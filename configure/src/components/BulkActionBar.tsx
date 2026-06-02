@@ -93,18 +93,14 @@ export function BulkActionBar({
   const hasEnabledCatalogs = selectedCatalogs.some(c => c.enabled);
   const hasNotInHome = selectedCatalogs.some(c => !c.showInHome);
   const hasInHome = selectedCatalogs.some(c => c.showInHome);
-  const hasRemovableCatalogs = selectedCatalogs.some(c => 
-    ['mdblist', 'streaming', 'stremthru', 'custom'].includes(c.source)
-  );
+  const hasRemovableCatalogs = selectedCatalogs.some(c => c.source !== 'merged');
   const hasRatingPostersDisabled = selectedCatalogs.some(c => c.enableRatingPosters === false);
   const hasRatingPostersEnabled = selectedCatalogs.some(c => c.enableRatingPosters !== false);
   const hasRandomizeDisabled = selectedCatalogs.some(c => !c.randomizePerPage);
   const hasRandomizeEnabled = selectedCatalogs.some(c => c.randomizePerPage);
   
-  // Count non-removable catalogs for tooltip
-  const nonRemovableCount = selectedCatalogs.filter(c =>
-    !['mdblist', 'streaming', 'stremthru', 'custom'].includes(c.source)
-  ).length;
+  // Count non-removable catalogs for tooltip (merged catalogs are disbanded, not deleted)
+  const nonRemovableCount = selectedCatalogs.filter(c => c.source === 'merged').length;
   const [showDisplayTypeDialog, setShowDisplayTypeDialog] = useState(false);
   const [displayTypeValue, setDisplayTypeValue] = useState('');
   const [showFindReplaceDialog, setShowFindReplaceDialog] = useState(false);
