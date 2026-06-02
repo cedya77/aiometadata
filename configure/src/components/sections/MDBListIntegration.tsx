@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { ChevronDown, Loader2, Plus, Trash2, KeyRound, BarChart3, Settings, PlayCircle, UserSearch, Link2, Bookmark, Sparkles, TrendingUp, Download } from 'lucide-react';
+import { ChevronDown, Loader2, Plus, Trash2, KeyRound, BarChart3, Settings, PlayCircle, UserSearch, Link2, Bookmark, Sparkles, TrendingUp, Download, Eye, EyeOff } from 'lucide-react';
 import { toast } from "sonner";
 import { apiCache } from '@/utils/apiCache';
 import { getGenresBySelection, GenreSelection } from '@/data/genres';
@@ -23,6 +23,7 @@ interface MDBListIntegrationProps {
 export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps) {
   const { config, setConfig, catalogTTL } = useConfig();
   const [tempKey, setTempKey] = useState(config.apiKeys.mdblist || "");
+  const [showKey, setShowKey] = useState(false);
   const [isValid, setIsValid] = useState(!!config.apiKeys.mdblist);
   const [isChecking, setIsChecking] = useState(false);
   const [customListUrl, setCustomListUrl] = useState("");
@@ -974,7 +975,18 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="mdblistkey">API Key</Label>
-                <Input id="mdblistkey" value={tempKey} onChange={(e) => setTempKey(e.target.value)} placeholder="Enter your MDBList API key" />
+                <div className="flex items-center space-x-2">
+                  <Input id="mdblistkey" type={showKey ? 'text' : 'password'} value={tempKey} onChange={(e) => setTempKey(e.target.value)} placeholder="Enter your MDBList API key" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowKey(!showKey)}
+                    aria-label={showKey ? 'Hide key' : 'Show key'}
+                    className="text-muted-foreground hover:text-foreground shrink-0"
+                  >
+                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
                 <a href="https://mdblist.com/preferences/#api_key_uid" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:underline">
                   Where do I get this?
                 </a>
