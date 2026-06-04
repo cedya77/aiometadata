@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.6.4](https://github.com/cedya77/aiometadata/compare/v2.6.3...v2.6.4) (2026-06-04)
+
+
+### Bug Fixes
+
+* apply age-rating filter using canonical catalog type, not localized ([960dc78](https://github.com/cedya77/aiometadata/commit/960dc78223d8f87e2213477de0be630f8113f0c7))
+* scope simkl watchlist activity watermark per status ([af009d7](https://github.com/cedya77/aiometadata/commit/af009d77031e3932958b3d2c6bc07e3646bab3a8))
+* stamp cross-ids on the tvdb anime catalog meta route ([cbb70fa](https://github.com/cedya77/aiometadata/commit/cbb70faecf12e79b00ffb62bcbed696cdca4fc97))
+
 ## [2.6.3](https://github.com/cedya77/aiometadata/compare/v2.6.2...v2.6.3) (2026-06-02)
 
 
