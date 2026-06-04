@@ -128,6 +128,42 @@ interface TmdbRequestError extends Error {
     retryDelay?: number;
 }
 
+function normalizeImdbMatchTitle(t: string): string {
+  return (t || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Trusts a title-search IMDb candidate only when its title matches one of the
+// TMDB titles (exact, or a full token subset/superset) within a one-year window,
+// rejecting loose fuzzy matches that merely share a release year.
+function isLikelyImdbTitleMatch(candidateName: string | undefined, candidateYear: number | string | undefined, acceptableTitles: (string | undefined)[], expectedYear: string | undefined): boolean {
+  const candidate = normalizeImdbMatchTitle(candidateName || '');
+  if (!candidate) return false;
+
+  if (expectedYear && candidateYear) {
+    const a = parseInt(String(expectedYear).substring(0, 4));
+    const b = parseInt(String(candidateYear).toString().substring(0, 4));
+    if (!isNaN(a) && !isNaN(b) && Math.abs(a - b) > 1) return false;
+  }
+
+  const candidateTokens = candidate.split(' ').filter(Boolean);
+  for (const raw of acceptableTitles) {
+    const t = normalizeImdbMatchTitle(raw || '');
+    if (!t) continue;
+    if (t === candidate) return true;
+    const tTokens = t.split(' ').filter(Boolean);
+    if (!tTokens.length) continue;
+    const tInCandidate = tTokens.every(tok => candidateTokens.includes(tok));
+    const candidateInT = candidateTokens.every(tok => tTokens.includes(tok));
+    if (tInCandidate || candidateInT) return true;
+  }
+  return false;
+}
+
 async function makeTmdbRequest(endpoint: string, apiKey: string, params: Record<string, any> = {}, method = 'GET', body: any = null, config: UserConfig = {} as UserConfig): Promise<any> {
   if (!apiKey) throw new Error("TMDB API key is required.");
   
@@ -222,7 +258,7 @@ async function makeTmdbRequest(endpoint: string, apiKey: string, params: Record<
               nameToImdbTitle = translation;
             }
           }
-          const imdbSearchResult = await new Promise((resolve) => {
+          const { imdbSearchResult, info } = await new Promise<{ imdbSearchResult: any; info: any }>((resolve) => {
             nameToImdb(
               {
                 name: nameToImdbTitle || "",
@@ -230,18 +266,32 @@ async function makeTmdbRequest(endpoint: string, apiKey: string, params: Record<
                 year: data.release_date.substring(0, 4),
                 strict: true
               },
-              (err: any, result: any) => resolve(err ? null : result)
+              (err: any, result: any, inf: any) => resolve(err ? { imdbSearchResult: null, info: null } : { imdbSearchResult: result, info: inf })
             );
           });
-          
+
+          let verified = false;
           if (imdbSearchResult) {
-              data.imdb_id = imdbSearchResult;
-              if (!data.external_ids) data.external_ids = {};
-              data.external_ids.imdb_id = imdbSearchResult;
+              const acceptableTitles = [data.original_title, data.title, nameToImdbTitle];
+              let candidateName = info?.meta?.name;
+              let candidateYear = info?.meta?.year;
+              if (!candidateName) {
+                  const candidateMeta = await getMetaFromImdbIo(imdbSearchResult, type);
+                  candidateName = candidateMeta?.name;
+                  candidateYear = candidateMeta?.year || candidateMeta?.releaseInfo;
+              }
+              verified = isLikelyImdbTitleMatch(candidateName, candidateYear, acceptableTitles, data.release_date);
+              if (verified) {
+                  data.imdb_id = imdbSearchResult;
+                  if (!data.external_ids) data.external_ids = {};
+                  data.external_ids.imdb_id = imdbSearchResult;
+              } else {
+                  consola.warn(`[TMDB] Rejected nameToImdb match for ${type} ${currentTmdbId} ("${nameToImdbTitle}"): ${imdbSearchResult} ("${candidateName}") failed title verification`);
+              }
           }
-          
+
           const duration = Date.now() - startTime;
-          timingMetrics.recordTiming('nameToImdb_lookup', duration, { type, success: !!imdbSearchResult });
+          timingMetrics.recordTiming('nameToImdb_lookup', duration, { type, success: verified });
       }
 
       // Strategy 2: Scraper Fallback
