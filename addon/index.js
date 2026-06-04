@@ -3769,7 +3769,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
     if (!filtersAlreadyApplied && responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0) {
       const { applyCatalogFilters } = require('./utils/catalogFilters');
       responseData.metas = await applyCatalogFilters(responseData.metas, {
-        type,
+        type: actualType,
         config,
         catalogConfig,
         cleanId
