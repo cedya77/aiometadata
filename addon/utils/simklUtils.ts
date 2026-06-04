@@ -323,7 +323,7 @@ async function fetchSimklWatchlistItems(
     const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
     // Redis keys
     const fullListKey = `simkl-watchlist-full:${tokenHash}:${status}`; // Stores the full object { movies:[], shows:[], anime:[] }
-    const activitiesKey = `simkl-activities:${tokenHash}`; // Stores the last fetched activities object
+    const activitiesKey = `simkl-activities:${tokenHash}:${status}`; // Per-status watermark, matching fullListKey granularity
 
     // 1. Get latest activities from Simkl (Cached via fetchSimklLastActivities for 6 hours)
     let currentActivities;
