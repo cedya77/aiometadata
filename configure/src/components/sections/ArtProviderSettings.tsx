@@ -136,7 +136,7 @@ export function ArtProviderSettings() {
         <div className="flex items-start gap-2 mt-4 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
           <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
           <p className="text-sm text-blue-800 dark:text-blue-200">
-            <strong>Note:</strong> Art provider settings apply to catalogs and detail pages, but not to search results. Search uses the selected search engine's poster sources for faster performance. <strong>Art URL Overrides (configured below) take priority over art provider settings.</strong>
+            <strong>Note:</strong> Art provider settings apply to catalogs and detail pages, but not to search results. Search uses the selected search engine's poster sources for faster performance, unless you enable <strong>Art URL Overrides in Search</strong> below. <strong>Art URL Overrides (configured below) take priority over art provider settings.</strong>
           </p>
         </div>
         
@@ -176,6 +176,26 @@ export function ArtProviderSettings() {
                 id="original-lang-fallback"
                 checked={!!config.artProviders?.originalLangFallback}
                 onCheckedChange={(value) => setConfig(prev => ({ ...prev, artProviders: { ...prev.artProviders, originalLangFallback: value } }))}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="search-art-url-overrides" className="text-base font-medium">
+                  Art URL Overrides in Search
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Apply your Art URL Overrides to search results too. Search may be slightly slower, but posters stay consistent with your catalogs.
+                </p>
+              </div>
+              <Switch
+                id="search-art-url-overrides"
+                checked={!!config.artProviders?.searchArtUrlOverrides}
+                onCheckedChange={(value) => setConfig(prev => ({ ...prev, artProviders: { ...prev.artProviders, searchArtUrlOverrides: value } }))}
               />
             </div>
           </CardContent>

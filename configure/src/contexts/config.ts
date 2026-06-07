@@ -135,6 +135,7 @@ export interface AppConfig {
     };
     englishArtOnly: boolean;
     originalLangFallback: boolean;
+    searchArtUrlOverrides: boolean;
   };
   tvdbSeasonType: string;
   mal: {

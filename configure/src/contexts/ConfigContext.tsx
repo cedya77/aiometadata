@@ -120,7 +120,8 @@ const initialConfig: AppConfig = {
     series: { poster: 'meta', background: 'meta', logo: 'meta' },
     anime: { poster: 'meta', background: 'imdb', logo: 'imdb' },
     englishArtOnly: false,
-    originalLangFallback: false
+    originalLangFallback: false,
+    searchArtUrlOverrides: false
   },
   tvdbSeasonType: 'default',
   mal: {
@@ -347,6 +348,9 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
           }
           if (userArtProviders.originalLangFallback !== undefined) {
             migratedArtProviders.originalLangFallback = userArtProviders.originalLangFallback;
+          }
+          if (userArtProviders.searchArtUrlOverrides !== undefined) {
+            migratedArtProviders.searchArtUrlOverrides = userArtProviders.searchArtUrlOverrides;
           }
           
           return migratedArtProviders;

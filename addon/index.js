@@ -3805,7 +3805,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
     // (when disabled, up next uses episode thumbnails as posters which shouldn't be overridden)
     const host = process.env.HOST_NAME.startsWith('http') ? process.env.HOST_NAME : `https://${process.env.HOST_NAME}`;
     const posterPatternsEnabled = config._currentSearchCatalogId
-      ? (config.search?.engineRatingPosters?.[config._currentSearchCatalogId] === true)
+      ? (config.search?.engineRatingPosters?.[config._currentSearchCatalogId] === true || config.artProviders?.searchArtUrlOverrides === true)
       : (catalogConfig?.enableRatingPosters !== false);
     const posterPattern = posterPatternsEnabled ? (config.customPosterUrlPattern || (config.posterRatingProvider && config.posterRatingProvider !== 'custom' ? require('./utils/parseProps').getDefaultPosterPattern(config.posterRatingProvider) : null)) : null;
     if ((posterPattern || config.customBackgroundUrlPattern || config.customLogoUrlPattern) && responseData?.metas && Array.isArray(responseData.metas)) {

@@ -348,7 +348,12 @@ class ConfigApi {
               artProvidersChanged = true;
               logger.debug(`englishArtOnly changed from ${oldConfig?.artProviders?.englishArtOnly} to ${config.artProviders?.englishArtOnly}`);
             }
-            
+
+            if (config.artProviders?.searchArtUrlOverrides !== oldConfig?.artProviders?.searchArtUrlOverrides) {
+              artProvidersChanged = true;
+              logger.debug(`searchArtUrlOverrides changed from ${oldConfig?.artProviders?.searchArtUrlOverrides} to ${config.artProviders?.searchArtUrlOverrides}`);
+            }
+
             // Check each content type (movie, series, anime)
             const contentTypes = ['movie', 'series', 'anime'];
             for (const contentType of contentTypes) {
@@ -690,7 +695,12 @@ class ConfigApi {
               artProvidersChanged = true;
               logger.debug(`englishArtOnly changed from ${oldConfig?.artProviders?.englishArtOnly} to ${config.artProviders?.englishArtOnly}`);
             }
-            
+
+            if (config.artProviders?.searchArtUrlOverrides !== oldConfig?.artProviders?.searchArtUrlOverrides) {
+              artProvidersChanged = true;
+              logger.debug(`searchArtUrlOverrides changed from ${oldConfig?.artProviders?.searchArtUrlOverrides} to ${config.artProviders?.searchArtUrlOverrides}`);
+            }
+
             // Check each content type (movie, series, anime)
             const contentTypes = ['movie', 'series', 'anime'];
             for (const contentType of contentTypes) {
