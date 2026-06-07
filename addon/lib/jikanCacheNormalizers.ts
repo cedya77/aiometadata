@@ -33,6 +33,7 @@ const DETAIL_KEYS = [
   'synopsis',
   'title',
   'title_english',
+  'genres',
 ];
 
 // We only need `images.jpg.large_image_url` but keep the `images` sub-tree
@@ -65,7 +66,8 @@ const CATALOG_ITEM_KEYS = [
   'synopsis',
   'year',
   'duration',
-  'status',  
+  'status',
+  'genres',
 ];
 
 // detail normalizer

@@ -2401,13 +2401,14 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
       if (releaseDatesResult) {
         releaseDates = releaseDatesResult;
       }
-      
+
       const meta = {
         id: `mal:${malId}`,
         type: stremioType,
         logo: logo,
         background: background,
         name: anime.title_english || anime.title,
+        genres: anime.genres?.map(g => g.name) || [],
         poster: finalPosterUrl,
         description: addMetaProviderAttribution(anime.synopsis, 'MAL', config),
         year: anime.year,

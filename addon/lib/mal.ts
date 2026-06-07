@@ -654,10 +654,10 @@ async function getAnimeByStudio(studioId: string | number, page: number = 1, lim
 
 async function getAnimeBySeason(year: number, season: string, page: number = 1, config: any = {}): Promise<any[]> {
   // sfw param disabled — causes 504 on Jikan's /seasons endpoint (2026-05)
-  // const queryParams: Record<string, any> = { page };
-  // if (config.sfw) queryParams.sfw = true;
-  // const params = new URLSearchParams(queryParams);
-  const url = `${JIKAN_API_BASE}/seasons/${year}/${season}?page=${page}`;
+   const queryParams: Record<string, any> = { page };
+  if (config.sfw) queryParams.sfw = true;
+  const params = new URLSearchParams(queryParams);
+  const url = `${JIKAN_API_BASE}/seasons/${year}/${season}?${params.toString()}`;
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then((response: any) => normalizeJikanCatalogForCache(response.data?.data || []))
     .catch((e: any) => {
