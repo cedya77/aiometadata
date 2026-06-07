@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.6.6](https://github.com/cedya77/aiometadata/compare/v2.6.5...v2.6.6) (2026-06-07)
+
+
+### Bug Fixes
+
+* **mal:** restore sfw param to mal seasons catalog fetching following resolution of 504 error from jikan and add missing genres property for MAL catalog meta. ([4661e98](https://github.com/cedya77/aiometadata/commit/4661e987e866c3e81997fe67bdd6658581d0a82f))
+
 ## [2.6.5](https://github.com/cedya77/aiometadata/compare/v2.6.4...v2.6.5) (2026-06-04)
 
 
