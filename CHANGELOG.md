@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.6.5](https://github.com/cedya77/aiometadata/compare/v2.6.4...v2.6.5) (2026-06-04)
+
+
+### Bug Fixes
+
+* verify nameToImdb title match before stamping imdb id ([c2aaeae](https://github.com/cedya77/aiometadata/commit/c2aaeae543032b57acdde6498a052bd4ed06eb96))
+
 ## [2.6.4](https://github.com/cedya77/aiometadata/compare/v2.6.3...v2.6.4) (2026-06-04)
 
 
