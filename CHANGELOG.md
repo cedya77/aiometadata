@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.6.7](https://github.com/cedya77/aiometadata/compare/v2.6.6...v2.6.7) (2026-06-08)
+
+
+### Bug Fixes
+
+* include TV-Y and TV-Y7 in age-rating catalog filter ([cd71ffd](https://github.com/cedya77/aiometadata/commit/cd71ffd1f6c0dc4fb9fde1c7862d9a094e9e6d30))
+
 ## [2.6.6](https://github.com/cedya77/aiometadata/compare/v2.6.5...v2.6.6) (2026-06-07)
 
 
