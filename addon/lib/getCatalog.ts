@@ -1207,19 +1207,19 @@ async function buildParameters(type: string, language: string, page: number, id:
     switch (config.ageRating) {
       case "G":
         parameters.certification_country = "US";
-        parameters.certification = type === "movie" ? "G" : "TV-G";
+        parameters.certification = type === "movie" ? "G" : ["TV-Y", "TV-Y7", "TV-G"].join("|");
         break;
       case "PG":
         parameters.certification_country = "US";
-        parameters.certification = type === "movie" ? ["G", "PG"].join("|") : ["TV-G", "TV-PG"].join("|");
+        parameters.certification = type === "movie" ? ["G", "PG"].join("|") : ["TV-Y", "TV-Y7", "TV-G", "TV-PG"].join("|");
         break;
       case "PG-13":
         parameters.certification_country = "US";
-        parameters.certification = type === "movie" ? ["G", "PG", "PG-13"].join("|") : ["TV-G", "TV-PG", "TV-14"].join("|");
+        parameters.certification = type === "movie" ? ["G", "PG", "PG-13"].join("|") : ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14"].join("|");
         break;
       case "R":
         parameters.certification_country = "US";
-        parameters.certification = type === "movie" ? ["G", "PG", "PG-13", "R"].join("|") : ["TV-G", "TV-PG", "TV-14", "TV-MA"].join("|");
+        parameters.certification = type === "movie" ? ["G", "PG", "PG-13", "R"].join("|") : ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"].join("|");
         break;
       case "NC-17":
         break;
