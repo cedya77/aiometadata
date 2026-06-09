@@ -26,8 +26,11 @@ const POLLING_INTERVALS = {
   OPERATIONS: 5 * 1000,         // 5 seconds - warming tasks need fast updates
   USERS: 15 * 1000,             // 15 seconds - user activity
   CONTENT: 60 * 1000,           // 60 seconds - slow-changing data
-  LOGS: 2 * 1000,               // 2 seconds - live log streaming
+  LOGS: 2 * 1000,               // 2 seconds - live log streaming (backstop for the SSE stream)
 } as const;
+
+// Cap client-side log accumulation so a long-open tab can't grow unbounded.
+const MAX_CLIENT_LOG_ENTRIES = 10000;
 
 // Query keys for cache management
 export const DASHBOARD_QUERY_KEYS = {
@@ -452,59 +455,97 @@ export function useDashboardLogs(options: DashboardQueryOptions & { paused?: boo
   const { activeTab = 'overview', enabled = true, paused = false } = options;
 
   const isActiveTab = activeTab === 'logs';
-  const shouldPoll = isVisible && isActiveTab && isAdmin && !paused;
+  const shouldStream = isVisible && isActiveTab && isAdmin && !!adminKey && enabled && !paused;
 
   const cursorRef = useRef(0);
   const [accumulated, setAccumulated] = useState<LogsData>({ entries: [], cursor: 0, tags: [] });
+  const [isFetching, setIsFetching] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
-  const query = useQuery({
-    queryKey: DASHBOARD_QUERY_KEYS.logs,
-    queryFn: async () => {
-      try {
-        const params = new URLSearchParams({ afterCursor: String(cursorRef.current), limit: '500' });
-        return await fetchDashboardData<LogsData>(`/api/dashboard/logs?${params}`, getHeaders());
-      } catch (error) {
-        if (error instanceof Error && error.message === 'UNAUTHORIZED') {
-          logout();
-          throw error;
-        }
-        throw error;
-      }
-    },
-    structuralSharing: false,
-    enabled: enabled && isAdmin && !!adminKey && isActiveTab,
-    refetchInterval: shouldPoll ? POLLING_INTERVALS.LOGS : false,
-    refetchIntervalInBackground: false,
-  });
-
+  // Pure SSE: the stream replays buffered history after our cursor (gapless on
+  // connect/reconnect, since the server hands off backfill->live atomically), then
+  // pushes live entries. No companion poll. EventSource can't send the x-admin-key
+  // header, so we read a fetch stream; reconnect resumes from the last cursor.
   useEffect(() => {
-    if (!query.data) return;
-    if (typeof query.data.newestId === 'number' && query.data.newestId < cursorRef.current) {
-      cursorRef.current = 0;
-      setAccumulated({ entries: [], cursor: 0, tags: query.data.tags });
-      return;
-    }
-    if (query.data.entries.length > 0 && query.data.cursor > cursorRef.current) {
-      cursorRef.current = query.data.cursor;
-      setAccumulated(prev => {
-        const combined = [...prev.entries, ...query.data!.entries];
-        return { entries: combined, cursor: query.data!.cursor, tags: query.data!.tags };
-      });
-    } else if (query.data.tags.length > 0) {
-      setAccumulated(prev => {
-        if (prev.tags.length !== query.data!.tags.length) {
-          return { ...prev, tags: query.data!.tags };
+    if (!shouldStream) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    let buf = '';
+    setIsFetching(true);
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/dashboard/logs/stream?afterCursor=${cursorRef.current}`, {
+          headers: getHeaders(),
+          signal: controller.signal,
+        });
+        if (!res.ok || !res.body) {
+          if (res.status === 401) logout();
+          return;
         }
-        return prev;
-      });
-    }
-  }, [query.data]);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        while (!cancelled) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const frames = buf.split('\n\n');
+          buf = frames.pop() || '';
+          const incoming: LogEntry[] = [];
+          for (const frame of frames) {
+            if (frame.startsWith(':')) continue;                 // heartbeat comment
+            if (frame.includes('event: ready')) { setIsFetching(false); continue; }
+            const dataLine = frame.split('\n').find((l) => l.startsWith('data:'));
+            if (!dataLine) continue;
+            const json = dataLine.slice(5).trim();
+            if (!json) continue;
+            try {
+              const entry = JSON.parse(json) as LogEntry;
+              if (typeof entry.id === 'number' && entry.id > cursorRef.current) incoming.push(entry);
+            } catch { /* ignore malformed frame */ }
+          }
+          if (incoming.length > 0) {
+            cursorRef.current = incoming[incoming.length - 1].id;
+            setAccumulated((prev) => {
+              const combined = [...prev.entries, ...incoming];
+              const entries = combined.length > MAX_CLIENT_LOG_ENTRIES ? combined.slice(-MAX_CLIENT_LOG_ENTRIES) : combined;
+              let tags = prev.tags;
+              let tagAdds: Set<string> | null = null;
+              for (const e of incoming) {
+                if (e.tag && !tags.includes(e.tag)) (tagAdds ??= new Set(tags)).add(e.tag);
+              }
+              if (tagAdds) tags = Array.from(tagAdds).sort();
+              return { entries, cursor: cursorRef.current, tags, newestId: cursorRef.current };
+            });
+          }
+        }
+      } catch {
+        // aborted on cleanup, or the connection dropped
+      } finally {
+        if (!cancelled) {
+          setIsFetching(false);
+          // auto-reconnect; resumes from cursorRef so the server replays the gap
+          setTimeout(() => { if (!cancelled) setRetryCount((c) => c + 1); }, 2000);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldStream, adminKey, getHeaders, retryCount]);
 
   const resetLogs = useCallback(() => {
     setAccumulated(prev => ({ entries: [], cursor: prev.cursor, tags: prev.tags }));
   }, []);
 
-  return { ...query, data: accumulated, resetLogs };
+  const refetch = useCallback(() => {
+    setRetryCount((c) => c + 1);
+  }, []);
+
+  return { data: accumulated, isFetching, refetch, resetLogs, isLoading: false, isError: false, error: null };
 }
 
 // ============================================================================

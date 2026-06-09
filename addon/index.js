@@ -5588,6 +5588,53 @@ addon.get("/api/dashboard/logs", requireDashboardAdmin, (req, res) => {
   }
 });
 
+addon.get("/api/dashboard/logs/stream", requireDashboardAdmin, (req, res) => {
+  const { subscribeToLogs, buildLogFilter, getLogEntries, getBufferStats } = require('./lib/logBuffer.js');
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const afterCursor = req.query.afterCursor ? parseInt(req.query.afterCursor, 10) : 0;
+  const filterOpts = {
+    level: req.query.level || undefined,
+    tag: req.query.tag || undefined,
+    search: req.query.search || undefined,
+  };
+  const match = buildLogFilter(filterOpts);
+
+  // Replay buffered history after the cursor, then subscribe for live entries.
+  // Both run synchronously with no await between them, so no entry can be pushed
+  // in the gap (single-threaded) — the backfill->live handoff is gapless and
+  // non-overlapping, which lets the client rely on the stream alone (no poll).
+  const replay = getLogEntries({ afterCursor, ...filterOpts, limit: 2000 });
+  for (const entry of replay.entries) {
+    res.write(`data: ${JSON.stringify(entry)}\n\n`);
+  }
+  res.write(`event: ready\ndata: ${JSON.stringify({ newestId: getBufferStats().newestId })}\n\n`);
+
+  const MAX_SOCKET_BUFFER = 1024 * 1024; // drop rather than buffer unboundedly for a slow client
+  let dropped = 0;
+  const unsubscribe = subscribeToLogs((entry) => {
+    if (!match(entry)) return;
+    if (res.writableLength > MAX_SOCKET_BUFFER) { dropped++; return; }
+    res.write(`data: ${JSON.stringify(entry)}\n\n`);
+  });
+
+  const heartbeat = setInterval(() => {
+    res.write(`: ping${dropped ? ` dropped=${dropped}` : ''}\n\n`);
+  }, 25000);
+  heartbeat.unref?.();
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+    res.end();
+  });
+});
+
 addon.get("/api/dashboard/memory", requireDashboardAdmin, (req, res) => {
   try {
     const dashboardApi = getDashboardAPI();
