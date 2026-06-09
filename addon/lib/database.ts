@@ -363,6 +363,48 @@ class Database {
     return rows ? rows.map(row => row.user_uuid) : [];
   }
 
+  async streamUserConfigs(onConfig: (config: any) => void, batchSize: number = 500): Promise<number> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const query = this.type === 'sqlite'
+      ? 'SELECT user_uuid, config_data FROM user_configs WHERE user_uuid > ? ORDER BY user_uuid LIMIT ?'
+      : 'SELECT user_uuid, config_data FROM user_configs WHERE user_uuid > $1 ORDER BY user_uuid LIMIT $2';
+
+    let lastUuid = '';
+    let processed = 0;
+
+    while (true) {
+      const rows = await this.allQuery(query, [lastUuid, batchSize]);
+      if (!rows.length) break;
+
+      for (const row of rows) {
+        lastUuid = row.user_uuid;
+        let config: any;
+        try {
+          config = typeof row.config_data === 'string' ? JSON.parse(row.config_data) : row.config_data;
+        } catch (error) {
+          config = null;
+        }
+        if (config) {
+          onConfig(config);
+          processed++;
+        }
+      }
+
+      if (rows.length < batchSize) break;
+      await new Promise(resolve => setImmediate(resolve));
+    }
+
+    return processed;
+  }
+
+
+  async getUserCount(): Promise<number> {
+    const row = await this.getQuery('SELECT COUNT(*) as count FROM user_configs', []);
+    return row ? (parseInt(row.count, 10) || 0) : 0;
+  }
 
   async getUsersCreatedToday(): Promise<number> {
     const today = new Date().toISOString().substring(0, 10);
