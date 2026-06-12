@@ -146,6 +146,31 @@ export function DashboardLogs({ data, loading, paused = false, onPauseToggle, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEntryId, autoScroll]);
 
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const breakOut = () => setAutoScroll((prev) => (prev ? false : prev));
+    const onWheel = (e: WheelEvent) => { if (e.deltaY < 0) breakOut(); };
+    let touchStartY = 0;
+    const onTouchStart = (e: TouchEvent) => { touchStartY = e.touches[0]?.clientY ?? 0; };
+    const onTouchMove = (e: TouchEvent) => {
+      if ((e.touches[0]?.clientY ?? 0) - touchStartY > 10) breakOut();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowUp" || e.key === "PageUp" || e.key === "Home") breakOut();
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("keydown", onKeyDown);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
   const handleScroll = () => {
     if (!scrollRef.current || isAutoScrolling.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
@@ -349,7 +374,8 @@ export function DashboardLogs({ data, loading, paused = false, onPauseToggle, on
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="h-[600px] overflow-y-auto rounded-md border bg-[hsl(240_6%_7%)] font-mono text-[13px] leading-relaxed"
+            tabIndex={0}
+            className="h-[600px] overflow-y-auto rounded-md border bg-[hsl(240_6%_7%)] font-mono text-[13px] leading-relaxed focus:outline-none"
           >
             {filteredEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
