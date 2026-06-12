@@ -9,6 +9,10 @@ function isHideWatchedExcluded(cleanId: string): boolean {
     || cleanId.includes('upnext');
 }
 
+const UNRELEASED_STATUSES = new Set([
+  'not yet aired', 'upcoming', 'not_yet_released', 'planned',
+]);
+
 const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
 const tvRatingHierarchy = ['TV-Y', 'TV-Y7', 'TV-G', 'TV-PG', 'TV-14', 'TV-MA'];
 const movieToTvMap: Record<string, string> = {
@@ -88,6 +92,7 @@ async function applyCatalogFilters(metas: any[], { type, config, catalogConfig, 
     const before = metas.length;
     metas = metas.filter(meta => {
       if (meta.type !== 'series') return true;
+      if (UNRELEASED_STATUSES.has(String(meta.status || '').toLowerCase())) return false;
       if (!meta.released) return true;
       return new Date(meta.released) <= now;
     });
