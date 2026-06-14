@@ -302,6 +302,172 @@ Then set these environment variables on the aiometadata service:
 
 If you're not using Traefik, remove the labels, expose port 8888 directly, and set `POSTER_PROXY_PREFIX_URL` to wherever your proxy is publicly accessible.
 
+### 4. Self-Hosted Jikan API (Optional — Anime Source)
+
+Anime metadata is sourced from [MyAnimeList](https://myanimelist.net/) via the [Jikan](https://jikan.moe/) API. By default the addon uses the public instance (`https://api.jikan.moe/v4`), but **the public Jikan API is shutting down on October 1, 2026** (brownout from September 1). To keep anime metadata working, run your own Jikan instance and point the addon at it with a single environment variable:
+
+```env
+JIKAN_API_BASE=http://jikan_rest:8080/v4
+```
+
+Set this on the `aiometadata` service (in its `.env`). When both containers share a Docker network, the addon reaches Jikan by container name — no public exposure needed.
+
+#### Compose stack
+
+Jikan needs four services (MongoDB stores data, Redis caches, Typesense powers search). Save as `apps/jikan-rest/compose.yaml` (or merge into your stack):
+
+```yaml
+secrets:
+  jikan_db_username:       { file: ./secrets/db_username.txt }
+  jikan_db_password:       { file: ./secrets/db_password.txt }
+  jikan_db_admin_username: { file: ./secrets/db_admin_username.txt }
+  jikan_db_admin_password: { file: ./secrets/db_admin_password.txt }
+  jikan_redis_password:    { file: ./secrets/redis_password.txt }
+  jikan_typesense_api_key: { file: ./secrets/typesense_api_key.txt }
+
+services:
+  jikan_rest:
+    image: docker.io/jikanme/jikan-rest:latest
+    container_name: jikan_rest
+    hostname: jikan-rest-api
+    user: "10001:10001"
+    restart: unless-stopped
+    env_file: [ .env.compose ]
+    secrets: [ jikan_db_username, jikan_db_password, jikan_redis_password, jikan_typesense_api_key ]
+    expose: [ 8080 ]
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q 'http://127.0.0.1:2114/health?plugin=http'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      jikan_mongo:     { condition: service_healthy }
+      jikan_redis:     { condition: service_healthy }
+      jikan_typesense: { condition: service_started }
+
+  jikan_mongo:
+    image: docker.io/mongo:focal
+    container_name: jikan_mongo
+    hostname: jikan_mongo
+    restart: unless-stopped
+    command: "--wiredTigerCacheSizeGB 0.5"
+    secrets: [ jikan_db_username, jikan_db_password, jikan_db_admin_username, jikan_db_admin_password ]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME_FILE: /run/secrets/jikan_db_admin_username
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/jikan_db_admin_password
+      MONGO_INITDB_DATABASE: jikan_admin
+    volumes:
+      - ${DOCKER_DATA_DIR}/jikan-rest/mongo:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh mongodb://localhost:27017 --quiet --eval 'db.runCommand(\"ping\").ok'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  jikan_redis:
+    image: docker.io/redis:6-alpine
+    container_name: jikan_redis
+    hostname: jikan_redis
+    restart: unless-stopped
+    secrets: [ jikan_redis_password ]
+    command: ["/bin/sh", "-c", "redis-server --requirepass \"$$(cat /run/secrets/jikan_redis_password)\" --appendonly yes"]
+    volumes:
+      - ${DOCKER_DATA_DIR}/jikan-rest/redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/jikan_redis_password)\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  jikan_typesense:
+    image: docker.io/typesense/typesense:0.24.1
+    container_name: jikan_typesense
+    hostname: jikan_typesense
+    restart: unless-stopped
+    entrypoint: /bin/sh
+    secrets: [ jikan_typesense_api_key ]
+    command: ["-c", "TYPESENSE_API_KEY=\"$$(cat /run/secrets/jikan_typesense_api_key)\" /opt/typesense-server --data-dir /data"]
+    volumes:
+      - ${DOCKER_DATA_DIR}/jikan-rest/typesense:/data
+```
+
+Save the container config as `apps/jikan-rest/.env.compose`:
+
+```env
+APP_DEBUG=false
+LOG_LEVEL=info
+APP_ENV=production
+# Indexers self-call the API; must point at RoadRunner's port (8080), NOT the default port 80
+APP_URL=http://127.0.0.1:8080
+CACHING=true
+CACHE_DRIVER=redis
+REDIS_HOST=jikan_redis
+REDIS_PASSWORD__FILE=/run/secrets/jikan_redis_password
+DB_CONNECTION=mongodb
+DB_HOST=jikan_mongo
+DB_DATABASE=jikan
+DB_USERNAME__FILE=/run/secrets/jikan_db_username
+DB_ADMIN__FILE=/run/secrets/jikan_db_username
+DB_PASSWORD__FILE=/run/secrets/jikan_db_password
+SCOUT_DRIVER=typesense
+SCOUT_QUEUE=false
+TYPESENSE_HOST=jikan_typesense
+TYPESENSE_PORT=8108
+TYPESENSE_API_KEY__FILE=/run/secrets/jikan_typesense_api_key
+CORS_MIDDLEWARE=true
+MICROCACHING=true
+MICROCACHING_EXPIRE=60
+```
+
+Save the MongoDB init script as `apps/jikan-rest/mongo-init.js`:
+
+```js
+const userToCreate = fs.readFileSync('/run/secrets/jikan_db_username', 'utf8');
+const userPassword = fs.readFileSync('/run/secrets/jikan_db_password', 'utf8');
+db = db.getSiblingDB("admin");
+db.createUser({ user: userToCreate, pwd: userPassword, roles: [{ role: "readWrite", db: "jikan" }] });
+db = db.getSiblingDB("jikan");
+db.createUser({ user: userToCreate, pwd: userPassword, roles: [{ role: "readWrite", db: "jikan" }] });
+```
+
+Generate the secret files (note the `chmod 644` — Mongo and the app run as non-root and must be able to read the bind-mounted secrets):
+
+```bash
+cd apps/jikan-rest && mkdir -p secrets
+echo -n "jikan"        > secrets/db_username.txt
+echo -n "jikanadmin"   > secrets/db_admin_username.txt
+openssl rand -hex 24   > secrets/db_password.txt
+openssl rand -hex 24   > secrets/db_admin_password.txt
+openssl rand -hex 24   > secrets/redis_password.txt
+openssl rand -hex 24   > secrets/typesense_api_key.txt
+chmod 644 secrets/*.txt
+```
+
+Then start it: `docker compose up -d`
+
+#### Seeding the index
+
+Direct lookups (e.g. `/v4/anime/1`) work immediately by scraping MAL on demand. But **search, `seasons`, `top`, and genre catalogs are served from Jikan's own database, which starts empty** and must be populated. Run the indexers (they scrape MAL and are rate-limited):
+
+```bash
+# Fast metadata
+docker exec jikan_rest php artisan indexer:genres
+docker exec jikan_rest php artisan indexer:producers
+docker exec jikan_rest php artisan indexer:anime-current-season
+docker exec jikan_rest php artisan indexer:anime-schedule
+
+# Full catalog (~30k anime — runs for hours; --delay is seconds between requests, default 3)
+docker exec -d jikan_rest sh -c 'php artisan indexer:anime --delay=1 >> /tmp/indexer-anime.log 2>&1'
+```
+
+Lower `--delay` speeds it up but increases the risk of MyAnimeList rate-limiting your IP. The container self-runs a scheduler that keeps data fresh after the initial seed. Check progress with `docker exec jikan_rest tail -f /tmp/indexer-anime.log`.
+
+#### Optional: worker-leak mitigation
+
+The bundled RoadRunner app server can accumulate CPU/memory over time. To recycle workers gracefully (no restart needed), mount a custom `.rr.yaml` over `/app/.rr.yaml` that adds lifecycle limits — give the queue worker `queue:work --max-time=3600 --max-jobs=1000 --memory=256`, set the HTTP pool `supervisor.ttl: 3600s`, and cap `num_workers`. Add `- ./rr.yaml:/app/.rr.yaml:ro` to the `jikan_rest` volumes.
+
 ---
 
 ## ⚙️ Configuration
