@@ -2256,6 +2256,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
           certification: item.attributes.ageRating,
           imdbRating: mapping?.imdb_id ? await getImdbRating(mapping?.imdb_id, stremioType) : 'N/A',
           released: item.attributes.startDate ? new Date(item.attributes.startDate) : undefined,
+          status: item.attributes.status,
           trailers: item.attributes.youtubeVideoId ? [{
             source: item.attributes.youtubeVideoId,
             type: "Trailer"
@@ -2422,6 +2423,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
         runtime: parseRunTime(anime.duration),
         imdbRating: imdbRating,
         released: anime.aired?.from ? new Date(anime.aired.from) : undefined,
+        status: anime.status,
         trailers: trailers
       };
 

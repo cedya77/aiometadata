@@ -10,7 +10,7 @@ function isHideWatchedExcluded(cleanId: string): boolean {
 }
 
 const UNRELEASED_STATUSES = new Set([
-  'not yet aired', 'upcoming', 'not_yet_released', 'planned',
+  'not yet aired', 'upcoming', 'not_yet_released', 'planned', 'unreleased', 'tba',
 ]);
 
 const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
