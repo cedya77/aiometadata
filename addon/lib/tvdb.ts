@@ -717,7 +717,7 @@ async function getSeriesExtended(seriesId: string, config: UserConfig): Promise<
       requestTracker.trackProviderCall('tvdb', responseTime, false);
       
       logger.error(`[getSeriesExtended] Error fetching extended series data for TVDB ID ${seriesId}:`, (error as Error).message);
-      return null; 
+      throw error;
     }
   });
 }
@@ -796,7 +796,7 @@ async function _fetchEpisodesBySeasonType(tvdbId: string, seasonType: string, la
       page++;
     } catch(error) {
       logger.error(`[_fetchEpisodesBySeasonType] Error fetching page ${page} of ${seasonType} episodes for TVDB ID ${tvdbId}:`, (error as Error).message);
-      hasNextPage = false;
+      throw error;
     }
   }
   return { episodes: allEpisodes };

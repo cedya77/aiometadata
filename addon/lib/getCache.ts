@@ -384,6 +384,10 @@ function classifyResult(result: any, error: any = null, cacheKey: string | null 
     return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
   }
 
+  if ((result as any)?.meta?.__degradedFallback) {
+    return { type: 'DEGRADED_FALLBACK', ttl: 0 };
+  }
+
   const isExternalApi = cacheKey && (
     cacheKey.includes('tvdb-api:') ||
     cacheKey.includes('tmdb-api:') ||
@@ -2081,6 +2085,13 @@ async function cacheWrapMetaSmart(userUUID: string, metaId: string, method: () =
     }
 
     const meta = result.meta;
+
+    if (meta.__degradedFallback) {
+      delete meta.__degradedFallback;
+      cacheLogger.warn(`[Meta] Skipping cache for degraded fallback result: ${metaId}`);
+      return result;
+    }
+
     let idToCache = meta.id;
 
     if (!idToCache || typeof idToCache !== 'string') {

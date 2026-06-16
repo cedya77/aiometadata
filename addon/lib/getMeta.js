@@ -25,6 +25,11 @@ const wikiMappings = require('./wiki-mapper.js');
 
 const logger = consola.withTag('Meta');
 
+function _markDegraded(meta, degraded) {
+  if (degraded && meta && typeof meta === 'object') meta.__degradedFallback = true;
+  return meta;
+}
+
 
 /** Extract all resolved IDs as underscore-prefixed properties for post-processing */
 function stampIds(allIds) {
@@ -776,6 +781,8 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
 async function getSeriesMeta(preferredProvider, stremioId, language, config, userUUID, allIds, includeVideos) {
   logger.debug(`[SeriesMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
 
+  let degraded = false;
+
   // Try preferred provider
   if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
     try {
@@ -791,7 +798,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
       }, config);
       
       if (seriesData) {
-        return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, false, includeVideos);
+        return _markDegraded(await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, false, includeVideos), degraded);
       } else {
         logger.warn(`[SeriesMeta] TMDB returned null data for ${allIds.tmdbId}`);
       }
@@ -800,6 +807,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
       logger.warn(`[SeriesMeta] TMDB failed: ${e.message}`);
       logger.warn(`[SeriesMeta] TMDB error at: ${errorLine}`);
       logger.warn(`[SeriesMeta] TMDB full stack trace:`, e.stack);
+      degraded = true;
     }
   }
 
@@ -807,12 +815,13 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
     try {
       const imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
       if (imdbData) {
-        return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config);
+        return _markDegraded(await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config), degraded);
       } else {
         logger.warn(`[SeriesMeta] IMDB returned null data for ${allIds.imdbId}`);
       }
     } catch (e) {
       logger.warn(`[SeriesMeta] IMDB failed: ${e.message}`);
+      degraded = true;
     }
   }
 
@@ -824,12 +833,13 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
       ]);
       
       if (seriesData) {
-        return await buildSeriesResponseFromTvmaze(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, false, includeVideos);
+        return _markDegraded(await buildSeriesResponseFromTvmaze(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, false, includeVideos), degraded);
       } else {
         logger.warn(`[SeriesMeta] TVmaze returned null data for ${allIds.tvmazeId}`);
       }
     } catch (e) {
       logger.warn(`[SeriesMeta] TVmaze failed: ${e.message}`);
+      degraded = true;
     }
   }
 
@@ -855,12 +865,13 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 
       // Check if we got valid data
       if (seriesData) {
-        return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, false, includeVideos);
+        return _markDegraded(await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, false, includeVideos), degraded);
       } else {
         logger.debug(`[SeriesMeta] TVDB returned null data for ${allIds.tvdbId} (expected when content doesn't exist on TVDB)`);
       }
     } catch (e) {
       logger.warn(`[SeriesMeta] TVDB fallback failed: ${e.message}`);
+      degraded = true;
     }
   }
 
@@ -881,7 +892,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
       }, config);
       
       if (seriesData) {
-        return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, false, includeVideos);
+        return _markDegraded(await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, false, includeVideos), degraded);
       } else {
         logger.warn(`[SeriesMeta] TMDB by ID returned null data for ${id}`);
       }
@@ -890,17 +901,19 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
       logger.warn(`[SeriesMeta] TMDB by ID failed: ${e.message}`);
       logger.warn(`[SeriesMeta] TMDB by ID error at: ${errorLine}`);
       logger.warn(`[SeriesMeta] TMDB by ID full stack trace:`, e.stack);
+      degraded = true;
     }
   } else if (provider === 'imdb' && id) {
     try {
       const seriesData = await imdb.getMetaFromImdb(id, 'series');
       if (seriesData) {
-        return await buildImdbSeriesResponse(stremioId, seriesData, { allIds }, config);
+        return _markDegraded(await buildImdbSeriesResponse(stremioId, seriesData, { allIds }, config), degraded);
       } else {
         logger.warn(`[SeriesMeta] IMDB by ID returned null data for ${id}`);
       }
     } catch (e) {
       logger.warn(`[SeriesMeta] IMDB by ID failed: ${e.message}`);
+      degraded = true;
     }
   } else if (provider === 'tvmaze' && id) {
     try {
@@ -910,12 +923,13 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
       ]);
       
       if (seriesData) {
-        return await buildSeriesResponseFromTvmaze(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, false, includeVideos);
+        return _markDegraded(await buildSeriesResponseFromTvmaze(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, false, includeVideos), degraded);
       } else {
         logger.warn(`[SeriesMeta] TVmaze by ID returned null data for ${id}`);
       }
     } catch (e) {
       logger.warn(`[SeriesMeta] TVmaze by ID failed: ${e.message}`);
+      degraded = true;
     }
   }
 
@@ -937,6 +951,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
   }
 
   // --- Preferred Provider Logic ---
+  let degraded = false;
   try {
     if (preferredProvider && preferredProvider !== 'kitsu' && preferredProvider !== 'mal') {
       logger.debug(`[AnimeMeta] Attempting preferred provider '${preferredProvider}' for ${stremioId}.`);
@@ -977,7 +992,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
             if (allIds?.imdbId) {
               logger.warn(`[AnimeMeta] TVDB unavailable for ${stremioId} (tvdb:${allIds.tvdbId}); falling back to IMDB.`);
               let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
-              return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
+              return _markDegraded(await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime), degraded);
             }
           } else {
             return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos);
@@ -997,7 +1012,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
             if (allIds?.imdbId) {
               logger.warn(`[AnimeMeta] TVDB unavailable for ${stremioId} (tvdb:${allIds.tvdbId}); falling back to IMDB.`);
               let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
-              return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
+              return _markDegraded(await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime), degraded);
             }
           } else {
             return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
@@ -1014,10 +1029,10 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       if (preferredProvider === 'imdb' && allIds?.imdbId) {
         if (type === 'series') {
           let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
-          return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
+          return _markDegraded(await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime), degraded);
         } else if (type === 'movie') {
           let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
-          return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
+          return _markDegraded(await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime), degraded);
         }
       }
       logger.debug(`[AnimeMeta] No ID found for preferred provider '${preferredProvider}'.`);
@@ -1103,6 +1118,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       }
     } catch (tmdbError) {
       logger.warn(`[AnimeMeta] TMDB fallback failed for ${stremioId}: ${tmdbError.message}`);
+      degraded = true;
     }
   }
 
@@ -1112,12 +1128,12 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       if (type === 'series') {
         const imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
         if (imdbData) {
-          return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
+          return _markDegraded(await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime), degraded);
         }
       } else if (type === 'movie') {
         const imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
         if (imdbData) {
-          return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
+          return _markDegraded(await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime), degraded);
         }
       }
     } catch (imdbError) {
