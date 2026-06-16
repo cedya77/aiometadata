@@ -181,6 +181,11 @@ cp .env.example .env
 - **Description**: Base URL for Jikan API
 - **Example**: `JIKAN_API_BASE=https://api.jikan.moe/v4`
 
+### `MAL_PAGE_SIZE`
+- **Default**: `25`
+- **Description**: Items per page for all MAL/Jikan catalogs and search. The public Jikan API caps `limit` at 25; only raise this on a self-hosted instance, and keep it **≤** that instance's `MAX_RESULTS_PER_PAGE` or requests will fail with a 400.
+- **Example**: `MAL_PAGE_SIZE=50`
+
 ### `MAL_SOCKS_PROXY_URL`
 - **Optional**: Yes
 - **Description**: SOCKS proxy for Jikan API requests (if your IP is rate-limited)

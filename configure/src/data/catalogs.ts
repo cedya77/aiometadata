@@ -46,6 +46,8 @@ export const animeCatalogs: CatalogDefinition[] = [
   { id: 'mal.most_favorites', name: 'MAL Most Favorites', type: 'anime', source: 'mal', isEnabledByDefault: false, showOnHomeByDefault: true },
   { id: 'mal.most_popular', name: 'MAL Most Popular', type: 'anime', source: 'mal', isEnabledByDefault: false, showOnHomeByDefault: true },
   { id: 'mal.top_anime', name: 'MAL Top Anime', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
+  { id: 'mal.season_top', name: 'MAL Top Rated This Week', type: 'anime', source: 'mal', isEnabledByDefault: false, showOnHomeByDefault: true },
+  { id: 'mal.season_top_new', name: 'MAL Top New This Week', type: 'anime', source: 'mal', isEnabledByDefault: false, showOnHomeByDefault: true },
 ]
 
 // --- Catalogs requiring Authentication ---

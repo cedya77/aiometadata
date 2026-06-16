@@ -3556,7 +3556,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
   if (cleanId.startsWith('flixpatrol.')) {
     catalogPageSize = 10;
   } else if (cleanId.includes('mal.')) {
-    catalogPageSize = 25;
+    catalogPageSize = parseInt(process.env.MAL_PAGE_SIZE || '25');
   } else if (cleanId === 'anilist.trending' || cleanId.startsWith('anilist.discover')) {
     catalogPageSize = 50;
   } else if (cleanId.startsWith('simkl.watchlist.') || cleanId.startsWith('simkl.dvd.') || cleanId.startsWith('simkl.trending.') || cleanId.startsWith('simkl.recipe.') || cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('anilist.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) {
@@ -3669,7 +3669,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
 
       // Compute search-specific page size based on the provider's actual results per page
       let searchPageSize = 20; // default (TMDB, Kitsu)
-      if (searchEngine && (searchEngine.startsWith('tvdb.') || searchEngine.startsWith('mal.'))) {
+      if (searchEngine && searchEngine.startsWith('mal.')) {
+        searchPageSize = parseInt(process.env.MAL_PAGE_SIZE || '25');
+      } else if (searchEngine && searchEngine.startsWith('tvdb.')) {
         searchPageSize = 25;
       } else if (searchEngine && searchEngine.startsWith('trakt.')) {
         searchPageSize = 30;

@@ -75,7 +75,9 @@
     "top_series": { "nameKey": "top_series", "extraSupported": ["genre", "skip"] },
     "most_favorites": { "nameKey": "most_favorites", "extraSupported": ["genre", "skip"] },
     "most_popular": { "nameKey": "most_popular", "extraSupported": ["genre", "skip"] },
-    "top_anime": { "nameKey": "top_anime", "extraSupported": ["genre", "skip"] }
+    "top_anime": { "nameKey": "top_anime", "extraSupported": ["genre", "skip"] },
+    "season_top": { "nameKey": "season_top", "extraSupported": ["genre", "skip"] },
+    "season_top_new": { "nameKey": "season_top_new", "extraSupported": ["genre", "skip"] }
   },
   "tvmaze": {
     "schedule": {

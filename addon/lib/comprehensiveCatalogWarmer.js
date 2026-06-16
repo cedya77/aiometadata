@@ -333,6 +333,22 @@ class ComprehensiveCatalogWarmer {
         break;
       }
 
+      case 'mal.season_top': {
+        const animeResults = await cacheWrapJikanApi(`mal-season-top-${page}-${config.sfw}`, async () => {
+          return await jikan.getSeasonTopRated(page, config);
+        }, 24 * 60 * 60, { skipVersion: true });
+        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
+        break;
+      }
+
+      case 'mal.season_top_new': {
+        const animeResults = await cacheWrapJikanApi(`mal-season-top-new-${page}-${config.sfw}`, async () => {
+          return await jikan.getSeasonTopNew(page, config);
+        }, 24 * 60 * 60, { skipVersion: true });
+        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
+        break;
+      }
+
       case 'mal.80sDecade':
       case 'mal.90sDecade':
       case 'mal.00sDecade':

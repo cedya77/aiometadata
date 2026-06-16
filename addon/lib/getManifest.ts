@@ -103,7 +103,7 @@ function createCatalog(id: string, type: string, catalogDef: any, options: strin
 
   let pageSize: number;
   if (id.startsWith('mal.')) {
-    pageSize = 25;
+    pageSize = parseInt(process.env.MAL_PAGE_SIZE as string) || 25;
   } else {
     pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
   }
@@ -1142,10 +1142,11 @@ async function getManifest(config: any, opts: { tag?: string } = {}): Promise<an
       else if (userCatalog.id === 'mal.airing' || userCatalog.id === 'mal.upcoming' ||
                userCatalog.id === 'mal.top_movies' || userCatalog.id === 'mal.top_series' ||
                userCatalog.id === 'mal.most_favorites' || userCatalog.id === 'mal.most_popular' ||
-               userCatalog.id === 'mal.top_anime') {
+               userCatalog.id === 'mal.top_anime' ||
+               userCatalog.id === 'mal.season_top' || userCatalog.id === 'mal.season_top_new') {
         catalogOptions = ['None'];
       }
-      else if (userCatalog.id.startsWith('mal.') && !['mal.airing', 'mal.upcoming', 'mal.schedule', 'mal.seasons', 'mal.top_movies', 'mal.top_series', 'mal.most_favorites', 'mal.top_anime', 'mal.most_popular'].includes(userCatalog.id)) {
+      else if (userCatalog.id.startsWith('mal.') && !['mal.airing', 'mal.upcoming', 'mal.schedule', 'mal.seasons', 'mal.top_movies', 'mal.top_series', 'mal.most_favorites', 'mal.top_anime', 'mal.most_popular', 'mal.season_top', 'mal.season_top_new'].includes(userCatalog.id)) {
         catalogOptions = userCatalog.showInHome ? animeGenreNames : ['None', ...animeGenreNames];
       }
       else {

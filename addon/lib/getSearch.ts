@@ -204,11 +204,11 @@ async function performAnimeSearch(type: string, query: string, language: string,
   switch(type){
     case 'movie':
       logger.debug('Performing anime search for movie:', query);
-      searchResults = await jikan.searchAnime('movie', query, 25, config, page);
+      searchResults = await jikan.searchAnime('movie', query, jikan.MAL_PAGE_SIZE, config, page);
       break;
     case 'series': {
       const desiredTvTypes = config.mal?.useImdbIdForCatalogAndSearch ?  new Set(['tv', 'ona']) : new Set(['tv', 'ova', 'ona', 'tv special']);
-      searchResults = await jikan.searchAnime('anime', query, 25, config, page);
+      searchResults = await jikan.searchAnime('anime', query, jikan.MAL_PAGE_SIZE, config, page);
       searchResults = searchResults.filter((item: any) => {
         return typeof item?.type === 'string' && desiredTvTypes.has(item.type.toLowerCase());
       });
@@ -216,7 +216,7 @@ async function performAnimeSearch(type: string, query: string, language: string,
     }
     default: {
       const desiredTypes = new Set(['tv', 'movie', 'ova', 'ona', 'tv special']);
-      searchResults = await jikan.searchAnime('anime', query, 25, config, page);
+      searchResults = await jikan.searchAnime('anime', query, jikan.MAL_PAGE_SIZE, config, page);
       searchResults = searchResults.filter((item: any) => {
         return typeof item?.type === 'string' && desiredTypes.has(item.type.toLowerCase());
       });

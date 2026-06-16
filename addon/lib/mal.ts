@@ -13,6 +13,7 @@ const {
 }: any = require('./jikanCacheNormalizers');
 
 const JIKAN_API_BASE = process.env.JIKAN_API_BASE || 'https://api.jikan.moe/v4';
+const MAL_PAGE_SIZE = Math.max(1, parseInt(String(process.env.MAL_PAGE_SIZE), 10) || 25);
 
 interface EtagEntry {
   etag: string;
@@ -309,7 +310,7 @@ async function _makeJikanRequest(url: string): Promise<any> {
   return response;
 }
 
-async function searchAnime(type: string, query: string, limit: number = 25, config: any = {}, page: number = 1): Promise<any[]> {
+async function searchAnime(type: string, query: string, limit: number = MAL_PAGE_SIZE, config: any = {}, page: number = 1): Promise<any[]> {
   let url = `${JIKAN_API_BASE}/anime?q=${encodeURIComponent(query)}&limit=${limit}&page=${page}`;
   if (config.sfw) {
     url += `&sfw=true`;
@@ -466,7 +467,8 @@ async function jikanGetAllPages(endpoint: string, initialParams: Record<string, 
 async function getAiringSchedule(day: string, page: number = 1, config: any = {}): Promise<any[]> {
   const queryParams: Record<string, any> = {
     filter: day.toLowerCase(),
-    page: page
+    page: page,
+    limit: MAL_PAGE_SIZE
   };
 
   if (config.sfw) {
@@ -485,7 +487,8 @@ async function getAiringSchedule(day: string, page: number = 1, config: any = {}
 
 async function getAiringNow(page: number = 1, config: any = {}): Promise<any[]> {
   const queryParams: Record<string, any> = {
-    page: page
+    page: page,
+    limit: MAL_PAGE_SIZE
   };
   if (config.sfw) {
     queryParams.sfw = true;
@@ -502,7 +505,8 @@ async function getAiringNow(page: number = 1, config: any = {}): Promise<any[]> 
 
 async function getUpcoming(page: number = 1, config: any = {}): Promise<any[]> {
   const queryParams: Record<string, any> = {
-    page: page
+    page: page,
+    limit: MAL_PAGE_SIZE
   };
   if (config.sfw) {
     queryParams.sfw = true;
@@ -524,6 +528,7 @@ async function getAnimeByGenre(genreId: number | string, typeFilter: string | nu
     order_by: 'members',
     sort: 'desc',
     page: page,
+    limit: MAL_PAGE_SIZE,
   };
 
   if (typeFilter) {
@@ -572,6 +577,7 @@ async function getTopAnimeByDateRange(startDate: string, endDate: string, page: 
     order_by: 'members',
     sort: 'desc',
     page: page,
+    limit: MAL_PAGE_SIZE,
   };
 
   if (genreId) {
@@ -596,6 +602,7 @@ async function getTopAnimeByType(type: string, page: number = 1, config: any = {
   const types = ['movie', 'tv', 'ova', 'ona'];
   const queryParams: Record<string, any> = {
     page: page,
+    limit: MAL_PAGE_SIZE,
   };
   if (types.includes(type)) {
     queryParams.type = type;
@@ -617,6 +624,7 @@ async function getTopAnimeByType(type: string, page: number = 1, config: any = {
 async function getTopAnimeByFilter(filter: string, page: number = 1, config: any = {}): Promise<any[]> {
   const queryParams: Record<string, any> = {
     page: page,
+    limit: MAL_PAGE_SIZE,
     filter: filter
   };
 
@@ -642,7 +650,7 @@ async function getStudios(limit: number = 100): Promise<any[]> {
   return jikanPaginator(endpoint, limit, queryParams);
 }
 
-async function getAnimeByStudio(studioId: string | number, page: number = 1, limit: number = 25): Promise<any[]> {
+async function getAnimeByStudio(studioId: string | number, page: number = 1, limit: number = MAL_PAGE_SIZE): Promise<any[]> {
   const url = `${JIKAN_API_BASE}/anime?producers=${studioId}&order_by=members&sort=desc&page=${page}&limit=${limit}`;
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then((response: any) => normalizeJikanCatalogForCache(response.data?.data || []))
@@ -654,7 +662,7 @@ async function getAnimeByStudio(studioId: string | number, page: number = 1, lim
 
 async function getAnimeBySeason(year: number, season: string, page: number = 1, config: any = {}): Promise<any[]> {
   // sfw param disabled — causes 504 on Jikan's /seasons endpoint (2026-05)
-   const queryParams: Record<string, any> = { page };
+   const queryParams: Record<string, any> = { page, limit: MAL_PAGE_SIZE };
   if (config.sfw) queryParams.sfw = true;
   const params = new URLSearchParams(queryParams);
   const url = `${JIKAN_API_BASE}/seasons/${year}/${season}?${params.toString()}`;
@@ -674,6 +682,45 @@ async function getAvailableSeasons(): Promise<any[]> {
       logger.error(`Could not fetch available seasons:`, e.message);
       return [];
     });
+}
+
+async function getCurrentSeasonRaw(config: any = {}): Promise<any[]> {
+  const params: Record<string, any> = { filter: 'tv', limit: MAL_PAGE_SIZE };
+  if (config.sfw) params.sfw = true;
+  const items = await jikanGetAllPages('/seasons/now', params);
+  return items
+    .filter((a: any) => typeof a?.score === 'number' && a.score > 0)
+    .sort((a: any, b: any) => (b.score || 0) - (a.score || 0));
+}
+
+async function hasPrequelOrParent(malId: string | number): Promise<boolean> {
+  const url = `${JIKAN_API_BASE}/anime/${malId}/relations`;
+  try {
+    const response = await enqueueRequest(() => _makeJikanRequest(url), url);
+    const relations = response.data?.data || [];
+    return relations.some((r: any) => r.relation === 'Prequel' || r.relation === 'Parent story');
+  } catch (e: any) {
+    logger.warn(`Could not fetch relations for anime ${malId}:`, e.message);
+    return false;
+  }
+}
+
+async function getSeasonTopRated(page: number = 1, config: any = {}): Promise<any[]> {
+  const sorted = await getCurrentSeasonRaw(config);
+  const start = (page - 1) * MAL_PAGE_SIZE;
+  return normalizeJikanCatalogForCache(sorted.slice(start, start + MAL_PAGE_SIZE));
+}
+
+async function getSeasonTopNew(page: number = 1, config: any = {}): Promise<any[]> {
+  const sorted = await getCurrentSeasonRaw(config);
+  const needed = page * MAL_PAGE_SIZE;
+  const qualifying: any[] = [];
+  for (const anime of sorted) {
+    if (qualifying.length >= needed) break;
+    if (!(await hasPrequelOrParent(anime.mal_id))) qualifying.push(anime);
+  }
+  const start = (page - 1) * MAL_PAGE_SIZE;
+  return normalizeJikanCatalogForCache(qualifying.slice(start, start + MAL_PAGE_SIZE));
 }
 
 async function fetchDiscover(params: Record<string, any> = {}, page: number = 1): Promise<{ items: any[]; hasMore: boolean; total: number; currentPage: number }> {
@@ -757,6 +804,7 @@ async function fetchDiscover(params: Record<string, any> = {}, page: number = 1)
 }
 
 export {
+  MAL_PAGE_SIZE,
   searchAnime,
   getAnimeDetails,
   getAnimeEpisodes,
@@ -775,9 +823,12 @@ export {
   getAnimeByStudio,
   getAnimeBySeason,
   getAvailableSeasons,
+  getSeasonTopRated,
+  getSeasonTopNew,
   fetchDiscover,
 };
 module.exports = {
+  MAL_PAGE_SIZE,
   searchAnime,
   getAnimeDetails,
   getAnimeEpisodes,
@@ -796,6 +847,8 @@ module.exports = {
   getAnimeByStudio,
   getAnimeBySeason,
   getAvailableSeasons,
+  getSeasonTopRated,
+  getSeasonTopNew,
   fetchDiscover,
   getMemoryStats: () => ({ etagCache: etagCache.size }),
 };

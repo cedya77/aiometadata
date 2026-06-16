@@ -274,6 +274,14 @@ async function getMalCatalog(
     animeResults = await cacheWrapJikanApi(`mal-top-anime-${page}-${config.sfw}`, async () => {
       return await jikan.getTopAnimeByType('anime', page, config);
     }, null, { skipVersion: true });
+  } else if (catalogId === 'mal.season_top') {
+    animeResults = await cacheWrapJikanApi(`mal-season-top-${page}-${config.sfw}`, async () => {
+      return await jikan.getSeasonTopRated(page, config);
+    }, 24 * 60 * 60, { skipVersion: true });
+  } else if (catalogId === 'mal.season_top_new') {
+    animeResults = await cacheWrapJikanApi(`mal-season-top-new-${page}-${config.sfw}`, async () => {
+      return await jikan.getSeasonTopNew(page, config);
+    }, 24 * 60 * 60, { skipVersion: true });
   } else if (decadeMap[catalogId]) {
     const [startDate, endDate] = decadeMap[catalogId];
     const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
