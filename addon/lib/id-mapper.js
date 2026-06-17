@@ -107,6 +107,11 @@ let tmdbIdToTraktMovieMap = new Map();
 let imdbIdToTraktMovieMap = new Map();
 
 
+function toIdList(value) {
+  const arr = Array.isArray(value) ? value : value != null ? [value] : [];
+  return arr.filter((id) => id !== null && id !== undefined && String(id).trim() !== '');
+}
+
 function processAndIndexData(data) {
   let animeList;
   
@@ -158,9 +163,21 @@ function processAndIndexData(data) {
   onaTypeCache.clear();
   
   for (const item of animeList) {
-    if (item.themoviedb_id && typeof item.themoviedb_id === 'object') {
-      item.themoviedb_id = item.themoviedb_id.tv ?? item.themoviedb_id.movie ?? null;
+    // Fribb collapses multi-part franchises into one entry, so imdb_id and
+    // themoviedb_id.movie can be arrays of distinct titles (e.g. Kizumonogatari
+    // Part 1/2/3). We index every id below so any part resolves; the scalar
+    // primary kept here is just a representative, NOT a canonical part — do not
+    // use it to fetch metadata for a specific part (use the incoming id instead).
+    let tmdbIds = [];
+    if (item.themoviedb_id && typeof item.themoviedb_id === 'object' && !Array.isArray(item.themoviedb_id)) {
+      tmdbIds = [...toIdList(item.themoviedb_id.tv), ...toIdList(item.themoviedb_id.movie)];
+    } else {
+      tmdbIds = toIdList(item.themoviedb_id);
     }
+    item.themoviedb_id = tmdbIds[0] ?? null;
+
+    const imdbIds = toIdList(item.imdb_id);
+    item.imdb_id = imdbIds[0] ?? null;
 
     if (item.mal_id) {
       animeIdMap.set(item.mal_id, item);
@@ -170,7 +187,9 @@ function processAndIndexData(data) {
     if (item.kitsu_id) kitsuIdMap.set(item.kitsu_id, item);
     if (item.anidb_id) anidbIdMap.set(item.anidb_id, item);
     if (item.anilist_id) anilistIdMap.set(item.anilist_id, item);
-    if (item.imdb_id) imdbIdMap.set(item.imdb_id, item);
+    for (const imdbId of imdbIds) {
+      if (!imdbIdMap.has(imdbId)) imdbIdMap.set(imdbId, item);
+    }
     if (item.simkl_id) simklIdMap.set(item.simkl_id, item);
 
     if (item.tvdb_id) {
@@ -181,15 +200,13 @@ function processAndIndexData(data) {
       }
       tvdbIdToAnimeListMap.get(tvdbId).push(item);
     }
-    if (item.themoviedb_id) {
-      const tmdbId = item.themoviedb_id;
+    for (const tmdbId of tmdbIds) {
       if (!tmdbIdToAnimeListMap.has(tmdbId)) {
         tmdbIdToAnimeListMap.set(tmdbId, []);
       }
       tmdbIdToAnimeListMap.get(tmdbId).push(item);
     }
-    if (item.imdb_id) {
-      const imdbId = item.imdb_id;
+    for (const imdbId of imdbIds) {
       if (!imdbIdToAnimeListMap.has(imdbId)) {
         imdbIdToAnimeListMap.set(imdbId, []);
       }
