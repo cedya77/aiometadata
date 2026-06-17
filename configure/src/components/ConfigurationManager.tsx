@@ -40,7 +40,7 @@ function ConfigurationSectionFallback() {
 }
 
 export function ConfigurationManager({ children }: ConfigurationManagerProps) {
-  const { config, setConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, isLoading: contextLoading, snapshotManifestFingerprint } = useConfig();
+  const { config, setConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, isLoading: contextLoading, manifestChangedSinceInstall, markManifestInstalled } = useConfig();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -214,9 +214,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
       setPassword("");
       setConfirmPassword("");
       setAddonPassword("");
-      if (snapshotManifestFingerprint()) {
-        setShowReinstallWarning(true);
-      }
+      setShowReinstallWarning(manifestChangedSinceInstall());
       toast.success("Configuration saved successfully!");
     } catch (err) {
       console.error('Save configuration error:', err);
@@ -698,7 +696,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => copyToClipboard(taggedInstallUrl, 'Install URL')}
+                    onClick={() => { markManifestInstalled(); setShowReinstallWarning(false); copyToClipboard(taggedInstallUrl, 'Install URL'); }}
                   >
                     <Copy className="h-4 w-4" />
                   </Button>
@@ -813,7 +811,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                   </div>
                 </DialogContent>
               </Dialog>
-              <Button onClick={() => { setInstallUrl(taggedInstallUrl); setIsInstallOpen(true); }}>
+              <Button onClick={() => { markManifestInstalled(); setShowReinstallWarning(false); setInstallUrl(taggedInstallUrl); setIsInstallOpen(true); }}>
                 <Download className="h-4 w-4 mr-2" /> Install
               </Button>
             </div>

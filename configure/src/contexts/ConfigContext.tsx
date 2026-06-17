@@ -25,7 +25,8 @@ interface ConfigContextType {
   sessionId: string;
   setSessionId: (sessionId: string) => void;
   manifestFingerprint: React.MutableRefObject<string | null>;
-  snapshotManifestFingerprint: () => boolean;
+  manifestChangedSinceInstall: () => boolean;
+  markManifestInstalled: () => void;
 }
 
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
@@ -442,17 +443,19 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
     setConfig(prev => ({ ...prev, sessionId: newSessionId }));
   };
 
-  // Compares current config against the stored baseline.
-  // Returns true if the manifest changed. Updates the baseline to current.
-  const snapshotManifestFingerprint = (): boolean => {
+  // Whether the manifest differs from the last installed baseline, without mutating it.
+  const manifestChangedSinceInstall = (): boolean => {
     const current = getManifestFingerprint(config);
-    const changed = manifestFingerprint.current !== null && current !== manifestFingerprint.current;
-    manifestFingerprint.current = current;
-    return changed;
+    return manifestFingerprint.current !== null && current !== manifestFingerprint.current;
+  };
+
+  // Reset the baseline to the current manifest (call when the user (re)installs).
+  const markManifestInstalled = (): void => {
+    manifestFingerprint.current = getManifestFingerprint(config);
   };
 
   return (
-    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, catalogTTL, isLoading, sessionId, setSessionId, traktSearchEnabled, manifestFingerprint, snapshotManifestFingerprint }}>
+    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, catalogTTL, isLoading, sessionId, setSessionId, traktSearchEnabled, manifestFingerprint, manifestChangedSinceInstall, markManifestInstalled }}>
       {children}
     </ConfigContext.Provider>
   );
