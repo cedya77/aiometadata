@@ -163,6 +163,11 @@ function processAndIndexData(data) {
   onaTypeCache.clear();
   
   for (const item of animeList) {
+    // Fribb collapses multi-part franchises into one entry, so imdb_id and
+    // themoviedb_id.movie can be arrays of distinct titles (e.g. Kizumonogatari
+    // Part 1/2/3). We index every id below so any part resolves; the scalar
+    // primary kept here is just a representative, NOT a canonical part — do not
+    // use it to fetch metadata for a specific part (use the incoming id instead).
     let tmdbIds = [];
     if (item.themoviedb_id && typeof item.themoviedb_id === 'object' && !Array.isArray(item.themoviedb_id)) {
       tmdbIds = [...toIdList(item.themoviedb_id.tv), ...toIdList(item.themoviedb_id.movie)];
