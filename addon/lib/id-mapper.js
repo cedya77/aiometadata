@@ -158,8 +158,11 @@ function processAndIndexData(data) {
   onaTypeCache.clear();
   
   for (const item of animeList) {
-    if (item.themoviedb_id && typeof item.themoviedb_id === 'object') {
+    if (item.themoviedb_id && typeof item.themoviedb_id === 'object' && !Array.isArray(item.themoviedb_id)) {
       item.themoviedb_id = item.themoviedb_id.tv ?? item.themoviedb_id.movie ?? null;
+    }
+    if (Array.isArray(item.imdb_id)) {
+      item.imdb_id = item.imdb_id.find((id) => id && String(id).trim()) ?? null;
     }
 
     if (item.mal_id) {
