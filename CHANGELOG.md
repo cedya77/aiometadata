@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.7.0](https://github.com/cedya77/aiometadata/compare/v2.6.7...v2.7.0) (2026-06-17)
+
+
+### Features
+
+* add weekly seasonal MAL catalogs ([04ae910](https://github.com/cedya77/aiometadata/commit/04ae91093ac0e4636d98d78856b6493acfbd0594))
+* aggregate dashboard system stats over full DB (streaming fold + gated Postgres SQL) ([0a861f5](https://github.com/cedya77/aiometadata/commit/0a861f5853c2e6841e348602b7f42efb990a1118))
+* bounded log buffer with redaction + self-backfilling SSE log stream ([9a4793a](https://github.com/cedya77/aiometadata/commit/9a4793a1a3a839b5c0cea946852a4b4c4b7ce5ac))
+* make MAL/Jikan page size configurable via MAL_PAGE_SIZE ([04ae910](https://github.com/cedya77/aiometadata/commit/04ae91093ac0e4636d98d78856b6493acfbd0594))
+
+
+### Bug Fixes
+
+* allow breaking out of live log auto-scroll via wheel, touch, and keyboard ([71d1b05](https://github.com/cedya77/aiometadata/commit/71d1b05a0a3fe1804ed77f07404a2f0580e8e3d1))
+* carry status into anime catalog meta and treat unreleased/tba as unreleased ([4960695](https://github.com/cedya77/aiometadata/commit/4960695b587bc2bdfbea20eaacb2d5c0369ac211))
+* clear reinstall banner after non-manifest saves and reinstall ([0333a71](https://github.com/cedya77/aiometadata/commit/0333a71dcdb48a97e7a5bc45bf1d75059cb3efe2))
+* don't cache degraded provider fallbacks on transient upstream errors ([f9af96c](https://github.com/cedya77/aiometadata/commit/f9af96c863b7151e8554f1972175510431278adf))
+* fribb parsing ([fcfeeb4](https://github.com/cedya77/aiometadata/commit/fcfeeb4cc6b4da6811af330d93516ba8c7c6faf7))
+* handle Fribb themoviedb_id.movie arrays and index all imdb/tmdb ids ([76e0a25](https://github.com/cedya77/aiometadata/commit/76e0a258b537878e27c6c46011526572ebdb4c5a))
+* hide unreleased series with not-yet-aired status and null release date ([637680e](https://github.com/cedya77/aiometadata/commit/637680ee189c6394724669fb6c9d4707bac70fba))
+
 ## [2.6.7](https://github.com/cedya77/aiometadata/compare/v2.6.6...v2.6.7) (2026-06-08)
 
 
