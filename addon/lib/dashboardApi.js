@@ -32,21 +32,6 @@ class DashboardAPI {
     this._maintenanceTasksCache = null;
     this._maintenanceTasksCacheTime = null;
 
-    // System-config aggregation snapshot, refreshed in the background so the
-    // full-DB scan never runs on a dashboard request once warmed.
-    this._systemConfigCache = null;
-    this._systemConfigCacheTime = null;
-    this._systemConfigRefreshPromise = null;
-    this._systemConfigRefreshMs = parseInt(process.env.SYSTEM_CONFIG_REFRESH_MS || '300000', 10);
-    this._systemConfigSqlAggMinUsers = parseInt(process.env.SYSTEM_CONFIG_SQL_AGG_MIN_USERS || '50000', 10);
-    setTimeout(() => {
-      this._refreshSystemConfig().catch(() => {});
-    }, 10000).unref();
-    this._systemConfigTimer = setInterval(() => {
-      this._refreshSystemConfig().catch(() => {});
-    }, this._systemConfigRefreshMs);
-    this._systemConfigTimer.unref();
-
     // Initialize persistent uptime tracking (async, don't await in constructor)
     this.initializePersistentUptime()
       .then(() => {
@@ -708,265 +693,73 @@ class DashboardAPI {
     }
   }
 
-  // Get aggregated system configuration stats. Served from a background-refreshed
-  // snapshot (stale-while-revalidate); only the cold first call awaits the scan.
+  // Get aggregated system configuration stats (cached for 60 seconds)
   async getSystemConfig() {
-    const now = Date.now();
-    if (this._systemConfigCache) {
-      const stale = !this._systemConfigCacheTime || (now - this._systemConfigCacheTime) >= this._systemConfigRefreshMs;
-      if (stale) this._refreshSystemConfig().catch(() => {});
-      return this._systemConfigCache;
-    }
-    return this._refreshSystemConfig();
-  }
+    try {
+      // Check if we have a recent cached result (within 60 seconds)
+      const now = Date.now();
+      if (this._systemConfigCache && this._systemConfigCacheTime && (now - this._systemConfigCacheTime) < 60000) {
+        return this._systemConfigCache;
+      }
 
-  // Recompute the snapshot, deduping concurrent/background refreshes onto one scan.
-  async _refreshSystemConfig() {
-    if (this._systemConfigRefreshPromise) return this._systemConfigRefreshPromise;
-    this._systemConfigRefreshPromise = this._computeSystemConfig()
-      .then((result) => {
-        this._systemConfigCache = result;
-        this._systemConfigCacheTime = Date.now();
-        return result;
-      })
-      .catch((error) => {
-        logger.error("Error refreshing system config:", error);
-        return this._systemConfigCache || {
-          totalUsers: 0,
-          sampleSize: 0,
-          aggregatedStats: this.getDefaultStats(),
-          redisConnected: false,
-          lastUpdated: new Date().toISOString(),
-        };
-      })
-      .finally(() => {
-        this._systemConfigRefreshPromise = null;
-      });
-    return this._systemConfigRefreshPromise;
-  }
+      let userConfigs = [];
+      let totalUsers = 0;
 
-  // Pick the aggregation strategy: SQL-side on large Postgres instances (no blobs
-  // shipped to Node), otherwise the streaming JS fold (the universal default).
-  async _computeSystemConfig() {
-    if (this.database && this.database.type === 'postgres') {
       try {
-        const count = await this.database.getUserCount();
-        if (count >= this._systemConfigSqlAggMinUsers) {
-          return await this._computeSystemConfigSql();
+        if (this.database) {
+          const userUUIDs = await this.database.getAllUserUUIDs();
+          totalUsers = userUUIDs.length;
+
+          const sampleSize = Math.min(250, userUUIDs.length);
+          for (let i = userUUIDs.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [userUUIDs[i], userUUIDs[j]] = [userUUIDs[j], userUUIDs[i]];
+          }
+          const sampleUUIDs = userUUIDs.slice(0, sampleSize);
+          const configPromises = sampleUUIDs.map(async (userUUID) => {
+            try {
+              return await this.database.getUserConfig(userUUID);
+            } catch (error) {
+              return null;
+            }
+          });
+
+          const configs = await Promise.all(configPromises);
+          userConfigs = configs.filter((config) => config !== null);
         }
-      } catch (error) {
-        logger.warn("SQL system-config aggregation failed, falling back to streaming fold:", error.message);
+      } catch (dbError) {
+        logger.warn(
+          "Failed to load user configs for aggregation:",
+          dbError.message,
+        );
       }
+
+      // Calculate aggregated statistics
+      const stats = this.calculateConfigStats(userConfigs);
+
+      const result = {
+        totalUsers: totalUsers,
+        sampleSize: userConfigs.length,
+        aggregatedStats: stats,
+        redisConnected: this.cache ? true : false,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      // Cache the result
+      this._systemConfigCache = result;
+      this._systemConfigCacheTime = now;
+
+      return result;
+    } catch (error) {
+      logger.error("Error getting system config:", error);
+      return {
+        totalUsers: 0,
+        sampleSize: 0,
+        aggregatedStats: this.getDefaultStats(),
+        redisConnected: false,
+        lastUpdated: new Date().toISOString(),
+      };
     }
-    return this._computeSystemConfigFold();
-  }
-
-  // Stream every config in the DB through the incremental fold (bounded memory).
-  async _computeSystemConfigFold() {
-    const stats = this.initConfigStats();
-    let processed = 0;
-
-    if (this.database) {
-      processed = await this.database.streamUserConfigs((config) => {
-        this.foldConfigStats(stats, config);
-      });
-    }
-
-    const aggregatedStats = processed > 0
-      ? this.formatStatsForDisplay(stats, processed)
-      : this.getDefaultStats();
-
-    return {
-      totalUsers: processed,
-      sampleSize: processed,
-      aggregatedStats: aggregatedStats,
-      redisConnected: this.cache ? true : false,
-      lastUpdated: new Date().toISOString(),
-    };
-  }
-
-  // Aggregate the whole DB entirely in Postgres (GROUP BY over jsonb) so no config
-  // blobs are shipped to or parsed in Node. Fills the same accumulator initConfigStats
-  // builds and reuses formatStatsForDisplay, so output is identical to the fold.
-  async _computeSystemConfigSql() {
-    const truthy = (path) => `COALESCE(${path}, '') NOT IN ('', 'false', '0')`;
-
-    const flagsSql = `
-      SELECT
-        count(*)::int AS total,
-        count(*) FILTER (WHERE ${truthy("j->>'sfw'")})::int AS sfw,
-        count(*) FILTER (WHERE ${truthy("j->>'includeAdult'")})::int AS includeadult,
-        count(*) FILTER (WHERE ${truthy("j->>'hideUnreleasedDigital'")})::int AS hideunreleaseddigital,
-        count(*) FILTER (WHERE ${truthy("j->>'hideUnreleasedShows'")})::int AS hideunreleasedshows,
-        count(*) FILTER (WHERE ${truthy("j->>'hideWatchedTrakt'")})::int AS hidewatchedtrakt,
-        count(*) FILTER (WHERE ${truthy("j->>'hideWatchedAnilist'")})::int AS hidewatchedanilist,
-        count(*) FILTER (WHERE ${truthy("j->>'hideWatchedMdblist'")})::int AS hidewatchedmdblist,
-        count(*) FILTER (WHERE ${truthy("j->>'exclusionKeywords'")})::int AS exclusionkeywords,
-        count(*) FILTER (WHERE ${truthy("j->>'usePosterProxy'")})::int AS posterproxy,
-        count(*) FILTER (WHERE ${truthy("j->'providers'->>'forceAnimeForDetectedImdb'")})::int AS forceanimedetection,
-        count(*) FILTER (WHERE ${truthy("j->'mal'->>'skipFiller'")})::int AS skipfiller,
-        count(*) FILTER (WHERE ${truthy("j->'mal'->>'skipRecap'")})::int AS skiprecap,
-        count(*) FILTER (WHERE ${truthy("j->>'mdblistWatchTracking'")})::int AS mdblistwatchtracking,
-        count(*) FILTER (WHERE ${truthy("j->>'anilistWatchTracking'")})::int AS anilistwatchtracking,
-        count(*) FILTER (WHERE ${truthy("j->>'simklWatchTracking'")})::int AS simklwatchtracking,
-        count(*) FILTER (WHERE ${truthy("j->>'traktWatchTracking'")})::int AS traktwatchtracking,
-        count(*) FILTER (WHERE j->>'posterRatingProvider' = 'top')::int AS ratingposterstop,
-        count(*) FILTER (WHERE ${truthy("j->'search'->>'ai_enabled'")})::int AS aisearchenabled
-      FROM (SELECT config_data::jsonb AS j FROM user_configs) c
-    `;
-
-    const distSql = `
-      WITH cfg AS (SELECT config_data::jsonb AS j FROM user_configs)
-      SELECT dim, key, count(*)::int AS cnt FROM (
-        SELECT 'language' AS dim, COALESCE(NULLIF(j->>'language',''),'en-US') AS key FROM cfg
-        UNION ALL SELECT 'movie',   COALESCE(NULLIF(j->'providers'->>'movie',''),'tmdb')  FROM cfg WHERE jsonb_typeof(j->'providers')='object'
-        UNION ALL SELECT 'series',  COALESCE(NULLIF(j->'providers'->>'series',''),'tvdb') FROM cfg WHERE jsonb_typeof(j->'providers')='object'
-        UNION ALL SELECT 'anime',   COALESCE(NULLIF(j->'providers'->>'anime',''),'mal')   FROM cfg WHERE jsonb_typeof(j->'providers')='object'
-        UNION ALL SELECT 'animeId', COALESCE(NULLIF(j->'providers'->>'anime_id_provider',''),'imdb') FROM cfg WHERE jsonb_typeof(j->'providers')='object'
-        UNION ALL SELECT 'searchMovie',       j->'search'->'providers'->>'movie'        FROM cfg WHERE NULLIF(j->'search'->'providers'->>'movie','') IS NOT NULL
-        UNION ALL SELECT 'searchSeries',      j->'search'->'providers'->>'series'       FROM cfg WHERE NULLIF(j->'search'->'providers'->>'series','') IS NOT NULL
-        UNION ALL SELECT 'searchAnimeMovie',  j->'search'->'providers'->>'anime_movie'  FROM cfg WHERE NULLIF(j->'search'->'providers'->>'anime_movie','') IS NOT NULL
-        UNION ALL SELECT 'searchAnimeSeries', j->'search'->'providers'->>'anime_series' FROM cfg WHERE NULLIF(j->'search'->'providers'->>'anime_series','') IS NOT NULL
-        UNION ALL SELECT 'aiProvider', j->'search'->>'ai_provider' FROM cfg WHERE ${truthy("j->'search'->>'ai_enabled'")} AND NULLIF(j->'search'->>'ai_provider','') IS NOT NULL
-      ) t WHERE key IS NOT NULL GROUP BY dim, key
-    `;
-
-    const streamingSql = `
-      WITH cfg AS (SELECT config_data::jsonb AS j FROM user_configs)
-      SELECT val AS key, count(*)::int AS cnt
-      FROM cfg, jsonb_array_elements_text(CASE WHEN jsonb_typeof(j->'streaming')='array' THEN j->'streaming' ELSE '[]'::jsonb END) AS s(val)
-      GROUP BY val
-    `;
-
-    const catalogHistSql = `
-      WITH cfg AS (SELECT config_data::jsonb AS j FROM user_configs WHERE jsonb_typeof(config_data::jsonb->'catalogs')='array'),
-      per AS (
-        SELECT
-          (SELECT count(*) FROM jsonb_array_elements(c.j->'catalogs') e WHERE (e->'enabled') IS DISTINCT FROM 'false'::jsonb)::int AS enabled_count,
-          (SELECT bool_or(${truthy("e->'metadata'->'discover'->'formState'->>'aiGenerated'")})
-             FROM jsonb_array_elements(c.j->'catalogs') e WHERE (e->'enabled') IS DISTINCT FROM 'false'::jsonb) AS has_ai
-        FROM cfg c
-      )
-      SELECT enabled_count, count(*)::int AS configs, count(*) FILTER (WHERE has_ai)::int AS ai_configs
-      FROM per GROUP BY enabled_count
-    `;
-
-    const catalogSrcSql = `
-      WITH cfg AS (SELECT config_data::jsonb AS j FROM user_configs WHERE jsonb_typeof(config_data::jsonb->'catalogs')='array')
-      SELECT e->>'source' AS key, count(*)::int AS cnt
-      FROM cfg, jsonb_array_elements(j->'catalogs') e
-      WHERE (e->'enabled') IS DISTINCT FROM 'false'::jsonb AND NULLIF(e->>'source','') IS NOT NULL
-      GROUP BY e->>'source'
-    `;
-
-    const artType = (typ, providerKey, fallback) => `
-      SELECT '${typ}' AS typ, r.surface, r.val
-      FROM cfg c
-      CROSS JOIN LATERAL (SELECT COALESCE(NULLIF(c.j->'providers'->>'${providerKey}',''),'${fallback}') AS fb, c.j->'artProviders'->'${typ}' AS art) pp
-      CROSS JOIN LATERAL (
-        SELECT sv.surface,
-          CASE
-            WHEN jsonb_typeof(pp.art)='string' THEN
-              CASE WHEN COALESCE(NULLIF(c.j->'artProviders'->>'${typ}',''),'meta')='meta' THEN pp.fb ELSE c.j->'artProviders'->>'${typ}' END
-            WHEN jsonb_typeof(pp.art)='object' THEN
-              CASE WHEN COALESCE(NULLIF(pp.art->>sv.surface,''),'meta')='meta' THEN pp.fb ELSE pp.art->>sv.surface END
-          END AS val
-        FROM (VALUES ('poster'),('background'),('logo')) sv(surface)
-      ) r
-      WHERE jsonb_typeof(c.j->'artProviders')='object' AND jsonb_typeof(pp.art) IN ('string','object')
-    `;
-    const artSql = `
-      WITH cfg AS (SELECT config_data::jsonb AS j FROM user_configs)
-      SELECT typ, surface, val, count(*)::int AS cnt FROM (
-        ${artType('movie', 'movie', 'tmdb')}
-        UNION ALL ${artType('series', 'series', 'tvdb')}
-        UNION ALL ${artType('anime', 'anime', 'mal')}
-      ) q WHERE val IS NOT NULL GROUP BY typ, surface, val
-    `;
-
-    const flagsRows = await this.database.allQuery(flagsSql);
-    const distRows = await this.database.allQuery(distSql);
-    const streamingRows = await this.database.allQuery(streamingSql);
-    const catHistRows = await this.database.allQuery(catalogHistSql);
-    const catSrcRows = await this.database.allQuery(catalogSrcSql);
-    const artRows = await this.database.allQuery(artSql);
-
-    const stats = this.initConfigStats();
-    const num = (v) => parseInt(v, 10) || 0;
-    const flags = flagsRows[0] || {};
-    const total = num(flags.total);
-
-    const distTarget = {
-      language: stats.languages,
-      movie: stats.metaProviders.movie,
-      series: stats.metaProviders.series,
-      anime: stats.metaProviders.anime,
-      animeId: stats.animeIdProviders,
-      searchMovie: stats.searchProviders.movie,
-      searchSeries: stats.searchProviders.series,
-      searchAnimeMovie: stats.searchProviders.anime_movie,
-      searchAnimeSeries: stats.searchProviders.anime_series,
-      aiProvider: stats.aiProvider,
-    };
-    for (const row of distRows) {
-      const target = distTarget[row.dim];
-      if (target) target[row.key] = (target[row.key] || 0) + num(row.cnt);
-    }
-
-    for (const row of streamingRows) {
-      stats.streamingServices[row.key] = (stats.streamingServices[row.key] || 0) + num(row.cnt);
-    }
-
-    let aiCatalogs = 0;
-    for (const row of catHistRows) {
-      stats.catalogCounts[num(row.enabled_count)] = num(row.configs);
-      aiCatalogs += num(row.ai_configs);
-    }
-
-    for (const row of catSrcRows) {
-      stats.catalogSources[row.key] = (stats.catalogSources[row.key] || 0) + num(row.cnt);
-    }
-
-    for (const row of artRows) {
-      const typeBucket = stats.artProviders[row.typ];
-      if (typeBucket && typeBucket[row.surface]) {
-        typeBucket[row.surface][row.val] = (typeBucket[row.surface][row.val] || 0) + num(row.cnt);
-      }
-    }
-
-    stats.contentFilters.sfw = num(flags.sfw);
-    stats.contentFilters.includeAdult = num(flags.includeadult);
-    stats.contentFilters.hideUnreleasedDigital = num(flags.hideunreleaseddigital);
-    stats.contentFilters.hideUnreleasedShows = num(flags.hideunreleasedshows);
-    stats.contentFilters.hideWatchedTrakt = num(flags.hidewatchedtrakt);
-    stats.contentFilters.hideWatchedAnilist = num(flags.hidewatchedanilist);
-    stats.contentFilters.hideWatchedMdblist = num(flags.hidewatchedmdblist);
-    stats.contentFilters.exclusionKeywords = num(flags.exclusionkeywords);
-    stats.contentFilters.posterProxy = num(flags.posterproxy);
-    stats.contentFilters.forceAnimeDetection = num(flags.forceanimedetection);
-
-    stats.features.skipFiller = num(flags.skipfiller);
-    stats.features.skipRecap = num(flags.skiprecap);
-    stats.features.mdblistWatchTracking = num(flags.mdblistwatchtracking);
-    stats.features.anilistWatchTracking = num(flags.anilistwatchtracking);
-    stats.features.simklWatchTracking = num(flags.simklwatchtracking);
-    stats.features.traktWatchTracking = num(flags.traktwatchtracking);
-    stats.features.ratingPostersTop = num(flags.ratingposterstop);
-    stats.features.ratingPostersRpdb = total - num(flags.ratingposterstop);
-    stats.features.aiSearchEnabled = num(flags.aisearchenabled);
-    stats.features.aiCatalogs = aiCatalogs;
-
-    const aggregatedStats = total > 0
-      ? this.formatStatsForDisplay(stats, total)
-      : this.getDefaultStats();
-
-    return {
-      totalUsers: total,
-      sampleSize: total,
-      aggregatedStats: aggregatedStats,
-      redisConnected: this.cache ? true : false,
-      lastUpdated: new Date().toISOString(),
-    };
   }
 
   // Calculate configuration statistics from user configs
@@ -974,14 +767,9 @@ class DashboardAPI {
     if (userConfigs.length === 0) {
       return this.getDefaultStats();
     }
-    const stats = this.initConfigStats();
-    userConfigs.forEach((config) => this.foldConfigStats(stats, config));
-    return this.formatStatsForDisplay(stats, userConfigs.length);
-  }
 
-  // Initialize an empty stats accumulator for incremental folding
-  initConfigStats() {
-    return {
+    const total = userConfigs.length;
+    const stats = {
       languages: {},
       metaProviders: { movie: {}, series: {}, anime: {} },
       artProviders: {
@@ -991,7 +779,7 @@ class DashboardAPI {
       },
       animeIdProviders: {},
       catalogSources: {},
-      catalogCounts: {},
+      catalogCounts: [],
       searchProviders: { movie: {}, series: {}, anime_movie: {}, anime_series: {} },
       aiProvider: {},
       streamingServices: {},
@@ -1020,10 +808,9 @@ class DashboardAPI {
         aiCatalogs: 0,
       },
     };
-  }
 
-  // Fold a single user config into the stats accumulator
-  foldConfigStats(stats, config) {
+    // Aggregate data
+    userConfigs.forEach((config) => {
       // Language distribution
       const lang = config.language || "en-US";
       stats.languages[lang] = (stats.languages[lang] || 0) + 1;
@@ -1092,7 +879,7 @@ class DashboardAPI {
       // Catalog sources & count (enabled only)
       if (Array.isArray(config.catalogs)) {
         const enabled = config.catalogs.filter((cat) => cat.enabled !== false);
-        stats.catalogCounts[enabled.length] = (stats.catalogCounts[enabled.length] || 0) + 1;
+        stats.catalogCounts.push(enabled.length);
         let hasAiCatalog = false;
         enabled.forEach((cat) => {
           if (cat.source) {
@@ -1135,6 +922,10 @@ class DashboardAPI {
       if (config.exclusionKeywords) stats.contentFilters.exclusionKeywords++;
       if (config.usePosterProxy) stats.contentFilters.posterProxy++;
       if (config.providers?.forceAnimeForDetectedImdb) stats.contentFilters.forceAnimeDetection++;
+    });
+
+    // Convert to percentages and format for display
+    return this.formatStatsForDisplay(stats, total);
   }
 
   // Format statistics for dashboard display
@@ -1162,26 +953,13 @@ class DashboardAPI {
         .sort((a, b) => b.count - a.count);
     };
 
-    const sortedCounts = Object.keys(stats.catalogCounts).map(Number).sort((a, b) => a - b);
-    let n = 0;
-    let totalCatalogs = 0;
-    for (const c of sortedCounts) {
-      n += stats.catalogCounts[c];
-      totalCatalogs += c * stats.catalogCounts[c];
-    }
-    const valueAtRank = (k) => {
-      let cum = 0;
-      for (const c of sortedCounts) {
-        cum += stats.catalogCounts[c];
-        if (k < cum) return c;
-      }
-      return sortedCounts.length ? sortedCounts[sortedCounts.length - 1] : 0;
-    };
-    const avgCatalogs = n > 0 ? Math.round(totalCatalogs / n * 10) / 10 : 0;
-    const medianCatalogs = n > 0 ? valueAtRank(Math.floor(n / 2)) : 0;
-    const maxCatalogs = n > 0 ? sortedCounts[sortedCounts.length - 1] : 0;
-    const p25 = n > 0 ? valueAtRank(Math.floor(n * 0.25)) : 0;
-    const p75 = n > 0 ? valueAtRank(Math.floor(n * 0.75)) : 0;
+    const catalogCounts = stats.catalogCounts.sort((a, b) => a - b);
+    const n = catalogCounts.length;
+    const avgCatalogs = n > 0 ? Math.round(catalogCounts.reduce((a, b) => a + b, 0) / n * 10) / 10 : 0;
+    const medianCatalogs = n > 0 ? catalogCounts[Math.floor(n / 2)] : 0;
+    const maxCatalogs = n > 0 ? catalogCounts[n - 1] : 0;
+    const p25 = n > 0 ? catalogCounts[Math.floor(n * 0.25)] : 0;
+    const p75 = n > 0 ? catalogCounts[Math.floor(n * 0.75)] : 0;
 
     return {
       languages: formatDistribution(stats.languages),
@@ -1197,7 +975,7 @@ class DashboardAPI {
       },
       animeIdProviders: formatDistribution(stats.animeIdProviders),
       catalogSources: formatSelfRelativeDistribution(stats.catalogSources),
-      catalogStats: { avg: avgCatalogs, median: medianCatalogs, max: maxCatalogs, p25, p75, total: totalCatalogs },
+      catalogStats: { avg: avgCatalogs, median: medianCatalogs, max: maxCatalogs, p25, p75, total: catalogCounts.reduce((a, b) => a + b, 0) },
       searchProviders: {
         movie: formatDistribution(stats.searchProviders.movie),
         series: formatDistribution(stats.searchProviders.series),
