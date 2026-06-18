@@ -23,6 +23,7 @@ import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 import { resolveDynamicTmdbDiscoverParams } from './tmdbDiscoverDateTokens.js';
 import { roundRobinInterleaveTagged, mergedDedupKey, filterMetasByGenre, normalizeGenreKey } from '../utils/mergedCatalog.js';
+import { filterByExcludedOriginalLanguages } from '../utils/original-language-filters.js';
 const { getTvmazeScheduleCatalog } = require('./tvmazeScheduleCatalog');
 
 const consola = require('consola');
@@ -994,8 +995,18 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         return [];
       }
 
+      const filteredResults = filterByExcludedOriginalLanguages(
+        response.results,
+        discoverMetadata?.excludedOriginalLanguages
+      );
+
+      if (filteredResults.length === 0) {
+        logger.info(`[TMDB Discover] No results for ${id} after original language exclusions`);
+        return [];
+      }
+
       const metaType = mediaType === 'movie' ? 'movie' : 'series';
-      const metas = await mapWithLimit(response.results, async (item: any) => {
+      const metas = await mapWithLimit(filteredResults, async (item: any) => {
         const stremioId = `tmdb:${item.id}`;
 
         try {

@@ -75,6 +75,7 @@ export interface CatalogConfig {
       source?: 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal' | 'mdblist';
       mediaType?: 'movie' | 'tv' | 'series' | 'anime';
       params?: Record<string, string | number | boolean>;
+      excludedOriginalLanguages?: string[];
       formState?: Record<string, any>;
     };
     discoverParams?: Record<string, string | number | boolean>;

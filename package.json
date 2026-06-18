@@ -23,6 +23,7 @@
     "lint:backend": "eslint addon scripts",
     "lint:frontend": "eslint configure/src",
     "lint:repo": "eslint eslint.config.js tailwind.config.mts vite.config.mts",
+    "test": "node --test -r ts-node/register addon/**/*.test.js",
     "preview": "vite preview",
     "start": "npm run start:backend"
   },
