@@ -216,6 +216,7 @@ http {
             add_header X-Cache-Status $upstream_cache_status;
 
             proxy_set_header Host $proxy_host;
+            proxy_set_header X-Forwarded-Host $proxy_host;
             proxy_set_header Accept-Encoding "";
         }
     }
