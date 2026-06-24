@@ -21,6 +21,7 @@ import {
   Square,
   Play,
   Trash2,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -185,6 +186,16 @@ export function DashboardOperations({ data, loading, activeTab }: { data: any; l
   const cacheClearing = clearCacheMutation.isPending;
   const clearingErrors = clearErrorsMutation.isPending;
 
+  const errorCounts = errorLogs.reduce(
+    (acc: { error: number; warning: number; info: number }, e: any) => {
+      if (e.level === "error") acc.error += 1;
+      else if (e.level === "warning") acc.warning += 1;
+      else acc.info += 1;
+      return acc;
+    },
+    { error: 0, warning: 0, info: 0 }
+  );
+
   return (
     <div className="space-y-6">
       {/* Cache & Poster Management */}
@@ -326,106 +337,108 @@ export function DashboardOperations({ data, loading, activeTab }: { data: any; l
 
       {/* Error Management */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <div>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3 gap-3">
+          <div className="min-w-0">
             <CardTitle>Error Management</CardTitle>
             <CardDescription>Recent errors and warnings from the system</CardDescription>
           </div>
           {errorLogs.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClearAllErrors}
-              disabled={clearingErrors}
-            >
-              {clearingErrors ? (
-                <>
-                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                  Clearing...
-                </>
-              ) : (
-                "Clear All"
-              )}
-            </Button>
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="hidden sm:flex items-center gap-3 text-sm tabular-nums">
+                {errorCounts.error > 0 && (
+                  <span className="flex items-center gap-1.5" title="Errors">
+                    <span className="w-2 h-2 rounded-full bg-red-500" />{errorCounts.error}
+                  </span>
+                )}
+                {errorCounts.warning > 0 && (
+                  <span className="flex items-center gap-1.5" title="Warnings">
+                    <span className="w-2 h-2 rounded-full bg-yellow-500" />{errorCounts.warning}
+                  </span>
+                )}
+                {errorCounts.info > 0 && (
+                  <span className="flex items-center gap-1.5" title="Info">
+                    <span className="w-2 h-2 rounded-full bg-blue-500" />{errorCounts.info}
+                  </span>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearAllErrors}
+                disabled={clearingErrors}
+              >
+                {clearingErrors ? (
+                  <>
+                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                    Clearing...
+                  </>
+                ) : (
+                  "Clear All"
+                )}
+              </Button>
+            </div>
           )}
         </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {errorLogs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mb-3">
-                  <Shield className="w-6 h-6 text-green-600" />
-                </div>
-                <p className="text-sm font-medium text-muted-foreground">No errors recorded</p>
-                <p className="text-xs text-muted-foreground mt-1">System is running smoothly</p>
+        <CardContent className="pt-0">
+          {errorLogs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center mb-3">
+                <Shield className="w-6 h-6 text-green-500" />
               </div>
-            ) : (
-              errorLogs.map((error: any) => (
-                <div
-                  key={error.id}
-                  className="border rounded-lg overflow-hidden"
-                >
-                  <div
-                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => toggleErrorDetails(error.id)}
-                  >
-                    <div className="flex items-center space-x-3 flex-1 min-w-0">
-                      <div
-                        className={`w-3 h-3 rounded-full shrink-0 ${
-                          error.level === "error"
-                            ? "bg-red-500"
-                            : error.level === "warning"
-                              ? "bg-yellow-500"
-                              : "bg-blue-500"
-                        }`}
-                      ></div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium truncate">{error.message}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {error.timeAgo || error.timestamp} • Occurred {error.count} time
-                          {error.count > 1 ? "s" : ""}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2 shrink-0">
-                      <Badge
-                        variant={
-                          error.level === "error" ? "destructive" : "secondary"
-                        }
-                      >
-                        {error.level}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {expandedErrors.has(error.id) ? "▲" : "▼"}
+              <p className="text-sm font-medium text-muted-foreground">No errors recorded</p>
+              <p className="text-xs text-muted-foreground mt-1">System is running smoothly</p>
+            </div>
+          ) : (
+            <div className="max-h-[320px] overflow-y-auto rounded-lg border divide-y">
+              {errorLogs.map((error: any) => {
+                const expanded = expandedErrors.has(error.id);
+                const dot =
+                  error.level === "error"
+                    ? "bg-red-500"
+                    : error.level === "warning"
+                      ? "bg-yellow-500"
+                      : "bg-blue-500";
+                const hasDetails = error.details && Object.keys(error.details).length > 0;
+                return (
+                  <div key={error.id}>
+                    <button
+                      type="button"
+                      onClick={() => toggleErrorDetails(error.id)}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+                    >
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
+                      <span className="flex-1 min-w-0 truncate text-sm font-medium">{error.message}</span>
+                      {error.count > 1 && (
+                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">×{error.count}</span>
+                      )}
+                      <span className="shrink-0 text-xs text-muted-foreground tabular-nums text-right w-[4.5rem]">
+                        {error.timeAgo || error.timestamp}
                       </span>
-                    </div>
+                      <ChevronRight
+                        className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`}
+                      />
+                    </button>
+                    {expanded && (
+                      <div className="px-3 pb-3 bg-muted/30">
+                        {hasDetails ? (
+                          <div className="grid gap-1.5 pt-2">
+                            {Object.entries(error.details).map(([key, value]: [string, any]) => (
+                              <div key={key} className="flex justify-between gap-4 text-sm">
+                                <span className="text-muted-foreground capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                                <span className="font-mono text-xs break-all text-right">{String(value)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground pt-2">No additional details available</p>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {expandedErrors.has(error.id) && error.details && Object.keys(error.details).length > 0 && (
-                    <div className="px-3 pb-3 pt-0 border-t bg-muted/30">
-                      <div className="pt-3 space-y-2">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Details</p>
-                        <div className="grid gap-1.5">
-                          {Object.entries(error.details).map(([key, value]: [string, any]) => (
-                            <div key={key} className="flex justify-between text-sm">
-                              <span className="text-muted-foreground capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                              <span className="font-mono text-xs">{String(value)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {expandedErrors.has(error.id) && (!error.details || Object.keys(error.details).length === 0) && (
-                    <div className="px-3 pb-3 pt-0 border-t bg-muted/30">
-                      <div className="pt-3">
-                        <p className="text-xs text-muted-foreground">No additional details available</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
 
