@@ -105,7 +105,24 @@ class MALCatalogWarmer {
     }
   }
 
+  syncConfigFromEnv() {
+    const warmupMode = process.env.CACHE_WARMUP_MODE || 'essential';
+    WARMUP_CONFIG.uuid = process.env.CACHE_WARMUP_UUID || 'system-cache-warmer';
+    WARMUP_CONFIG.enabled = process.env.MAL_WARMUP_ENABLED !== 'false' && warmupMode === 'essential';
+    WARMUP_CONFIG.intervalHours = parseInt(process.env.MAL_WARMUP_INTERVAL_HOURS) || 6;
+    WARMUP_CONFIG.taskDelayMs = parseInt(process.env.MAL_WARMUP_TASK_DELAY_MS) || 100;
+    WARMUP_CONFIG.quietHoursEnabled = process.env.MAL_WARMUP_QUIET_HOURS_ENABLED === 'true';
+    WARMUP_CONFIG.quietHoursRange = process.env.MAL_WARMUP_QUIET_HOURS_RANGE || '2-8';
+    WARMUP_CONFIG.priorityPages = parseInt(process.env.MAL_WARMUP_PRIORITY_PAGES) || 2;
+    WARMUP_CONFIG.warmPriority = process.env.MAL_WARMUP_PRIORITY !== 'false';
+    WARMUP_CONFIG.warmSchedule = process.env.MAL_WARMUP_SCHEDULE !== 'false';
+    WARMUP_CONFIG.warmDecades = process.env.MAL_WARMUP_DECADES === 'true';
+    WARMUP_CONFIG.sfw = process.env.MAL_WARMUP_SFW !== 'false';
+    WARMUP_CONFIG.logLevel = process.env.MAL_WARMUP_LOG_LEVEL || 'normal';
+  }
+
   async startBackgroundWarming() {
+    this.syncConfigFromEnv();
     if (!WARMUP_CONFIG.enabled) {
       const mode = process.env.CACHE_WARMUP_MODE || 'essential';
       this.log('info', `MAL catalog warming disabled (CACHE_WARMUP_MODE=${mode})`);
@@ -191,19 +208,7 @@ class MALCatalogWarmer {
       return;
     }
 
-    const warmupMode = process.env.CACHE_WARMUP_MODE || 'essential';
-    WARMUP_CONFIG.uuid = process.env.CACHE_WARMUP_UUID || 'system-cache-warmer';
-    WARMUP_CONFIG.enabled = process.env.MAL_WARMUP_ENABLED !== 'false' && warmupMode === 'essential';
-    WARMUP_CONFIG.intervalHours = parseInt(process.env.MAL_WARMUP_INTERVAL_HOURS) || 6;
-    WARMUP_CONFIG.taskDelayMs = parseInt(process.env.MAL_WARMUP_TASK_DELAY_MS) || 100;
-    WARMUP_CONFIG.quietHoursEnabled = process.env.MAL_WARMUP_QUIET_HOURS_ENABLED === 'true';
-    WARMUP_CONFIG.quietHoursRange = process.env.MAL_WARMUP_QUIET_HOURS_RANGE || '2-8';
-    WARMUP_CONFIG.priorityPages = parseInt(process.env.MAL_WARMUP_PRIORITY_PAGES) || 2;
-    WARMUP_CONFIG.warmPriority = process.env.MAL_WARMUP_PRIORITY !== 'false';
-    WARMUP_CONFIG.warmSchedule = process.env.MAL_WARMUP_SCHEDULE !== 'false';
-    WARMUP_CONFIG.warmDecades = process.env.MAL_WARMUP_DECADES === 'true';
-    WARMUP_CONFIG.sfw = process.env.MAL_WARMUP_SFW !== 'false';
-    WARMUP_CONFIG.logLevel = process.env.MAL_WARMUP_LOG_LEVEL || 'normal';
+    this.syncConfigFromEnv();
 
     // Check if we're in quiet hours
     if (WARMUP_CONFIG.quietHoursEnabled) {
@@ -579,6 +584,7 @@ class MALCatalogWarmer {
   }
 
   getStats() {
+    this.syncConfigFromEnv();
     return {
       ...this.warmupStats,
       isWarming: this.isWarming,

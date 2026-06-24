@@ -130,6 +130,26 @@ class ComprehensiveCatalogWarmer {
     return !this.shouldStop;
   }
 
+  /**
+   * Recompute env-derived config from the live process.env. This module is
+   * imported before dashboard settings are loaded from the database into
+   * process.env, so the import-time WARMUP_CONFIG can be stale when values
+   * are configured via the dashboard rather than env vars.
+   */
+  syncConfigFromEnv() {
+    this.config.uuids = parseWarmupUUIDs();
+    this.config.enabled = !!(process.env.CACHE_WARMUP_UUIDS || process.env.CACHE_WARMUP_UUID) && (process.env.CACHE_WARMUP_MODE || 'essential') === 'comprehensive';
+    this.config.intervalHours = Math.max(12, parseFloat(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24);
+    this.config.maxPagesPerCatalog = parseInt(process.env.CATALOG_WARMUP_MAX_PAGES_PER_CATALOG) || 100;
+    this.config.quietHoursEnabled = process.env.CATALOG_WARMUP_QUIET_HOURS_ENABLED === 'true';
+    this.config.quietHoursRange = process.env.CATALOG_WARMUP_QUIET_HOURS || '02:00-06:00';
+    this.config.taskDelayMs = parseInt(process.env.CATALOG_WARMUP_TASK_DELAY_MS) || 100;
+    this.config.logLevel = process.env.CATALOG_WARMUP_LOG_LEVEL || 'info';
+    this.config.autoOnVersionChange = process.env.CATALOG_WARMUP_AUTO_ON_VERSION_CHANGE === 'true';
+    this.stats.enabled = this.config.enabled;
+    this.stats.totalUUIDs = this.config.uuids.length;
+  }
+
   log(level, message) {
     const levels = ['debug', 'info', 'success', 'warn', 'error'];
     const configLevel = this.config.logLevel;
@@ -897,15 +917,7 @@ class ComprehensiveCatalogWarmer {
       return false;
     }
 
-    this.config.uuids = parseWarmupUUIDs();
-    this.config.enabled = !!(process.env.CACHE_WARMUP_UUIDS || process.env.CACHE_WARMUP_UUID) && (process.env.CACHE_WARMUP_MODE || 'essential') === 'comprehensive';
-    this.config.intervalHours = Math.max(12, parseFloat(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24);
-    this.config.maxPagesPerCatalog = parseInt(process.env.CATALOG_WARMUP_MAX_PAGES_PER_CATALOG) || 100;
-    this.config.quietHoursEnabled = process.env.CATALOG_WARMUP_QUIET_HOURS_ENABLED === 'true';
-    this.config.quietHoursRange = process.env.CATALOG_WARMUP_QUIET_HOURS || '02:00-06:00';
-    this.config.taskDelayMs = parseInt(process.env.CATALOG_WARMUP_TASK_DELAY_MS) || 100;
-    this.config.logLevel = process.env.CATALOG_WARMUP_LOG_LEVEL || 'info';
-    this.config.autoOnVersionChange = process.env.CATALOG_WARMUP_AUTO_ON_VERSION_CHANGE === 'true';
+    this.syncConfigFromEnv();
 
     if (!this.config.enabled) {
       this.log('debug', 'Catalog warming is disabled');
@@ -1124,6 +1136,8 @@ class ComprehensiveCatalogWarmer {
   }
 
   async startBackgroundWarming() {
+    this.syncConfigFromEnv();
+
     if (!process.env.CACHE_WARMUP_UUIDS && !process.env.CACHE_WARMUP_UUID) {
       this.log('info', 'Comprehensive catalog warming disabled - CACHE_WARMUP_UUIDS not set');
       return;
@@ -1207,6 +1221,7 @@ class ComprehensiveCatalogWarmer {
   }
 
   async getStats() {
+    this.syncConfigFromEnv();
     try {
       // Only load persisted stats if we don't have current stats (i.e., at startup)
       if (!this.stats || this.stats.totalCatalogs === 0) {
