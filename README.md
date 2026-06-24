@@ -102,6 +102,29 @@ docker compose up -d
 
 Cache poster images locally using an nginx reverse proxy. Eliminates upstream latency on repeated requests and, combined with comprehensive cache warming, serves posters instantly from disk. Includes a `/stats` endpoint for monitoring cache size and image count.
 
+#### Option A — Built-in (single container)
+
+If you run a **single instance** and just want one container, enable the bundled proxy instead of running a separate service:
+
+```yaml
+  aiometadata:
+    # ...your existing service...
+    environment:
+      - ENABLE_BUILTIN_POSTER_CACHE=true
+      - POSTER_PROXY_PREFIX_URL=https://posters.example.com   # public address of port 8888
+    volumes:
+      - ${DOCKER_DATA_DIR}/poster-cache:/var/cache/nginx       # persist cache across restarts
+    init: true                                                 # reap the proxy's helper processes
+    expose:
+      - "8888"
+```
+
+The same nginx config, `/stats`, and `/purge` apply. `POSTER_WARMUP_URL` defaults to `http://127.0.0.1:8888` automatically; you still set `POSTER_PROXY_PREFIX_URL` to the public address clients use to reach port 8888.
+
+> **Multi-replica / Kubernetes:** leave `ENABLE_BUILTIN_POSTER_CACHE` off and use Option B — each replica's in-container cache is independent and unshared.
+
+#### Option B — Standalone service
+
 Add a `poster-cache` service alongside your aiometadata container:
 
 ```yaml

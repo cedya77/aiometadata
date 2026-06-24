@@ -16,6 +16,7 @@ export interface LogEntry {
   message: string;
   args?: string;
   userId?: string;
+  service?: string;
 }
 
 export interface LogQueryFilters {
@@ -23,6 +24,7 @@ export interface LogQueryFilters {
   level?: string;
   tag?: string;
   search?: string;
+  service?: string;
   limit?: number;
 }
 
@@ -60,6 +62,7 @@ let count = 0;       // number of live entries
 let totalBytes = 0;  // summed byte estimate of live entries
 let nextId = 1;
 const tagSet = new Set<string>();
+const serviceSet = new Set<string>();
 
 type LogSubscriber = (entry: LogEntry) => void;
 const subscribers = new Set<LogSubscriber>();
@@ -126,6 +129,7 @@ function entryByteSize(e: LogEntry): number {
     + (e.args ? e.args.length : 0)
     + (e.tag ? e.tag.length : 0)
     + (e.userId ? e.userId.length : 0)
+    + (e.service ? e.service.length : 0)
     + 80; // fixed overhead for id/timestamp/level/object scaffolding
 }
 
@@ -178,13 +182,15 @@ export function subscribeToLogs(fn: LogSubscriber): () => void {
   };
 }
 
-export function buildLogFilter(opts: { level?: string; tag?: string; search?: string } = {}): (entry: LogEntry) => boolean {
+export function buildLogFilter(opts: { level?: string; tag?: string; search?: string; service?: string } = {}): (entry: LogEntry) => boolean {
   const levelNum = opts.level ? LEVEL_LABEL_TO_NUM[opts.level.toLowerCase()] : undefined;
   const tag = opts.tag;
+  const service = opts.service;
   const searchLower = opts.search ? opts.search.toLowerCase() : undefined;
   return (entry: LogEntry): boolean => {
     if (levelNum !== undefined && entry.level !== levelNum) return false;
     if (tag && entry.tag !== tag) return false;
+    if (service && (entry.service || 'addon') !== service) return false;
     if (searchLower
       && !entry.message.toLowerCase().includes(searchLower)
       && !(entry.userId && entry.userId.toLowerCase().includes(searchLower))) return false;
@@ -193,9 +199,9 @@ export function buildLogFilter(opts: { level?: string; tag?: string; search?: st
 }
 
 export function getLogEntries(filters: LogQueryFilters = {}): { entries: LogEntry[]; cursor: number; newestId: number } {
-  const { afterCursor = 0, level, tag, search, limit = 200 } = filters;
+  const { afterCursor = 0, level, tag, search, service, limit = 200 } = filters;
   const effectiveLimit = Math.min(Math.max(1, limit), 1000);
-  const match = buildLogFilter({ level, tag, search });
+  const match = buildLogFilter({ level, tag, search, service });
 
   // Walk newest -> oldest. Ids are monotonic in write order, so once we pass the
   // cursor every older entry is too — the live-tail case is O(returned), not O(N).
@@ -214,6 +220,38 @@ export function getLogEntries(filters: LogQueryFilters = {}): { entries: LogEntr
 
 export function getLogTags(): string[] {
   return Array.from(tagSet).sort();
+}
+
+export function getLogServices(): string[] {
+  return Array.from(serviceSet).sort();
+}
+
+// Ingest a log line from a non-consola source (e.g. the bundled nginx poster
+// cache). Best-effort: callers must never let a malformed line throw.
+export function ingestExternalLog(opts: {
+  service: string;
+  level: number;
+  levelLabel?: string;
+  tag?: string;
+  message: string;
+  timestamp?: string;
+}): void {
+  const levelNum = typeof opts.level === 'number' ? opts.level : 3;
+  const levelLabel = opts.levelLabel || LEVEL_MAP[levelNum] || 'info';
+  let message = redact(opts.message || '');
+  if (message.length > ARG_DETAIL_MAX) message = message.slice(0, ARG_DETAIL_MAX) + '… (truncated)';
+  const tag = opts.tag || '';
+  if (tag) tagSet.add(tag);
+  if (opts.service) serviceSet.add(opts.service);
+  pushEntry({
+    id: nextId++,
+    timestamp: opts.timestamp || new Date().toISOString(),
+    level: levelNum,
+    levelLabel,
+    tag,
+    message,
+    service: opts.service,
+  });
 }
 
 export function getBufferStats(): { size: number; capacity: number; bytes: number; maxBytes: number; oldestId: number; newestId: number } {
@@ -251,6 +289,7 @@ function handleLogObj(logObj: any): void {
   const levelLabel = logObj.type || LEVEL_MAP[levelNum] || 'info';
 
   if (tag) tagSet.add(tag);
+  serviceSet.add('addon');
 
   const ctx = requestContext.getStore();
   const entry: LogEntry = {
@@ -260,6 +299,7 @@ function handleLogObj(logObj: any): void {
     levelLabel,
     tag,
     message,
+    service: 'addon',
     ...(args && { args }),
     ...(ctx?.userId && { userId: ctx.userId }),
   };

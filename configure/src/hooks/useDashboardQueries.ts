@@ -439,12 +439,14 @@ export interface LogEntry {
   message: string;
   args?: string;
   userId?: string;
+  service?: string;
 }
 
 export interface LogsData {
   entries: LogEntry[];
   cursor: number;
   tags: string[];
+  services: string[];
   newestId?: number;
 }
 
@@ -458,7 +460,7 @@ export function useDashboardLogs(options: DashboardQueryOptions & { paused?: boo
   const shouldStream = isVisible && isActiveTab && isAdmin && !!adminKey && enabled && !paused;
 
   const cursorRef = useRef(0);
-  const [accumulated, setAccumulated] = useState<LogsData>({ entries: [], cursor: 0, tags: [] });
+  const [accumulated, setAccumulated] = useState<LogsData>({ entries: [], cursor: 0, tags: [], services: [] });
   const [isFetching, setIsFetching] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
 
@@ -511,11 +513,16 @@ export function useDashboardLogs(options: DashboardQueryOptions & { paused?: boo
               const entries = combined.length > MAX_CLIENT_LOG_ENTRIES ? combined.slice(-MAX_CLIENT_LOG_ENTRIES) : combined;
               let tags = prev.tags;
               let tagAdds: Set<string> | null = null;
+              let services = prev.services;
+              let serviceAdds: Set<string> | null = null;
               for (const e of incoming) {
                 if (e.tag && !tags.includes(e.tag)) (tagAdds ??= new Set(tags)).add(e.tag);
+                const svc = e.service || 'addon';
+                if (!services.includes(svc)) (serviceAdds ??= new Set(services)).add(svc);
               }
               if (tagAdds) tags = Array.from(tagAdds).sort();
-              return { entries, cursor: cursorRef.current, tags, newestId: cursorRef.current };
+              if (serviceAdds) services = Array.from(serviceAdds).sort();
+              return { entries, cursor: cursorRef.current, tags, services, newestId: cursorRef.current };
             });
           }
         }
@@ -538,7 +545,7 @@ export function useDashboardLogs(options: DashboardQueryOptions & { paused?: boo
   }, [shouldStream, adminKey, getHeaders, retryCount]);
 
   const resetLogs = useCallback(() => {
-    setAccumulated(prev => ({ entries: [], cursor: prev.cursor, tags: prev.tags }));
+    setAccumulated(prev => ({ entries: [], cursor: prev.cursor, tags: prev.tags, services: prev.services }));
   }, []);
 
   const refetch = useCallback(() => {

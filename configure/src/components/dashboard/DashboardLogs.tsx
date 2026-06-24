@@ -74,6 +74,7 @@ function formatTime(iso: string): string {
 
 function formatEntryForCopy(entry: LogEntry): string {
   const parts = [formatTime(entry.timestamp), `[${entry.levelLabel.toUpperCase()}]`];
+  if (entry.service && entry.service !== "addon") parts.push(`<${entry.service}>`);
   if (entry.tag) parts.push(`(${entry.tag})`);
   if (entry.userId) parts.push(`{${entry.userId}}`);
   parts.push(entry.message);
@@ -89,6 +90,7 @@ export function DashboardLogs({ data, loading, paused = false, onPauseToggle, on
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<Set<string>>(new Set());
   const [tagFilter, setTagFilter] = useState("all");
+  const [serviceFilter, setServiceFilter] = useState("all");
   const [autoScroll, setAutoScroll] = useState(true);
   const [newCount, setNewCount] = useState(0);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
@@ -106,6 +108,7 @@ export function DashboardLogs({ data, loading, paused = false, onPauseToggle, on
     return data.entries.filter((entry) => {
       if (levelFilter.size > 0 && !levelFilter.has(entry.levelLabel)) return false;
       if (tagFilter !== "all" && entry.tag !== tagFilter) return false;
+      if (serviceFilter !== "all" && (entry.service || "addon") !== serviceFilter) return false;
       if (debouncedSearch) {
         const q = debouncedSearch.toLowerCase();
         if (!entry.message.toLowerCase().includes(q)
@@ -115,7 +118,7 @@ export function DashboardLogs({ data, loading, paused = false, onPauseToggle, on
       }
       return true;
     });
-  }, [data?.entries, levelFilter, tagFilter, debouncedSearch]);
+  }, [data?.entries, levelFilter, tagFilter, serviceFilter, debouncedSearch]);
 
   const virtualizer = useVirtualizer({
     count: filteredEntries.length,
@@ -208,6 +211,7 @@ export function DashboardLogs({ data, loading, paused = false, onPauseToggle, on
     setDebouncedSearch("");
     setLevelFilter(new Set());
     setTagFilter("all");
+    setServiceFilter("all");
   };
 
   const copyRow = useCallback((entry: LogEntry) => {
@@ -244,8 +248,9 @@ export function DashboardLogs({ data, loading, paused = false, onPauseToggle, on
     prevLenRef.current = 0;
   };
 
-  const hasFilters = search || levelFilter.size > 0 || tagFilter !== "all";
+  const hasFilters = search || levelFilter.size > 0 || tagFilter !== "all" || serviceFilter !== "all";
   const tags = data?.tags || [];
+  const services = data?.services || [];
 
   if (loading) {
     return (
@@ -368,6 +373,19 @@ export function DashboardLogs({ data, loading, paused = false, onPauseToggle, on
                 ))}
               </SelectContent>
             </Select>
+            {services.length > 1 && (
+              <Select value={serviceFilter} onValueChange={setServiceFilter}>
+                <SelectTrigger className="w-[150px] h-9">
+                  <SelectValue placeholder="Service" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Services</SelectItem>
+                  {services.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="relative">
@@ -480,6 +498,11 @@ const LogRow = React.memo(function LogRow({
       <Badge variant="outline" className={`shrink-0 text-[10px] px-1.5 py-0 font-medium uppercase ${levelClass}`}>
         {entry.levelLabel}
       </Badge>
+      {entry.service && entry.service !== "addon" && (
+        <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 font-normal text-cyan-400/80 border-cyan-400/20">
+          {entry.service}
+        </Badge>
+      )}
       {entry.tag && (
         <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 font-normal text-muted-foreground border-muted-foreground/20">
           {entry.tag}

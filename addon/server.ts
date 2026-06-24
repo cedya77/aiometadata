@@ -20,6 +20,15 @@ import { initializeSettings } from './lib/settingsService.js';
 
 installLogReporter();
 
+if (/^(1|true|yes|on)$/i.test(process.env.ENABLE_BUILTIN_POSTER_CACHE || '')) {
+  try {
+    const { startPosterCacheLogReader } = require('./lib/posterCacheLogReader.js');
+    startPosterCacheLogReader();
+  } catch (e: any) {
+    consola.warn('[PosterCacheLogs] failed to start log reader:', e?.message);
+  }
+}
+
 const PORT: number = parseInt(process.env.PORT || '3232', 10);
  
 async function startServer(): Promise<void> {

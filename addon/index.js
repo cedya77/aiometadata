@@ -5573,7 +5573,7 @@ addon.get("/api/dashboard/operations", requireDashboardAdmin, (req, res) => {
 
 addon.get("/api/dashboard/logs", requireDashboardAdmin, (req, res) => {
   try {
-    const { getLogEntries, getLogTags } = require('./lib/logBuffer.js');
+    const { getLogEntries, getLogTags, getLogServices } = require('./lib/logBuffer.js');
     const afterCursor = req.query.afterCursor ? parseInt(req.query.afterCursor, 10) : 0;
     const limit = req.query.limit ? parseInt(req.query.limit, 10) : 200;
     const { entries, cursor, newestId } = getLogEntries({
@@ -5581,9 +5581,10 @@ addon.get("/api/dashboard/logs", requireDashboardAdmin, (req, res) => {
       level: req.query.level || undefined,
       tag: req.query.tag || undefined,
       search: req.query.search || undefined,
+      service: req.query.service || undefined,
       limit,
     });
-    res.json({ entries, cursor, newestId, tags: getLogTags() });
+    res.json({ entries, cursor, newestId, tags: getLogTags(), services: getLogServices() });
   } catch (error) {
     consola.error('[Dashboard API] Logs error:', error);
     res.status(500).json({ error: 'Failed to fetch logs' });
@@ -5604,6 +5605,7 @@ addon.get("/api/dashboard/logs/stream", requireDashboardAdmin, (req, res) => {
     level: req.query.level || undefined,
     tag: req.query.tag || undefined,
     search: req.query.search || undefined,
+    service: req.query.service || undefined,
   };
   const match = buildLogFilter(filterOpts);
 
