@@ -77,7 +77,7 @@ async function tvdbHttpRequest(url: string, options: any = {}, maxRetries: numbe
 }
 
 const TVDB_API_URL = 'https://api4.thetvdb.com/v4';
-const GLOBAL_TVDB_KEY = process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY;
+const globalTvdbKey = () => process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY;
 const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com/banners/images/';
 
 // Type definitions for TVDB API responses
@@ -471,7 +471,7 @@ const tokenCache = new Map<string, TokenCache>(); // One token per unique TVDB A
 const tokenInflight = new Map<string, Promise<string | null>>(); // Deduplicate concurrent logins per key
 
 async function getAuthToken(apiKey: string | undefined, userUUID: string | null = null): Promise<string | null> {
-  const key = apiKey || GLOBAL_TVDB_KEY;
+  const key = apiKey || globalTvdbKey();
   if (!key) {
     logger.error('TVDB API Key is not configured.');
     return null;

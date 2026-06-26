@@ -6,10 +6,10 @@ const KEY_VALIDATION_STATUS_SET = new Set(['valid', 'invalid', 'timeout', 'error
 const isKnownKeyValidationStatus = (status) =>
   typeof status === 'string' && KEY_VALIDATION_STATUS_SET.has(status);
 const TESTABLE_API_KEY_FIELDS = new Set(['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'openrouter', 'publicmetadb']);
-const TEST_API_KEY_MAX_LENGTH = (() => {
+function getTestApiKeyMaxLength() {
   const parsed = parseInt(process.env.TEST_API_KEY_MAX_LENGTH || '128', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 128;
-})();
+}
 
 // Gemini dispatcher configuration for API key testing
 // Priority: GEMINI_HTTPS_PROXY/GEMINI_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct connection
@@ -50,12 +50,12 @@ const { deleteKeysByPattern } = require('./redisUtils');
 
 const MAX_TAG_NAME_LENGTH = 32;
 
-const MAX_CATALOGS = (() => {
+function getMaxCatalogs() {
   const raw = process.env.MAX_CATALOGS;
   if (!raw) return null;
   const max = Number.parseInt(raw, 10);
   return (Number.isFinite(max) && max > 0) ? max : null;
-})();
+}
 
 class ConfigApi {
   constructor() {
@@ -152,19 +152,20 @@ class ConfigApi {
   }
 
   validateCatalogCount(config) {
-    if (!MAX_CATALOGS) return { valid: true };
+    const maxCatalogs = getMaxCatalogs();
+    if (!maxCatalogs) return { valid: true };
     const catalogs = config && config.catalogs;
     if (!Array.isArray(catalogs)) return { valid: true };
-    
+
     // Only count enabled catalogs
     const enabledCount = catalogs.filter(c => c.enabled !== false).length;
-    
-    if (enabledCount <= MAX_CATALOGS) return { valid: true };
+
+    if (enabledCount <= maxCatalogs) return { valid: true };
     return {
       valid: false,
       count: enabledCount,
-      max: MAX_CATALOGS,
-      message: `Too many enabled catalogs (${enabledCount}); the maximum allowed on this instance is ${MAX_CATALOGS}. Disable some catalogs and try again.`,
+      max: maxCatalogs,
+      message: `Too many enabled catalogs (${enabledCount}); the maximum allowed on this instance is ${maxCatalogs}. Disable some catalogs and try again.`,
     };
   }
 
@@ -1082,8 +1083,9 @@ class ConfigApi {
         continue;
       }
 
-      if (trimmedValue.length > TEST_API_KEY_MAX_LENGTH) {
-        return { error: `API key '${key}' exceeds max length (${TEST_API_KEY_MAX_LENGTH}).` };
+      const maxKeyLength = getTestApiKeyMaxLength();
+      if (trimmedValue.length > maxKeyLength) {
+        return { error: `API key '${key}' exceeds max length (${maxKeyLength}).` };
       }
 
       normalizedApiKeys[key] = trimmedValue;

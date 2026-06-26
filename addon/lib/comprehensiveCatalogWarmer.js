@@ -49,7 +49,7 @@ const logger = consola.create({
 });
 
 // Configuration from environment variables
-const WARMUP_MODE = process.env.CACHE_WARMUP_MODE || 'essential'; // 'essential', 'comprehensive'
+const warmupMode = () => process.env.CACHE_WARMUP_MODE || 'essential'; // 'essential', 'comprehensive'
 
 // Parse UUIDs from environment variable (supports single UUID or comma-separated list)
 const parseWarmupUUIDs = () => {
@@ -61,7 +61,7 @@ const parseWarmupUUIDs = () => {
 };
 
 const WARMUP_CONFIG = {
-  enabled: !!(process.env.CACHE_WARMUP_UUIDS || process.env.CACHE_WARMUP_UUID) && WARMUP_MODE === 'comprehensive',
+  enabled: !!(process.env.CACHE_WARMUP_UUIDS || process.env.CACHE_WARMUP_UUID) && warmupMode() === 'comprehensive',
   uuids: parseWarmupUUIDs(),
   intervalHours: Math.max(12, parseFloat(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24), // Daily default, minimum 12h (supports fractional hours like 0.5)
   initialDelaySeconds: parseInt(process.env.CATALOG_WARMUP_INITIAL_DELAY_SECONDS) || 300,

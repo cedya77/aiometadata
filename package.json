@@ -23,6 +23,7 @@
     "lint:backend": "eslint addon scripts",
     "lint:frontend": "eslint configure/src",
     "lint:repo": "eslint eslint.config.js tailwind.config.mts vite.config.mts",
+    "check:env": "ts-node --skip-project --transpile-only --compiler-options '{\"module\":\"commonjs\",\"target\":\"es2020\",\"esModuleInterop\":true,\"ignoreDeprecations\":\"6.0\"}' scripts/check-env-registry.ts",
     "preview": "vite preview",
     "start": "npm run start:backend"
   },
