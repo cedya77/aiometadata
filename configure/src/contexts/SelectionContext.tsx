@@ -123,7 +123,7 @@ export function SelectionProvider({ children, catalogs }: SelectionProviderProps
     setState(prev => {
       const newSelectedIds = new Set(prev.selectedIds);
       catalogs
-        .filter(catalog => catalog.type === type)
+        .filter(catalog => (catalog.displayType || catalog.type) === type)
         .forEach(catalog => {
           newSelectedIds.add(getCatalogKey(catalog));
         });
@@ -138,7 +138,7 @@ export function SelectionProvider({ children, catalogs }: SelectionProviderProps
     setState(prev => {
       const newSelectedIds = new Set(prev.selectedIds);
       catalogs
-        .filter(catalog => catalog.type === type)
+        .filter(catalog => (catalog.displayType || catalog.type) === type)
         .forEach(catalog => {
           newSelectedIds.delete(getCatalogKey(catalog));
         });

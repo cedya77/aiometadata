@@ -31,7 +31,9 @@ export function SelectByFieldControl({
   const counts = useMemo(() => {
     const result: Record<string, number> = {};
     catalogs.forEach(catalog => {
-      const value = (catalog[field] as string) || 'custom';
+      const value = field === 'type'
+        ? (catalog.displayType || catalog.type || 'custom')
+        : ((catalog[field] as string) || 'custom');
       result[value] = (result[value] || 0) + 1;
     });
     return result;
