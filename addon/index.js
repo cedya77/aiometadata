@@ -4167,7 +4167,7 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id{/:extra}.json", async function
       return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
     
-    // Check if any watch tracking is enabled (MDBList, AniList, Simkl, or Trakt)
+    // Check if any watch tracking is enabled (MDBList, AniList, Simkl, Trakt, or PublicMetaDB)
     const hasMdblistKey = config?.apiKeys?.mdblist;
     const mdblistEnabled = !!config?.mdblistWatchTracking;
     const hasAnilistToken = config?.apiKeys?.anilistTokenId;
@@ -4176,13 +4176,16 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id{/:extra}.json", async function
     const simklEnabled = !!config?.simklWatchTracking;
     const hasTraktToken = config?.apiKeys?.traktTokenId;
     const traktEnabled = !!config?.traktWatchTracking;
+    const hasPublicMetaDBKey = config?.apiKeys?.publicmetadb;
+    const publicMetaDBEnabled = !!config?.publicmetadbWatchTracking;
 
     const shouldTrackMdblist = hasMdblistKey && mdblistEnabled;
     const shouldTrackAnilist = hasAnilistToken && anilistEnabled;
     const shouldTrackSimkl = hasSimklToken && simklEnabled;
     const shouldTrackTrakt = hasTraktToken && traktEnabled;
+    const shouldTrackPublicMetaDB = hasPublicMetaDBKey && publicMetaDBEnabled;
 
-    if (shouldTrackMdblist || shouldTrackAnilist || shouldTrackSimkl || shouldTrackTrakt) {      // Import and call subtitle handler
+    if (shouldTrackMdblist || shouldTrackAnilist || shouldTrackSimkl || shouldTrackTrakt || shouldTrackPublicMetaDB) {      // Import and call subtitle handler
       const { handleSubtitleRequest } = require('./lib/subtitleHandler');
       
       // Call handler synchronously (no await)
@@ -4192,7 +4195,7 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id{/:extra}.json", async function
       return respond(req, res, result, { cacheMaxAge: 0 });
     } else {
       // Watch tracking disabled or no credentials - return empty subtitles
-      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - mdblist: ${shouldTrackMdblist}, anilist: ${shouldTrackAnilist}, simkl: ${shouldTrackSimkl}, trakt: ${shouldTrackTrakt}`);
+      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - mdblist: ${shouldTrackMdblist}, anilist: ${shouldTrackAnilist}, simkl: ${shouldTrackSimkl}, trakt: ${shouldTrackTrakt}, publicmetadb: ${shouldTrackPublicMetaDB}`);
       return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
   } catch (error) {

@@ -226,11 +226,20 @@ function getManifestFingerprint(config: AppConfig): string {
     showInHome: c.showInHome,
   }));
 
+  const subtitlesResource = !!(
+    (config.apiKeys?.mdblist && config.mdblistWatchTracking) ||
+    (config.apiKeys?.anilistTokenId && config.anilistWatchTracking) ||
+    (config.apiKeys?.simklTokenId && config.simklWatchTracking) ||
+    (config.apiKeys?.traktTokenId && config.traktWatchTracking) ||
+    (config.apiKeys?.publicmetadb && config.publicmetadbWatchTracking)
+  );
+
   return JSON.stringify({
     catalogs: catalogFingerprint,
     addonName: config.addonName,
     catalogModeOnly: config.catalogModeOnly,
     showRateMeButton: config.showRateMeButton,
+    subtitlesResource,
     showPrefix: config.showPrefix,
     language: config.language,
     search: {
