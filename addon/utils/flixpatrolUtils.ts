@@ -165,7 +165,7 @@ export async function getFlixPatrolMetas(
         const stremioId = `tmdb:${entry.tmdb.id}`;
 
         const result = await cacheWrapMetaSmart(
-          config.userUUID,
+          config.userUUID || '',
           stremioId,
           async () => {
             return await getMeta(stremioType, language, stremioId, config, config.userUUID, includeVideos);
