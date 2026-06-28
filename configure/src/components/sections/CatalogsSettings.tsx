@@ -230,6 +230,14 @@ const TMDB_SORT_OPTIONS: { value: TMDBSortOption; label: string }[] = [
   { value: 'vote_average', label: 'Top Rated' },
   { value: 'revenue', label: 'Revenue' },
 ];
+const TMDB_MIN_VOTES_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: 'No minimum' },
+  { value: 50, label: '50 (default)' },
+  { value: 100, label: '100' },
+  { value: 250, label: '250' },
+  { value: 500, label: '500' },
+  { value: 1000, label: '1000' },
+];
 
 const TRAKT_SORT_OPTIONS: { value: TraktSortOption; label: string; vip?: boolean }[] = [
   { value: 'default', label: 'Default (Original Order)' },
@@ -1148,6 +1156,8 @@ const TMDBSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConf
 
   const [sort, setSort] = useState<TMDBSortOption>(initialSort);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>((catalog.sortDirection as 'asc' | 'desc') || 'desc');
+  const [minVotes, setMinVotes] = useState<number>(catalog.minVotes ?? 50);
+  const supportsMinVotes = catalog.id === 'tmdb.year';
   const [hideWatchedTrakt, setHideWatchedTrakt] = useState<string>(catalog.metadata?.hideWatchedTrakt === true ? 'on' : catalog.metadata?.hideWatchedTrakt === false ? 'off' : 'global');
   const [hideWatchedAnilist, setHideWatchedAnilist] = useState<string>(catalog.metadata?.hideWatchedAnilist === true ? 'on' : catalog.metadata?.hideWatchedAnilist === false ? 'off' : 'global');
   const [hideWatchedMdblist, setHideWatchedMdblist] = useState<string>(catalog.metadata?.hideWatchedMdblist === true ? 'on' : catalog.metadata?.hideWatchedMdblist === false ? 'off' : 'global');
@@ -1160,7 +1170,7 @@ const TMDBSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConf
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, sortDirection, metadata: { ...c.metadata, hideWatchedTrakt: hideTraktValue, hideWatchedAnilist: hideAnilistValue, hideWatchedMdblist: hideMdblistValue } }
+          ? { ...c, sort, sortDirection, ...(supportsMinVotes ? { minVotes } : {}), metadata: { ...c.metadata, hideWatchedTrakt: hideTraktValue, hideWatchedAnilist: hideAnilistValue, hideWatchedMdblist: hideMdblistValue } }
           : c
       )
     }));
@@ -1201,6 +1211,26 @@ const TMDBSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConf
               </SelectContent>
             </Select>
           </div>
+          {supportsMinVotes && (
+            <div className="space-y-2">
+              <Label>Minimum Votes</Label>
+              <Select value={String(minVotes)} onValueChange={(value) => setMinVotes(parseInt(value, 10))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TMDB_MIN_VOTES_OPTIONS.map(option => (
+                    <SelectItem key={option.value} value={String(option.value)}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Hide titles with fewer than this many TMDB votes. Higher values reduce obscure entries.
+              </p>
+            </div>
+          )}
           {config.apiKeys?.traktTokenId && (
             <div className="space-y-2">
               <Label>Hide Trakt Watched</Label>

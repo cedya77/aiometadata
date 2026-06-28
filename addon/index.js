@@ -3402,6 +3402,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
   else if (cleanId.startsWith('streaming.') || cleanId.startsWith('tmdb.year') || cleanId.startsWith('tmdb.language')) {
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
+    if (cleanId.startsWith('tmdb.year') && typeof catalogConfig?.minVotes === 'number') {
+      extraArgs.minVotes = catalogConfig.minVotes;
+    }
   }
   // Discover custom catalogs use discover params (include hash for safe cache invalidation)
   else if (cleanId.startsWith('tmdb.discover.') || cleanId.startsWith('tvdb.discover.') || cleanId.startsWith('simkl.discover.') || cleanId.startsWith('anilist.discover.') || cleanId.startsWith('mal.discover.')) {

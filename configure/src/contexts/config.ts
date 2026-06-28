@@ -34,6 +34,8 @@ export interface CatalogConfig {
   // MDBList external list score filters
   filter_score_min?: number;
   filter_score_max?: number;
+  // Minimum TMDB vote count filter (tmdb.year catalog)
+  minVotes?: number;
   // Enable RPDB for this catalog (for poster enhancements)
   enableRatingPosters?: boolean;
   // Randomize items within each page on every load

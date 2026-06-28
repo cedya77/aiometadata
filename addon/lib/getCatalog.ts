@@ -1294,6 +1294,9 @@ async function buildParameters(type: string, language: string, page: number, id:
       case "tmdb.year":
         const year = genre && genre.toLowerCase() !== 'none' ? genre : new Date().getFullYear();
         parameters[type === "movie" ? "primary_release_year" : "first_air_date_year"] = year;
+        if (catalogConfig?.minVotes !== undefined && catalogConfig.minVotes !== null) {
+          parameters['vote_count.gte'] = catalogConfig.minVotes;
+        }
         // Only set default sort if no custom sort is configured
         if (!catalogConfig?.sort) {
           parameters.sort_by = 'popularity.desc';
