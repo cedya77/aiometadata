@@ -678,18 +678,18 @@ async function trackAnimeProgress(parsedId, config, userUUID) {
 }
 
 /**
- * Generate the AniList OAuth authorization URL
- * 
- * @param {string} redirectUri - OAuth callback URL
- * @param {string} state - CSRF protection state parameter
+ * Generate the AniList OAuth authorization URL (Implicit Grant)
+ *
+ * Uses response_type=token with no redirect_uri param so the access token is
+ * returned directly in the callback URL fragment. This avoids the server-side
+ * token exchange, which AniList blocks behind a Cloudflare challenge.
+ *
  * @returns {string} Authorization URL
  */
-function getAuthorizationUrl(redirectUri, state) {
+function getAuthorizationUrl() {
   const params = new URLSearchParams({
     client_id: ANILIST_CLIENT_ID,
-    redirect_uri: redirectUri,
-    response_type: 'code',
-    state: state
+    response_type: 'token'
   });
   return `${ANILIST_AUTH_URL}?${params.toString()}`;
 }
