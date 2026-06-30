@@ -52,12 +52,24 @@ cp .env.example .env
 
 ## Database Configuration
 
-### `DATABASE_URL`
+### `DATABASE_URI`
 - **Required**: Yes
-- **Description**: Database connection string (PostgreSQL or SQLite)
+- **Description**: Database connection string (PostgreSQL or SQLite). In a multi-region deploy this is the single **writable primary**, shared by every region — all writes (config saves, OAuth tokens, login rehash) go here.
 - **Examples**:
-  - PostgreSQL: `DATABASE_URL=postgresql://user:password@localhost:5432/aiometadata`
-  - SQLite: `DATABASE_URL=sqlite:./data/aiometadata.db`
+  - PostgreSQL: `DATABASE_URI=postgresql://user:password@localhost:5432/aiometadata`
+  - SQLite: `DATABASE_URI=sqlite://addon/data/db.sqlite`
+
+### `DATABASE_READ_URI`
+- **Required**: No (PostgreSQL only)
+- **Description**: Optional read-replica connection string. When set, all reads are served from this replica while writes still go to `DATABASE_URI`. Intended for geo-redundant deploys where each region points `DATABASE_URI` at the shared primary and `DATABASE_READ_URI` at a local streaming replica for low-latency reads. Falls back to the primary automatically if unset or unreachable at startup.
+- **Example**: `DATABASE_READ_URI=postgresql://user:password@local-replica:5432/aiometadata`
+
+### `RUN_MIGRATIONS`
+- **Required**: No
+- **Default**: `true`
+- **Description**: Whether to run schema creation (`CREATE TABLE IF NOT EXISTS …`) on startup. Set to `false` on replica-region instances so they boot without attempting DDL; run migrations once against the primary.
+
+> **Geo-redundancy note:** the database is the source of truth and the sync layer — there is no separate config-sync mechanism. Run one shared primary plus a local read replica per region, point `DATABASE_URI` at the primary everywhere and `DATABASE_READ_URI` at each region's replica. Config saves prime the local Redis cache directly, so the user who made a change reads it back immediately even before replication catches up. Cache (`REDIS_URL`) can be regional; cross-region invalidation is bounded by `CONFIG_CACHE_TTL_SEC`.
 
 ---
 

@@ -288,12 +288,15 @@ class ConfigApi {
       // This helps with cache invalidation
       configWithTimestamp.configVersion = Date.now();
       
-      await database.saveUserConfig(userUUID, passwordHash, configWithTimestamp);
+      const persistedConfig = await database.saveUserConfig(userUUID, passwordHash, configWithTimestamp);
       logger.info(`Saved config for user ${userUUID}`);
-      
-      // Invalidate memory cache
-      configCache.del(userUUID);
-      
+
+      if (persistedConfig) {
+        await configCache.set(userUUID, persistedConfig);
+      } else {
+        await configCache.del(userUUID);
+      }
+
       // Always trust the UUID after creation
       await database.trustUUID(userUUID);
       
@@ -632,12 +635,15 @@ class ConfigApi {
       };
       
       // Update the configuration
-      await database.saveUserConfig(userUUID, passwordHash, configWithTimestamp);
+      const persistedConfig = await database.saveUserConfig(userUUID, passwordHash, configWithTimestamp);
       logger.debug(`Updated config for user ${userUUID} with configVersion: ${configWithTimestamp.configVersion}`);
       logger.debug(`Previous configVersion was: ${oldConfig?.configVersion || 'none'}`);
-      
-      // Invalidate memory cache
-      configCache.del(userUUID);
+
+      if (persistedConfig) {
+        await configCache.set(userUUID, persistedConfig);
+      } else {
+        await configCache.del(userUUID);
+      }
       
       // Invalidate user's cache when config changes
       try {

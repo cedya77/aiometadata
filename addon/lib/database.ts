@@ -13,11 +13,13 @@ type DbType = 'sqlite' | 'postgres';
 
 class Database {
   db: any;
+  readDb: any;
   type: DbType | null;
   initialized: boolean;
 
   constructor() {
     this.db = null;
+    this.readDb = null;
     this.type = null;
     this.initialized = false;
   }
@@ -76,8 +78,16 @@ class Database {
     // Mark initialized BEFORE creating tables to avoid recursive initialize() calls
     // from runQuery/getQuery during table creation.
     this.initialized = true;
-    await this.createTables();
-    logger.info(`Initialized ${this.type} database`);
+
+    const runMigrations = String(process.env.RUN_MIGRATIONS ?? 'true').toLowerCase() !== 'false';
+    if (runMigrations) {
+      await this.createTables();
+    } else {
+      logger.info('RUN_MIGRATIONS=false, skipping schema creation (expecting an already-migrated database)');
+    }
+
+    const usingReplica = this.readDb && this.readDb !== this.db;
+    logger.info(`Initialized ${this.type} database${usingReplica ? ' with a separate read replica' : ''}`);
   }
 
   async initializeSQLite(uri: string): Promise<void> {
@@ -101,6 +111,8 @@ class Database {
     this.db.pragma('cache_size = 10000');
     this.db.pragma('temp_store = MEMORY');
     this.db.pragma('mmap_size = 268435456');
+
+    this.readDb = this.db;
   }
 
   async initializePostgreSQL(uri: string): Promise<void> {
@@ -108,6 +120,23 @@ class Database {
     this.type = 'postgres';
 
     await this.db.query('SELECT 1');
+
+    const readUri = process.env.DATABASE_READ_URI;
+    if (readUri && readUri !== uri) {
+      try {
+        this.readDb = new Pool({ connectionString: readUri });
+        await this.readDb.query('SELECT 1');
+        logger.info('Connected to read replica (DATABASE_READ_URI)');
+      } catch (error: any) {
+        logger.warn(`Read replica unreachable, falling back to primary for reads: ${error.message}`);
+        if (this.readDb && this.readDb !== this.db) {
+          try { await this.readDb.end(); } catch { /* ignore */ }
+        }
+        this.readDb = this.db;
+      }
+    } else {
+      this.readDb = this.db;
+    }
   }
 
   async createTables(): Promise<void> {
@@ -252,10 +281,10 @@ class Database {
     }
 
     if (this.type === 'sqlite') {
-      const statement = this.db.prepare(query);
+      const statement = this.readDb.prepare(query);
       return this.executeSQLiteStatement(statement, 'get', params) || null;
     } else {
-      const result = await this.db.query(query, params);
+      const result = await this.readDb.query(query, params);
       return result.rows[0] || null;
     }
   }
@@ -266,10 +295,10 @@ class Database {
     }
 
     if (this.type === 'sqlite') {
-      const statement = this.db.prepare(query);
+      const statement = this.readDb.prepare(query);
       return this.executeSQLiteStatement(statement, 'all', params);
     } else {
-      const result = await this.db.query(query, params);
+      const result = await this.readDb.query(query, params);
       return result.rows;
     }
   }
@@ -278,7 +307,7 @@ class Database {
     return crypto.randomUUID();
   }
 
-  async saveUserConfig(userUUID: string, passwordHash: string, configData: any): Promise<void> {
+  async saveUserConfig(userUUID: string, passwordHash: string, configData: any): Promise<any> {
     let normalizedConfig = configData;
 
     if (typeof normalizedConfig === 'string') {
@@ -328,6 +357,12 @@ class Database {
          DO UPDATE SET password_hash = $2, config_data = $3, updated_at = CURRENT_TIMESTAMP`,
         [userUUID, passwordHash, configJson]
       );
+    }
+
+    try {
+      return JSON.parse(configJson);
+    } catch {
+      return null;
     }
   }
 
@@ -616,10 +651,15 @@ class Database {
       if (this.type === 'sqlite') {
         this.db.close();
         this.db = null;
+        this.readDb = null;
         this.initialized = false;
         return;
       } else {
+        if (this.readDb && this.readDb !== this.db) {
+          await this.readDb.end();
+        }
         await this.db.end();
+        this.readDb = null;
       }
     }
   }
