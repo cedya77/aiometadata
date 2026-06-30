@@ -260,6 +260,7 @@ export interface LetterboxdCatalogOptions {
   url: string;
   cacheTTL?: number;
   displayTypeOverrides?: { movie?: string; series?: string };
+  existingCatalogs?: CatalogConfig[];
 }
 
 /**
@@ -276,12 +277,20 @@ export function createLetterboxdCatalog(options: LetterboxdCatalogOptions): Cata
     url,
     cacheTTL = 86400, // Default 24 hours
     displayTypeOverrides,
+    existingCatalogs = [],
   } = options;
 
   const displayType = getDisplayTypeOverride('movie', displayTypeOverrides);
+  const sameIdentifierCount = existingCatalogs.filter((catalog) => {
+    if (catalog.source !== 'letterboxd') return false;
+    return catalog.metadata?.identifier === identifier;
+  }).length;
+  const catalogId = sameIdentifierCount === 0
+    ? `letterboxd.${identifier}`
+    : `letterboxd.${identifier}.${sameIdentifierCount + 1}`;
 
   return {
-    id: `letterboxd.${identifier}`,
+    id: catalogId,
     type: 'movie', // Letterboxd is primarily movies
     name: title,
     enabled: true,

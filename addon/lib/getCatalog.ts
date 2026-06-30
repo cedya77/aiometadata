@@ -2304,16 +2304,14 @@ async function getLetterboxdCatalog(
   includeVideos: boolean = false
 ): Promise<any[]> {
   try {
-    // Extract identifier from catalog ID (format: letterboxd.<identifier>)
-    const identifier = catalogId.replace('letterboxd.', '');
-    
+    // Find catalog config to determine source identifier and watchlist flag
+    const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+    // Prefer metadata identifier to support duplicated catalogs with suffixed IDs.
+    const identifier = catalogConfig?.metadata?.identifier || catalogId.replace('letterboxd.', '');
     if (!identifier) {
       logger.error(`Invalid Letterboxd catalog ID: ${catalogId}`);
       return [];
     }
-
-    // Find catalog config to determine if it's a watchlist
-    const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
     const isWatchlist = catalogConfig?.metadata?.isWatchlist || false;
 
     logger.info(`Fetching Letterboxd ${isWatchlist ? 'watchlist' : 'list'}: ${identifier}, Page: ${page}`);

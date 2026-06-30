@@ -534,13 +534,6 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
       }
 
       const { identifier, isWatchlist } = await extractResponse.json();
-      const catalogId = `letterboxd.${identifier}`;
-
-      if (catalogExists(catalogId)) {
-        toast.info("This Letterboxd list is already in your catalogs");
-        onClose();
-        return;
-      }
 
       // Fetch list metadata from StremThru
       const listResponse = await fetch('/api/letterboxd/list', {
@@ -566,6 +559,7 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
         url: parsedUrl.url,
         cacheTTL: catalogTTL,
         displayTypeOverrides: config.displayTypeOverrides,
+        existingCatalogs: config.catalogs,
       });
 
       setConfig(prev => ({

@@ -94,17 +94,6 @@ export function LetterboxdIntegration({ isOpen, onClose }: LetterboxdIntegration
       const itemCount = listData.data?.items?.length || 0;
 
       // Step 3: Create catalog
-      const catalogId = `letterboxd.${identifier}`;
-
-      // Check if catalog already exists
-      if (config.catalogs.some(c => c.id === catalogId)) {
-        toast.error("List already added", {
-          description: "This Letterboxd list is already in your catalogs"
-        });
-        setIsProcessing(false);
-        return;
-      }
-
       const newCatalog = createLetterboxdCatalog({
         identifier,
         title: listTitle,
@@ -113,6 +102,7 @@ export function LetterboxdIntegration({ isOpen, onClose }: LetterboxdIntegration
         url: listUrl,
         cacheTTL: defaultCacheTTL,
         displayTypeOverrides: config.displayTypeOverrides,
+        existingCatalogs: config.catalogs,
       });
 
       setConfig(prev => ({
