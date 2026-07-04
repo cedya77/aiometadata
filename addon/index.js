@@ -3039,6 +3039,78 @@ addon.get("/api/publicmetadb/picks", async (req, res) => {
   }
 });
 
+// POST /api/managers/credentials - Persist manager sync credentials into the user's stored config
+addon.post("/api/managers/credentials", async (req, res) => {
+  try {
+    const { userUUID, password, managerId, instanceUrl, apiKey } = req.body || {};
+    if (!userUUID || !password || !managerId || !instanceUrl || !apiKey) {
+      return res.status(400).json({ error: "userUUID, password, managerId, instanceUrl and apiKey are required" });
+    }
+    const existingConfig = await database.verifyUserAndGetConfig(userUUID, password);
+    if (!existingConfig) {
+      return res.status(401).json({ error: "Invalid UUID or password" });
+    }
+    existingConfig.managers = {
+      ...(existingConfig.managers || {}),
+      [managerId]: { instanceUrl, apiKey }
+    };
+    const passwordHash = await database.hashPassword(password);
+    await database.saveUserConfig(userUUID, passwordHash, existingConfig);
+    res.json({ success: true });
+  } catch (error) {
+    consola.error(`[Managers] Failed to save credentials: ${error.message}`);
+    res.status(500).json({ error: "Failed to save manager credentials" });
+  }
+});
+
+// POST /api/aiomanager/reinstall - Proxy "Sync to AIOManager" to the user's instance (Hydra API)
+addon.post("/api/aiomanager/reinstall", async (req, res) => {
+  try {
+    const { instanceUrl, apiKey, addonUrl } = req.body || {};
+    if (!instanceUrl || !apiKey || !addonUrl) {
+      return res.status(400).json({ error: "instanceUrl, apiKey and addonUrl are required" });
+    }
+    let parsedInstance;
+    try {
+      parsedInstance = new URL(instanceUrl);
+    } catch {
+      return res.status(400).json({ error: "instanceUrl must be a valid URL" });
+    }
+    if (parsedInstance.protocol !== 'http:' && parsedInstance.protocol !== 'https:') {
+      return res.status(400).json({ error: "instanceUrl must be a http(s) URL" });
+    }
+    // Only relay reinstalls for manifests served by this instance
+    const hostName = (process.env.HOST_NAME || '').replace(/\/+$/, '');
+    if (hostName) {
+      let expectedHost = null;
+      let addonHost = null;
+      try {
+        expectedHost = new URL(hostName.includes('://') ? hostName : `https://${hostName}`).host.toLowerCase();
+        addonHost = new URL(String(addonUrl)).host.toLowerCase();
+      } catch {}
+      if (!expectedHost || !addonHost || addonHost !== expectedHost) {
+        return res.status(400).json({ error: "addonUrl must be a manifest URL from this addon" });
+      }
+    }
+    const { httpPost } = require('./utils/httpClient');
+    const target = `${instanceUrl.replace(/\/+$/, '')}/hydra/reinstall`;
+    const response = await httpPost(target, { addonUrl }, {
+      headers: { 'X-API-Key': apiKey },
+      timeout: 15000
+    });
+    res.json(response.data ?? { success: true });
+  } catch (error) {
+    const upstreamStatus = error.response?.status;
+    let upstreamData = error.response?.data;
+    if (typeof upstreamData === 'string') {
+      try { upstreamData = JSON.parse(upstreamData); } catch { upstreamData = null; }
+    }
+    consola.error(`[AIOManager Proxy] Hydra reinstall failed: ${error.message}`);
+    const status = upstreamStatus >= 400 && upstreamStatus < 600 ? upstreamStatus : 502;
+    res.status(status).json({ error: upstreamData?.error || error.message || "Hydra reinstall failed" });
+  }
+});
+
 addon.get("/api/publicmetadb/picks/:pickId/items", async (req, res) => {
   try {
     const { apikey, page } = req.query;

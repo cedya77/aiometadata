@@ -10,6 +10,7 @@ import { AlertCircle, AlertTriangle, CheckCircle, Copy, Loader2, Save, Key, User
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { TagChip } from "@/components/TagChip";
+import { ManagerSync } from "@/components/ManagerSync";
 import { cn } from "@/lib/utils";
 
 interface ConfigurationManagerProps {
@@ -814,6 +815,10 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
               <Button onClick={() => { markManifestInstalled(); setShowReinstallWarning(false); setInstallUrl(taggedInstallUrl); setIsInstallOpen(true); }}>
                 <Download className="h-4 w-4 mr-2" /> Install
               </Button>
+              <ManagerSync
+                manifestUrl={taggedInstallUrl}
+                onSynced={() => { markManifestInstalled(); setShowReinstallWarning(false); }}
+              />
             </div>
           </CardContent>
         </Card>

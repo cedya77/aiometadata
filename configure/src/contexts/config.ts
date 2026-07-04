@@ -165,6 +165,11 @@ export interface AppConfig {
     publicmetadb?: string;
     customDescriptionBlurb?: string;
   };
+  /** Addon manager integrations (AIOManager, etc.) for syncing the addon into the user's manager, keyed by manager id */
+  managers?: Record<string, {
+    instanceUrl?: string;
+    apiKey?: string;
+  }>;
   /** Poster rating provider: 'rpdb' for RatingPosterDB, 'top' for Top Poster API, or 'custom' for custom URL patterns */
   posterRatingProvider?: 'rpdb' | 'top' | 'custom';
   usePosterProxy: boolean;
