@@ -2046,7 +2046,8 @@ async function getTraktCatalog(
       }
 
       const privacy = catalogConfig?.metadata?.privacy || 'public';
-      const listAccessToken = privacy === 'public'
+      // Unauthenticated Trakt requests hit their CDN cache (s-maxage=3600)
+      const listAccessToken = (privacy === 'public' && !config.apiKeys?.traktTokenId)
         ? ''
         : (await ensureTraktAccessToken() || '');
 
