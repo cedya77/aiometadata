@@ -279,12 +279,29 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
         throw new Error('Trakt Client ID not configured. Please set TRAKT_CLIENT_ID in your server environment.');
       }
       
-      const cacheKey = `trakt_user_lists_${traktUsername.trim()}`;
+      const trimmedUsername = traktUsername.trim();
+      // Fetching the connected account's own lists goes through the authenticated
+      // proxy so private/friends/link lists are included, not just public ones.
+      const isOwnAccount = isConnected && !!config.apiKeys?.traktTokenId &&
+        !!username && trimmedUsername.toLowerCase() === username.toLowerCase();
+
+      const cacheKey = `trakt_user_lists_${isOwnAccount ? 'auth_' : ''}${trimmedUsername}`;
       const userLists = await apiCache.cachedFetch(
         cacheKey,
         async () => {
-          const response = await fetch(`/api/trakt/users/${traktUsername.trim()}/lists`);
-          
+          const response = isOwnAccount
+            ? await fetch(`/api/trakt/proxy`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  tokenId: config.apiKeys?.traktTokenId,
+                  endpoint: '/users/me/lists',
+                })
+              })
+            : await fetch(`/api/trakt/users/${trimmedUsername}/lists`);
+
           if (!response.ok) {
             if (response.status === 404) {
               throw new Error(`User "${traktUsername}" not found or has no public lists`);
@@ -303,7 +320,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
       if (userLists.length === 0) {
         toast.info("No lists found", {
-          description: `User "${traktUsername}" has no public lists available`
+          description: `User "${traktUsername}" has no ${isOwnAccount ? '' : 'public '}lists available`
         });
         setTraktUserLists([]);
       } else {
@@ -1361,7 +1378,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                 </div>
                 <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Import Lists from Trakt User</CardTitle>
-                  <CardDescription>Load all public lists from any Trakt user</CardDescription>
+                  <CardDescription>Load all public lists from any Trakt user. Enter your own username to also include your private lists.</CardDescription>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">

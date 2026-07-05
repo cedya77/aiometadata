@@ -1151,6 +1151,11 @@ function resolveTraktProxyAuthMode(pathname) {
     return 'required';
   }
 
+  // /users/me/* always needs OAuth (Trakt resolves "me" from the token).
+  if (pathnameLower === '/users/me' || pathnameLower.startsWith('/users/me/')) {
+    return 'required';
+  }
+
   // OAuth optional routes we currently proxy.
   if (pathnameLower.startsWith('/users/') && isOptionalUsersRoute(pathnameLower)) {
     return 'optional';
