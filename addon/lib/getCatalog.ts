@@ -892,6 +892,9 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       // Non-unified watchlist (separate movies/series catalogs)
       listId = 'watchlist';
       unified = false;
+    } else if (id.startsWith('mdblist.recommended.')) {
+      listId = `recommended/${id.split('.')[2]}`;
+      unified = true;
     } else {
       // Regular MDBList catalog
       listId = id.split(".")[1];

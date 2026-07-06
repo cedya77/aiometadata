@@ -193,7 +193,9 @@ async function createMDBListCatalog(userCatalog: any, mdblistKey: string, prefet
       logger.info(`MDBList using ${genres.length} static fallback genres for selection: ${genreSelection}`);
     }
 
-    const genreOptions = userCatalog.showInHome ? genres : ['None', ...genres];
+    const genreOptions = userCatalog.id.startsWith('mdblist.recommended.')
+      ? ['None']
+      : (userCatalog.showInHome ? genres : ['None', ...genres]);
 
     const catalogType = userCatalog.displayType || userCatalog.type;
 

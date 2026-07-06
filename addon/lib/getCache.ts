@@ -1230,7 +1230,7 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
   };
 
-  const isMDBListWatchlistOrUpNext = idOnly.startsWith('mdblist.watchlist') || idOnly === 'mdblist.upnext';
+  const isMDBListWatchlistOrUpNext = idOnly.startsWith('mdblist.watchlist') || idOnly === 'mdblist.upnext' || idOnly.startsWith('mdblist.recommended.');
   if (isMDBListCatalog && isMDBListWatchlistOrUpNext) {
     catalogConfig.apiKeys = {
       mdblist: config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''

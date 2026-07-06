@@ -311,7 +311,7 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
   // Use configurable page size (supports CATALOG_LIST_ITEMS_SIZE env var)
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
 
-  const keyScope = listId === 'watchlist'
+  const keyScope = (listId === 'watchlist' || listId.startsWith('recommended/'))
     ? crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16)
     : 'shared';
 
