@@ -577,7 +577,6 @@ function shouldTrackAniList(config) {
     return false;
   }
 
-  logger.debug('[AniList Tracker] Enabled - AniList account connected and tracking enabled');
   return true;
 }
 
