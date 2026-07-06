@@ -80,6 +80,9 @@ const pendingTraktOAuthStates = new Map();
 const TRAKT_OAUTH_STATE_TTL_MS = parseInt(process.env.TRAKT_OAUTH_STATE_TTL_MS || String(10 * 60 * 1000), 10);
 const usedAnilistCodes = new Set();
 
+const usedMalCodes = new Set();
+const malPkceStates = new Map();
+
 function extractCanonicalIdFromDynamicUpNextId(type, stremioId) {
   if (type !== 'series' || typeof stremioId !== 'string') {
     return null;
@@ -2917,6 +2920,258 @@ addon.get("/anilist/status/:userUUID", async (req, res) => {
   }
 });
 
+const malTracker = require('./lib/malTracker');
+
+addon.use(['/mal/auth', '/mal/callback'], noStoreOAuthHeaders);
+
+// GET /mal/auth - Initiate MyAnimeList OAuth flow
+addon.get("/mal/auth", async (req, res) => {
+  try {
+    const clientId = process.env.MAL_CLIENT_ID;
+    const clientSecret = process.env.MAL_CLIENT_SECRET;
+    const redirectUri = normalizeRedirectUri(process.env.MAL_REDIRECT_URI || `${process.env.HOST_NAME}/mal/callback`);
+
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: "MyAnimeList OAuth not configured. Please set MAL_CLIENT_ID and MAL_CLIENT_SECRET environment variables." });
+    }
+
+    consola.info(`[MAL OAuth] Starting auth flow with redirect_uri=${redirectUri}`);
+
+    const state = crypto.randomBytes(32).toString('hex');
+    const codeVerifier = malTracker.generateCodeVerifier();
+    malPkceStates.set(state, codeVerifier);
+    setTimeout(() => malPkceStates.delete(state), 10 * 60 * 1000);
+
+    const authUrl = malTracker.getAuthorizationUrl(redirectUri, state, codeVerifier);
+    res.redirect(authUrl);
+  } catch (error) {
+    consola.error("[MAL OAuth] Authorization error:", error);
+    res.status(500).json({ error: "Failed to initiate MyAnimeList authorization" });
+  }
+});
+
+// GET /mal/callback - Handle MyAnimeList OAuth callback
+addon.get("/mal/callback", async (req, res) => {
+  const oauthErrorPage = (title, message) => `
+    <!DOCTYPE html>
+    <html>
+    <head><title>MyAnimeList OAuth Error</title></head>
+    <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+      <h1>${title}</h1>
+      <p>${message}</p>
+    </body>
+    </html>
+  `;
+
+  try {
+    const { code, state } = req.query;
+
+    if (!code) {
+      return res.status(400).send(oauthErrorPage('❌ OAuth Error', 'Invalid callback parameters - missing authorization code.'));
+    }
+
+    const codeVerifier = state ? malPkceStates.get(state) : undefined;
+    if (!codeVerifier) {
+      return res.status(400).send(oauthErrorPage('❌ OAuth Error', 'Invalid or expired state parameter. Please try authenticating again.'));
+    }
+    malPkceStates.delete(state);
+
+    if (usedMalCodes.has(code)) {
+      return res.status(400).send(oauthErrorPage('⚠️ Code Already Used', 'This authorization code has already been exchanged. Please try authenticating again.'));
+    }
+    usedMalCodes.add(code);
+    setTimeout(() => usedMalCodes.delete(code), 120000);
+
+    const clientId = process.env.MAL_CLIENT_ID;
+    const clientSecret = process.env.MAL_CLIENT_SECRET;
+    const redirectUri = normalizeRedirectUri(process.env.MAL_REDIRECT_URI || `${process.env.HOST_NAME}/mal/callback`);
+
+    if (!clientId || !clientSecret) {
+      return res.status(500).send(oauthErrorPage('⚠️ Configuration Error', 'MyAnimeList OAuth is not configured on this server.'));
+    }
+
+    const tokens = await malTracker.exchangeCodeForTokens(code, redirectUri, codeVerifier);
+    if (!tokens) {
+      return res.status(500).send(oauthErrorPage('❌ Token Exchange Failed', 'Failed to exchange authorization code for tokens.'));
+    }
+
+    const user = await malTracker.getAuthenticatedUser(tokens.access_token);
+    if (!user) {
+      return res.status(500).send(oauthErrorPage('❌ User Info Error', 'Failed to retrieve MyAnimeList user information.'));
+    }
+
+    const existingTokens = await database.getOAuthTokensByProvider('mal');
+    const existingToken = existingTokens.find(t => t.user_id.toLowerCase() === user.username.toLowerCase());
+    let tokenId;
+    let saved;
+    if (existingToken) {
+      tokenId = existingToken.id;
+      consola.info(`[MAL OAuth] Updating existing token - tokenId: ${tokenId}, user: ${user.username}`);
+      saved = await database.updateOAuthToken(
+        tokenId,
+        tokens.access_token,
+        tokens.refresh_token || '',
+        tokens.expires_at
+      );
+    } else {
+      tokenId = crypto.randomUUID();
+      consola.info(`[MAL OAuth] Creating new token - tokenId: ${tokenId}, user: ${user.username}`);
+      saved = await database.saveOAuthToken(
+        tokenId,
+        'mal',
+        user.username,
+        tokens.access_token,
+        tokens.refresh_token || '',
+        tokens.expires_at,
+        ''
+      );
+    }
+
+    if (!saved) {
+      return res.status(500).send(oauthErrorPage('❌ Database Error', 'Failed to save OAuth token to database.'));
+    }
+
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>MyAnimeList OAuth Success</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+          .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+          h1 { color: #2e51a2; }
+          .token-box { background: #f9f9f9; border: 2px dashed #2e51a2; padding: 20px; margin: 20px 0; border-radius: 5px; word-break: break-all; }
+          .token { font-family: monospace; font-size: 14px; color: #333; }
+          button { background: #2e51a2; color: white; border: none; padding: 12px 30px; font-size: 16px; cursor: pointer; border-radius: 5px; margin: 10px; }
+          button:hover { background: #24417f; }
+          .instructions { text-align: left; margin-top: 30px; padding: 20px; background: #f0f4ff; border-left: 4px solid #2e51a2; }
+          .instructions ol { padding-left: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>✅ MyAnimeList OAuth Successful</h1>
+          <p>Your MyAnimeList account <strong>${user.username}</strong> has been authorized!</p>
+
+          <div class="token-box">
+            <div class="token" id="tokenId">${tokenId}</div>
+          </div>
+
+          <button onclick="copyToken()">📋 Copy Token ID</button>
+
+          <div class="instructions">
+            <h3>📝 Next Steps:</h3>
+            <ol>
+              <li>Copy the Token ID above</li>
+              <li>Go to your addon configuration page</li>
+              <li>Find the <strong>MyAnimeList Integration</strong> section</li>
+              <li>Paste this Token ID in the <strong>MAL Token ID</strong> field</li>
+              <li>Save your configuration</li>
+            </ol>
+            <p><strong>⚠️ Important:</strong> Keep this Token ID private. Anyone with this ID can access your MyAnimeList account through this addon.</p>
+          </div>
+        </div>
+
+        <script>
+          function copyToken() {
+            const tokenText = document.getElementById('tokenId').textContent;
+            navigator.clipboard.writeText(tokenText).then(() => {
+              alert('✅ Token ID copied to clipboard!');
+            }).catch(err => {
+              alert('❌ Failed to copy. Please select and copy manually.');
+            });
+          }
+        </script>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    consola.error("[MAL OAuth] Callback error:", error);
+    res.status(500).send(oauthErrorPage('❌ OAuth Error', `An error occurred during authentication: ${error.message}`));
+  }
+});
+
+// POST /mal/disconnect - Disconnect MyAnimeList account
+addon.post("/mal/disconnect", async (req, res) => {
+  try {
+    const { userUUID } = req.body;
+
+    if (!userUUID) {
+      return res.status(400).json({ error: "userUUID is required" });
+    }
+
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) {
+      return res.status(404).json({ error: "User config not found" });
+    }
+
+    if (config.apiKeys?.malTokenId) {
+      await database.deleteOAuthToken(config.apiKeys.malTokenId);
+      delete config.apiKeys.malTokenId;
+    }
+
+    delete config.malWatchTracking;
+
+    const user = await database.getUser(userUUID);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    await database.saveUserConfig(userUUID, user.password_hash, config);
+    configCache.del(userUUID);
+
+    res.json({ success: true });
+  } catch (error) {
+    consola.error("[MAL] Disconnect error:", error);
+    res.status(500).json({ error: "Failed to disconnect MyAnimeList" });
+  }
+});
+
+// GET /mal/status/:userUUID - Get MyAnimeList connection status
+addon.get("/mal/status/:userUUID", async (req, res) => {
+  try {
+    const { userUUID } = req.params;
+
+    if (!userUUID) {
+      return res.status(400).json({ error: "userUUID is required" });
+    }
+
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) {
+      return res.status(404).json({ error: "User config not found" });
+    }
+
+    const malTokenId = config.apiKeys?.malTokenId;
+    if (!malTokenId) {
+      return res.json({
+        connected: false,
+        username: null
+      });
+    }
+
+    const token = await database.getOAuthToken(malTokenId);
+    if (!token) {
+      return res.json({
+        connected: false,
+        username: null
+      });
+    }
+
+    const hasRefreshToken = !!token.refresh_token;
+    const isExpired = token.expires_at && Date.now() >= token.expires_at && !hasRefreshToken;
+    res.json({
+      connected: !isExpired,
+      expired: isExpired,
+      expiresAt: token.expires_at || null,
+      username: token.user_id,
+      trackingEnabled: config.malWatchTracking !== false
+    });
+  } catch (error) {
+    consola.error("[MAL] Status check error:", error);
+    res.status(500).json({ error: "Failed to check MyAnimeList status" });
+  }
+});
+
 // POST /api/anilist/lists - Get user's AniList anime lists
 addon.post("/api/anilist/lists", async (req, res) => {
   try {
@@ -3588,6 +3843,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
   }
+  // MAL user lists use: sort
+  else if (cleanId.startsWith('mal.userlist.')) {
+    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
+  }
   // Up next catalogs need poster preference and filter settings in cache key
   if (cleanId === 'trakt.upnext' || cleanId === 'mdblist.upnext') {
       extraArgs.useShowPoster = typeof catalogConfig?.metadata?.useShowPosterForUpNext === 'boolean'
@@ -3642,6 +3901,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
   let catalogPageSize;
   if (cleanId.startsWith('flixpatrol.')) {
     catalogPageSize = 10;
+  } else if (cleanId.startsWith('mal.userlist.') || cleanId === 'mal.suggestions') {
+    catalogPageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
   } else if (cleanId.includes('mal.')) {
     catalogPageSize = parseInt(process.env.MAL_PAGE_SIZE || '25');
   } else if (cleanId === 'anilist.trending' || cleanId.startsWith('anilist.discover')) {
@@ -4259,6 +4520,8 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id{/:extra}.json", async function
     const mdblistEnabled = !!config?.mdblistWatchTracking;
     const hasAnilistToken = config?.apiKeys?.anilistTokenId;
     const anilistEnabled = !!config?.anilistWatchTracking;
+    const hasMalToken = config?.apiKeys?.malTokenId;
+    const malEnabled = !!config?.malWatchTracking;
     const hasSimklToken = config?.apiKeys?.simklTokenId;
     const simklEnabled = !!config?.simklWatchTracking;
     const hasTraktToken = config?.apiKeys?.traktTokenId;
@@ -4268,11 +4531,12 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id{/:extra}.json", async function
 
     const shouldTrackMdblist = hasMdblistKey && mdblistEnabled;
     const shouldTrackAnilist = hasAnilistToken && anilistEnabled;
+    const shouldTrackMal = hasMalToken && malEnabled;
     const shouldTrackSimkl = hasSimklToken && simklEnabled;
     const shouldTrackTrakt = hasTraktToken && traktEnabled;
     const shouldTrackPublicMetaDB = hasPublicMetaDBKey && publicMetaDBEnabled;
 
-    if (shouldTrackMdblist || shouldTrackAnilist || shouldTrackSimkl || shouldTrackTrakt || shouldTrackPublicMetaDB) {      // Import and call subtitle handler
+    if (shouldTrackMdblist || shouldTrackAnilist || shouldTrackMal || shouldTrackSimkl || shouldTrackTrakt || shouldTrackPublicMetaDB) {      // Import and call subtitle handler
       const { handleSubtitleRequest } = require('./lib/subtitleHandler');
       
       // Call handler synchronously (no await)
@@ -4282,7 +4546,7 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id{/:extra}.json", async function
       return respond(req, res, result, { cacheMaxAge: 0 });
     } else {
       // Watch tracking disabled or no credentials - return empty subtitles
-      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - mdblist: ${shouldTrackMdblist}, anilist: ${shouldTrackAnilist}, simkl: ${shouldTrackSimkl}, trakt: ${shouldTrackTrakt}, publicmetadb: ${shouldTrackPublicMetaDB}`);
+      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - mdblist: ${shouldTrackMdblist}, anilist: ${shouldTrackAnilist}, mal: ${shouldTrackMal}, simkl: ${shouldTrackSimkl}, trakt: ${shouldTrackTrakt}, publicmetadb: ${shouldTrackPublicMetaDB}`);
       return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
   } catch (error) {

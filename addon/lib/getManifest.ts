@@ -543,6 +543,27 @@ function createAniListCatalog(userCatalog: any, showPrefix: boolean = false, pre
   }
 }
 
+function createMalUserListCatalog(userCatalog: any, showPrefix: boolean = false, prefixName: string = "AIOMetadata"): any {
+  try {
+    const catalogType = userCatalog.displayType || userCatalog.type || 'series';
+
+    return {
+      id: userCatalog.id,
+      type: catalogType,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20,
+      extra: [
+        { name: "genre", options: ['None'], isRequired: userCatalog.showInHome ? false : true },
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome
+    };
+  } catch (error: any) {
+    logger.error(`Error creating MAL user list catalog ${userCatalog.id}:`, error.message);
+    return null;
+  }
+}
+
 async function createMalCatalog(userCatalog: any, genres: string[], showPrefix: boolean = false, prefixName: string = "AIOMetadata"): Promise<any> {
   try {
     logger.debug(`Creating MAL discover catalog: ${userCatalog.id} (${userCatalog.type})`);
@@ -965,6 +986,9 @@ async function getManifest(config: any, opts: { tag?: string } = {}): Promise<an
       if (userCatalog.id.startsWith('mal.discover.')) {
         return true;
       }
+      if (userCatalog.id.startsWith('mal.userlist.') || userCatalog.id === 'mal.suggestions') {
+        return true;
+      }
       if (userCatalog.id.startsWith('stremthru.')) {
         return true;
       }
@@ -1054,6 +1078,10 @@ async function getManifest(config: any, opts: { tag?: string } = {}): Promise<an
         const result = await createMalCatalog(userCatalog, animeGenreNames, showPrefix, prefixName);
         logger.debug(`Mal discover catalog result:`, result ? 'success' : 'failed');
         return result;
+      }
+      if (userCatalog.id.startsWith('mal.userlist.') || userCatalog.id === 'mal.suggestions') {
+        logger.debug(`Processing MAL user list catalog: ${userCatalog.id}`);
+        return createMalUserListCatalog(userCatalog, showPrefix, prefixName);
       }
       if (userCatalog.id.startsWith('letterboxd.')) {
           logger.debug(`Processing Letterboxd catalog: ${userCatalog.id}`);
@@ -1445,6 +1473,7 @@ async function getManifest(config: any, opts: { tag?: string } = {}): Promise<an
   const watchTrackingEnabled =
     (config.apiKeys?.mdblist && config.mdblistWatchTracking) ||
     (config.apiKeys?.anilistTokenId && config.anilistWatchTracking) ||
+    (config.apiKeys?.malTokenId && config.malWatchTracking) ||
     (config.apiKeys?.simklTokenId && config.simklWatchTracking) ||
     (config.apiKeys?.traktTokenId && config.traktWatchTracking) ||
     (config.apiKeys?.publicmetadb && config.publicmetadbWatchTracking);

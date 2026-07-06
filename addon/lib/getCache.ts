@@ -1259,6 +1259,12 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
     };
   }
 
+  if (idOnly.startsWith('mal.userlist.') || idOnly === 'mal.suggestions') {
+    catalogConfig.apiKeys = {
+      malTokenId: config.apiKeys?.malTokenId || ''
+    };
+  }
+
   if (isMALCatalog || contentScope === 'anime') {
     catalogConfig.mal = {
       useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
@@ -1301,6 +1307,14 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
     if (catCfg?.cacheTTL) {
       cacheTTL = catCfg.cacheTTL;
       cacheLogger.debug(`[Catalog] Using custom cache TTL for Trakt catalog ${idOnly}: ${cacheTTL}s`);
+    }
+  }
+
+  if (idOnly.startsWith('mal.userlist.') || idOnly === 'mal.suggestions') {
+    const catCfg = config.catalogs?.find((c: any) => c.id === idOnly);
+    if (catCfg?.cacheTTL) {
+      cacheTTL = catCfg.cacheTTL;
+      cacheLogger.debug(`[Catalog] Using custom cache TTL for MAL user list catalog ${idOnly}: ${cacheTTL}s`);
     }
   }
 

@@ -341,6 +341,7 @@ export function DashboardSystem({ data }: DashboardSystemProps) {
             <div className="space-y-0.5">
               <FeaturePercent label="Trakt" value={features.traktWatchTracking || 0} />
               <FeaturePercent label="AniList" value={features.anilistWatchTracking || 0} />
+              <FeaturePercent label="MAL" value={features.malWatchTracking || 0} />
               <FeaturePercent label="Simkl" value={features.simklWatchTracking || 0} />
               <FeaturePercent label="MDBList" value={features.mdblistWatchTracking || 0} />
             </div>

@@ -149,6 +149,7 @@ const initialConfig: AppConfig = {
   usePosterProxy: true,
   mdblistWatchTracking: false,
   anilistWatchTracking: false,
+  malWatchTracking: false,
   simklWatchTracking: false,
   traktWatchTracking: false,
   publicmetadbWatchTracking: false,
@@ -229,6 +230,7 @@ function getManifestFingerprint(config: AppConfig): string {
   const subtitlesResource = !!(
     (config.apiKeys?.mdblist && config.mdblistWatchTracking) ||
     (config.apiKeys?.anilistTokenId && config.anilistWatchTracking) ||
+    (config.apiKeys?.malTokenId && config.malWatchTracking) ||
     (config.apiKeys?.simklTokenId && config.simklWatchTracking) ||
     (config.apiKeys?.traktTokenId && config.traktWatchTracking) ||
     (config.apiKeys?.publicmetadb && config.publicmetadbWatchTracking)

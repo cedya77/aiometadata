@@ -8,6 +8,7 @@ import { TMDBIntegration } from './TMDBIntegration';
 import { DiscoverBuilderDialog } from './DiscoverBuilderDialog';
 import { LetterboxdIntegration } from './LetterboxdIntegration';
 import { AniListIntegration } from './AniListIntegration';
+import { MALIntegration } from './MALIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
 import { StreamingTop10Integration } from './StreamingTop10Integration';
 import { AIOMetadataIntegration } from './AIOMetadataIntegration';
@@ -3328,6 +3329,7 @@ function CatalogsSettingsContent({
   const [customizeTemplate, setCustomizeTemplate] = useState<CustomizeTemplate | null>(null);
   const [isLetterboxdOpen, setIsLetterboxdOpen] = useState(false);
   const [isAniListOpen, setIsAniListOpen] = useState(false);
+  const [isMalOpen, setIsMalOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
   const [isStreamingTop10Open, setIsStreamingTop10Open] = useState(false);
   const [isAIOMetadataOpen, setIsAIOMetadataOpen] = useState(false);
@@ -4535,10 +4537,25 @@ function CatalogsSettingsContent({
 
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={handleOpenStreamingDialog} 
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setIsMalOpen(true)}
+                      aria-label="MyAnimeList Integration"
+                      className="h-9 w-9"
+                    >
+                      <img src="/mal_icon.png" alt="MyAnimeList" className="h-5 w-5 object-contain rounded" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>MyAnimeList Integration</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleOpenStreamingDialog}
                       aria-label="Streaming Providers"
                       className="h-9 w-9"
                     >
@@ -4621,6 +4638,10 @@ function CatalogsSettingsContent({
           <AniListIntegration
             isOpen={isAniListOpen}
             onClose={() => setIsAniListOpen(false)}
+          />
+          <MALIntegration
+            isOpen={isMalOpen}
+            onClose={() => setIsMalOpen(false)}
           />
           <StreamingTop10Integration
             isOpen={isStreamingTop10Open}

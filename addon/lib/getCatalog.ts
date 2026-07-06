@@ -82,6 +82,11 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       const malDiscoverResults = await getMalDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       return { metas: malDiscoverResults };
     }
+    else if (id.startsWith('mal.userlist.') || id === 'mal.suggestions') {
+      logger.debug(`Routing to MAL user list catalog handler for id: ${id}`);
+      const malUserListResults = await getMalUserListCatalog(type, id, page, language, config, userUUID);
+      return { metas: malUserListResults };
+    }
     else if (id.startsWith('mal.')) {
       logger.debug(`Routing to MAL catalog handler for id: ${id}`);
       const malResults = await getMalCatalog(type, id, genre, page, language, config);
@@ -2332,6 +2337,85 @@ async function resolveAniListItemsToMetas(
   let validMetas = metas.filter(meta => meta !== null);
   
   return validMetas;
+}
+
+/**
+ * Get a MAL user anime list catalog (mal.userlist.<status>)
+ * Fetches the connected user's list from the MAL API using their OAuth token.
+ */
+async function getMalUserListCatalog(
+  type: string,
+  catalogId: string,
+  page: number,
+  language: string,
+  config: UserConfig,
+  userUUID: string
+): Promise<any[]> {
+  try {
+    const malTracker = require('./malTracker');
+    const isSuggestions = catalogId === 'mal.suggestions';
+    const status = catalogId.replace('mal.userlist.', '');
+    if (!isSuggestions && !malTracker.MAL_USERLIST_STATUSES.includes(status)) {
+      logger.error(`[MAL] Unknown user list status for catalog: ${catalogId}`);
+      return [];
+    }
+
+    const accessToken = await malTracker.getValidAccessToken(userUUID);
+    if (!accessToken) {
+      logger.warn(`[MAL] No valid access token for user ${userUUID} (catalog: ${catalogId})`);
+      return [];
+    }
+
+    const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+    const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+    const offset = (page - 1) * pageSize;
+    const sort = catalogConfig?.sort || 'list_updated_at';
+    const nsfw = !config.sfw;
+
+    const response = isSuggestions
+      ? await malTracker.fetchMalSuggestions(accessToken, offset, pageSize, nsfw)
+      : await malTracker.fetchMalUserList(status, accessToken, offset, pageSize, sort, nsfw);
+    logger.debug(`[MAL] Fetched ${response.items.length} items from "${isSuggestions ? 'suggestions' : status}", hasMore: ${response.hasMore}`);
+
+    if (response.items.length === 0) {
+      return [];
+    }
+
+    const newItems = response.items.map((item: any) => {
+      const node = item.node || {};
+      return {
+        mal_id: node.id,
+        type: node.media_type === 'movie' ? 'movie' : 'series',
+        title: node.title,
+        title_english: node.alternative_titles?.en || null,
+        year: node.start_date ? parseInt(String(node.start_date).slice(0, 4), 10) : null,
+        duration: node.average_episode_duration ? `${Math.round(node.average_episode_duration / 60)} min per ep` : null,
+        episodes: node.num_episodes || null,
+        synopsis: node.synopsis || null,
+        images: {
+          jpg: {
+            large_image_url: node.main_picture?.large || node.main_picture?.medium || null
+          }
+        },
+        aired: {
+          from: node.start_date || null,
+          to: node.end_date || null
+        },
+        status: node.end_date ? 'Finished Airing' : 'Currently Airing'
+      };
+    });
+
+    const metas = await Utils.parseAnimeCatalogMetaBatch(newItems, config, language);
+    const validMetas = metas.filter((meta: any) => meta !== null);
+
+    logger.success(`[MAL] Processed ${validMetas.length} items for catalog ${catalogId} (page ${page})`);
+    return validMetas;
+  } catch (err: any) {
+    const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
+    logger.error(`[MAL] Error processing user list catalog ${catalogId}: ${err.message}`);
+    logger.error(`Error at: ${errorLine}`);
+    return [];
+  }
 }
 
 /**

@@ -227,6 +227,38 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     default: '',
     envOnly: true,
   },
+  {
+    key: 'MAL_CLIENT_ID',
+    envVar: 'MAL_CLIENT_ID',
+    label: 'MyAnimeList Client ID',
+    description: 'MyAnimeList OAuth application client ID. Changing invalidates all user tokens.',
+    category: 'OAuth',
+    type: 'string',
+    default: '',
+    sensitive: true,
+    envOnly: true,
+  },
+  {
+    key: 'MAL_CLIENT_SECRET',
+    envVar: 'MAL_CLIENT_SECRET',
+    label: 'MyAnimeList Client Secret',
+    description: 'MyAnimeList OAuth application client secret',
+    category: 'OAuth',
+    type: 'string',
+    default: '',
+    sensitive: true,
+    envOnly: true,
+  },
+  {
+    key: 'MAL_REDIRECT_URI',
+    envVar: 'MAL_REDIRECT_URI',
+    label: 'MyAnimeList Redirect URI',
+    description: 'MyAnimeList OAuth redirect URI override',
+    category: 'OAuth',
+    type: 'string',
+    default: '',
+    envOnly: true,
+  },
 
   // --- Cache ---
   {

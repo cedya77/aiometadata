@@ -3,6 +3,7 @@ const idMapper: any = require('./id-mapper');
 const { resolveTmdbEpisodeFromKitsu }: any = require('./id-mapper');
 const { resolveTvdbEpisodeFromAnidbEpisode, resolveAnidbEpisodeFromTvdbEpisode }: any = require('./anime-list-mapper');
 const anilistTracker: any = require('./anilistTracker');
+const malTracker: any = require('./malTracker');
 const simklUtils: any = require('../utils/simklUtils');
 
 const logger: any = consola.withTag('SubtitleHandler');
@@ -228,6 +229,15 @@ function handleSubtitleRequest(type: string, id: string, config: any, userUUID: 
     if (shouldTrackAniList(config)) {
       anilistTracker.trackAnimeProgress(parsedId, config, userUUID).catch((error: any) => {
         logger.error(`[Watch Tracking] AniList tracking failed for ${id}: ${error.message}`, {
+          stack: error.stack,
+          parsedId: parsedId
+        });
+      });
+    }
+
+    if (malTracker.shouldTrackMal(config)) {
+      malTracker.trackAnimeProgress(parsedId, config, userUUID).catch((error: any) => {
+        logger.error(`[Watch Tracking] MAL tracking failed for ${id}: ${error.message}`, {
           stack: error.stack,
           parsedId: parsedId
         });

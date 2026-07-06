@@ -298,6 +298,10 @@ export function GeneralSettings() {
   const handleAniListTrackingChange = (checked: boolean) => {
     setConfig(prevConfig => ({ ...prevConfig, anilistWatchTracking: checked }));
   };
+
+  const handleMalTrackingChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, malWatchTracking: checked }));
+  };
   
   const handleSimklTrackingChange = (checked: boolean) => {
     setConfig(prevConfig => ({ ...prevConfig, simklWatchTracking: checked }));
@@ -484,6 +488,14 @@ export function GeneralSettings() {
                 <p className="text-sm text-muted-foreground">Sync anime watch progress to AniList.</p>
               </div>
               <Switch id="anilist-watch-tracking" checked={!!config.anilistWatchTracking} onCheckedChange={handleAniListTrackingChange} />
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="mal-watch-tracking" className="font-medium">MyAnimeList Tracking</Label>
+                <p className="text-sm text-muted-foreground">Sync anime watch progress to MyAnimeList.</p>
+              </div>
+              <Switch id="mal-watch-tracking" checked={!!config.malWatchTracking} onCheckedChange={handleMalTrackingChange} />
             </div>
 
             <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">

@@ -162,6 +162,7 @@ export interface AppConfig {
     traktTokenId?: string;
     simklTokenId?: string;
     anilistTokenId?: string;
+    malTokenId?: string;
     publicmetadb?: string;
     customDescriptionBlurb?: string;
   };
@@ -175,6 +176,7 @@ export interface AppConfig {
   usePosterProxy: boolean;
   mdblistWatchTracking: boolean;
   anilistWatchTracking: boolean;
+  malWatchTracking?: boolean;
   simklWatchTracking: boolean;
   traktWatchTracking: boolean;
   publicmetadbWatchTracking: boolean;

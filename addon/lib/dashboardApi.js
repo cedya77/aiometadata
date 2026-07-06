@@ -800,6 +800,7 @@ class DashboardAPI {
         skipRecap: 0,
         mdblistWatchTracking: 0,
         anilistWatchTracking: 0,
+        malWatchTracking: 0,
         simklWatchTracking: 0,
         traktWatchTracking: 0,
         ratingPostersRpdb: 0,
@@ -871,6 +872,7 @@ class DashboardAPI {
       if (config.mal?.skipRecap) stats.features.skipRecap++;
       if (config.mdblistWatchTracking) stats.features.mdblistWatchTracking++;
       if (config.anilistWatchTracking) stats.features.anilistWatchTracking++;
+      if (config.malWatchTracking) stats.features.malWatchTracking++;
       if (config.simklWatchTracking) stats.features.simklWatchTracking++;
       if (config.traktWatchTracking) stats.features.traktWatchTracking++;
       config.posterRatingProvider === 'top' ? stats.features.ratingPostersTop++ : stats.features.ratingPostersRpdb++;
@@ -1001,6 +1003,7 @@ class DashboardAPI {
         skipRecap: Math.round((stats.features.skipRecap / total) * 100),
         mdblistWatchTracking: Math.round((stats.features.mdblistWatchTracking / total) * 100),
         anilistWatchTracking: Math.round((stats.features.anilistWatchTracking / total) * 100),
+        malWatchTracking: Math.round((stats.features.malWatchTracking / total) * 100),
         simklWatchTracking: Math.round((stats.features.simklWatchTracking / total) * 100),
         traktWatchTracking: Math.round((stats.features.traktWatchTracking / total) * 100),
         ratingPostersRpdb: Math.round((stats.features.ratingPostersRpdb / total) * 100),
@@ -1047,6 +1050,7 @@ class DashboardAPI {
         skipRecap: 0,
         mdblistWatchTracking: 0,
         anilistWatchTracking: 0,
+        malWatchTracking: 0,
         simklWatchTracking: 0,
         traktWatchTracking: 0,
         ratingPostersRpdb: 0,
