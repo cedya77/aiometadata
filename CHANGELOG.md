@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.8.0](https://github.com/cedya77/aiometadata/compare/v2.7.1...v2.8.0) (2026-07-06)
+
+
+### Features
+
+* add configurable minimum votes for tmdb.year catalog ([07db94a](https://github.com/cedya77/aiometadata/commit/07db94a55bc9ca48efbd81ac6d102045896ff7c7))
+* add MDBList recommendation catalogs ([d71a5d5](https://github.com/cedya77/aiometadata/commit/d71a5d5ef4f20ec1e1387958dca510cbc800b195))
+* add MyAnimeList integration with watch tracking and list catalogs ([91e97e5](https://github.com/cedya77/aiometadata/commit/91e97e58c044a59c642c621a5d2cd38355ba230e))
+* add opt-in built-in poster cache with dashboard log integration ([153cd15](https://github.com/cedya77/aiometadata/commit/153cd152e103e4f80f158a3eeaa53645096cfb62))
+* add with_networks filter to tmdb discover series builder ([2e80228](https://github.com/cedya77/aiometadata/commit/2e80228fc50776d80cdd174e6eb92af17797606e))
+* compact Error Management UI in ops tab ([d93ab67](https://github.com/cedya77/aiometadata/commit/d93ab67b8afa9b1c6b83df69c12fd294d97b989a))
+* enforce env-registry coverage and backfill dashboard settings ([3935e2e](https://github.com/cedya77/aiometadata/commit/3935e2e51f3854ac3abb0776afb6db9643725113))
+* import private lists from connected Trakt account by entering own username ([61b2b08](https://github.com/cedya77/aiometadata/commit/61b2b08e584e8f55ee8897117c0e0d4ffe885542))
+* only advertise subtitles resource when watch tracking is enabled ([23a10cb](https://github.com/cedya77/aiometadata/commit/23a10cb0d106f42c18cae2273d70a99f1fa60288))
+* support read replica and DDL gating for geo-redundancy ([cebae83](https://github.com/cedya77/aiometadata/commit/cebae83a44f8be2b575a19dd5aad44dde5f06009))
+
+
+### Bug Fixes
+
+* add available flag to TMDB series episode videos ([4f9590e](https://github.com/cedya77/aiometadata/commit/4f9590ed2711e1ac94dda0b7e20d0618e474b5a5))
+* apply tmdb discover series runtime filter locally with episode fallbacks ([f9b173c](https://github.com/cedya77/aiometadata/commit/f9b173cf57b9a2d9b8bf1582249c56fb0ed7a3f1))
+* authenticate public Trakt list requests to bypass stale CDN cache ([0eca2b5](https://github.com/cedya77/aiometadata/commit/0eca2b5370b07d3f4fc004453d0302c15f8bd31d))
+* include custom display types in Select by Type filter ([b64f3ab](https://github.com/cedya77/aiometadata/commit/b64f3ab04631108e45eafc8cc12ef7b2395376a7))
+* insert duplicated discover catalog below the original ([e1569a5](https://github.com/cedya77/aiometadata/commit/e1569a532c056732ea162bb5ee068acc2ba43bb7))
+* preserve tags and merge membership when editing discover catalog filters ([e1569a5](https://github.com/cedya77/aiometadata/commit/e1569a532c056732ea162bb5ee068acc2ba43bb7))
+* prevent cross-provider poisoning of anime meta components ([24f42a3](https://github.com/cedya77/aiometadata/commit/24f42a3a463e3a22b8b8b0d24d975f4214d6e9e5))
+* re-read warmup config from env so dashboard-applied settings take effect ([2c3ce26](https://github.com/cedya77/aiometadata/commit/2c3ce26bfa64a6d2da058595d50e11da511ba909))
+* revert AniList auth to authorization code grant ([122a76a](https://github.com/cedya77/aiometadata/commit/122a76aee768295e4c4c7e43e6e37638c0c078c7))
+* use AniList implicit grant to bypass Cloudflare-blocked token endpoint ([fb4db5a](https://github.com/cedya77/aiometadata/commit/fb4db5a0aa631ab081bc0859ee74ab286d1cfe0b))
+
 ## [2.7.1](https://github.com/cedya77/aiometadata/compare/v2.7.0...v2.7.1) (2026-06-17)
 
 
