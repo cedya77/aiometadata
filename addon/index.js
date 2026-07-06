@@ -3358,6 +3358,10 @@ addon.post("/api/aiomanager/reinstall", async (req, res) => {
       headers: { 'X-API-Key': apiKey },
       timeout: 15000
     });
+    if (typeof response.data === 'string') {
+      consola.error(`[AIOManager Proxy] Non-JSON response from ${target} (status ${response.status}); reinstall was likely not processed`);
+      return res.status(502).json({ error: "AIOManager returned an unexpected non-JSON response; the sync was likely not processed" });
+    }
     res.json(response.data ?? { success: true });
   } catch (error) {
     const upstreamStatus = error.response?.status;
