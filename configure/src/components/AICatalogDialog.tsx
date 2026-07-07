@@ -15,10 +15,11 @@ interface AICatalogDialogProps {
   onCatalogsCreated?: (catalogs: CatalogConfig[]) => void;
 }
 
-type AICatalogGenerationMode = 'auto' | 'tmdb' | 'anilist' | 'mal' | 'tvdb' | 'simkl';
+type AICatalogGenerationMode = 'auto' | 'ranked' | 'tmdb' | 'anilist' | 'mal' | 'tvdb' | 'simkl';
 
 const GENERATION_MODE_OPTIONS: Array<{ value: AICatalogGenerationMode; label: string }> = [
   { value: 'auto', label: 'Auto' },
+  { value: 'ranked', label: 'Ranked List' },
   { value: 'tmdb', label: 'TMDB' },
   { value: 'anilist', label: 'AniList' },
   { value: 'mal', label: 'MAL' },
@@ -36,6 +37,13 @@ const EXAMPLE_PROMPTS: Record<AICatalogGenerationMode, string[]> = {
     "Give me horror, comedy, and thriller catalogs",
     "Top rated anime movies on MAL",
     "A24 movies sorted by popularity",
+  ],
+  ranked: [
+    "Best sci-fi shows of all time",
+    "Greatest cyberpunk movies ever made",
+    "Most influential space opera series",
+    "Best slow-burn mystery shows",
+    "Top animated movies for adults",
   ],
   tmdb: [
     "Top Pixar movies sorted by rating",
@@ -90,7 +98,7 @@ export function AICatalogDialog({ isOpen, onClose, embedded, onCatalogsCreated }
 
   useEffect(() => {
     if (isOpen) {
-      setExampleIndex(Math.floor(Math.random() * EXAMPLE_PROMPTS.tmdb.length));
+      setExampleIndex(Math.floor(Math.random() * EXAMPLE_PROMPTS.auto.length));
       setState('idle');
       setError(null);
       setCreatedCatalogs([]);

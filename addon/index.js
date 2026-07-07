@@ -1919,6 +1919,111 @@ addon.get("/api/tvdb/discover/search/:entity", async (req, res) => {
 
 // AI-powered catalog creation
 const aiCatalogRateLimit = new Map();
+
+function normalizeAICatalogTitle(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function getAICatalogYear(value) {
+  const match = String(value || '').match(/\d{4}/);
+  return match ? Number(match[0]) : null;
+}
+
+function scoreTmdbTitleMatch(result, requestedTitle, requestedYear, catalogType) {
+  const resultTitle = catalogType === 'movie'
+    ? (result.title || result.original_title || '')
+    : (result.name || result.original_name || '');
+  const resultDate = catalogType === 'movie' ? result.release_date : result.first_air_date;
+  const resultYear = getAICatalogYear(resultDate);
+  const normalizedRequested = normalizeAICatalogTitle(requestedTitle);
+  const normalizedResult = normalizeAICatalogTitle(resultTitle);
+  let score = 0;
+
+  if (normalizedRequested && normalizedRequested === normalizedResult) score += 100;
+  else if (normalizedRequested && normalizedResult.includes(normalizedRequested)) score += 45;
+  else if (normalizedRequested && normalizedRequested.includes(normalizedResult)) score += 25;
+
+  if (requestedYear && resultYear) {
+    const delta = Math.abs(requestedYear - resultYear);
+    if (delta === 0) score += 40;
+    else if (delta === 1) score += 15;
+    else if (delta > 3) score -= 30;
+  }
+
+  score += Math.min(Number(result.vote_count || 0), 5000) / 500;
+  score += Math.min(Number(result.popularity || 0), 500) / 100;
+  return score;
+}
+
+async function resolveAIRankedItem(item, catalogType, config) {
+  if (item.stremioId) return item;
+  if (item.imdbId && /^tt\d+$/i.test(item.imdbId)) {
+    return { ...item, stremioId: item.imdbId };
+  }
+  if (item.tmdbId) {
+    return { ...item, stremioId: `tmdb:${item.tmdbId}` };
+  }
+
+  const moviedb = require('./lib/getTmdb');
+  const requestedYear = getAICatalogYear(item.year);
+  const searchParams = {
+    query: item.title,
+    language: config.language || DEFAULT_LANGUAGE,
+    include_adult: config.includeAdult || false,
+    page: 1,
+  };
+  const response = catalogType === 'movie'
+    ? await moviedb.searchMovie(searchParams, config)
+    : await moviedb.searchTv(searchParams, config);
+  const results = Array.isArray(response?.results) ? response.results : [];
+  if (!results.length) return null;
+
+  const best = results
+    .map(result => ({
+      result,
+      score: scoreTmdbTitleMatch(result, item.title, requestedYear, catalogType),
+    }))
+    .sort((a, b) => b.score - a.score)[0]?.result;
+
+  if (!best?.id) return null;
+  return {
+    ...item,
+    tmdbId: best.id,
+    stremioId: `tmdb:${best.id}`,
+  };
+}
+
+async function resolveAIRankedCatalog(catalog, config) {
+  const catalogType = catalog.catalogType === 'movie' ? 'movie' : 'series';
+  const resolvedItems = [];
+  const seen = new Set();
+
+  for (const item of catalog.items || []) {
+    try {
+      const resolved = await resolveAIRankedItem(item, catalogType, config);
+      if (!resolved?.stremioId || seen.has(resolved.stremioId)) continue;
+      seen.add(resolved.stremioId);
+      resolvedItems.push(resolved);
+    } catch (error) {
+      aiCatalogLogger.warn(`Failed to resolve ranked item "${item.title}": ${error.message}`);
+    }
+  }
+
+  return {
+    ...catalog,
+    source: 'ai-list',
+    catalogType,
+    mediaType: catalogType === 'movie' ? 'movie' : 'tv',
+    params: {},
+    items: resolvedItems,
+  };
+}
+
 addon.post("/api/ai/create-catalog", async (req, res) => {
   try {
     const { userUUID, password, query, provider, generationMode, geminiKey: clientGeminiKey, openrouterKey: clientOpenrouterKey } = req.body;
@@ -1929,9 +2034,9 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
     if (!query || typeof query !== 'string' || !query.trim()) {
       return res.status(400).json({ error: 'Query is required' });
     }
-    const allowedGenerationModes = new Set(['auto', 'tmdb', 'anilist', 'mal', 'tvdb', 'simkl']);
+    const allowedGenerationModes = new Set(['auto', 'tmdb', 'anilist', 'mal', 'tvdb', 'simkl', 'ranked']);
     if (!allowedGenerationModes.has(generationMode)) {
-      return res.status(400).json({ error: 'generationMode must be one of: auto, tmdb, anilist, mal, tvdb' });
+      return res.status(400).json({ error: 'generationMode must be one of: auto, tmdb, anilist, mal, tvdb, simkl, ranked' });
     }
 
     // Rate limit: 5 requests per minute per user
@@ -1957,7 +2062,7 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
       return res.status(400).json({ error: 'No AI API key configured. Add an OpenRouter or Gemini key in your settings.' });
     }
 
-    const { buildCatalogCreationPrompt, parseCatalogAIResponse, normalizeCatalog, validateCatalogParams, resolveEntities, buildCatalogConfigs } = require('./utils/ai-catalog-service');
+    const { buildCatalogCreationPrompt, parseCatalogAIResponse, normalizeCatalog, validateCatalogParams, resolveEntities, buildCatalogConfigs, buildRankedCatalogConfigs } = require('./utils/ai-catalog-service');
     const hasTmdb = !!(config.apiKeys?.tmdb || process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY);
     const hasTvdb = !!(config.apiKeys?.tvdb || process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY);
     const hasSimkl = !!process.env.SIMKL_CLIENT_ID;
@@ -1966,6 +2071,9 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
     }
     if (generationMode === 'tvdb' && !hasTvdb) {
       return res.status(400).json({ error: 'TVDB catalog generation requires a TVDB API key.' });
+    }
+    if (generationMode === 'ranked' && !hasTmdb) {
+      return res.status(400).json({ error: 'Ranked AI catalog generation requires a TMDB API key for title resolution.' });
     }
     const { systemPrompt, userPrompt } = buildCatalogCreationPrompt(query.trim(), {
       mode: generationMode,
@@ -2008,6 +2116,33 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
     const parsed = parseCatalogAIResponse(rawText);
     if (!parsed || !parsed.catalogs.length) {
       return res.status(422).json({ error: 'AI returned an invalid response. Try again or rephrase your request.' });
+    }
+    if (generationMode === 'ranked') {
+      const rankedCatalogs = parsed.catalogs.filter(catalog => catalog.source === 'ai-list');
+      if (rankedCatalogs.length === 0) {
+        return res.status(422).json({ error: 'AI did not return a ranked list catalog. Try again or switch to Auto.' });
+      }
+
+      const resolvedRankedCatalogs = [];
+      const rankedWarnings = [...(parsed.warnings || [])];
+      for (const catalog of rankedCatalogs) {
+        const resolvedCatalog = await resolveAIRankedCatalog(catalog, config);
+        if (resolvedCatalog.items.length === 0) {
+          rankedWarnings.push(`Skipped "${catalog.name || 'unnamed'}": no titles could be resolved`);
+          continue;
+        }
+        resolvedRankedCatalogs.push(resolvedCatalog);
+        if ((catalog.items || []).length !== resolvedCatalog.items.length) {
+          rankedWarnings.push(`Some titles in "${catalog.name}" could not be resolved and were omitted`);
+        }
+      }
+
+      if (resolvedRankedCatalogs.length === 0) {
+        return res.status(422).json({ error: 'No ranked titles could be resolved. Try adding years or using more specific titles.', warnings: rankedWarnings });
+      }
+
+      const catalogConfigs = buildRankedCatalogConfigs(resolvedRankedCatalogs, query.trim());
+      return res.json({ catalogs: catalogConfigs, warnings: rankedWarnings.length ? rankedWarnings.slice(0, 3) : undefined });
     }
     if (generationMode !== 'auto') {
       const filteredCatalogs = parsed.catalogs.filter(catalog => catalog.source === generationMode);
@@ -3842,6 +3977,24 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
       extraArgs.discoverSig = discoverSignature;
     }
   }
+  // AI ranked lists use stored item IDs; hash them so edits invalidate catalog cache.
+  else if (cleanId.startsWith('ai.list.')) {
+    const aiListItems = catalogConfig?.metadata?.aiList?.items || [];
+    if (Array.isArray(aiListItems)) {
+      const aiListSignature = crypto
+        .createHash('md5')
+        .update(stableStringify(aiListItems.map(item => ({
+          stremioId: item?.stremioId,
+          tmdbId: item?.tmdbId,
+          imdbId: item?.imdbId,
+          title: item?.title,
+          year: item?.year,
+        }))))
+        .digest('hex')
+        .substring(0, 8);
+      extraArgs.aiListSig = aiListSignature;
+    }
+  }
   // AniList uses: sort, sortDirection
   else if (cleanId.startsWith('anilist.')) {
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
@@ -3911,12 +4064,12 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
     catalogPageSize = parseInt(process.env.MAL_PAGE_SIZE || '25');
   } else if (cleanId === 'anilist.trending' || cleanId.startsWith('anilist.discover')) {
     catalogPageSize = 50;
-  } else if (cleanId.startsWith('simkl.watchlist.') || cleanId.startsWith('simkl.dvd.') || cleanId.startsWith('simkl.trending.') || cleanId.startsWith('simkl.recipe.') || cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('anilist.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) {
+  } else if (cleanId.startsWith('simkl.watchlist.') || cleanId.startsWith('simkl.dvd.') || cleanId.startsWith('simkl.trending.') || cleanId.startsWith('simkl.recipe.') || cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('ai.list.') || cleanId.startsWith('trakt.') || cleanId.startsWith('anilist.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) {
     catalogPageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
   } else {
     catalogPageSize = 20;
   }
-  const isOffsetBased = cleanId.startsWith('stremthru.') || cleanId.startsWith('custom.');
+  const isOffsetBased = cleanId.startsWith('stremthru.') || cleanId.startsWith('custom.') || cleanId.startsWith('ai.list.');
   const catalogPage = extraArgs.skip 
     ? (isOffsetBased 
         ? Math.floor(parseInt(extraArgs.skip) / catalogPageSize) + 1 
@@ -4042,7 +4195,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
         const searchResult = await getSearch(cleanId, searchType, language, searchExtraArgs, config);
         return { metas: searchResult.metas || [] };
       }, searchEngine, cacheOptions);
-      } else if (cleanId.startsWith('custom.') || cleanId.startsWith('stremthru.')) {
+      } else if (cleanId.startsWith('custom.') || cleanId.startsWith('stremthru.') || cleanId.startsWith('ai.list.')) {
       const { genre: genreName } = extraArgs;
       const skipValue = extraArgs.skip !== undefined ? parseInt(extraArgs.skip) : 0;
       const result = await getCatalog(actualType, language, catalogPage, cleanId, genreName, config, userUUID, false, skipValue);

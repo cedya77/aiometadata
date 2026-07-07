@@ -67,6 +67,11 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       const stremthruResults = await getExternalAddonCatalog(type, id, genre, page, language, config, userUUID, includeVideos, skip);
       return { metas: stremthruResults };
     }
+    else if (id.startsWith('ai.list.')) {
+      logger.debug(`Routing to AI ranked list catalog handler for id: ${id}`);
+      const aiListResults = await getAIRankedListCatalog(type, id, genre, page, language, config, userUUID, includeVideos, skip);
+      return { metas: aiListResults };
+    }
     else if (id.startsWith('custom.')) {
       logger.debug(`Routing to External Addon catalog handler for id: ${id}`);
       const customResults = await getExternalAddonCatalog(type, id, genre, page, language, config, userUUID, includeVideos, skip);
@@ -145,6 +150,70 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     logger.error(`Error at: ${errorLine}`);
     logger.error(`Full stack trace:`, error.stack);
     return { metas: [] };
+  }
+}
+
+async function getAIRankedListCatalog(
+  type: string,
+  catalogId: string,
+  genreName: string | null,
+  page: number,
+  language: string,
+  config: any,
+  userUUID: string,
+  includeVideos: boolean = false,
+  skip?: number
+): Promise<any[]> {
+  try {
+    const catalogConfig = config.catalogs?.find((c: any) => c.id === catalogId && (c.type === type || c.displayType === type))
+      || config.catalogs?.find((c: any) => c.id === catalogId);
+    const aiListItems = Array.isArray(catalogConfig?.metadata?.aiList?.items)
+      ? catalogConfig.metadata.aiList.items
+      : [];
+
+    if (aiListItems.length === 0) {
+      logger.warn(`[AI List] No stored ranked items found for ${catalogId}`);
+      return [];
+    }
+
+    const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+    const offset = typeof skip === 'number' && Number.isFinite(skip)
+      ? Math.max(0, skip)
+      : Math.max(0, (Math.max(1, page) - 1) * pageSize);
+    const pageItems = aiListItems.slice(offset, offset + pageSize);
+
+    const metas = await mapWithLimit(pageItems, async (item: any) => {
+      const stremioId = item?.stremioId
+        || item?.imdbId
+        || (item?.tmdbId ? `tmdb:${item.tmdbId}` : null);
+      if (!stremioId) return null;
+
+      const result = await cacheWrapMetaSmart(
+        userUUID,
+        stremioId,
+        async () => getMeta(type, language, stremioId, config, userUUID, includeVideos),
+        undefined,
+        {
+          enableErrorCaching: true,
+          maxRetries: 2,
+          config,
+        },
+        type as any,
+        includeVideos
+      );
+      return result?.meta || null;
+    });
+
+    let validMetas = metas.filter(Boolean);
+    if (genreName && genreName !== 'None') {
+      validMetas = filterMetasByGenre(validMetas, genreName);
+    }
+
+    logger.success(`[AI List] Processed ${validMetas.length}/${pageItems.length} items for ${catalogId}`);
+    return validMetas;
+  } catch (error: any) {
+    logger.error(`[AI List] Error processing catalog ${catalogId}: ${error.message}`);
+    return [];
   }
 }
 

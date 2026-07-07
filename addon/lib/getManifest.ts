@@ -680,6 +680,28 @@ function createMergedCatalog(
   }
 }
 
+function createAIRankedListCatalog(userCatalog: any, showPrefix: boolean = false, prefixName: string = "AIOMetadata"): any {
+  try {
+    logger.debug(`Creating AI ranked list catalog: ${userCatalog.id} (${userCatalog.type})`);
+    const catalogType = userCatalog.displayType || userCatalog.type;
+    const catalogName = userCatalog.name || 'AI Ranked List';
+
+    return {
+      id: userCatalog.id,
+      type: catalogType,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${catalogName}`,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20,
+      extra: [
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome
+    };
+  } catch (error: any) {
+    logger.error(`Error creating AI ranked list catalog ${userCatalog.id}:`, error.message);
+    return null;
+  }
+}
+
 async function createSimklCatalog(userCatalog: any, showPrefix: boolean = false, prefixName: string = "AIOMetadata"): Promise<any> {
   try {
     logger.debug(`Creating Simkl catalog: ${userCatalog.id} (${userCatalog.type})`);
@@ -991,6 +1013,9 @@ async function getManifest(config: any, opts: { tag?: string } = {}): Promise<an
       if (userCatalog.id.startsWith('mal.userlist.') || userCatalog.id === 'mal.suggestions') {
         return true;
       }
+      if (userCatalog.id.startsWith('ai.list.')) {
+        return true;
+      }
       if (userCatalog.id.startsWith('stremthru.')) {
         return true;
       }
@@ -1084,6 +1109,10 @@ async function getManifest(config: any, opts: { tag?: string } = {}): Promise<an
       if (userCatalog.id.startsWith('mal.userlist.') || userCatalog.id === 'mal.suggestions') {
         logger.debug(`Processing MAL user list catalog: ${userCatalog.id}`);
         return createMalUserListCatalog(userCatalog, showPrefix, prefixName);
+      }
+      if (userCatalog.id.startsWith('ai.list.')) {
+        logger.debug(`Processing AI ranked list catalog: ${userCatalog.id}`);
+        return createAIRankedListCatalog(userCatalog, showPrefix, prefixName);
       }
       if (userCatalog.id.startsWith('letterboxd.')) {
           logger.debug(`Processing Letterboxd catalog: ${userCatalog.id}`);

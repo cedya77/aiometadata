@@ -194,12 +194,49 @@ Dynamic (put in "resolve", backend resolves names to IDs):
 `;
 
 
-type PromptSource = Exclude<AICatalogGenerationMode, 'auto'> | 'simkl';
+type PromptSource = Exclude<AICatalogGenerationMode, 'auto' | 'ranked'> | 'simkl';
 
 interface BuildCatalogCreationPromptOptions {
   mode: AICatalogGenerationMode;
   keys: AvailableKeys;
 }
+
+const RANKED_LIST_PROMPT = `You create AI-ranked Stremio catalog lists from natural language.
+
+=== HARD RULES ===
+- Return valid JSON only: { "catalogs": [...] }.
+- Return exactly 1 catalog unless the user explicitly asks for multiple. Max 5.
+- Each catalog source MUST be "ai-list".
+- catalogType MUST be "movie" or "series".
+- mediaType MUST be "movie" for movies or "tv" for series.
+- items MUST be an ordered array of 10 to 30 titles.
+- Preserve your ranking order. The app will resolve titles and keep this order.
+- Include year when you know it. Use first-air year for series.
+- Do not include explanations outside JSON.
+- Current date: {{CURRENT_DATE}}.
+
+=== OUTPUT CONTRACT ===
+{
+  "catalogs": [
+    {
+      "source": "ai-list",
+      "catalogType": "series",
+      "name": "Best Sci-Fi Shows",
+      "mediaType": "tv",
+      "params": {},
+      "items": [
+        { "title": "The Expanse", "year": 2015, "reason": "Hard sci-fi worldbuilding" },
+        { "title": "Battlestar Galactica", "year": 2004, "reason": "Influential serialized space opera" }
+      ]
+    }
+  ]
+}
+
+Rules:
+- For subjective prompts like best, greatest, essential, underrated, cult, or all-time, rank titles directly instead of creating filters.
+- Avoid popularity-only lists. Balance influence, writing, originality, cultural impact, and rewatchability.
+- If the user asks for sci-fi, avoid pure fantasy unless the title is strongly accepted as sci-fi/fantasy crossover.
+- Return ONLY valid JSON. No markdown, explanations, or code fences.`;
 
 const SOURCE_SECTIONS: Record<PromptSource, string> = {
   tmdb: SOURCE_TMDB,
@@ -293,6 +330,9 @@ function getPromptSources(mode: AICatalogGenerationMode, keys: AvailableKeys): P
       ...(keys.tvdb ? ['tvdb' as const] : []),
     ];
   }
+  if (mode === 'ranked') {
+    return [];
+  }
 
   if (mode === 'tmdb' && !keys.tmdb) {
     throw new Error('TMDB catalog generation requires a TMDB API key');
@@ -314,6 +354,13 @@ function getDecisionPolicy(mode: AICatalogGenerationMode, sources: PromptSource[
 }
 
 export function buildCatalogCreationPrompt(query: string, options: BuildCatalogCreationPromptOptions): { systemPrompt: string; userPrompt: string } {
+  if (options.mode === 'ranked') {
+    return {
+      systemPrompt: RANKED_LIST_PROMPT.replace('{{CURRENT_DATE}}', formatPromptDate()),
+      userPrompt: query,
+    };
+  }
+
   const sources = getPromptSources(options.mode, options.keys);
   const sections = [PROMPT_HEADER];
   sections.push(getDecisionPolicy(options.mode, sources));
@@ -360,6 +407,22 @@ function coerceAICatalogOutput(rawCatalog: any): AICatalogOutput | null {
     ? rawCatalog.mediaType.trim().toLowerCase()
     : catalogType;
   const resolve = coerceResolve(rawCatalog.resolve);
+  const items: AICatalogOutput['items'] | undefined = Array.isArray(rawCatalog.items)
+    ? rawCatalog.items
+        .map((item: any): NonNullable<AICatalogOutput['items']>[number] | null => {
+          if (!isPlainObject(item)) return null;
+          const title = typeof item.title === 'string' ? item.title.trim() : '';
+          if (!title) return null;
+          const out: NonNullable<AICatalogOutput['items']>[number] = { title };
+          if (typeof item.year === 'string' || typeof item.year === 'number') out.year = item.year;
+          if (typeof item.imdbId === 'string' && item.imdbId.trim()) out.imdbId = item.imdbId.trim();
+          if (typeof item.tmdbId === 'string' || typeof item.tmdbId === 'number') out.tmdbId = item.tmdbId;
+          if (typeof item.stremioId === 'string' && item.stremioId.trim()) out.stremioId = item.stremioId.trim();
+          if (typeof item.reason === 'string' && item.reason.trim()) out.reason = item.reason.trim();
+          return out;
+        })
+        .filter((item): item is NonNullable<AICatalogOutput['items']>[number] => item !== null)
+    : undefined;
 
   return {
     source,
@@ -368,6 +431,7 @@ function coerceAICatalogOutput(rawCatalog: any): AICatalogOutput | null {
     mediaType,
     params: { ...(rawCatalog.params || {}) },
     ...(resolve ? { resolve } : {}),
+    ...(items?.length ? { items } : {}),
   };
 }
 

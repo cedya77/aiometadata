@@ -1,5 +1,5 @@
-const VALID_SOURCES = ['tmdb', 'tvdb', 'anilist', 'mal', 'simkl'] as const;
-export const AI_CATALOG_GENERATION_MODES = ['auto', 'tmdb', 'anilist', 'mal', 'tvdb', 'simkl'] as const;
+const VALID_SOURCES = ['tmdb', 'tvdb', 'anilist', 'mal', 'simkl', 'ai-list'] as const;
+export const AI_CATALOG_GENERATION_MODES = ['auto', 'tmdb', 'anilist', 'mal', 'tvdb', 'simkl', 'ranked'] as const;
 
 type AICatalogGenerationMode = typeof AI_CATALOG_GENERATION_MODES[number];
 
@@ -10,6 +10,14 @@ interface AICatalogOutput {
   mediaType: string;
   params: Record<string, any>;
   resolve?: Record<string, string[]>;
+  items?: Array<{
+    title: string;
+    year?: number | string;
+    imdbId?: string;
+    tmdbId?: number | string;
+    stremioId?: string;
+    reason?: string;
+  }>;
 }
 
 interface ParsedAIResponse {
@@ -54,7 +62,20 @@ interface CatalogConfig {
   cacheTTL?: number;
   metadata: {
     description: string;
-    discover: {
+    aiList?: {
+      version: number;
+      source: string;
+      originalQuery: string;
+      items: Array<{
+        title: string;
+        year?: number | string;
+        stremioId: string;
+        tmdbId?: number | string;
+        imdbId?: string;
+        reason?: string;
+      }>;
+    };
+    discover?: {
       version: number;
       source: string;
       mediaType: string;

@@ -15,7 +15,7 @@ export interface CatalogConfig {
   type: 'movie' | 'series' | 'anime' | 'all';
   enabled: boolean;
   tags?: string[];
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd' | 'simkl' | 'flixpatrol' | 'publicmetadb' | 'merged'; // Keep source as the display label
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd' | 'simkl' | 'flixpatrol' | 'publicmetadb' | 'merged' | 'ai-list'; // Keep source as the display label
   sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs
   showInHome: boolean;
   genres?: string[]; // Optional genres array for catalogs that support genre filtering
@@ -80,6 +80,19 @@ export interface CatalogConfig {
       formState?: Record<string, any>;
     };
     discoverParams?: Record<string, string | number | boolean>;
+    aiList?: {
+      version?: number;
+      source?: string;
+      originalQuery?: string;
+      items?: Array<{
+        title: string;
+        year?: string | number;
+        stremioId: string;
+        tmdbId?: string | number;
+        imdbId?: string;
+        reason?: string;
+      }>;
+    };
     // Simkl-specific metadata
     interval?: 'today' | 'week' | 'month';
     pageSize?: number; // Results per page for Simkl trending and watchlist catalogs (default: 50)

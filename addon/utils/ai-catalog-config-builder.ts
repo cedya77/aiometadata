@@ -216,3 +216,44 @@ export function buildCatalogConfigs(catalogs: AICatalogOutput[], resolvedParams:
     };
   });
 }
+
+export function buildRankedCatalogConfigs(catalogs: AICatalogOutput[], originalQuery: string): CatalogConfig[] {
+  return catalogs.map((catalog, i) => {
+    const sanitizedName = catalog.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40) || 'ai_ranked';
+    const uniqueSuffix = (Date.now() + i).toString(36);
+    const catalogType = catalog.catalogType === 'movie' ? 'movie' : 'series';
+    const catalogId = `ai.list.${catalogType}.${sanitizedName}.${uniqueSuffix}`;
+    const items = (catalog.items || [])
+      .filter(item => item?.stremioId)
+      .map(item => ({
+        title: item.title,
+        ...(item.year !== undefined ? { year: item.year } : {}),
+        stremioId: item.stremioId as string,
+        ...(item.tmdbId !== undefined ? { tmdbId: item.tmdbId } : {}),
+        ...(item.imdbId ? { imdbId: item.imdbId } : {}),
+        ...(item.reason ? { reason: item.reason } : {}),
+      }));
+
+    return {
+      id: catalogId,
+      type: catalogType,
+      name: catalog.name,
+      enabled: true,
+      showInHome: true,
+      source: 'ai-list',
+      metadata: {
+        description: `AI Ranked List (${catalogType})`,
+        aiList: {
+          version: 1,
+          source: 'tmdb',
+          originalQuery,
+          items,
+        },
+      },
+    } as CatalogConfig;
+  });
+}

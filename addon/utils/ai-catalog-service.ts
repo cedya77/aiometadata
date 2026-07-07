@@ -1,4 +1,4 @@
-import { buildCatalogConfigs } from './ai-catalog-config-builder';
+import { buildCatalogConfigs, buildRankedCatalogConfigs } from './ai-catalog-config-builder';
 import { resolveEntities } from './ai-catalog-entity-resolver';
 import { buildCatalogCreationPrompt, parseCatalogAIResponse } from './ai-catalog-generation';
 import { normalizeCatalog, normalizeCatalogMediaTypes, stripUnknownParams, validateCatalogParams } from './ai-catalog-sanitizer';
@@ -12,6 +12,7 @@ export {
   validateCatalogParams,
   resolveEntities,
   buildCatalogConfigs,
+  buildRankedCatalogConfigs,
 };
 
 module.exports = {
@@ -23,4 +24,5 @@ module.exports = {
   validateCatalogParams,
   resolveEntities,
   buildCatalogConfigs,
+  buildRankedCatalogConfigs,
 };

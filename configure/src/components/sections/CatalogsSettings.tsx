@@ -344,10 +344,12 @@ const sourceBadgeStyles = {
   anilist: "bg-cyan-800/80 text-cyan-200 border-cyan-600/50 hover:bg-cyan-800",
   flixpatrol: "bg-emerald-800/80 text-emerald-200 border-emerald-600/50 hover:bg-emerald-800",
   merged: "bg-violet-800/80 text-violet-200 border-violet-600/50 hover:bg-violet-800",
+  'ai-list': "bg-slate-800/80 text-slate-200 border-slate-600/50 hover:bg-slate-800",
 };
 
 const sourceBadgeLabels: Record<string, string> = {
   flixpatrol: 'TOP 10',
+  'ai-list': 'AI LIST',
 };
 
 
