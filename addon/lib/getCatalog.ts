@@ -176,11 +176,19 @@ async function getAIRankedListCatalog(
       return [];
     }
 
+    const displayItems = aiListItems.filter((item: any) =>
+      item?.resolved !== false && (item?.stremioId || item?.imdbId || item?.tmdbId)
+    );
+    if (displayItems.length === 0) {
+      logger.warn(`[AI List] No resolved ranked items found for ${catalogId}`);
+      return [];
+    }
+
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
     const offset = typeof skip === 'number' && Number.isFinite(skip)
       ? Math.max(0, skip)
       : Math.max(0, (Math.max(1, page) - 1) * pageSize);
-    const pageItems = aiListItems.slice(offset, offset + pageSize);
+    const pageItems = displayItems.slice(offset, offset + pageSize);
 
     const metas = await mapWithLimit(pageItems, async (item: any) => {
       const stremioId = item?.stremioId
@@ -209,7 +217,7 @@ async function getAIRankedListCatalog(
       validMetas = filterMetasByGenre(validMetas, genreName);
     }
 
-    logger.success(`[AI List] Processed ${validMetas.length}/${pageItems.length} items for ${catalogId}`);
+    logger.success(`[AI List] Processed ${validMetas.length}/${pageItems.length} resolved items for ${catalogId} (${aiListItems.length - displayItems.length} unresolved stored)`);
     return validMetas;
   } catch (error: any) {
     logger.error(`[AI List] Error processing catalog ${catalogId}: ${error.message}`);

@@ -228,14 +228,16 @@ export function buildRankedCatalogConfigs(catalogs: AICatalogOutput[], originalQ
     const catalogType = catalog.catalogType === 'movie' ? 'movie' : 'series';
     const catalogId = `ai.list.${catalogType}.${sanitizedName}.${uniqueSuffix}`;
     const items = (catalog.items || [])
-      .filter(item => item?.stremioId)
       .map(item => ({
+        ...(item.rank !== undefined ? { rank: item.rank } : {}),
         title: item.title,
         ...(item.year !== undefined ? { year: item.year } : {}),
-        stremioId: item.stremioId as string,
+        ...(item.stremioId ? { stremioId: item.stremioId as string } : {}),
         ...(item.tmdbId !== undefined ? { tmdbId: item.tmdbId } : {}),
         ...(item.imdbId ? { imdbId: item.imdbId } : {}),
         ...(item.reason ? { reason: item.reason } : {}),
+        ...(item.resolved !== undefined ? { resolved: item.resolved } : {}),
+        ...(item.unresolvedReason ? { unresolvedReason: item.unresolvedReason } : {}),
       }));
 
     return {
@@ -248,7 +250,7 @@ export function buildRankedCatalogConfigs(catalogs: AICatalogOutput[], originalQ
       metadata: {
         description: `AI Ranked List (${catalogType})`,
         aiList: {
-          version: 1,
+          version: 2,
           source: 'tmdb',
           originalQuery,
           items,

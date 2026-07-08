@@ -11,12 +11,15 @@ interface AICatalogOutput {
   params: Record<string, any>;
   resolve?: Record<string, string[]>;
   items?: Array<{
+    rank?: number;
     title: string;
     year?: number | string;
     imdbId?: string;
     tmdbId?: number | string;
     stremioId?: string;
     reason?: string;
+    resolved?: boolean;
+    unresolvedReason?: string;
   }>;
 }
 
@@ -67,12 +70,15 @@ interface CatalogConfig {
       source: string;
       originalQuery: string;
       items: Array<{
+        rank?: number;
         title: string;
         year?: number | string;
-        stremioId: string;
+        stremioId?: string;
         tmdbId?: number | string;
         imdbId?: string;
         reason?: string;
+        resolved?: boolean;
+        unresolvedReason?: string;
       }>;
     };
     discover?: {

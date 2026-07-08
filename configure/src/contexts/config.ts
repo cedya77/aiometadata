@@ -85,12 +85,15 @@ export interface CatalogConfig {
       source?: string;
       originalQuery?: string;
       items?: Array<{
+        rank?: number;
         title: string;
         year?: string | number;
-        stremioId: string;
+        stremioId?: string;
         tmdbId?: string | number;
         imdbId?: string;
         reason?: string;
+        resolved?: boolean;
+        unresolvedReason?: string;
       }>;
     };
     // Simkl-specific metadata

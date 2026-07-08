@@ -2000,17 +2000,45 @@ async function resolveAIRankedItem(item, catalogType, config) {
 
 async function resolveAIRankedCatalog(catalog, config) {
   const catalogType = catalog.catalogType === 'movie' ? 'movie' : 'series';
-  const resolvedItems = [];
+  const items = [];
   const seen = new Set();
 
-  for (const item of catalog.items || []) {
+  for (const [index, item] of (catalog.items || []).entries()) {
+    const rank = index + 1;
     try {
       const resolved = await resolveAIRankedItem(item, catalogType, config);
-      if (!resolved?.stremioId || seen.has(resolved.stremioId)) continue;
+      if (!resolved?.stremioId) {
+        items.push({
+          ...item,
+          rank,
+          resolved: false,
+          unresolvedReason: 'No provider metadata match found',
+        });
+        continue;
+      }
+      if (seen.has(resolved.stremioId)) {
+        items.push({
+          ...resolved,
+          rank,
+          resolved: false,
+          unresolvedReason: `Duplicate resolved ID: ${resolved.stremioId}`,
+        });
+        continue;
+      }
       seen.add(resolved.stremioId);
-      resolvedItems.push(resolved);
+      items.push({
+        ...resolved,
+        rank,
+        resolved: true,
+      });
     } catch (error) {
       aiCatalogLogger.warn(`Failed to resolve ranked item "${item.title}": ${error.message}`);
+      items.push({
+        ...item,
+        rank,
+        resolved: false,
+        unresolvedReason: error.message || 'Resolution failed',
+      });
     }
   }
 
@@ -2020,7 +2048,7 @@ async function resolveAIRankedCatalog(catalog, config) {
     catalogType,
     mediaType: catalogType === 'movie' ? 'movie' : 'tv',
     params: {},
-    items: resolvedItems,
+    items,
   };
 }
 
@@ -2127,13 +2155,15 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
       const rankedWarnings = [...(parsed.warnings || [])];
       for (const catalog of rankedCatalogs) {
         const resolvedCatalog = await resolveAIRankedCatalog(catalog, config);
-        if (resolvedCatalog.items.length === 0) {
+        const resolvedCount = resolvedCatalog.items.filter(item => item.resolved !== false && item.stremioId).length;
+        const unresolvedCount = resolvedCatalog.items.length - resolvedCount;
+        if (resolvedCount === 0) {
           rankedWarnings.push(`Skipped "${catalog.name || 'unnamed'}": no titles could be resolved`);
           continue;
         }
         resolvedRankedCatalogs.push(resolvedCatalog);
-        if ((catalog.items || []).length !== resolvedCatalog.items.length) {
-          rankedWarnings.push(`Some titles in "${catalog.name}" could not be resolved and were omitted`);
+        if (unresolvedCount > 0) {
+          rankedWarnings.push(`${unresolvedCount} title${unresolvedCount === 1 ? '' : 's'} in "${catalog.name}" could not be resolved and were preserved with unresolved reasons`);
         }
       }
 
