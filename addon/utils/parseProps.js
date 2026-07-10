@@ -82,7 +82,34 @@ function resolveCustomArtUrl(pattern, ids, type, config, extra) {
     return resolveRatingPosterUrl(pattern, ids, type, config, extra);
   }
 
-  return resolvePattern(pattern, ids, type, config, extra);
+  const direct = resolvePattern(pattern, ids, type, config, extra);
+  if (direct) return direct;
+
+  return resolveArtIdFallback(pattern, ids, type, config, extra);
+}
+
+/**
+ * When a custom art pattern references {imdb_id} in its path but the IMDb ID is
+ * unavailable (common for anime resolved via TVDB/Kitsu), retry with an available
+ * ID in a form self-hosted art services accept in that slot: tmdb:{type}:{id},
+ * tvdb:{id}, kitsu:{id}. Gated on {imdb_id} sitting in the URL path — a composite
+ * ID is a valid path segment but would corrupt a `?imdb_id=` query parameter.
+ */
+function resolveArtIdFallback(pattern, ids, type, config, extra) {
+  if (!pattern.includes('{imdb_id}') || ids?.imdbId) return null;
+  if (!pattern.split('?')[0].includes('{imdb_id}')) return null;
+
+  const typePrefix = type === 'movie' ? 'movie' : 'series';
+  const altIds = [];
+  if (ids?.tmdbId) altIds.push(`tmdb:${typePrefix}:${ids.tmdbId}`);
+  if (ids?.tvdbId) altIds.push(`tvdb:${ids.tvdbId}`);
+  if (ids?.kitsuId) altIds.push(`kitsu:${ids.kitsuId}`);
+
+  for (const alt of altIds) {
+    const resolved = resolvePattern(pattern, { ...ids, imdbId: alt }, type, config, extra);
+    if (resolved) return resolved;
+  }
+  return null;
 }
 
 /**
