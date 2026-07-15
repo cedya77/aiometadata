@@ -24,6 +24,8 @@ RUN chmod +x /usr/local/bin/entrypoint.sh \
       /etc/aiometadata/poster-cache/stats.sh \
       /etc/aiometadata/poster-cache/purge-handler.sh
 
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh
+
 ARG PORT=3232
 EXPOSE ${PORT}
 # Built-in poster cache (opt-in) listens here
