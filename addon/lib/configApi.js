@@ -1041,7 +1041,24 @@ class ConfigApi {
             config.posterRatingProvider = 'none';
           }
         }
-
+        // --- TVDB Configuration Sanitization ---
+        if (Array.isArray(config.tvdbFallbackIds)) {
+          config.tvdbFallbackIds = config.tvdbFallbackIds
+            .filter(id => id != null)
+            .map(id => String(id).trim())
+            .filter(Boolean);
+        } else if (typeof config.tvdbFallbackIds === 'string') {
+          config.tvdbFallbackIds = config.tvdbFallbackIds
+            .split(',')
+            .map(id => id.trim())
+            .filter(Boolean);
+        } else {
+          config.tvdbFallbackIds = [];
+        }
+        // Default to DVD season ordering for older configurations that don't yet define the season type.
+        if (!config.tvdbSeasonTypeFallback) {
+          config.tvdbSeasonTypeFallback = 'dvd';
+        }
         // Strip instance-specific fields that shouldn't be returned from saved config
         const sanitizedConfig = {
           ...config,

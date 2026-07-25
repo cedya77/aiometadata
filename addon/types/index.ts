@@ -67,6 +67,8 @@ export interface UserConfig {
   regexExclusionFilter?: string;
   exclusionGenres?: string;
   tvdbSeasonType?: string;
+  tvdbSeasonTypeFallback?: string;
+  tvdbFallbackIds?: string[];
   castCount?: number;
   blurThumbs?: boolean;
   displayAgeRating?: boolean;

@@ -803,23 +803,34 @@ async function _fetchEpisodesBySeasonType(tvdbId: string, seasonType: string, la
 }
 
 async function getSeriesEpisodes(tvdbId: string, language: string = 'en-US', seasonType: string = 'default', config: UserConfig = {} as UserConfig, bypassCache: boolean = false): Promise<TvdbEpisodesResponse | null> {
-  const cacheKey = `series-episodes:${tvdbId}:${language}:${seasonType}`;
+  let effectiveSeasonType = config.tvdbSeasonType || seasonType || 'default';
+  if (tvdbId && Array.isArray(config.tvdbFallbackIds)) {
+    const cleanTvdbId = String(tvdbId).trim();
+    const isFallbackMatch = config.tvdbFallbackIds.some(
+      (id) => String(id).trim() === cleanTvdbId
+    );
+
+    if (isFallbackMatch && config.tvdbSeasonTypeFallback) {
+      effectiveSeasonType = config.tvdbSeasonTypeFallback;
+    }
+  }
+
+  const cacheKey = `series-episodes:${tvdbId}:${language}:${effectiveSeasonType}`;
 
   return cacheWrapTvdbApi(cacheKey, async () => {
     const consola = require('consola');
-    consola.debug(`[TVDB] Fetching episodes for ${tvdbId} with type: '${seasonType}' and lang: '${language}'`);
-    let result = await _fetchEpisodesBySeasonType(tvdbId, seasonType, language, config);
- 
-    if ((!result || result.episodes.length === 0) && seasonType !== 'official') {
-      logger.debug(`No episodes found for type '${seasonType}'. Falling back to 'official' order.`);
+    consola.debug(`[TVDB] Fetching episodes for ${tvdbId} with type: '${effectiveSeasonType}' and lang: '${language}'`);
+    let result = await _fetchEpisodesBySeasonType(tvdbId, effectiveSeasonType, language, config);
+
+    if ((!result || result.episodes.length === 0) && effectiveSeasonType !== 'official') {
+      logger.debug(`No episodes found for type '${effectiveSeasonType}'. Falling back to 'official' order.`);
       result = await _fetchEpisodesBySeasonType(tvdbId, 'official', language, config);
     }
 
     if ((!result || result.episodes.length === 0) && language !== 'en-US') {
       logger.debug(`No episodes found in '${language}'. Falling back to 'en-US'.`);
-      return getSeriesEpisodes(tvdbId, 'en-US', seasonType, config, true); 
+      return getSeriesEpisodes(tvdbId, 'en-US', effectiveSeasonType, config, true); 
     }
-    
     return normalizeTvdbSeriesEpisodesForCache(result);
   });
 }
