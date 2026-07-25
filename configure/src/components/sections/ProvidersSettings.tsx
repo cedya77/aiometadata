@@ -3,6 +3,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useConfig } from '@/contexts/ConfigContext';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 
 const movieProviders = [
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
@@ -177,29 +178,72 @@ export function ProvidersSettings() {
         </Card>
       </div>
 
-
-
       {/* TVDB Specific Settings */}
-      <Card className={!hasTvdbKey ? 'opacity-50' : ''}>
-        <CardHeader>
-          <CardTitle>TheTVDB Settings</CardTitle>
-          <CardDescription>
-            {hasTvdbKey 
-              ? 'Customize how episode data is fetched from TheTVDB.'
-              : 'Add your TVDB API key in the Integrations tab to enable these settings.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="max-w-lg">
-            <Label className="text-lg font-medium">Season Order</Label>
-            <Select value={config.tvdbSeasonType} onValueChange={handleSeasonTypeChange} disabled={!hasTvdbKey}>
-              <SelectTrigger className="mt-2"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {tvdbSeasonTypes.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground mt-2">"Aired Order (Default)" or "Official order" are recommended.</p>
-        </CardContent>
-      </Card>
+          <Card className={!hasTvdbKey ? 'opacity-50' : ''}>
+            <CardHeader>
+              <CardTitle>TheTVDB Settings</CardTitle>
+              <CardDescription>
+                {hasTvdbKey 
+                  ? 'Customize how episode data is fetched from TheTVDB.'
+                  : 'Add your TVDB API key in the Integrations tab to enable these settings.'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Side-by-side Season Orders */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-sm font-medium">Season Order</Label>
+                  <Select 
+                    value={config.tvdbSeasonType || 'default'} 
+                    onValueChange={handleSeasonTypeChange} 
+                    disabled={!hasTvdbKey}
+                  >
+                    <SelectTrigger className="mt-2"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {tvdbSeasonTypes.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-2 font-normal">
+                    "Aired Order (Default)" or "Official order" are recommended.
+                  </p>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">Fallback Season Order</Label>
+                  <Select 
+                    value={config.tvdbSeasonTypeFallback || 'dvd'} 
+                    onValueChange={(val) => setConfig(prev => ({ ...prev, tvdbSeasonTypeFallback: val }))}
+                    disabled={!hasTvdbKey}
+                  >
+                    <SelectTrigger className="mt-2">
+                      <SelectValue placeholder="Select fallback order" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tvdbSeasonTypes.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-2 font-normal">
+                    The alternate order for the TVDB IDs listed below.
+                  </p>
+                </div>
+              </div>
+
+              {/* Fallback IDs Input */}
+              <div className="border-t border-white/[0.06] pt-4">
+                <Label className="text-sm font-medium">TVDB Fallback IDs</Label>
+                <Input
+                  className="mt-2"
+                  placeholder="e.g., 366263, 81342"
+                  value={Array.isArray(config.tvdbFallbackIds) ? config.tvdbFallbackIds.join(', ') : (config.tvdbFallbackIds || '')}
+                  onChange={(e) => setConfig(prev => ({ ...prev, tvdbFallbackIds: e.target.value }))}
+                  disabled={!hasTvdbKey}
+                />
+                <p className="text-xs text-muted-foreground mt-2 font-normal">
+                  Comma-separated TVDB IDs (shows) that should ignore the default order and use the fallback order above.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
 
       {/* TMDB Specific Settings */}
       <Card>

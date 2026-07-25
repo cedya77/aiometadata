@@ -803,21 +803,41 @@ async function _fetchEpisodesBySeasonType(tvdbId: string, seasonType: string, la
 }
 
 async function getSeriesEpisodes(tvdbId: string, language: string = 'en-US', seasonType: string = 'default', config: UserConfig = {} as UserConfig, bypassCache: boolean = false): Promise<TvdbEpisodesResponse | null> {
-  const cacheKey = `series-episodes:${tvdbId}:${language}:${seasonType}`;
+  // 1. Determine effective season order
+  let effectiveSeasonType = config.tvdbSeasonType || seasonType || 'default';
+
+  // 2. Check if this show's ID is in the user's fallback list
+  if (tvdbId && Array.isArray(config.tvdbFallbackIds)) {
+    const cleanTvdbId = String(tvdbId).trim();
+    const isFallbackMatch = config.tvdbFallbackIds.some(
+      (id) => String(id).trim() === cleanTvdbId
+    );
+
+    // If there's a match and a fallback type is provided, override!
+    if (isFallbackMatch && config.tvdbSeasonTypeFallback) {
+      effectiveSeasonType = config.tvdbSeasonTypeFallback;
+    }
+  }
+
+  // 3. Cache key automatically includes the effective type ('dvd', 'absolute', etc.)
+  const cacheKey = `series-episodes:${tvdbId}:${language}:${effectiveSeasonType}`;
 
   return cacheWrapTvdbApi(cacheKey, async () => {
     const consola = require('consola');
-    consola.debug(`[TVDB] Fetching episodes for ${tvdbId} with type: '${seasonType}' and lang: '${language}'`);
-    let result = await _fetchEpisodesBySeasonType(tvdbId, seasonType, language, config);
- 
-    if ((!result || result.episodes.length === 0) && seasonType !== 'official') {
-      logger.debug(`No episodes found for type '${seasonType}'. Falling back to 'official' order.`);
+    consola.debug(`[TVDB] Fetching episodes for ${tvdbId} with type: '${effectiveSeasonType}' and lang: '${language}'`);
+    
+    // 4. Pass the effectiveSeasonType to the fetcher
+    let result = await _fetchEpisodesBySeasonType(tvdbId, effectiveSeasonType, language, config);
+
+    if ((!result || result.episodes.length === 0) && effectiveSeasonType !== 'official') {
+      logger.debug(`No episodes found for type '${effectiveSeasonType}'. Falling back to 'official' order.`);
       result = await _fetchEpisodesBySeasonType(tvdbId, 'official', language, config);
     }
 
     if ((!result || result.episodes.length === 0) && language !== 'en-US') {
       logger.debug(`No episodes found in '${language}'. Falling back to 'en-US'.`);
-      return getSeriesEpisodes(tvdbId, 'en-US', seasonType, config, true); 
+      // Pass the effectiveSeasonType down to the fallback language call
+      return getSeriesEpisodes(tvdbId, 'en-US', effectiveSeasonType, config, true); 
     }
     
     return normalizeTvdbSeriesEpisodesForCache(result);
