@@ -1410,7 +1410,7 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
       },
     };
   }
-  if (idOnly.startsWith('movielens.') && !idOnly.startsWith('movielens.list.')) {
+  if (idOnly.startsWith('movielens.')) {
     options = { ...options, resultClassifier: classifyResultAllowEmpty };
   }
   const existingOnHit = options.onHit;

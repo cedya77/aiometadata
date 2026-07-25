@@ -2720,7 +2720,7 @@ async function getMovieLensCatalog(
         hasRated: includeRated ? (onlyIncludeRated ? 'yes' : undefined) : 'no',
         sortBy, sortDirection, tag, genre: genreName, minYear, maxYear, minPop, maxFutureDays, maxDaysAgo, page, pageSize,
       });
-    }, ttl, isList ? {} : { resultClassifier: classifyResultAllowEmpty });
+    }, ttl, { resultClassifier: classifyResultAllowEmpty });
     const windowItems = Array.isArray(items) ? items : [];
 
     const mdblistShaped = windowItems

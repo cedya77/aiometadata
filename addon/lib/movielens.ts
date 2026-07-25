@@ -155,6 +155,7 @@ interface MovieLensUserMeta {
 async function getUserMeta(credId: string): Promise<MovieLensUserMeta> {
   const empty: MovieLensUserMeta = { groupTags: [], engineId: null, engineWeight: null, popWeight: null, numRatings: null };
   const res = await apiFetch(credId, 'users/me');
+  // return empty metadata on failure, to avoid breaking otherwise working catalogs.
   if (res.status !== 200) return empty;
   const json: any = await res.json();
   const prefs = json?.data?.preferences || {};
