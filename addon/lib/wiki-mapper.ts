@@ -171,7 +171,33 @@ async function downloadCsv(
 }
 
 function loadMappings(csvData: string, maps: { imdb: Map<string, IdMap>, tvdb: Map<number, IdMap>, tmdb: Map<number, IdMap>, tvmaze?: Map<number, IdMap> }) {
-  const records: IdMap[] = parse(csvData, { columns: true });
+  const malformedRows: string[] = [];
+  const records: IdMap[] = parse(csvData, {
+    columns: true,
+    relax_column_count: true,
+    skip_empty_lines: true,
+    on_record: (record: IdMap, context: any) => {
+      const values = Object.values(record).filter(Boolean).map(value => String(value));
+      const hasAnyId = Boolean(record.imdbId || record.tvdbId || record.tmdbId || record.tvmazeId);
+      const looksLikeSingleErrorLine = values.length === 1
+        && !/^tt\d+$/.test(values[0])
+        && !/^\d+(\/.*)?$/.test(values[0]);
+
+      // Upstream mapping generation can occasionally append HTTP/proxy error
+      // bodies (for example Wikidata Java stack traces) to the CSV. Treat those
+      // rows as bad data, not as a fatal startup condition for every addon pod.
+      if (!hasAnyId || looksLikeSingleErrorLine) {
+        malformedRows.push(`line ${context?.lines || 'unknown'}: ${JSON.stringify(record).slice(0, 200)}`);
+        return null;
+      }
+
+      return record;
+    }
+  });
+
+  if (malformedRows.length > 0) {
+    console.warn(`[Wiki Mapper] Skipped ${malformedRows.length} malformed CSV rows. First examples: ${malformedRows.slice(0, 5).join(' | ')}`);
+  }
   
   maps.imdb.clear();
   maps.tvdb.clear();
