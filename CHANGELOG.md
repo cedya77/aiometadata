@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.12.1](https://github.com/cedya77/aiometadata/compare/v2.12.0...v2.12.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* **docs:** document AUTH_REQUIRE_SIGNIN in the sign-in guide ([0e0641e](https://github.com/cedya77/aiometadata/commit/0e0641e6590968777c1aee5c3ee30e0000dca249))
+
 ## [2.12.0](https://github.com/cedya77/aiometadata/compare/v2.11.0...v2.12.0) (2026-08-07)
 
 
