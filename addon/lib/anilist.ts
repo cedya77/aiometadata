@@ -333,8 +333,9 @@ class AniListAPI {
         total: pageInfo.total || 0,
       };
     } else {
-      // Custom list - fetch all lists then find and paginate manually
-      const query = `
+      // Custom list - fetch lightweight entries first so large lists can be paginated
+      // before requesting metadata for only the current page.
+      const entriesQuery = `
         query($userName: String, $sort: [MediaListSort]) {
           MediaListCollection(userName: $userName, type: ANIME, sort: $sort) {
             lists {
@@ -344,32 +345,6 @@ class AniListAPI {
                 score(format: POINT_100)
                 media {
                   id
-                  idMal
-                  title {
-                    english
-                    romaji
-                    native
-                  }
-                  startDate {
-                    year
-                    month
-                    day
-                  }
-                  endDate {
-                    year
-                    month
-                    day
-                  }
-                  seasonYear
-                  duration
-                  episodes
-                  format
-                  description
-                  coverImage {
-                    large
-                    medium
-                    color
-                  }
                 }
               }
             }
@@ -377,9 +352,9 @@ class AniListAPI {
         }
       `;
 
-      const response = await this.makeRateLimitedRequest(() => 
+      const entriesResponse = await this.makeRateLimitedRequest(() =>
         httpPost(this.baseURL, {
-          query,
+          query: entriesQuery,
           variables: { userName: username, sort: [sort, 'MEDIA_ID'] }
         }, {
           headers: {
@@ -390,7 +365,7 @@ class AniListAPI {
         })
       );
 
-      const data = response.data?.data;
+      const data = entriesResponse.data?.data;
       const lists = data?.MediaListCollection?.lists || [];
       const targetList = lists.find((list: any) => list.name === listName);
 
@@ -404,10 +379,68 @@ class AniListAPI {
       const endIndex = startIndex + pageSize;
       const paginatedEntries = allEntries.slice(startIndex, endIndex);
 
-      const items = paginatedEntries.map((entry: any) => ({
-        score: entry.score,
-        media: entry.media,
-      }));
+      if (paginatedEntries.length === 0) {
+        return { items: [], hasMore: false, total };
+      }
+
+      const metadataQuery = `
+        query($ids: [Int], $perPage: Int) {
+          Page(page: 1, perPage: $perPage) {
+            media(id_in: $ids, type: ANIME) {
+              id
+              idMal
+              title {
+                english
+                romaji
+                native
+              }
+              startDate {
+                year
+                month
+                day
+              }
+              endDate {
+                year
+                month
+                day
+              }
+              seasonYear
+              duration
+              episodes
+              format
+              description
+              coverImage {
+                large
+                medium
+                color
+              }
+            }
+          }
+        }
+      `;
+
+      const ids = paginatedEntries.map((entry: any) => entry.media.id);
+      const metadataResponse = await this.makeRateLimitedRequest(() =>
+        httpPost(this.baseURL, {
+          query: metadataQuery,
+          variables: { ids, perPage: ids.length }
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          timeout: 30000
+        })
+      );
+
+      const media = metadataResponse.data?.data?.Page?.media || [];
+      const mediaById = new Map(media.map((item: any) => [item.id, item]));
+      const items = paginatedEntries
+        .map((entry: any) => ({
+          score: entry.score,
+          media: mediaById.get(entry.media.id),
+        }))
+        .filter((entry: any) => entry.media);
 
       return {
         items,
