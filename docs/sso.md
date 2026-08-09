@@ -43,10 +43,22 @@ All of these are in the dashboard under **Server**, or as environment variables.
 | `OIDC_RATE_LIMIT_WINDOW` | `300` | Length of that window, in seconds. |
 | `TRUST_PROXY_HOPS` | `1` | How many reverse proxies sit in front of the addon. Environment only. |
 | `SESSION_TTL_SECONDS` | `86400` | How long a sign-in lasts. |
+| `AUTH_REQUIRE_SIGNIN` | `false` | Asks for a sign-in before the configuration and dashboard pages render, rather than only when saving. See below. |
 
 Sign-in is rate limited per client address, and the address is only as trustworthy as the count in `TRUST_PROXY_HOPS`. It reads that many entries back from the end of `X-Forwarded-For`, because a client can add entries at the front but cannot remove the ones your own proxies append. The default of `1` matches the usual single reverse proxy; raise it if more sit in front. Set it to `0` when the addon is reachable directly, which reads the address from the socket and ignores the header.
 
 Getting it wrong costs one of two things. Too low behind a proxy and every visitor shares one bucket, so a single abuser can exhaust the limit for everyone. Too high, or anything above `0` on a directly reachable instance, and the address can be forged, which defeats the limit but grants nothing on its own.
+
+## Requiring sign-in
+
+By default anyone reaching the configuration page sees it, and is only asked to sign in when they save. `AUTH_REQUIRE_SIGNIN=true` moves that gate to the page itself. The configuration and dashboard pages redirect to your provider before they render, and the API behind them answers `401` until a session exists, apart from the few endpoints the sign-in flow itself needs.
+
+Addon routes are deliberately untouched. Manifests, catalogs, meta, streams and artwork are still served to anyone holding the URL, because clients carry no session and would stop working the moment the setting went on. This gates who can configure the instance, not who can use it.
+
+Two things keep it from locking you out:
+
+- It is ignored while no identity provider is configured, so turning it on before setting one up does nothing.
+- A request carrying a valid `ADMIN_KEY` header passes regardless.
 
 ## Permissions
 
