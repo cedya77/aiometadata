@@ -286,7 +286,7 @@ const host = process.env.HOST_NAME.startsWith('http')
     : `https://${process.env.HOST_NAME}`;
 
 // --- Main Orchestrator ---
-async function getMeta(type, language, stremioId, config = {}, userUUID, includeVideos = true) {
+async function getMetaInner(type, language, stremioId, config = {}, userUUID, includeVideos = true) {
   try {
     // Validate inputs
     if (!stremioId || typeof stremioId !== 'string') {
@@ -3512,6 +3512,39 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
     )
     return null
   }
+}
+
+const { getAddonTrailers, toTrailerStreams } = require('./trailerAddon');
+
+// Trailer source is a user preference rather than a property of whichever
+// metadata provider answered, so it is applied once here instead of in each
+// builder. A failed lookup leaves the provider's own trailers in place.
+async function getMeta(type, language, stremioId, config = {}, userUUID, ...rest) {
+  const meta = await getMetaInner(type, language, stremioId, config, userUUID, ...rest);
+
+  if (!meta?.meta) {
+    return meta;
+  }
+
+  // Every provider fills `trailers` and none fills `trailerStreams`, so it is
+  // derived here rather than at each builder.
+  if (!meta.meta.trailerStreams?.length) {
+    meta.meta.trailerStreams = toTrailerStreams(meta.meta.trailers);
+  }
+
+  if (!config?.trailerAddonUrl || config?.trailerProvider === 'default') {
+    return meta;
+  }
+
+  const id = meta.meta.imdb_id || meta.meta.id;
+  const replacement = await getAddonTrailers(config.trailerAddonUrl, type, id, logger);
+
+  if (replacement) {
+    meta.meta.trailers = replacement.trailers;
+    meta.meta.trailerStreams = replacement.trailerStreams;
+  }
+
+  return meta;
 }
 
 module.exports = { getMeta };

@@ -210,6 +210,9 @@ export interface AppConfig {
     apiKey?: string;
   }>;
   /** Poster rating provider: 'none' to disable rating posters, 'rpdb' for RatingPosterDB, 'top' for Top Poster API, or 'custom' for custom URL patterns */
+  /** Trailer source: 'default' uses the metadata provider's trailers, otherwise a Stremio addon supplies them */
+  trailerProvider?: 'default' | 'streailer' | 'custom';
+  trailerAddonUrl?: string;
   posterRatingProvider?: 'none' | 'rpdb' | 'top' | 'custom';
   usePosterProxy: boolean;
   mdblistWatchTracking: boolean;

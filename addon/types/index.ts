@@ -46,6 +46,10 @@ export interface UserConfig {
     { movie?: boolean; series?: boolean }
   >>;
   /** Poster rating provider: 'rpdb' for RatingPosterDB, 'top' for Top Poster API, or 'custom' for custom URL patterns */
+  /** Trailer source: 'default' uses the metadata provider's trailers, 'custom' takes them from a Stremio addon */
+  trailerProvider?: 'default' | 'streailer' | 'custom';
+  /** Manifest URL of the trailer addon used when trailerProvider is not 'default' */
+  trailerAddonUrl?: string;
   posterRatingProvider?: 'rpdb' | 'top' | 'custom';
   catalogs?: Catalog[];
   streaming?: StreamingConfig[];

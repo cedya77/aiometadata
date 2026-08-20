@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { useConfig } from '@/contexts/ConfigContext';
 import { isInUse } from '@/lib/metaProviderUsage';
 import { Callout } from '@/components/settings/Callout';
@@ -8,6 +9,14 @@ import { ProviderSelect, type SelectableOption } from '@/components/settings/Pro
 import { SettingRow } from '@/components/settings/SettingRow';
 import { NoticeDisclosure } from '@/components/settings/NoticeDisclosure';
 import { animeNotices } from '@/lib/animeNotices';
+
+const STREAILER_CONFIGURE = 'https://streailer.elfhosted.com/configure';
+
+const trailerProviders: SelectableOption[] = [
+  { value: 'default', label: 'Metadata provider (default)' },
+  { value: 'streailer', label: 'Streailer' },
+  { value: 'custom', label: 'Custom addon' },
+];
 
 const movieProviders: SelectableOption[] = [
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
@@ -48,6 +57,9 @@ const tvdbSeasonTypes: SelectableOption[] = [
 
 export function ProvidersSettings() {
   const { config, setConfig, hasBuiltInTvdb } = useConfig();
+  // A config saved before this field existed has no trailerProvider. Derive it
+  // once so the select and the fields below cannot disagree about what is set.
+  const trailerProvider = config.trailerProvider || 'default';
   const isImdbForCatalog = !!config.mal?.useImdbIdForCatalogAndSearch;
   const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
 
@@ -131,6 +143,63 @@ export function ProvidersSettings() {
 
       {/* Provider Selection Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <SettingRow
+              htmlFor="trailerProvider"
+              label="Trailer Source"
+              description="Use the metadata provider's trailers, or any Stremio trailer addon."
+              control={
+                <ProviderSelect
+                  id="trailerProvider"
+                  ariaLabel="Trailer source"
+                  value={trailerProvider}
+                  onValueChange={(value) => {
+                    const provider = value as 'default' | 'streailer' | 'custom';
+                    if (provider === 'streailer') {
+                      // Deliberately not prefilled. The bare manifest URL returns
+                      // the addon's own default language, so filling it in hands
+                      // the user a working-looking setting they did not choose.
+                      setConfig(prev => ({ ...prev, trailerProvider: provider, trailerAddonUrl: '' }));
+                    } else if (provider === 'default') {
+                      setConfig(prev => ({ ...prev, trailerProvider: provider, trailerAddonUrl: '' }));
+                    } else {
+                      setConfig(prev => ({ ...prev, trailerProvider: provider }));
+                    }
+                  }}
+                  options={trailerProviders}
+                  className="w-full sm:w-[240px]"
+                />
+              }
+            />
+            {trailerProvider !== 'default' && (
+              <SettingRow
+                htmlFor="trailerAddonUrl"
+                label="Trailer Addon URL"
+                description="The addon's manifest URL. An unconfigured URL returns the addon's own default language, so set the language on its configure page and paste the URL it gives you."
+                control={
+                  <Input
+                    id="trailerAddonUrl"
+                    value={config.trailerAddonUrl || ''}
+                    placeholder={STREAILER_CONFIGURE}
+                    onChange={(e) => setConfig(prev => ({ ...prev, trailerAddonUrl: e.target.value }))}
+                    className="w-full sm:w-[420px]"
+                  />
+                }
+              />
+            )}
+            {trailerProvider === 'streailer' && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Pick your language on{' '}
+                <a href={STREAILER_CONFIGURE} target="_blank" rel="noreferrer" className="underline">
+                  Streailer's configure page
+                </a>
+                , then paste the URL it produces above.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader><CardTitle>Movie Provider</CardTitle><CardDescription>Source for movie data.</CardDescription></CardHeader>
           <CardContent>
