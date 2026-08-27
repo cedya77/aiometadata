@@ -21,8 +21,30 @@ import {
 } from './tmdbCacheNormalizers.js';
 import { LRUCache } from 'lru-cache';
 import { UserConfig } from '../types/index';
+import { envInt } from '../utils/envNumber';
 
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
+
+/**
+ * TTL for the `/movie/{id}`, `/tv/{id}` and `/collection/{id}` detail responses.
+ *
+ * These are by far the largest thing this addon puts in Redis: they carry a wide
+ * `append_to_response` (images, translations, seasons), so a single entry runs to
+ * tens of KB even after compression. On a shared instance they can dominate the
+ * keyspace and push out the per-user meta and catalog entries, which are the
+ * expensive ones to rebuild.
+ *
+ * Deployments that already front TMDB with their own caching proxy (`TMDB_API_BASE`
+ * pointing at a passthrough cache) hold this data a second time, for longer, and
+ * closer to the source — for them the Redis copy earns nothing and this can be
+ * lowered, or set to `0` to skip caching these responses entirely. Deployments that
+ * talk to TMDB directly should leave it alone.
+ *
+ * Read per call rather than at module load, so it follows a hot-reloaded env.
+ */
+function TMDB_DETAIL_TTL(): number {
+  return envInt('TMDB_DETAIL_TTL', 24 * 60 * 60);
+}
 const ACCOUNT_DETAILS_CACHE_MAX = 2000;
 const ACCOUNT_DETAILS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const COMMA_LIST_QUERY_PARAMS = new Set([
@@ -466,7 +488,7 @@ export async function movieInfo(params: any, config: UserConfig) {
   const cacheKey = `tmdb:movie:detail:${id}${getTmdbQueryCacheSuffix(normalizedQueryParams)}`;
   return cacheWrapGlobal(cacheKey, () =>
     makeTmdbRequest(`/movie/${id}`, getApiKey(config), normalizedQueryParams, 'GET', null, config),
-    24 * 60 * 60
+    TMDB_DETAIL_TTL()
   );
 }
 export async function tvInfo(params: any, config: UserConfig) {
@@ -475,7 +497,7 @@ export async function tvInfo(params: any, config: UserConfig) {
   const cacheKey = `tmdb:tv:detail:${id}${getTmdbQueryCacheSuffix(normalizedQueryParams)}`;
   return cacheWrapGlobal(cacheKey, () =>
     makeTmdbRequest(`/tv/${id}`, getApiKey(config), normalizedQueryParams, 'GET', null, config),
-    24 * 60 * 60
+    TMDB_DETAIL_TTL()
   );
 }
 
@@ -610,7 +632,7 @@ export async function collectionInfo(params: any, config: UserConfig) {
   const cacheKey = `tmdb:collection:detail:${id}${getTmdbQueryCacheSuffix(normalizedQueryParams)}`;
   return cacheWrapGlobal(cacheKey, () =>
     makeTmdbRequest(`/collection/${id}`, getApiKey(config), normalizedQueryParams, 'GET', null, config),
-    24 * 60 * 60
+    TMDB_DETAIL_TTL()
   );
 }
 

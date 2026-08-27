@@ -95,6 +95,11 @@ cp .env.example .env
 - **Description**: Redis connection URL for caching (required for the app to function)
 - **Example**: `REDIS_URL=redis://localhost:6379`
 
+### `TMDB_DETAIL_TTL`
+- **Default**: `86400` (24 hours)
+- **Description**: Time-to-live, in seconds, for cached TMDB `/movie/{id}`, `/tv/{id}` and `/collection/{id}` detail responses. These are the largest entries the addon writes to Redis — they carry a wide `append_to_response` (images, translations, seasons), so one entry can run to tens of KB even after compression, and on a busy shared instance they can crowd out the per-user meta and catalog entries that are far more expensive to rebuild. If `TMDB_API_BASE` already points at your own caching proxy, that proxy holds the same data for longer and closer to the source, so the Redis copy earns little: lower this, or set it to `0` to skip caching these responses entirely. Leave it at the default when talking to TMDB directly.
+- **Example**: `TMDB_DETAIL_TTL=3600`
+
 ### `CATALOG_REFRESH_AHEAD_ENABLED`
 - **Default**: `true`
 - **Description**: Rebuild a catalog in the background when a request arrives near the end of its cache lifetime, so the cached copy is served immediately and the rebuild never lands on a user request. Only catalogs are affected. Cache TTLs are unchanged, so nothing is served staler than `CATALOG_TTL` already allows.
