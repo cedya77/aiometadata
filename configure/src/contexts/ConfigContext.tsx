@@ -162,6 +162,8 @@ const initialConfig: AppConfig = {
     openrouter: "",
     publicmetadb: "",
   },
+  trailerProvider: 'default' as 'default' | 'streailer' | 'custom',
+  trailerAddonUrl: '',
   posterRatingProvider: 'none' as 'none' | 'rpdb' | 'top' | 'custom',
   usePosterProxy: true,
   mdblistWatchTracking: false,

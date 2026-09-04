@@ -238,6 +238,9 @@ export interface AppConfig {
   /** Addon manager destinations. One entry is one account on one manager instance. */
   managerAccounts?: ManagerAccount[];
   /** Poster rating provider: 'none' to disable rating posters, 'rpdb' for RatingPosterDB, 'top' for Top Poster API, or 'custom' for custom URL patterns */
+  /** Trailer source: 'default' uses the metadata provider's trailers, otherwise a Stremio addon supplies them */
+  trailerProvider?: 'default' | 'streailer' | 'custom';
+  trailerAddonUrl?: string;
   posterRatingProvider?: 'none' | 'rpdb' | 'top' | 'custom';
   usePosterProxy: boolean;
   mdblistWatchTracking: boolean;
