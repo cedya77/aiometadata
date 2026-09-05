@@ -120,6 +120,8 @@ function resolvePattern(pattern, ids, type, config, extra) {
   const optionalPlaceholders = {
     '{blur}': extra?.blur != null ? String(extra.blur) : '',
     '{thumbnail}': extra?.thumbnail || '',
+    '{landscape}': extra?.landscape || '',
+    '{logo}': extra?.logo || '',
   };
 
   let url = pattern;
@@ -194,7 +196,7 @@ function resolveRatingPosterUrl(pattern, ids, type, config, extra) {
 /** Default poster URL pattern for RPDB */
 const RPDB_DEFAULT_PATTERN = 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true';
 /** Default poster URL pattern for TOP Posters */
-const TOP_DEFAULT_PATTERN = 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg?lang={language_short}';
+const TOP_DEFAULT_PATTERN = 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg';
 /** Default episode thumbnail URL pattern for TOP Posters */
 const TOP_DEFAULT_THUMBNAIL_PATTERN = 'https://api.top-posters.com/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?blur={blur}&fallback_url={thumbnail}&user_agent={user_agent}';
 
@@ -1468,7 +1470,7 @@ function getRpdbPoster(type, ids, language, rpdbkey) {
     }
 }
 
-function getTopPosterPoster(type, ids, language, topPosterKey, fallbackUrl = null) {
+function getTopPosterPoster(type, ids, _language, topPosterKey, fallbackUrl = null) {
     const { tmdbId, imdbId } = ids;
     let baseUrl = `https://api.top-posters.com`;
     let idType = null;
@@ -1501,13 +1503,7 @@ function getTopPosterPoster(type, ids, language, topPosterKey, fallbackUrl = nul
     const urlPath = `${baseUrl}/${topPosterKey}/${idType}/poster/${fullMediaId}.jpg`;
     
     // Build query parameters
-    // Top Poster API expects ISO 639-1 format (2-letter language code, e.g., 'en', 'it', 'pt')
     const params = new URLSearchParams();
-    if (language) {
-        // Extract ISO 639-1 code (2-letter) from language string (e.g., 'en-US' -> 'en', 'it-IT' -> 'it', 'en' -> 'en')
-        const iso6391Code = language.split('-')[0].toLowerCase();
-        params.append('lang', iso6391Code);
-    }
     if (fallbackUrl) {
         params.append('fallback_url', fallbackUrl);
     }

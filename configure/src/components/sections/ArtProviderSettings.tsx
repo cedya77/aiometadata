@@ -258,10 +258,10 @@ export function ArtProviderSettings() {
                       setConfig(prev => ({
                         ...prev,
                         posterRatingProvider: provider,
-                        customPosterUrlPattern: 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg?lang={language_short}',
+                        customPosterUrlPattern: 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg',
                         customBackgroundUrlPattern: '',
-                        customLandscapeUrlPattern: '',
-                        customLogoUrlPattern: '',
+                        customLandscapeUrlPattern: 'https://api.top-posters.com/{top_key}/imdb/banner/{imdb_id}.jpg?fallback_url={landscape}&user_agent={user_agent}',
+                        customLogoUrlPattern: 'https://api.top-posters.com/{top_key}/imdb/logo/{imdb_id}.png?fallback_url={logo}&user_agent={user_agent}',
                         customThumbnailUrlPattern: 'https://api.top-posters.com/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?blur={blur}&fallback_url={thumbnail}&user_agent={user_agent}'
                       }));
                     }
@@ -314,7 +314,7 @@ export function ArtProviderSettings() {
                       onClick={() => {
                         const pattern = config.posterRatingProvider === 'rpdb'
                           ? 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true'
-                          : 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg?lang={language_short}';
+                          : 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg';
                         setConfig(prev => ({ ...prev, customPosterUrlPattern: pattern }));
                       }}
                     >
@@ -396,6 +396,8 @@ export function ArtProviderSettings() {
                 <p>
                   <strong>Language:</strong> <code>{'{language}'}</code> (e.g. fr-FR) <code>{'{language_short}'}</code> (e.g. fr) &nbsp;
                   <strong>Thumbnail:</strong> <code>{'{season}'}</code> <code>{'{episode}'}</code> <code>{'{blur}'}</code> <code>{'{thumbnail}'}</code>
+                  &nbsp; <strong>Landscape fallback:</strong> <code>{'{landscape}'}</code>
+                  &nbsp; <strong>Logo fallback:</strong> <code>{'{logo}'}</code>
                 </p>
                 <p>
                   <strong>Optional IDs:</strong> add <code>?</code> before the closing brace (e.g. <code>{'{tvdb_id?}'}</code>) to blank a
