@@ -39,6 +39,41 @@ export const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'] as const;
  */
 export const REFRESH_HOURS = [6, 12, 24] as const;
 
+/**
+ * How a built row is arranged.
+ *
+ * Rating weighted by audience is the default. The model's own order is the
+ * honest one, but it is unfiltered by quality, so a row can open on titles
+ * rated in the fives while far better picks sit further down; weighting asks a
+ * title to be both well liked and actually watched before it leads, which
+ * reads better without turning the row into a list of the merely famous.
+ */
+export const PICK_ORDERS = ['suggested', 'popular', 'acclaimed', 'balanced'] as const;
+export type PickOrder = typeof PICK_ORDERS[number];
+
+/** The row's own setting where it has one, otherwise whatever was set for all. */
+function forCatalog(config: any, catalogId: string | undefined, field: string): any {
+  if (!catalogId) return undefined;
+  const entry = (config?.catalogs || []).find((catalog: any) => catalog?.id === catalogId);
+  return entry?.metadata?.[field];
+}
+
+export function pickOrder(config: any, catalogId?: string): PickOrder {
+  const chosen = forCatalog(config, catalogId, 'pickOrder') ?? config?.recommendations?.order;
+  return (PICK_ORDERS as readonly string[]).includes(chosen) ? chosen : 'balanced';
+}
+
+/**
+ * Titles below this are dropped whatever the ordering, because a vote count
+ * near zero is usually not an obscure gem: it is the search having matched the
+ * wrong title. Only applied where a count is actually known.
+ */
+export function voteFloor(config: any, catalogId?: string): number {
+  const chosen = Number(forCatalog(config, catalogId, 'pickMinVotes') ?? config?.recommendations?.min_votes);
+  if (Number.isFinite(chosen) && chosen >= 0) return chosen;
+  return parseInt(process.env.RECOMMENDATION_MIN_VOTES || '100', 10);
+}
+
 export function refreshTtl(config: any): number {
   const chosen = Number(config?.recommendations?.refresh_hours);
   if ((REFRESH_HOURS as readonly number[]).includes(chosen)) return chosen * 60 * 60;
@@ -97,5 +132,5 @@ export function resolveProvider(config: any): ResolvedProvider | null {
 
 module.exports = {
   resolveProvider, reasoningEffort, REASONING_EFFORTS, RECOMMENDATION_EPOCH,
-  refreshTtl, REFRESH_HOURS,
+  refreshTtl, REFRESH_HOURS, pickOrder, PICK_ORDERS, voteFloor,
 };

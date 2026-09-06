@@ -76,6 +76,44 @@ async function hydrate(picks: any[], config: any, userUUID: string): Promise<any
   return out.filter(Boolean);
 }
 
+/**
+ * Sorts a built row, and drops what almost certainly is not the title meant.
+ *
+ * The sort has to cover the whole selection before it is paged, which is why it
+ * reads counts carried on the picks rather than anything hydration produces:
+ * hydration only ever sees the twenty on the page.
+ */
+export function arrange(picks: any[], config: any, catalogId?: string): any[] {
+  const { pickOrder, voteFloor }: any = require('./provider');
+  const order = pickOrder(config, catalogId);
+  const floor = voteFloor(config, catalogId);
+
+  // An unknown count is not evidence of obscurity, so it is left alone.
+  const kept = floor > 0
+    ? picks.filter(pick => !Number.isFinite(pick?.votes) || pick.votes >= floor)
+    : picks.slice();
+
+  if (order === 'suggested') return kept;
+
+  const votes = (pick: any) => (Number.isFinite(pick?.votes) ? pick.votes : 0);
+  const score = (pick: any) => (Number.isFinite(pick?.score) ? pick.score : 0);
+
+  if (order === 'popular') return kept.sort((a, b) => votes(b) - votes(a));
+  if (order === 'acclaimed') return kept.sort((a, b) => score(b) - score(a));
+
+  // Weighted so a high score has to carry an audience to lead the row, which is
+  // what stops a two hundred vote curiosity outranking everything.
+  const counts = kept.map(votes).filter(Boolean).sort((a, b) => a - b);
+  const median = counts.length ? counts[Math.floor(counts.length / 2)] : 0;
+  const mean = kept.length ? kept.reduce((sum, pick) => sum + score(pick), 0) / kept.length : 0;
+  const weighted = (pick: any) => {
+    const v = votes(pick);
+    if (!v || !median) return score(pick);
+    return (v / (v + median)) * score(pick) + (median / (v + median)) * mean;
+  };
+  return kept.sort((a, b) => weighted(b) - weighted(a));
+}
+
 export async function getRecommendationCatalog(
   type: string,
   id: string,
@@ -96,12 +134,16 @@ export async function getRecommendationCatalog(
     // disagree, since each request races the clock separately.
     const picks = await recommend(config, userUUID, profile, kindFor(id));
 
+    // Ordered here rather than when the row is written, so changing the setting
+    // rearranges what already exists instead of paying a model to write it again.
+    const ordered = arrange(picks, config, id);
+
     // The whole selection is generated at once, but clients page through it at
     // the manifest's page size. Serving only the first page silently discarded
     // most of what was generated.
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20', 10);
     const start = Math.max(0, (page - 1) * pageSize);
-    const slice = picks.slice(start, start + pageSize);
+    const slice = ordered.slice(start, start + pageSize);
 
     return hydrate(slice, config, userUUID);
   } catch (error: any) {
@@ -115,6 +157,7 @@ module.exports = {
   RECOMMENDATION_CATALOGS,
   isRecommendationCatalog,
   getRecommendationCatalog,
+  arrange,
 };
 
 /**

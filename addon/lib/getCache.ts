@@ -1417,7 +1417,7 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
   // the previous one's picks being served for the rest of the catalog TTL, which
   // reads as the setting having done nothing.
   if (idOnly.startsWith('recommendations.')) {
-    const { RECOMMENDATION_EPOCH }: any = require('../utils/recommendations/provider');
+    const { RECOMMENDATION_EPOCH, pickOrder, voteFloor }: any = require('../utils/recommendations/provider');
     catalogConfig.recommendations = {
       epoch: RECOMMENDATION_EPOCH,
       provider: config.recommendations?.provider || '',
@@ -1432,6 +1432,13 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
       stalledWeight: config.recommendations?.stalled_weight || '',
       staleAfterDays: config.recommendations?.stale_after_days || '',
       refreshHours: config.recommendations?.refresh_hours || '',
+      // Ordering is applied to a built row, so it changes the page but not the
+      // picks: the page has to notice, and nothing needs writing again.
+      // The resolved values, not the raw settings: the gear sets these per
+      // catalog so two rows must not share a page, and a page whose setting is
+      // simply unset still has to notice when the default itself moves.
+      order: pickOrder(config, idOnly),
+      minVotes: voteFloor(config, idOnly),
     };
   }
 

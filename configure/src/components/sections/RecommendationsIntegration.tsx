@@ -113,6 +113,7 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
   const stalled = draft.stalled_weight || 'note';
   const staleDays = draft.stale_after_days || 180;
   const refreshHours = draft.refresh_hours || 24;
+  const order = draft.order || 'balanced';
   const usingOpenRouter = preferred === 'openrouter'
     ? hasOpenRouter
     : preferred === 'gemini' ? false : !hasGemini && hasOpenRouter;
@@ -449,6 +450,33 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
               )}
 
               <div className="space-y-2 border-t border-white/[0.06] pt-4">
+                <Label className="text-sm font-medium">Order</Label>
+                <div className={TRAY}>
+                  {([
+                    ['suggested', 'As suggested'],
+                    ['popular', 'Most watched'],
+                    ['balanced', 'Well liked'],
+                    ['acclaimed', 'Highest rated'],
+                  ] as const).map(([id, label]) => (
+                    <button key={id} type="button" onClick={() => patch({ order: id })}
+                      aria-pressed={order === id} className={segment(order === id)}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {order === 'suggested'
+                    ? 'The order the model chose. Nothing is weighed by how well it was received, so a row can open on titles few people rated highly.'
+                    : order === 'popular'
+                      ? 'Biggest audience first. Easy to browse, though it buries the unfamiliar picks the profile worked to find.'
+                      : order === 'balanced'
+                        ? 'Rating weighted by audience, so a title needs both to lead the row.'
+                        : 'Highest rated first, whether ten thousand people have seen it or two hundred.'}
+                  {' '}Rearranging is free; it does not rebuild the row.
+                </p>
+              </div>
+
+              <div className="space-y-2">
                 <Label className="text-sm font-medium">Write new rows</Label>
                 <div className={TRAY}>
                   {([[6, 'Every 6 hours'], [12, 'Every 12 hours'], [24, 'Once a day']] as const).map(([id, label]) => (

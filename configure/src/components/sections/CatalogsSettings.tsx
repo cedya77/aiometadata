@@ -32,7 +32,7 @@ import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Database, Copy, MoreHorizontal, Sparkles } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -2433,6 +2433,13 @@ const GenericSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   const [hideWatchedSimkl, setHideWatchedSimkl] = useState<string>(catalog.metadata?.hideWatchedSimkl === true ? 'on' : catalog.metadata?.hideWatchedSimkl === false ? 'off' : 'global');
   const [hideUnreleasedDigital, setHideUnreleasedDigital] = useState<string>(catalog.metadata?.hideUnreleasedDigital === true ? 'on' : catalog.metadata?.hideUnreleasedDigital === false ? 'off' : 'global');
   const [hideUnreleasedShows, setHideUnreleasedShows] = useState<string>(catalog.metadata?.hideUnreleasedShows === true ? 'on' : catalog.metadata?.hideUnreleasedShows === false ? 'off' : 'global');
+  const isRecommendations = (catalog as CatalogConfig & { source?: string }).source === 'recommendations';
+  const [pickOrder, setPickOrder] = useState<string>(catalog.metadata?.pickOrder || 'global');
+  const [pickMinVotes, setPickMinVotes] = useState<string>(
+    catalog.metadata?.pickMinVotes === undefined || catalog.metadata?.pickMinVotes === null
+      ? 'global'
+      : String(catalog.metadata.pickMinVotes),
+  );
 
   const handleSave = () => {
     const hideTraktValue = hideWatchedTrakt === 'on' ? true : hideWatchedTrakt === 'off' ? false : undefined;
@@ -2446,7 +2453,26 @@ const GenericSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, metadata: { ...c.metadata, hideWatchedTrakt: hideTraktValue, hideWatchedAnilist: hideAnilistValue, hideWatchedMdblist: hideMdblistValue, hideWatchedSimkl: hideSimklValue, hideUnreleasedDigital: hideUnreleasedDigitalValue, hideUnreleasedShows: hideUnreleasedShowsValue } }
+          ? {
+            ...c,
+            metadata: {
+              ...c.metadata,
+              hideWatchedTrakt: hideTraktValue,
+              hideWatchedAnilist: hideAnilistValue,
+              hideWatchedMdblist: hideMdblistValue,
+              hideWatchedSimkl: hideSimklValue,
+              hideUnreleasedDigital: hideUnreleasedDigitalValue,
+              hideUnreleasedShows: hideUnreleasedShowsValue,
+              ...(isRecommendations
+                ? {
+                  pickOrder: pickOrder === 'global'
+                    ? undefined
+                    : (pickOrder as 'suggested' | 'popular' | 'acclaimed' | 'balanced'),
+                  pickMinVotes: pickMinVotes === 'global' ? undefined : Number(pickMinVotes),
+                }
+                : {}),
+            },
+          }
           : c
       )
     }));
@@ -2460,6 +2486,47 @@ const GenericSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
           <DialogTitle>{catalog.name} Settings</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
+          {isRecommendations && (
+            <>
+              <div className="space-y-2">
+                <Label>Order</Label>
+                <Select value={pickOrder} onValueChange={setPickOrder}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global">Use Global Setting</SelectItem>
+                    <SelectItem value="suggested">As suggested</SelectItem>
+                    <SelectItem value="popular">Most watched</SelectItem>
+                    <SelectItem value="balanced">Well liked</SelectItem>
+                    <SelectItem value="acclaimed">Highest rated</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Applies to this row alone. As suggested keeps what fits you first rather than
+                  what is famous; the others read IMDb votes and scores. Rearranging is free and
+                  does not build the row again.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Least known</Label>
+                <Select value={pickMinVotes} onValueChange={setPickMinVotes}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global">Use Global Setting</SelectItem>
+                    <SelectItem value="0">Keep everything</SelectItem>
+                    <SelectItem value="100">At least 100 votes</SelectItem>
+                    <SelectItem value="1000">At least 1,000 votes</SelectItem>
+                    <SelectItem value="10000">At least 10,000 votes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Drops titles almost nobody has rated. Mostly this catches a title matched in
+                  error rather than an obscure one worth seeing.
+                </p>
+              </div>
+            </>
+          )}
+
           {config.apiKeys?.traktTokenId && (
             <div className="space-y-2">
               <Label>Hide Trakt Watched</Label>
@@ -3560,7 +3627,7 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
 
 
           {/* Settings Gear - Now show for all catalogs if any tracking is connected */}
-          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || (catalog.source === 'simkl' && !catalog.id.startsWith('simkl.watchlist.')) || catalog.source === 'movielens' || catalog.source === 'letterboxd' || catalog.source === 'streaming' || catalog.source === 'publicmetadb' ||
+          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || (catalog.source === 'simkl' && !catalog.id.startsWith('simkl.watchlist.')) || catalog.source === 'movielens' || catalog.source === 'letterboxd' || catalog.source === 'streaming' || catalog.source === 'publicmetadb' || catalog.source === 'recommendations' ||
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language')) ||
             (config.apiKeys?.traktTokenId || config.apiKeys?.anilistTokenId || config.apiKeys?.mdblist)) && (
             <Tooltip>

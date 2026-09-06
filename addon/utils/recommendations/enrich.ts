@@ -126,6 +126,59 @@ async function fromMdblist(rows: WatchedRow[], config: any): Promise<FactMap> {
 }
 
 /**
+ * Audience size and score for titles that have been resolved to a TMDB id.
+ *
+ * The instance already holds IMDb's own ratings file, a million titles keyed by
+ * imdb id and refreshed daily, which is a far better signal than TMDB's own
+ * counts: Wind River carries 320,000 IMDb votes against 5,931 on TMDB. The one
+ * thing missing is the imdb id, and one MDBList batch per type supplies it for
+ * a whole list, so the lookup itself costs nothing.
+ */
+export async function attachRatings(items: any[], config: any): Promise<void> {
+  const withIds = items.filter(item => item?.tmdbId);
+  if (!withIds.length) return;
+
+  const apiKey = config?.apiKeys?.mdblist;
+  if (!apiKey) return;
+
+  const { fetchMDBListBatchMediaInfo }: any = require('../mdbList');
+  const { getImdbRating }: any = require('../../lib/imdbRatings');
+
+  for (const mediaType of ['movie', 'show'] as const) {
+    const group = withIds.filter(item => (mediaType === 'movie' ? item.kind === 'movie' : item.kind !== 'movie'));
+    if (!group.length) continue;
+
+    try {
+      const results = await fetchMDBListBatchMediaInfo(
+        'tmdb', mediaType, group.map(item => String(item.tmdbId)), apiKey, [],
+      );
+      const imdbByTmdb = new Map<number, string>();
+      for (const entry of results || []) {
+        const tmdb = Number(entry?.ids?.tmdb ?? entry?.id);
+        const imdb = entry?.ids?.imdb;
+        if (Number.isFinite(tmdb) && typeof imdb === 'string' && imdb) imdbByTmdb.set(tmdb, imdb);
+      }
+
+      await Promise.all(group.map(async (item) => {
+        const imdbId = imdbByTmdb.get(Number(item.tmdbId));
+        if (!imdbId) return;
+        item.imdbId = imdbId;
+        const rating = await getImdbRating(imdbId).catch(() => null);
+        if (!rating) return;
+        item.votes = rating.votes;
+        item.score = rating.rating;
+        item.votesFrom = 'imdb';
+      }));
+    } catch (error: any) {
+      logger.debug(`Could not read ratings for ${mediaType}s, keeping TMDB counts: ${error.message}`);
+    }
+  }
+
+  const known = items.filter(item => item.votesFrom === 'imdb').length;
+  logger.debug(`Ratings: ${known} of ${items.length} from IMDb, the rest from TMDB`);
+}
+
+/**
  * Genres and the name behind each title, for the rows that reach the prompt.
  *
  * Neither source carries them: Simkl's history endpoint returns watch state and
@@ -165,4 +218,4 @@ export async function enrichRows(rows: WatchedRow[], config: any): Promise<FactM
   return facts;
 }
 
-module.exports = { enrichRows };
+module.exports = { enrichRows, attachRatings };

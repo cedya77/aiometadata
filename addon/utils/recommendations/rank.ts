@@ -345,6 +345,12 @@ async function resolveSuggestion(pick: Suggestion, config: any, genres: Genres):
       tmdbId: hit.id,
       kind: pick.kind,
       anime: isAnime(hit, pick.kind === 'series' ? genres.series : genres.movie),
+      // Kept from the search we already ran. TMDB counts are a fraction of
+      // IMDb's and from a different crowd, but they are free and need no key,
+      // so they are the fallback when nothing better can be looked up.
+      votes: Number.isFinite(hit.vote_count) ? hit.vote_count : undefined,
+      score: Number.isFinite(hit.vote_average) ? hit.vote_average : undefined,
+      votesFrom: 'tmdb',
       title: hit.title || hit.name || pick.title,
       year: Number(String(hit.release_date || hit.first_air_date || '').slice(0, 4)) || pick.year,
       poster: hit.poster_path ? `https://image.tmdb.org/t/p/w500${hit.poster_path}` : null,
@@ -455,6 +461,10 @@ export async function recommend(
       seen.add(signature);
       return true;
     });
+
+    // Attached before caching, so ordering a page is a sort rather than a lookup.
+    const { attachRatings }: any = require('./enrich');
+    await attachRatings(kept, config).catch(() => undefined);
 
     logger.info(
       `${userUUID}/${kind}: ${picks.length} proposed, `
