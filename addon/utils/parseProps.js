@@ -15,7 +15,7 @@ const { getImdbRating } = require('../lib/getImdbRating');
 const consola = require('consola');
 const { cacheWrapMetaSmart, cacheWrapGlobal } = require('../lib/getCache');
 const { getReleaseAvailability } = require('./releaseAvailability');
-const { malRatingToCertification, isUnratedCertification } = require('./ageRating');
+const { malRatingToCertification, isUnratedCertification, applyDisplayAgeRatingProjection } = require('./ageRating');
 const wikiMappings = require('../lib/wiki-mapper.js');
 function CATALOG_TTL() { return parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10); }
 const buildInfo = require('../lib/buildInfo');
@@ -2025,6 +2025,20 @@ function getKitsuGenresForItem(item, included = [], allowIncludedFallback = fals
     .filter(Boolean);
 }
 
+/**
+ * Anime catalog rows are built here instead of by getMeta, so the certification the
+ * parser had already resolved stayed on the meta as a bare field and never reached
+ * `app_extras`, where the display projection looks for it. A row therefore arrived
+ * without the rating its movie and series counterparts carry, and the chip only
+ * appeared once the meta request landed behind it. Restate it the way the meta
+ * builders do, and project it so the row ships the same `links` they do.
+ */
+function attachAnimeCatalogCertification(meta, config) {
+  if (!meta || isUnratedCertification(meta.certification)) return meta;
+  meta.app_extras = { ...(meta.app_extras || {}), certification: meta.certification };
+  return applyDisplayAgeRatingProjection(meta, config);
+}
+
 async function parseAnimeCatalogMeta(anime, config, language, descriptionFallback = null) {
   if (!anime || !anime.mal_id) return null;
 
@@ -2139,7 +2153,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
       name: anime.title_english || anime.title
     });
   }
-  return {
+  return attachAnimeCatalogCertification({
     id:  `mal:${malId}`,
     type: stremioType,
     logo: stremioType === 'movie' ? await tmdb.getTmdbMovieLogo(tmdbId, config) : await tmdb.getTmdbSeriesLogo(tmdbId, config),
@@ -2164,7 +2178,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
       defaultVideoId: stremioType === 'movie' ? mapping?.imdb_id ? mapping?.imdb_id: (kitsuId ? `kitsu:${kitsuId}` : `mal:${malId}`): null,
       hasScheduledVideos: stremioType === 'series',
     },
-  };
+  }, config);
 }
 
 /**
@@ -2399,7 +2413,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
           return metaRatingLevel <= userRatingLevel;
         });
       }
-      return metas;
+      return metas.map(meta => attachAnimeCatalogCertification(meta, config));
     } catch (error) {
       logger.warn(`[parseAnimeCatalogMetaBatch] Kitsu batch fetch failed:`, error.message);
     }
@@ -2531,7 +2545,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
     }
   }));
   
-  return results.filter(Boolean);
+  return results.filter(Boolean).map(meta => attachAnimeCatalogCertification(meta, config));
 }
 
 /**

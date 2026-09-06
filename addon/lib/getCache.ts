@@ -3,7 +3,7 @@ const { loadConfigFromDatabase }: any = require('./configApi');
 const consola: any = require('consola');
 const crypto: any = require('crypto');
 const { isMetricsDisabled }: any = require('./metricsConfig');
-const { allowsUnrated, hasAgeRatingCap }: any = require('../utils/ageRating');
+const { allowsUnrated, hasAgeRatingCap, stripCertificationLinks, applyDisplayAgeRatingProjection }: any = require('../utils/ageRating');
 const {
   decodeCachePayload,
   encodeCachePayload,
@@ -1069,29 +1069,6 @@ function applyBlurThumbProjection(meta: any, config: any): any {
     }
     return { ...video, thumbnail: `${blurPrefix}${encodeURIComponent(rawThumbnail)}` };
   });
-  return meta;
-}
-
-function stripCertificationLinks(links: any[], certification: string): any[] {
-  if (!Array.isArray(links) || !certification) return links;
-  return links.filter((link: any) => !(link?.name === certification && link?.category === 'Genres'));
-}
-
-function applyDisplayAgeRatingProjection(meta: any, config: any): any {
-  const certification = meta?.app_extras?.certification;
-  if (!certification) return meta;
-  const displayCert = meta?.app_extras?.certificationLocal || certification;
-  const links = Array.isArray(meta.links) ? stripCertificationLinks(meta.links, certification).filter((l: any) => !(l?.name === displayCert && l?.category === 'Genres')) : [];
-  if (config.displayAgeRating) {
-    const imdbId = meta.id?.match(/^tt\d+/)?.[0] || meta.imdb_id || meta._imdbId;
-    const tmdbPath = meta.type === 'series' ? 'tv' : 'movie';
-    const url = imdbId
-      ? `https://www.imdb.com/title/${imdbId}/parentalguide/`
-      : `https://www.themoviedb.org/${tmdbPath}/${meta.id}`;
-    meta.links = [{ name: displayCert, category: 'Genres', url }, ...links];
-  } else if (Array.isArray(meta.links)) {
-    meta.links = links;
-  }
   return meta;
 }
 
