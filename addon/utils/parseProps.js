@@ -3657,14 +3657,12 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
     }
   }
   
-  // Check if poster rating is enabled (RPDB or Top Poster API)
-  if (isPosterRatingEnabled(config)) {
-    const proxyId = (imdbId ? `${imdbId}` : (tmdbId ? `tmdb:${tmdbId}` : tvdbId ? `tvdb:${tvdbId}` : null));
-
-    if (proxyId) {
-      finalPosterUrl = buildPosterProxyUrl(host, stremioType, proxyId, finalPosterUrl, language, config);
-    }
-  }
+  // The rating poster is deliberately not applied to anime. A franchise is one title
+  // on imdb/tmdb/tvdb and many entries on Kitsu/MAL, so keying the poster on the mapped
+  // id handed every season of a franchise the same image - Gintama's kitsu:818, 5971,
+  // 7253 and 12553 all map to tt0988818 - while an entry with no mapping kept its own
+  // artwork and looked correct. The entry's own poster is the only thing that tells the
+  // seasons apart, so it is kept.
 
   return finalPosterUrl;
 }

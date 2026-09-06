@@ -4967,8 +4967,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
       const proxyApiKey = config.usePosterProxy ? getPosterRatingApiKey(config) : null;
       for (const meta of responseData.metas) {
         const ids = extractIdsFromMeta(meta);
+        const rowIsAnime = (meta.type || '') === 'anime' || meta.isAnime === true
+          || /^(kitsu|mal|anilist|anidb):/i.test(String(meta.id || ''));
         const type = meta.type || actualType;
-        if (posterPattern && (!isUpNextCatalog || upNextUsesShowPoster)) {
+        if (posterPattern && !rowIsAnime && (!isUpNextCatalog || upNextUsesShowPoster)) {
           if (proxyApiKey) {
             const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
             if (proxyId) {
@@ -5142,8 +5144,14 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
       const { resolveCustomArtUrl, resolvePosterPattern, resolveThumbnailPattern, getPosterRatingApiKey } = require('./utils/parseProps');
       const ids = extractIdsFromMeta(result.meta);
       const metaType = result.meta.type || type;
+      // An anime franchise is one title on imdb/tmdb/tvdb and many entries on Kitsu/MAL,
+      // so a poster keyed on the mapped id is the same image for every season. Gintama's
+      // kitsu:818, 5971, 7253 and 12553 all map to tt0988818 and all resolved to one
+      // poster, while kitsu:14095, which has no mapping, kept its own and looked right.
+      const isAnimeMeta = metaType === 'anime' || result.meta.isAnime === true
+        || /^(kitsu|mal|anilist|anidb):/i.test(String(result.meta.id || ''));
       // Apply poster pattern unless enableRatingPostersForLibrary is explicitly disabled
-      if (config.enableRatingPostersForLibrary !== false) {
+      if (config.enableRatingPostersForLibrary !== false && !isAnimeMeta) {
         const metaPosterPattern = resolvePosterPattern(config);
         if (metaPosterPattern) {
           const proxyApiKey = config.usePosterProxy ? getPosterRatingApiKey(config) : null;

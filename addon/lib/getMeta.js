@@ -2841,25 +2841,12 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     // Use AniList poster if available and configured
     let finalPosterUrl = enrichmentData.bestPosterUrl || posterUrl; 
     const _rawPosterUrl = finalPosterUrl;
-    // Check if poster rating is enabled (RPDB or Top Poster API)
-    if (Utils.isPosterRatingEnabled(config) && mapping && stremioType !== 'movie') {
-      const tvdbId = mapping.tvdbId;
-      const tmdbId = mapping.tmdbId;
-      const imdbId = mapping.imdbId;
-      let proxyId = null;
-      let proxyType = stremioType;
-
-      if (tvdbId) {
-        proxyId = `tvdb:${tvdbId}`;
-      } else if (tmdbId || imdbId) {
-        proxyId = tmdbId ? `tmdb:${tmdbId}` : `imdb:${imdbId}`; 
-      }
-
-      if (proxyId) {
-        finalPosterUrl = Utils.buildPosterProxyUrl(host, proxyType, proxyId, posterUrl, language, config);
-      logger.debug(`[buildAnimeResponse] Constructed Poster Rating Proxy URL: ${finalPosterUrl}`);
-      }
-    }
+    // The rating poster is deliberately not applied here. Anime series map many-to-one
+    // onto their tvdb/tmdb/imdb id - a franchise is a single title over there and many
+    // Kitsu/MAL entries over here - so keying the poster on the mapped id handed every
+    // season of a franchise the same image, and the entry's own artwork is the only
+    // thing that tells them apart. Anime movies never reached this branch, so no poster
+    // that previously carried a rating loses one.
     
     
     // Process episodes while API calls are running
