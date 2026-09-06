@@ -40,17 +40,8 @@ function pickDefined(source: any, keys: string[]) {
 }
 
 //flatten to .original since we only consume it
-/**
- * Kitsu sometimes hands back a presigned storage URL carrying `X-Amz-Expires=900`, so
- * the link dies fifteen minutes after it is issued while the meta around it is cached
- * for far longer. The client then gets a 401 upstream, the art proxy turns that into a
- * 502, and the title renders with no image at all while its neighbours are fine -
- * Gintama: The Final (kitsu:43683) against the rest of the franchise.
- *
- * The object is served publicly without the signature, so dropping the query restores a
- * permanent URL. Only signed URLs are touched, and only the query is removed, so an
- * unsigned URL and any meaningful path are left exactly as they are.
- */
+/** Kitsu presigns some storage urls; the query is signing parameters and expires in
+ *  15 minutes, while the object stays public without them. */
 function stripExpiringSignature(url: string): string {
   if (typeof url !== 'string' || !url.includes('X-Amz-Signature')) return url;
   const query = url.indexOf('?');
