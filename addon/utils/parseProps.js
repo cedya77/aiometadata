@@ -314,6 +314,61 @@ function getPosterRatingApiKey(config) {
  * we use direct URL and let Stremio handle it. For permanent errors (404, 401), 
  * Top Poster API returns proper codes that Stremio can handle.
  */
+/**
+ * Whether this entry may wear a rating poster.
+ *
+ * The rating providers only know imdb and tmdb ids, and an anime franchise is a single
+ * title there and many entries on Kitsu/MAL, so keying on a shared id hands every
+ * season the same poster. The anime-list mapping records which entries claim an id, so
+ * ask it rather than assume.
+ *
+ * All three indexes are consulted and the longest claimant list wins, because their
+ * coverage differs sharply - roughly 4400 tvdb and 4200 tmdb mappings against 1700 imdb
+ * ones. Gintama is why that matters: tt0988818 is absent from the imdb index and looks
+ * unique, while tmdb 57041 and tvdb 79895 each report thirteen entries.
+ *
+ * An id claimed once is the entry's own and is always safe. An id claimed by several
+ * belongs to the franchise, and exactly one entry may wear it: the start of the first
+ * season, which is what the provider's artwork actually depicts. Every other entry
+ * keeps its own poster, so no two entries can end up showing the same image while the
+ * badge is still preserved wherever it is truthful.
+ */
+function animeRatingPosterKeyIsUnique(ids) {
+  try {
+    const mapper = require('../lib/anime-list-mapper');
+    if (!mapper?.isInitialized?.()) return false;
+    const imdbId = ids?.imdbId || ids?.imdb_id;
+    const tmdbId = ids?.tmdbId || ids?.tmdb_id;
+    const tvdbId = ids?.tvdbId || ids?.tvdb_id;
+    const anidbId = parseInt(ids?.anidbId || ids?.anidb_id, 10);
+
+    let claimants = [];
+    for (const list of [
+      imdbId ? mapper.getAnimeByImdbId(imdbId) : null,
+      tmdbId ? mapper.getAnimeByTmdbId(tmdbId) : null,
+      tvdbId ? mapper.getAnimeByTvdbId(tvdbId) : null,
+    ]) {
+      if (Array.isArray(list) && list.length > claimants.length) claimants = list;
+    }
+    if (claimants.length <= 1) return true;
+    if (!Number.isFinite(anidbId)) return false;
+
+    const rank = (entry) => [
+      entry?.$?.defaulttvdbseason === '1' ? 0 : 1,
+      parseInt(entry?.$?.episodeoffset, 10) || 0,
+      parseInt(entry?.$?.anidbid, 10) || 0,
+    ];
+    const primary = claimants.slice().sort((x, y) => {
+      const a = rank(x), b = rank(y);
+      return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+    })[0];
+    return parseInt(primary?.$?.anidbid, 10) === anidbId;
+  } catch {
+    // Mapping unavailable: a wrong poster is worse than a missing badge, so decline.
+    return false;
+  }
+}
+
 function buildPosterProxyUrl(host, type, proxyId, fallback, language, config) {
   const provider = config.posterRatingProvider || 'none';
   const apiKey = getPosterRatingApiKey(config);
@@ -3493,6 +3548,7 @@ module.exports = {
   resolveProxyRatingPosterUrl,
   getPosterRatingApiKey,
   buildPosterProxyUrl,
+  animeRatingPosterKeyIsUnique,
   isPosterRatingEnabled,
   getDefaultPosterPattern,
   getDefaultThumbnailPattern,
@@ -3657,12 +3713,14 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
     }
   }
   
-  // The rating poster is deliberately not applied to anime. A franchise is one title
-  // on imdb/tmdb/tvdb and many entries on Kitsu/MAL, so keying the poster on the mapped
-  // id handed every season of a franchise the same image - Gintama's kitsu:818, 5971,
-  // 7253 and 12553 all map to tt0988818 - while an entry with no mapping kept its own
-  // artwork and looked correct. The entry's own poster is the only thing that tells the
-  // seasons apart, so it is kept.
+  // Only key the rating poster on an id this entry does not share with the rest of its
+  // franchise; see animeRatingPosterKeyIsUnique.
+  if (isPosterRatingEnabled(config) && animeRatingPosterKeyIsUnique({ imdbId, tmdbId, tvdbId, anidbId: mapping?.anidbId })) {
+    const proxyId = (imdbId ? `${imdbId}` : (tmdbId ? `tmdb:${tmdbId}` : null));
+    if (proxyId) {
+      finalPosterUrl = buildPosterProxyUrl(host, stremioType, proxyId, finalPosterUrl, language, config);
+    }
+  }
 
   return finalPosterUrl;
 }

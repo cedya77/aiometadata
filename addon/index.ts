@@ -4969,8 +4969,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
         const ids = extractIdsFromMeta(meta);
         const rowIsAnime = (meta.type || '') === 'anime' || meta.isAnime === true
           || /^(kitsu|mal|anilist|anidb):/i.test(String(meta.id || ''));
+        const rowSkipsRatingPoster = rowIsAnime
+          && !require('./utils/parseProps').animeRatingPosterKeyIsUnique(ids);
         const type = meta.type || actualType;
-        if (posterPattern && !rowIsAnime && (!isUpNextCatalog || upNextUsesShowPoster)) {
+        if (posterPattern && !rowSkipsRatingPoster && (!isUpNextCatalog || upNextUsesShowPoster)) {
           if (proxyApiKey) {
             const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
             if (proxyId) {
@@ -5150,8 +5152,12 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
       // poster, while kitsu:14095, which has no mapping, kept its own and looked right.
       const isAnimeMeta = metaType === 'anime' || result.meta.isAnime === true
         || /^(kitsu|mal|anilist|anidb):/i.test(String(result.meta.id || ''));
+      // An anime keeps its rating poster when the id it would be keyed on is its own
+      // rather than the whole franchise's; see animeRatingPosterKeyIsUnique.
+      const skipRatingPoster = isAnimeMeta
+        && !require('./utils/parseProps').animeRatingPosterKeyIsUnique(ids);
       // Apply poster pattern unless enableRatingPostersForLibrary is explicitly disabled
-      if (config.enableRatingPostersForLibrary !== false && !isAnimeMeta) {
+      if (config.enableRatingPostersForLibrary !== false && !skipRatingPoster) {
         const metaPosterPattern = resolvePosterPattern(config);
         if (metaPosterPattern) {
           const proxyApiKey = config.usePosterProxy ? getPosterRatingApiKey(config) : null;
