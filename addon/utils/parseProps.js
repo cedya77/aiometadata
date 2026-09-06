@@ -2034,7 +2034,22 @@ function getKitsuGenresForItem(item, included = [], allowIncludedFallback = fals
  * builders do, and project it so the row ships the same `links` they do.
  */
 function attachAnimeCatalogCertification(meta, config) {
-  if (!meta || isUnratedCertification(meta.certification)) return meta;
+  if (!meta) return meta;
+  // A row and the meta page it opens must agree, or the client shows one and then
+  // swaps in the other. The meta builders give anime an imdb link, a share link and a
+  // genre link per genre; a row that carried none of them changed the moment the meta
+  // request landed behind it. Build the same set from what the row already holds.
+  if (!Array.isArray(meta.links) || meta.links.length === 0) {
+    const links = [];
+    if (meta.imdb_id) {
+      links.push(parseImdbLink(meta.imdbRating, meta.imdb_id));
+      links.push(parseShareLink(meta.name, meta.imdb_id, meta.type));
+    }
+    links.push(...parseAnimeGenreLink(meta.genres, meta.type, config.userUUID));
+    const built = links.filter(Boolean);
+    if (built.length > 0) meta.links = built;
+  }
+  if (isUnratedCertification(meta.certification)) return meta;
   meta.app_extras = { ...(meta.app_extras || {}), certification: meta.certification };
   return applyDisplayAgeRatingProjection(meta, config);
 }

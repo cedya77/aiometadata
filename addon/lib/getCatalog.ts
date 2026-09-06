@@ -41,6 +41,37 @@ const host = process.env.HOST_NAME?.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
+
+/**
+ * A catalog row and the meta page it opens must agree, or the client paints one and
+ * then swaps in the other. On Android TV the preview panel fills from the row as soon
+ * as an item is focused and is replaced when /meta lands, so any disagreement is
+ * visible as a flicker - and only when scrolling fast enough to see the first paint.
+ *
+ * Movie and series rows do not flicker because they are built by getMeta itself. Anime
+ * rows are built by the lighter parseAnimeCatalogMeta, which resolves genres and the
+ * certification from different sources than the meta builders, so the two drift per
+ * title: some rows carry the rating but fewer genre links, others carry the genres but
+ * no rating. Patching field by field only moves the drift around, so resolve the rows
+ * through the same builder and the same cache the meta path already uses.
+ */
+async function hydrateAnimeRows(rows: any[], language: string, config: UserConfig, userUUID: string, includeVideos: boolean): Promise<any[]> {
+  if (!Array.isArray(rows) || rows.length === 0) return rows;
+  return await Promise.all(rows.map(async (row: any) => {
+    if (!row?.id) return row;
+    try {
+      const result = await cacheWrapMetaSmart(userUUID || '', row.id, async () => {
+        return await getMeta(row.type, language, row.id, config, userUUID || '', includeVideos);
+      }, undefined, { enableErrorCaching: true, maxRetries: 1, config }, row.type as any, includeVideos);
+      // Returned as-is: overriding any field here would reintroduce exactly the
+      // disagreement this function exists to remove.
+      return result?.meta ?? row;
+    } catch {
+      return row;
+    }
+  }));
+}
+
 async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false, skip?: number): Promise<{ metas: any[] }> {
   try {
     if (id === 'tvdb.collections') {
@@ -96,7 +127,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     else if (id.startsWith('mal.')) {
       logger.debug(`Routing to MAL catalog handler for id: ${id}`);
       const malResults = await getMalCatalog(type, id, genre, page, language, config);
-      return { metas: malResults };
+      return { metas: await hydrateAnimeRows(malResults, language, config, userUUID, includeVideos) };
     }
     else if (id === 'tvmaze.schedule') {
       logger.debug(`Routing to TVMaze schedule catalog handler`);
@@ -111,7 +142,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     else if (id.startsWith('anilist.')) {
       logger.debug(`Routing to AniList catalog handler for id: ${id}`);
       const anilistResults = await getAniListCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      return { metas: anilistResults };
+      return { metas: await hydrateAnimeRows(anilistResults, language, config, userUUID, includeVideos) };
     }
     else if (id.startsWith('letterboxd.')) {
       logger.debug(`Routing to Letterboxd catalog handler for id: ${id}`);
