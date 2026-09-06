@@ -61,6 +61,12 @@ interface GenerateContentResult {
   text: string | null;
   /** Normalised where OpenRouter provides it, otherwise the provider's own. */
   finishReason: string | null;
+  /**
+   * Token counts and cost as OpenRouter billed them. The prompt count is the
+   * only way to see whether an `:online` model pasted search results in, since
+   * nothing else in the reply says that it searched.
+   */
+  usage: { promptTokens?: number; completionTokens?: number; cost?: number } | null;
 }
 
 async function generateContent({ apiKey, model, prompt, systemPrompt, timeout = 30000, maxTokens = 8192, reasoningEffort }: GenerateContentOptions): Promise<GenerateContentResult> {
@@ -117,6 +123,13 @@ async function generateContent({ apiKey, model, prompt, systemPrompt, timeout = 
     return {
       text,
       finishReason: choice?.finish_reason || choice?.native_finish_reason || null,
+      usage: data?.usage
+        ? {
+          promptTokens: data.usage.prompt_tokens,
+          completionTokens: data.usage.completion_tokens,
+          cost: data.usage.cost,
+        }
+        : null,
     };
   } catch (error: any) {
     const responseTime = Date.now() - startTime;

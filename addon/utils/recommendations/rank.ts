@@ -11,6 +11,25 @@ const DEFAULT_WANT = parseInt(process.env.RECOMMENDATION_COUNT || '100', 10);
 
 const RECENT_TTL = parseInt(process.env.RECOMMENDATION_RECENT_TTL || String(24 * 60 * 60), 10);
 
+/** Roughly what one pick costs to write: a title, a year, a kind and a short reason. */
+const TOKENS_PER_PICK = parseInt(process.env.RECOMMENDATION_TOKENS_PER_PICK || '50', 10);
+
+/**
+ * Sized to the answer rather than to the model's ceiling.
+ *
+ * OpenRouter reserves the whole output window against the balance before it
+ * will run a request, so asking for far more than the reply needs refuses
+ * calls that a smaller ask would have carried: a flat 16k on a model billed at
+ * $30 per million output tokens demanded half a dollar of headroom to write a
+ * list measured at about a third of that. Thinking is drawn from the same
+ * budget, so a heavier setting is given room rather than being starved.
+ */
+function replyBudget(picks: number, effort: string): number {
+  const thinking = effort === 'high' ? 2 : effort === 'medium' ? 1.5 : 1;
+  const needed = Math.ceil(picks * TOKENS_PER_PICK * thinking) + 512;
+  return Math.min(16384, Math.max(2048, needed));
+}
+
 /**
  * Grounding is offered to the model, not imposed on it, and it will not take it
  * up for a request it believes it can already answer: asked for a JSON array of
@@ -20,7 +39,7 @@ const RECENT_TTL = parseInt(process.env.RECOMMENDATION_RECENT_TTL || String(24 *
  * answer is handed to the ranking call as context. Shared between users, since
  * what came out this year does not depend on who is asking.
  */
-async function fetchRecent(profile: TasteProfile, kind: RecommendKind, chosen: any): Promise<string> {
+async function fetchRecent(profile: TasteProfile, kind: RecommendKind, chosen: any, config: any): Promise<string> {
   const { cacheWrapGlobal }: any = require('../../lib/getCache');
   const now = new Date().getFullYear();
   const shape = kind === 'movie' ? 'films'
@@ -37,17 +56,24 @@ async function fetchRecent(profile: TasteProfile, kind: RecommendKind, chosen: a
   return cacheWrapGlobal(key, async () => {
     const { generateContent } = require(chosen.clientPath);
     try {
+      const { reasoningEffort }: any = require('./provider');
       const result = await generateContent({
         apiKey: chosen.apiKey,
         model: chosen.model,
         prompt: question,
         useGrounding: true,
+        reasoningEffort: reasoningEffort(config),
         timeout: 60000,
       });
       const queries = result?.groundingMetadata?.webSearchQueries;
-      logger.debug(queries?.length
-        ? `Web search ran ${queries.length} queries for recent ${kind}`
-        : `Web search returned nothing for recent ${kind}`);
+      const usage = result?.usage;
+      logger.info(
+        `Recent ${kind} search via ${chosen.model}: `
+        + (queries?.length ? `${queries.length} queries, ` : '')
+        + (usage?.promptTokens ? `${usage.promptTokens} prompt tokens, ` : '')
+        + (usage?.cost ? `$${Number(usage.cost).toFixed(4)}, ` : '')
+        + `${(result?.text || '').length} chars back`
+      );
       return (result?.text || '').slice(0, 6000);
     } catch (error: any) {
       logger.warn(`Web search pass failed, continuing without it: ${error.message}`);
@@ -67,7 +93,7 @@ export type RecommendKind = 'movie' | 'series' | 'anime' | 'all';
 /** Where live results come from: OpenRouter's :online pastes them in ahead of
  *  the call, Gemini needs the separate pass below. Either way the ranking call
  *  itself reads context rather than searching. */
-type SearchMode = 'preloaded' | 'context' | false;
+type SearchMode = 'preloaded' | false;
 
 interface Suggestion {
   title: string;
@@ -188,10 +214,7 @@ function buildPrompt(
         + 'Draw the newest part of your list from these where they fit, and take their years as '
         + 'correct over your own recollection. They are candidates, not a list to copy out: skip '
         + 'any that do not suit, and keep the rest of the list from your own knowledge.'
-      : searchMode === 'context'
-        ? 'Live search results are in your context. Use them for the newest part of the list, and '
-          + 'verify a release year against them rather than guessing.'
-        : '',
+      : '',
     '',
     'Already watched, do not repeat any of these:',
     exclude.join(', '),
@@ -369,20 +392,25 @@ export async function recommend(
 
     if (!chosen) return [];
     const { model, apiKey, clientPath, webSearch } = chosen;
-    const searchMode: SearchMode = webSearch ? (chosen.provider === 'openrouter' ? 'context' : 'preloaded') : false;
-    // OpenRouter's :online has already pasted results in by the time the model
-    // is reached, so the extra pass is Gemini's alone.
-    const recent = searchMode === 'preloaded' ? await fetchRecent(profile, kind, chosen) : '';
+    const searchMode: SearchMode = webSearch ? 'preloaded' : false;
+    // Both providers are asked as a question first. OpenRouter will search off a
+    // ranking prompt too, but the query it derives from twenty thousand
+    // characters of JSON instructions is a poor one, and it is billed per
+    // request: a plain question is a better search and is asked once a day.
+    const recent = searchMode ? await fetchRecent(profile, kind, chosen, config) : '';
     const { generateContent } = require(clientPath);
 
     // Asking for extra covers the ones that will not resolve or are already watched.
+    const asked = Math.ceil(want * 1.25);
     const result = await generateContent({
       apiKey,
-      model,
-      prompt: buildPrompt(profile, kind, exclude, Math.ceil(want * 1.25), watched, searchMode, recent),
+      // The search happened in the pass above and its answer is in the prompt,
+      // so this call reads context rather than paying to search again.
+      model: recent ? String(model).replace(/:online$/, '') : model,
+      prompt: buildPrompt(profile, kind, exclude, asked, watched, searchMode, recent),
       systemPrompt: systemPrompt(searchMode),
       timeout: 90000,
-      maxTokens: 16384,
+      maxTokens: replyBudget(asked, reasoningEffort(config)),
       reasoningEffort: reasoningEffort(config),
     });
 

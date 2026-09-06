@@ -26,7 +26,7 @@ export interface ResolvedProvider {
  * pages being served for the rest of the catalog TTL: the series row went on
  * showing an anime film for hours after the filter that excludes it shipped.
  */
-export const RECOMMENDATION_EPOCH = 2;
+export const RECOMMENDATION_EPOCH = 3;
 
 export const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'] as const;
 
