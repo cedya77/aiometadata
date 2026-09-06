@@ -1,0 +1,144 @@
+name: Docker - Build and Push PREVIEW Image
+
+# Run by hand against a branch, for putting a change in front of a few testers
+# before it is merged. Publishes under a tag of its own so the shared `testing`
+# image keeps pointing at what its testers already run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to publish, e.g. recommendations'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+    env:
+      REGISTRY: ghcr.io
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set preview version
+        env:
+          PREVIEW_TAG: ${{ inputs.tag }}
+        run: |
+          DATE=$(date -u +'%Y%m%d')
+          export SEMVER="0.0.0-preview.${PREVIEW_TAG}.${DATE}"
+          node -e "
+            const fs = require('fs');
+            const version = process.env.SEMVER;
+            const pkg = JSON.parse(fs.readFileSync('package.json'));
+            pkg.version = version;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            if (fs.existsSync('package-lock.json')) {
+              const lock = JSON.parse(fs.readFileSync('package-lock.json'));
+              lock.version = version;
+              if (lock.packages && lock.packages['']) lock.packages[''].version = version;
+              fs.writeFileSync('package-lock.json', JSON.stringify(lock, null, 2) + '\n');
+            }
+          "
+
+      - name: Set up QEMU for multi-arch builds
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare platform pair
+        id: prep
+        run: |
+          platform=${{ matrix.platform }}
+          echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          cache-from: type=gha,scope=preview-${{ steps.prep.outputs.pair }}
+          cache-to: type=gha,scope=preview-${{ steps.prep.outputs.pair }},mode=max
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-digests-${{ steps.prep.outputs.pair }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: preview-digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifest
+        working-directory: /tmp/digests
+        env:
+          PREVIEW_TAG: ${{ inputs.tag }}
+        run: |
+          IMAGE=ghcr.io/${{ github.repository }}
+          docker buildx imagetools create \
+            -t "$IMAGE:$PREVIEW_TAG" \
+            -t "$IMAGE:$PREVIEW_TAG-${{ github.sha }}" \
+            $(printf "$IMAGE@sha256:%s " *)
+
+      - name: Report
+        env:
+          PREVIEW_TAG: ${{ inputs.tag }}
+        run: |
+          echo "Published ghcr.io/${{ github.repository }}:$PREVIEW_TAG from ${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
