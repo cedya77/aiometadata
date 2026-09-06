@@ -543,6 +543,20 @@ class ConfigApi {
       
       const installUrl = buildInstallUrl(process.env.HOST_NAME, req.get('host'), manifestIdentifier(userUUID));
 
+      // Recommendations take a large model a minute or more to write, so they
+      // are built now rather than when somebody opens the row. Deliberately not
+      // awaited: the save is done, and a slow model must not hold up its reply.
+      try {
+        const { warmRecommendations } = require('../utils/recommendations/catalog');
+        setImmediate(() => {
+          warmRecommendations(config, userUUID).catch(error => {
+            logger.warn(`Recommendation warm failed for ${userUUID}: ${error.message}`);
+          });
+        });
+      } catch (warmError) {
+        logger.warn(`Could not start recommendation warm: ${warmError.message}`);
+      }
+
       res.json({
         success: true,
         userUUID,

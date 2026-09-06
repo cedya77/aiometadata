@@ -274,6 +274,35 @@ export interface AppConfig {
     gemini_model?: string;
     openrouter_model?: string;
   };
+  /** Model overrides for the recommendation catalogs. */
+  recommendations?: {
+    provider?: 'gemini' | 'openrouter';
+    gemini_model?: string;
+    openrouter_model?: string;
+    /** Which watch histories the profile is built from. */
+    sources?: 'simkl' | 'mdblist' | 'both';
+    /** Gemini google_search grounding, or the OpenRouter :online suffix. Off unless set. */
+    web_search?: boolean;
+    /**
+     * How much thinking the model may spend before it answers. Billed and
+     * counted against the same reply budget as the answer, so a high setting
+     * can leave a long list with no room to finish. OpenRouter only.
+     */
+    reasoning_effort?: 'minimal' | 'low' | 'medium' | 'high';
+    /**
+     * How much a series left unfinished counts against it. Stalling is weak
+     * evidence: people stop because a season ended or they forgot, not only
+     * because they lost interest.
+     */
+    stalled_weight?: 'ignore' | 'note' | 'mild' | 'dislike';
+    /** Days without an episode before an unfinished title reads as set aside. */
+    stale_after_days?: number;
+    /**
+     * How often the rows are written again. Each rebuild is a large model call
+     * that is charged for, so nothing shorter than six hours is offered.
+     */
+    refresh_hours?: 6 | 12 | 24;
+  };
   searchEnabled: boolean;
   sessionId: string;
   timezone?: string;

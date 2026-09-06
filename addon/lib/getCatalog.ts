@@ -126,6 +126,12 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       const simklResults = await getSimklCatalog(type, id, genre, page, language, config, userUUID, includeVideos, skip);
       return { metas: simklResults };
     }
+    else if (id.startsWith('recommendations.')) {
+      logger.debug(`Routing to recommendation handler for id: ${id}`);
+      const { getRecommendationCatalog }: any = require('../utils/recommendations/catalog');
+      const picks = await getRecommendationCatalog(type, id, page, config, userUUID);
+      return { metas: picks };
+    }
     else if (id.startsWith('movielens.')) {
       logger.debug(`Routing to MovieLens catalog handler for id: ${id}`);
       const movieLensResults = await getMovieLensCatalog(type, id, genre, page, language, config, userUUID, includeVideos);

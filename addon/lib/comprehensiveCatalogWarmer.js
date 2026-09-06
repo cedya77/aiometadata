@@ -1039,8 +1039,10 @@ class ComprehensiveCatalogWarmer {
               }
             }
             const skipIds = new Set(['trakt.upnext', 'mdblist.upnext', 'publicmetadb.upnext', 'simkl.upnext', 'simkl.upnext.anime']);
+            const { isRecommendationCatalog } = require('../utils/recommendations/catalog');
             const enabledCatalogs = allCatalogs.filter(c =>
-              c.source !== 'merged' && !skipIds.has(c.id) && c.cacheTTL !== 0 &&
+              c.source !== 'merged' && !skipIds.has(c.id) && !isRecommendationCatalog(c.id) &&
+              c.cacheTTL !== 0 &&
               (c.enabled || mergedChildIds.has(`${c.id}:${c.type}`))
             );
             userConfigs[uuid] = { config, enabledCatalogs };

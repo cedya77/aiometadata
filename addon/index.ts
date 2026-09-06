@@ -2980,6 +2980,99 @@ addon.get("/api/collections/preview", collectionPreviewHandler);
 // POST carries the definition of a catalog that is staged but not yet saved.
 addon.post("/api/collections/preview", collectionPreviewHandler);
 
+/**
+ * What the recommendation engine currently knows, for the integration panel.
+ *
+ * Reads only what is already cached or cheap to read: it must never trigger a
+ * profile build, since opening a settings dialog should not spend a model call.
+ */
+addon.get("/api/recommendations/status", async (req: any, res: any) => {
+  try {
+    const userUUID = String(req.query.userUUID || '').trim();
+    if (!userUUID) return res.status(400).json({ error: "userUUID is required" });
+
+    const storedConfig = await loadConfigFromDatabase(userUUID);
+    if (!storedConfig) return res.status(404).json({ error: "User configuration not found" });
+    const config: any = { ...storedConfig, userUUID };
+
+    // The dialog reports on the settings in front of the user, which are not the
+    // saved ones until they save: reading the stored config alone made switching
+    // history source leave every figure on screen unchanged.
+    if (req.query.recommendations) {
+      try {
+        const pending = JSON.parse(String(req.query.recommendations));
+        if (pending && typeof pending === 'object') {
+          config.recommendations = { ...config.recommendations, ...pending };
+        }
+      } catch { /* a malformed override falls back to what is saved */ }
+    }
+
+    const { collectWatchedRows, isWatched, resolveSources }: any = require('./utils/recommendations/history');
+    const { summarise }: any = require('./utils/recommendations/rows');
+    const { resolveProvider }: any = require('./utils/recommendations/provider');
+
+    const sources = resolveSources(config);
+    const rows = (await collectWatchedRows(config, userUUID)).filter(isWatched);
+    const chosen = resolveProvider(config);
+
+    const { profileCacheKey }: any = require('./utils/recommendations/profile');
+    const redis = require('./lib/redisClient').default || require('./lib/redisClient');
+    const profileKey = `global:e2:${profileCacheKey(config, userUUID)}`;
+    let profile: any = null;
+    try {
+      const raw = await redis.get(profileKey);
+      if (raw) profile = JSON.parse(raw);
+    } catch { /* a missing profile is the normal state before the first build */ }
+
+    return res.json({
+      sources: sources.choice,
+      connected: { simkl: sources.simkl, mdblist: sources.mdblist },
+      provider: chosen ? { provider: chosen.provider, model: chosen.model } : null,
+      counts: summarise(rows, require('./utils/recommendations/rows').tuningFrom(config)),
+      profile: profile ? { summary: profile.summary, builtAt: profile.builtAt, builtFrom: profile.builtFrom } : null,
+    });
+  } catch (error: any) {
+    consola.withTag('Recommendations').warn(`Status failed: ${error.message}`);
+    return res.status(500).json({ error: "Could not read recommendation status" });
+  }
+});
+
+/** Starts building one recommendation catalog, so the work happens while the
+ *  user is still in settings rather than when they first open the row. */
+addon.post("/api/recommendations/generate", async (req: any, res: any) => {
+  try {
+    const userUUID = String(req.body?.userUUID || req.query?.userUUID || '').trim();
+    const catalogId = String(req.body?.catalogId || '').trim();
+    if (!userUUID || !catalogId) {
+      return res.status(400).json({ error: "userUUID and catalogId are required" });
+    }
+
+    const storedConfig = await loadConfigFromDatabase(userUUID);
+    if (!storedConfig) return res.status(404).json({ error: "User configuration not found" });
+
+    // The caller may still be editing, so the catalogs it intends to add are not
+    // in the saved config yet. Only the credentials and preferences are read.
+    const config: any = { ...storedConfig, userUUID };
+    if (req.body?.recommendations && typeof req.body.recommendations === 'object') {
+      config.recommendations = { ...config.recommendations, ...req.body.recommendations };
+    }
+
+    const { startJob }: any = require('./utils/recommendations/jobs');
+    const job = startJob(config, userUUID, catalogId);
+    return res.json({ job });
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+addon.get("/api/recommendations/jobs", (req: any, res: any) => {
+  const userUUID = String(req.query.userUUID || '').trim();
+  if (!userUUID) return res.status(400).json({ error: "userUUID is required" });
+  const { listJobs, pruneJobs }: any = require('./utils/recommendations/jobs');
+  pruneJobs();
+  return res.json({ jobs: listJobs(userUUID) });
+});
+
 // --- Trakt Proxy Endpoints ---
 // These proxy frontend Trakt calls through the backend rate limiter
 

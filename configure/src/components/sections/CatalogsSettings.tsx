@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { MDBListIntegration } from './MDBListIntegration';
 import { TraktIntegration } from './TraktIntegration';
 import { SimklIntegration } from './SimklIntegration';
+import { RecommendationsIntegration } from './RecommendationsIntegration';
 import { MovieLensIntegration } from './MovieLensIntegration';
 import { PublicMetaDBIntegration } from './PublicMetaDBIntegration';
 import { TMDBIntegration } from './TMDBIntegration';
@@ -4014,6 +4015,7 @@ function CatalogsSettingsContent({
   const [isTraktOpen, setIsTraktOpen] = useState(false);
   const [isSimklOpen, setIsSimklOpen] = useState(false);
   const [isMovieLensOpen, setIsMovieLensOpen] = useState(false);
+  const [isRecommendationsOpen, setIsRecommendationsOpen] = useState(false);
   const [isPublicMetaDBOpen, setIsPublicMetaDBOpen] = useState(false);
   const [isTmdbListOpen, setIsTmdbListOpen] = useState(false);
   const [isTmdbDiscoverBuilderOpen, setIsTmdbDiscoverBuilderOpen] = useState(false);
@@ -5261,6 +5263,21 @@ function CatalogsSettingsContent({
                     <Button
                       variant="ghost"
                       size="icon"
+                      onClick={() => setIsRecommendationsOpen(true)}
+                      aria-label="Recommendations"
+                      className="h-9 w-9"
+                    >
+                      <Sparkles className="h-5 w-5 text-sky-300" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Recommendations</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => setIsMovieLensOpen(true)}
                       aria-label="MovieLens Integration"
                       className="h-9 w-9"
@@ -5445,6 +5462,10 @@ function CatalogsSettingsContent({
           <MovieLensIntegration
             isOpen={isMovieLensOpen}
             onClose={() => setIsMovieLensOpen(false)}
+          />
+          <RecommendationsIntegration
+            isOpen={isRecommendationsOpen}
+            onClose={() => setIsRecommendationsOpen(false)}
           />
           <PublicMetaDBIntegration
             isOpen={isPublicMetaDBOpen}

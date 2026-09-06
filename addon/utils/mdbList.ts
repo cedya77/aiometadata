@@ -952,12 +952,14 @@ interface WatchHistoryResponse {
   seasons: any[];
   episodes: WatchHistoryEpisodeEntry[];
   pagination: {
-    page: number;
-    limit: number;
-    total_movies: number;
-    total_seasons: number;
-    total_episodes: number;
-    has_more: boolean;
+    offset?: number;
+    limit?: number;
+    total_movies?: number;
+    total_shows?: number;
+    total_seasons?: number;
+    total_episodes?: number;
+    has_more?: boolean;
+    next_cursor?: string;
   };
 }
 
@@ -1035,6 +1037,9 @@ function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
 /**
  * Fetch user's watch history from MDBList API
  */
+/** Bounded so a very large library cannot spend the whole rate limit on one read. */
+const MAX_WATCH_HISTORY_PAGES = parseInt(process.env.MDBLIST_WATCH_HISTORY_PAGES || '6', 10);
+
 async function fetchWatchHistory(apiKey: string): Promise<WatchHistoryResponse | null> {
   if (!apiKey) {
     logger.debug('[Watch Tracking] Missing API key for fetchWatchHistory');
@@ -1042,15 +1047,41 @@ async function fetchWatchHistory(apiKey: string): Promise<WatchHistoryResponse |
   }
 
   try {
-    const url = `https://api.mdblist.com/sync/watched?apikey=${apiKey}`;
+    // Without `offset` the endpoint answers in cursor mode, capped at 100 rows,
+    // and reports no totals — which silently truncated a library of hundreds to
+    // whatever fitted in the first page. Passing an offset switches it to the
+    // paged mode, which returns 1000 at a time and says how many there are.
+    const merged: WatchHistoryResponse = {
+      movies: [], seasons: [], episodes: [], pagination: {},
+    };
 
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, { dispatcher: mdblistDispatcher }),
-      apiKey,
-      'MDBList fetchWatchHistory'
+    let offset = 0;
+    for (let page = 0; page < MAX_WATCH_HISTORY_PAGES; page += 1) {
+      const url = `https://api.mdblist.com/sync/watched?apikey=${apiKey}&offset=${offset}`;
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, { dispatcher: mdblistDispatcher }),
+        apiKey,
+        `MDBList fetchWatchHistory (offset ${offset})`
+      );
+
+      const body = response.data as WatchHistoryResponse;
+      if (!body) break;
+
+      merged.movies.push(...(body.movies || []));
+      merged.seasons.push(...(body.seasons || []));
+      merged.episodes.push(...(body.episodes || []));
+      merged.pagination = body.pagination || {};
+
+      const returned = (body.movies?.length || 0) + (body.seasons?.length || 0) + (body.episodes?.length || 0);
+      if (!body.pagination?.has_more || returned === 0) break;
+      offset += body.pagination.limit || returned;
+    }
+
+    logger.debug(
+      `[Watch Tracking] Read ${merged.movies.length} movies and ${merged.episodes.length} episodes `
+      + `of ${merged.pagination.total_movies ?? '?'} / ${merged.pagination.total_episodes ?? '?'}`
     );
-
-    return response.data as WatchHistoryResponse;
+    return merged;
   } catch (error: any) {
     logger.error(`[Watch Tracking] Failed to fetch watch history: ${error.message}`);
     return null;
@@ -1717,6 +1748,7 @@ async function fetchMDBListCatalog(
 }
 
 export {
+  fetchWatchHistory,
   fetchMDBListItems,
   fetchMDBListExternalItems,
   usesMdblistExternalItemsEndpoint,

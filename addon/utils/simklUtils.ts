@@ -896,19 +896,27 @@ function mergeItems(existingItems: any[], newItems: any[]): any[] {
 
 async function fetchSimklWatchedItems(
   accessToken: string,
-  type: 'movies' | 'shows' | 'anime' = 'movies'
+  type: 'movies' | 'shows' | 'anime' = 'movies',
+  status: 'completed' | 'dropped' | 'hold' = 'completed'
 ): Promise<any[]> {
   try {
     const endpoint = type === 'movies' ? 'movies' : type === 'shows' ? 'tv' : 'anime';
-    const url = `${SIMKL_BASE_URL}/sync/all-items/${endpoint}/completed`;
+    // Default richness on purpose: it already carries user_rating, last_watched_at
+    // and the episode counters. `extended=full` only adds per-episode arrays.
+    const url = `${SIMKL_BASE_URL}/sync/all-items/${endpoint}/${status}`;
     
     const response: any = await makeAuthenticatedSimklRequest(
       url,
       accessToken,
-      `Simkl fetchWatchedItems (${type})`
+      `Simkl fetchWatchedItems (${type}/${status})`
     );
     
-    const items = response.data || [];
+    // The payload is an object keyed by media kind, never a bare array, so an
+    // Array.isArray guard on it silently returns nothing.
+    const payload = response.data;
+    const items = Array.isArray(payload)
+      ? payload
+      : (payload?.movies || payload?.shows || payload?.anime || []);
     return Array.isArray(items) ? items : [];
   } catch (error: any) {
     logger.error(`Error fetching Simkl watched items: ${error.message}`);
@@ -930,7 +938,10 @@ async function fetchSimklWatchingItems(
       `Simkl fetchWatchingItems (${type})`
     );
     
-    const items = response.data || [];
+    const payload = response.data;
+    const items = Array.isArray(payload)
+      ? payload
+      : (payload?.shows || payload?.anime || payload?.movies || []);
     return Array.isArray(items) ? items : [];
   } catch (error: any) {
     logger.error(`Error fetching Simkl watching items: ${error.message}`);
@@ -1783,6 +1794,7 @@ export {
   getSimklRatings,
   getSimklToken,
   getSimklWatchedIds,
+  fetchSimklWatchedItems,
   getSimklActivityFingerprint,
   fetchSimklTrendingItems,
   fetchSimklRecipeItems,
