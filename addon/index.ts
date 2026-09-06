@@ -4999,6 +4999,50 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
       responseData = await readPage(catalogPage, legacySkip);
     }
     }
+    // A catalog row and the meta it opens have to agree. The client fills the preview
+    // panel from the row on focus and replaces it once /meta lands, so any field the two
+    // disagree about is visible as the panel changing under the user. Movie and series
+    // rows are built by getMeta, so they already agree; anime rows come from
+    // parseAnimeCatalogMeta, which resolves genres and the certification from other
+    // sources, so they drift per title.
+    //
+    // reconstructMetaFromComponents serves a meta out of the component caches and never
+    // builds one, so a row costs a cache read and no provider call. A row whose meta is
+    // not cached keeps its light form and is warmed after the response, one title at a
+    // time, capped, and single-flighted by cacheWrapMetaSmart. A row is therefore wrong
+    // at most on its first appearance.
+    if (String(type || '').startsWith('anime') && Array.isArray(responseData?.metas) && responseData.metas.length > 0) {
+      const { reconstructMetaFromComponents } = require('./lib/getCache');
+      const coldRows: any[] = [];
+      responseData.metas = await Promise.all(responseData.metas.map(async (row: any) => {
+        if (!row?.id) return row;
+        try {
+          const cached = await reconstructMetaFromComponents(userUUID || '', row.id, undefined, { config }, row.type, false, false);
+          if (cached?.meta) return cached.meta;
+          coldRows.push(row);
+        } catch {
+          // fall through to the light row
+        }
+        return row;
+      }));
+
+      if (coldRows.length > 0) {
+        const toWarm = coldRows.slice(0, 30);
+        setImmediate(async () => {
+          const { getMeta: buildMeta } = require('./lib/getMeta');
+          for (const row of toWarm) {
+            try {
+              await cacheWrapMetaSmart(userUUID || '', row.id, async () => {
+                return await buildMeta(row.type, language, row.id, config, userUUID || '', false);
+              }, undefined, { enableErrorCaching: true, maxRetries: 1, config }, row.type, false);
+            } catch {
+              // a title that will not build is not worth retrying inline
+            }
+          }
+        });
+      }
+    }
+
     if (!filtersAlreadyApplied && responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0) {
       responseData.metas = await applyCatalogFilters(responseData.metas, {
         type: actualType,
