@@ -10,44 +10,20 @@ export interface ResolvedProvider {
   clientPath: string;
 }
 
-/**
- * Which model answers, and with whose key.
- *
- * An explicit choice is honoured whenever the matching key exists; otherwise
- * whichever key is present wins. Without this, a user holding both keys could
- * never reach OpenRouter, because "gemini unless gemini is missing" is not a
- * preference, it is an accident of ordering.
- */
-/**
- * Bumped whenever a change alters what a row comes out holding.
- *
- * Picks and the catalog pages built from them are cached separately and expire
- * on their own clocks, so a fix that only invalidates the picks leaves the old
- * pages being served for the rest of the catalog TTL: the series row went on
- * showing an anime film for hours after the filter that excludes it shipped.
- */
+/** An explicit choice wins where its key exists, so holding both keys still
+ *  reaches either provider. */
+/** Bumped when a change alters what a row holds. Keys both the picks and the
+ *  pages built from them, which expire on separate clocks. */
 export const RECOMMENDATION_EPOCH = 3;
 
 export const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'] as const;
 
-/**
- * How often a row is written again, in hours.
- *
- * Nothing shorter than six is offered: a fresh list is a large model writing for
- * a minute and is charged for, and the taste it is drawn from does not move that
- * fast. The default is a day.
- */
+/** How often a row is written again. Each rewrite is a billed model call, so
+ *  nothing shorter than six hours is offered. */
 export const REFRESH_HOURS = [6, 12, 24] as const;
 
-/**
- * How a built row is arranged.
- *
- * Rating weighted by audience is the default. The model's own order is the
- * honest one, but it is unfiltered by quality, so a row can open on titles
- * rated in the fives while far better picks sit further down; weighting asks a
- * title to be both well liked and actually watched before it leads, which
- * reads better without turning the row into a list of the merely famous.
- */
+/** How a built row is arranged. The model's own order is unfiltered by quality,
+ *  so rating weighted by audience is the default. */
 export const PICK_ORDERS = ['suggested', 'popular', 'acclaimed', 'balanced'] as const;
 export type PickOrder = typeof PICK_ORDERS[number];
 
@@ -63,11 +39,8 @@ export function pickOrder(config: any, catalogId?: string): PickOrder {
   return (PICK_ORDERS as readonly string[]).includes(chosen) ? chosen : 'balanced';
 }
 
-/**
- * Titles below this are dropped whatever the ordering, because a vote count
- * near zero is usually not an obscure gem: it is the search having matched the
- * wrong title. Only applied where a count is actually known.
- */
+/** Near-zero votes usually means the search matched the wrong title, not an
+ *  obscure gem. Only applied where a count is known. */
 export function voteFloor(config: any, catalogId?: string): number {
   const chosen = Number(forCatalog(config, catalogId, 'pickMinVotes') ?? config?.recommendations?.min_votes);
   if (Number.isFinite(chosen) && chosen >= 0) return chosen;
@@ -82,13 +55,8 @@ export function refreshTtl(config: any): number {
   return Number.isFinite(fallback) && fallback > 0 ? fallback : 24 * 60 * 60;
 }
 
-/**
- * Thinking is billed at the completion rate and counted against the same reply
- * budget as the answer, and OpenRouter refuses to disable it on some models
- * ("Reasoning is mandatory for this endpoint"), so it is capped instead. The
- * bill lands on the key in the user's own configuration, so the choice is
- * theirs; low measured cheaper than the default with no loss of answer.
- */
+/** Thinking is billed and drawn from the reply budget, and some models refuse to
+ *  disable it, so it is capped rather than turned off. */
 export function reasoningEffort(config: any): string {
   const chosen = config?.recommendations?.reasoning_effort;
   return (REASONING_EFFORTS as readonly string[]).includes(chosen) ? chosen : 'low';

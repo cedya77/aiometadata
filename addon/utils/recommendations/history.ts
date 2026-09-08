@@ -2,13 +2,8 @@ import consola from 'consola';
 
 const logger = consola.withTag('Recommendations');
 
-/**
- * Held for a day when Simkl can tell us whether anything moved, and only
- * minutes when it cannot. Simkl's own docs ban polling /sync/all-items without
- * gating on /sync/activities first, so the short hold was never the right
- * answer for it: it re-read the whole library every quarter of an hour whether
- * or not a single episode had been watched.
- */
+/** A day when Simkl can say whether anything moved, minutes when it cannot. The
+ *  docs require gating /sync/all-items on /sync/activities. */
 const HISTORY_TTL = parseInt(process.env.RECOMMENDATION_HISTORY_TTL || String(24 * 60 * 60), 10);
 
 /** Without a change signal, freshness has to come from the clock. */
@@ -27,14 +22,8 @@ export function isWatched(row: WatchedRow): boolean {
   return row.status !== 'plantowatch';
 }
 
-/**
- * One title the user has watched, flattened from whichever service reported it.
- *
- * Deliberately shallow: everything here either arrives with the history payload
- * or comes from the shared per-title cache. Genres, cast and directors are not
- * included because neither service returns them and fetching them per title
- * would cost one upstream call each, for a signal the model already has.
- */
+/** One watched title, flattened across services. Shallow on purpose: everything
+ *  here arrives with the history payload. */
 export interface WatchedRow {
   /** imdb id where known, else `<source>:<id>`. Used to dedupe across services. */
   key: string;
@@ -207,22 +196,12 @@ async function collectMdblistRows(config: any): Promise<WatchedRow[]> {
   return [...rows, ...shows.values()];
 }
 
-/**
- * Everything the user has watched, from every service they have connected.
- *
- * A title can come from both services; the richer row wins, which in practice
- * means Simkl, since it is the only one that reports a user rating.
- */
+/** A title can come from both services; the richer row wins, in practice Simkl,
+ *  the only one reporting a user rating. */
 export type HistorySource = 'simkl' | 'mdblist' | 'both';
 
-/**
- * Which services a profile is built from.
- *
- * Explicit where the account exists, otherwise whichever is connected. Kept
- * separate from "is it connected" because connecting Simkl for watchlist
- * catalogs should not silently enrol a whole viewing history into a model
- * prompt, and because the two services rarely hold the same library.
- */
+/** Kept separate from "is it connected": connecting Simkl for watchlist catalogs
+ *  should not enrol a viewing history into a model prompt. */
 export function resolveSources(config: any): { simkl: boolean; mdblist: boolean; choice: HistorySource } {
   const hasSimkl = !!config?.apiKeys?.simklTokenId;
   const hasMdblist = !!config?.apiKeys?.mdblist;
@@ -233,14 +212,8 @@ export function resolveSources(config: any): { simkl: boolean; mdblist: boolean;
   return { simkl: hasSimkl, mdblist: hasMdblist, choice: 'both' };
 }
 
-/**
- * A short string that changes when the user's Simkl lists do.
- *
- * Asking each type about `completed` is enough: the fingerprint a type returns
- * already folds in its sibling statuses and its removals, because a title
- * moving between lists bumps both ends. Activities are themselves cached, so
- * this is one API call per half hour however often it is asked.
- */
+/** Changes when the Simkl lists do. `completed` per type is enough: a fingerprint
+ *  folds in sibling statuses and removals, since a move bumps both ends. */
 async function simklFingerprint(config: any): Promise<string> {
   try {
     const { getSimklToken, getSimklActivityFingerprint }: any = require('../simklUtils');

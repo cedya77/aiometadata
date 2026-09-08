@@ -35,13 +35,8 @@ export function isRunning(userUUID: string, catalogId: string): boolean {
   return !!job && job.stage !== 'done' && job.stage !== 'error';
 }
 
-/**
- * Generates one catalog end to end, reporting where it has got to.
- *
- * Everything the request path would do is done here instead: the profile, the
- * picks, and one pass of art fetching so the meta caches are warm. By the time
- * somebody installs the manifest, opening the row is a cache read.
- */
+/** One catalog end to end, reporting progress: profile, picks, and a pass of art
+ *  fetching so the first open is a cache read. */
 export function startJob(config: any, userUUID: string, catalogId: string): Job {
   const existing = jobs.get(keyOf(userUUID, catalogId));
   if (existing && isRunning(userUUID, catalogId)) return existing;

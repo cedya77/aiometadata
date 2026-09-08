@@ -125,17 +125,8 @@ const asList = (value: any, cap: number): string[] => (Array.isArray(value) ? va
   .map((entry: string) => entry.trim())
   .slice(0, cap);
 
-/**
- * Builds a taste profile from the user's history, or returns the stored one.
- *
- * Cached per user rather than per request: the history moves slowly and the
- * profile is the expensive half of the pipeline. Ranking runs against the cached
- * profile on every catalog refresh.
- */
-/**
- * Built here rather than at each reader, because the status panel looks the
- * profile up by key and a term added on one side only makes it read as missing.
- */
+/** Cached per user: the history moves slowly and this is the expensive half. */
+/** Built in one place: the status panel looks the profile up by the same key. */
 export function profileCacheKey(config: any, userUUID: string): string {
   const { resolveProvider, reasoningEffort }: any = require('./provider');
   const { resolveSources }: any = require('./history');

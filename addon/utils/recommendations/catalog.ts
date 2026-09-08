@@ -6,12 +6,8 @@ const logger = consola.withTag('Recommendations');
 
 export const RECOMMENDATION_PREFIX = 'recommendations.';
 
-/**
- * Catalog ids this feature serves, split by kind. A mixed row is deliberately not
- * offered: TMDB has no anime type, so the model is the only thing separating anime
- * from live-action series, and asking for both in one pass returns the same title
- * twice (Attack on Titan and Death Note both landed in series *and* anime).
- */
+/** One row per kind. A mixed row returns the same title twice, since only the
+ *  model separates anime from live action. */
 export const RECOMMENDATION_CATALOGS: Array<{ id: string; kind: RecommendKind; type: string; name: string }> = [
   { id: 'recommendations.movies', kind: 'movie', type: 'movie', name: 'Films For You' },
   { id: 'recommendations.series', kind: 'series', type: 'series', name: 'Series For You' },
@@ -27,19 +23,9 @@ function kindFor(id: string): RecommendKind {
   return match ? match.kind : 'movie';
 }
 
-/**
- * A recommendation is only useful if it can be opened, so each pick is emitted
- * against its TMDB id. The reason the model gave is kept in the description,
- * ahead of the synopsis, because it is the part that explains the row.
- */
-/**
- * Turns picks into metas the same way every other catalog does.
- *
- * A pick is only a TMDB id and a sentence; everything a row actually shows —
- * the art the user chose, rating posters, age filtering, id mapping — lives in
- * getMeta. Building metas by hand from the search hit skipped all of it, so
- * these rows looked unlike every other row in the addon.
- */
+
+/** Through getMeta, so a row gets the art, filtering and id mapping every other
+ *  row gets. The model's reason leads the description. */
 async function hydrate(picks: any[], config: any, userUUID: string): Promise<any[]> {
   const { getMeta }: any = require('../../lib/getMeta');
   const language = config?.language || 'en-US';
@@ -76,13 +62,8 @@ async function hydrate(picks: any[], config: any, userUUID: string): Promise<any
   return out.filter(Boolean);
 }
 
-/**
- * Sorts a built row, and drops what almost certainly is not the title meant.
- *
- * The sort has to cover the whole selection before it is paged, which is why it
- * reads counts carried on the picks rather than anything hydration produces:
- * hydration only ever sees the twenty on the page.
- */
+/** Sorts the whole selection before it is paged, so it reads counts carried on
+ *  the picks: hydration only ever sees the page. */
 export function arrange(picks: any[], config: any, catalogId?: string): any[] {
   const { pickOrder, voteFloor }: any = require('./provider');
   const order = pickOrder(config, catalogId);
@@ -160,15 +141,8 @@ module.exports = {
   arrange,
 };
 
-/**
- * Builds the profile and the picks for whichever recommendation catalogs the
- * saved configuration carries, off the request path.
- *
- * Generation is around a minute and a half of a large model writing, so the
- * first person to open the row would otherwise wait it out or see it empty. A
- * save is the natural moment to pay that: it is already asynchronous from the
- * user's point of view, and it is exactly when the inputs changed.
- */
+/** Builds the saved configuration's rows off the request path, on save: it is
+ *  already asynchronous, and it is when the inputs changed. */
 export async function warmRecommendations(config: any, userUUID: string): Promise<void> {
   const wanted = (config?.catalogs || [])
     .filter((catalog: any) => catalog?.enabled && isRecommendationCatalog(catalog.id))

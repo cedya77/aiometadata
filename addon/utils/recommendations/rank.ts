@@ -14,31 +14,16 @@ const RECENT_TTL = parseInt(process.env.RECOMMENDATION_RECENT_TTL || String(24 *
 /** Roughly what one pick costs to write: a title, a year, a kind and a short reason. */
 const TOKENS_PER_PICK = parseInt(process.env.RECOMMENDATION_TOKENS_PER_PICK || '50', 10);
 
-/**
- * Sized to the answer rather than to the model's ceiling.
- *
- * OpenRouter reserves the whole output window against the balance before it
- * will run a request, so asking for far more than the reply needs refuses
- * calls that a smaller ask would have carried: a flat 16k on a model billed at
- * $30 per million output tokens demanded half a dollar of headroom to write a
- * list measured at about a third of that. Thinking is drawn from the same
- * budget, so a heavier setting is given room rather than being starved.
- */
+/** OpenRouter reserves the whole window against the balance, and thinking draws
+ *  from it too, so it is sized to the reply rather than the model's ceiling. */
 function replyBudget(picks: number, effort: string): number {
   const thinking = effort === 'high' ? 2 : effort === 'medium' ? 1.5 : 1;
   const needed = Math.ceil(picks * TOKENS_PER_PICK * thinking) + 512;
   return Math.min(16384, Math.max(2048, needed));
 }
 
-/**
- * Grounding is offered to the model, not imposed on it, and it will not take it
- * up for a request it believes it can already answer: asked for a JSON array of
- * recommendations with the tool enabled, it returned webSearchQueries null on
- * every attempt, instruction or no instruction. Asked the same thing as a plain
- * question it searched every time. So the search is made as a question, and its
- * answer is handed to the ranking call as context. Shared between users, since
- * what came out this year does not depend on who is asking.
- */
+/** Models search for a plain question and not for a JSON ranking prompt, so the
+ *  search is asked separately and its answer passed in. Shared between users. */
 async function fetchRecent(profile: TasteProfile, kind: RecommendKind, chosen: any, config: any): Promise<string> {
   const { cacheWrapGlobal }: any = require('../../lib/getCache');
   const now = new Date().getFullYear();
@@ -102,12 +87,7 @@ interface Suggestion {
   reason?: string;
 }
 
-/**
- * Enabling the tool only offers it; the model decides per request whether to
- * call it, and for a recommendation prompt it concludes it already knows the
- * answer. AI search pairs the flag with a mandatory instruction for the same
- * reason, and the same wording is used here.
- */
+/** The flag only offers the tool; the model still decides whether to call it. */
 function systemPrompt(searchMode: SearchMode): string {
   return [
     'You recommend films and television from a description of someone\'s taste.',
@@ -135,14 +115,8 @@ function describeProfile(profile: TasteProfile): string {
   ].filter(Boolean).join('\n');
 }
 
-/**
- * A model asked for recommendations reaches for canon, which skews old: an
- * unguided pass returned a median year of 2014 for someone whose library is
- * mostly 2020s. The correction is not "prefer new" though, it is "match them",
- * so the target mix is read off their own history rather than fixed here. A
- * library of 90s cinema should get 90s cinema back. The current year is stated
- * because the model has no clock and cannot place a decade share without it.
- */
+/** A model reaches for canon and skews old. The target is read off the viewer's
+ *  own history, not fixed here, and the year is stated: it has no clock. */
 export function eraBrief(rows: WatchedRow[], kind: RecommendKind, want: number): string {
   const now = new Date().getFullYear();
   const relevant = kind === 'all' ? rows : rows.filter(row => row.kind === kind);
@@ -225,13 +199,8 @@ function buildPrompt(
   ].join('\n');
 }
 
-/**
- * Reads whatever entries are intact when the reply as a whole will not parse.
- *
- * A hundred and twenty titles is a lot of generated JSON, and one stray quote
- * in one reason used to cost every one of them: the row went out empty. Each
- * object is taken on its own, so a broken entry costs a single title.
- */
+/** Reads the entries that are intact when the reply will not parse, so one stray
+ *  quote costs a title rather than the row. */
 function salvagePicks(body: string): any[] {
   const picksAt = body.indexOf('"picks"');
   const from = picksAt >= 0 ? body.indexOf('[', picksAt) + 1 : 0;
@@ -298,20 +267,12 @@ function parsePicks(raw: string): Suggestion[] {
     }));
 }
 
-/**
- * Turns a proposed title into something the user can actually open.
- *
- * A model naming titles will occasionally name one that does not exist, or spell
- * it in a way TMDB does not match. Anything that fails to resolve is dropped
- * rather than shown, so the catalog only ever contains real, openable entries.
- */
+/** A model will name titles that do not exist or spell them oddly; anything that
+ *  does not resolve is dropped rather than shown. */
 type Genres = { movie: Array<{ id: number; name: string }>; series: Array<{ id: number; name: string }> };
 
-/**
- * TMDB reports the genre of a search hit as ids, so the names have to be looked
- * up before anything can be called animation. Both lists are read because the
- * anime row resolves films and series alike.
- */
+/** Search hits carry genre ids, not names. Both lists, since the anime row
+ *  resolves films and series alike. */
 async function genreLists(config: any): Promise<Genres> {
   const { getGenreList }: any = require('../../lib/getGenreList');
   const language = config?.language || 'en-US';
@@ -453,12 +414,25 @@ export async function recommend(
 
     const rightKind = resolved.filter((item: any) => (kind === 'anime' ? item.anime : !item.anime));
 
-    const watchedTitles = new Set(watched.map(row => `${row.title.toLowerCase()}|${row.year || ''}`));
+    // Simkl stores anime under its romaji title and TMDB answers in English, so a
+    // title is not a key across the two. Ids first, title and year as fallback.
+    const watchedKeys = new Set<string>();
+    for (const row of watched) {
+      if (row.tmdbId) watchedKeys.add(`tmdb:${row.tmdbId}`);
+      if (row.imdbId) watchedKeys.add(`imdb:${row.imdbId}`);
+      watchedKeys.add(`title:${row.title.toLowerCase()}|${row.year || ''}`);
+    }
+
     const seen = new Set<string>();
     const kept = rightKind.filter((item: any) => {
-      const signature = `${item.title.toLowerCase()}|${item.year || ''}`;
-      if (watchedTitles.has(signature) || seen.has(signature)) return false;
-      seen.add(signature);
+      const keys = [
+        item.tmdbId ? `tmdb:${item.tmdbId}` : null,
+        item.imdbId ? `imdb:${item.imdbId}` : null,
+        `title:${item.title.toLowerCase()}|${item.year || ''}`,
+      ].filter(Boolean) as string[];
+
+      if (keys.some(key => watchedKeys.has(key) || seen.has(key))) return false;
+      for (const key of keys) seen.add(key);
       return true;
     });
 

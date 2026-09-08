@@ -1,13 +1,8 @@
 import type { WatchedRow } from './history';
 import type { FactMap } from './enrich';
 
-/**
- * How a title left unfinished should be read.
- *
- * Stalling is the weakest evidence in a history: people stop because they lost
- * interest, but also because a season ended, or they simply forgot. So how much
- * it counts is the viewer's call, not ours.
- */
+/** Stalling is weak evidence: people stop because a season ended or they forgot,
+ *  not only because they lost interest. So how much it counts is the viewer's. */
 export type StalledWeight = 'ignore' | 'note' | 'mild' | 'dislike';
 
 export interface Tuning {
@@ -38,12 +33,8 @@ function isStale(row: WatchedRow, tuning: Tuning): boolean {
   return Date.now() - last > tuning.staleDays * 24 * 60 * 60 * 1000;
 }
 
-/**
- * @param total episodes the series has, where the source did not say. MDBList
- * has no watch states of its own and reports everything as completed, so for it
- * the only evidence a series was put down is progress against a total, and the
- * total has to be looked up.
- */
+/** @param total episodes, for MDBList, which reports everything as completed and
+ *  leaves progress against a total as the only evidence a series was put down. */
 export function standingOf(row: WatchedRow, total?: number, tuning: Tuning = DEFAULT_TUNING): Standing {
   if (row.status === 'dropped') return 'dropped';
   if (row.status === 'hold') return 'hold';
@@ -74,12 +65,8 @@ export function isNegative(row: WatchedRow, total?: number, tuning: Tuning = DEF
   return !!row.rating && row.rating <= 4;
 }
 
-/**
- * How many titles reach the model. Taste saturates well before a full library
- * does, and which titles are sent matters more than how many: the strata below
- * carry current taste, durable taste and dislikes, which a flat "most recent N"
- * would lose.
- */
+/** How many titles reach the model. Which ones matters more than how many, hence
+ *  the strata below. */
 const DEFAULT_LIMIT = 200;
 
 export interface HistoryStats {
@@ -128,12 +115,8 @@ export function summarise(rows: WatchedRow[], tuning: Tuning = DEFAULT_TUNING): 
   };
 }
 
-/**
- * Picks the titles worth spending tokens on, in four strata: what they watched
- * last, what they scored highest, what they scored lowest or abandoned, and a
- * spread of the rest so the sample is not all one era. Dislikes are kept even
- * when they are few, because they are the only thing that says what to avoid.
- */
+/** Four strata: watched last, scored highest, scored lowest or abandoned, and a
+ *  spread of the rest. */
 export function stratify(rows: WatchedRow[], limit = DEFAULT_LIMIT, tuning: Tuning = DEFAULT_TUNING): WatchedRow[] {
   const picked = new Map<string, WatchedRow>();
   const take = (candidates: WatchedRow[], count: number) => {

@@ -73,14 +73,8 @@ function airedEpisodes(seasons: any[]): number | undefined {
   return total > 0 ? total : undefined;
 }
 
-/**
- * Everything MDBList will say about a whole sample, in one request per type.
- *
- * It carries genres, per-season episode counts with their air dates, and how
- * the title is rated elsewhere, which is worth more here than it looks: a
- * library with a handful of personal scores has nothing else to say whether
- * what they watch is acclaimed or disposable.
- */
+/** Genres, per-season episode counts with air dates, and outside ratings, for a
+ *  whole sample in one request per type. */
 async function fromMdblist(rows: WatchedRow[], config: any): Promise<FactMap> {
   const facts: FactMap = new Map();
   const apiKey = config?.apiKeys?.mdblist;
@@ -125,15 +119,8 @@ async function fromMdblist(rows: WatchedRow[], config: any): Promise<FactMap> {
   return facts;
 }
 
-/**
- * Audience size and score for titles that have been resolved to a TMDB id.
- *
- * The instance already holds IMDb's own ratings file, a million titles keyed by
- * imdb id and refreshed daily, which is a far better signal than TMDB's own
- * counts: Wind River carries 320,000 IMDb votes against 5,931 on TMDB. The one
- * thing missing is the imdb id, and one MDBList batch per type supplies it for
- * a whole list, so the lookup itself costs nothing.
- */
+/** Audience size and score. The instance already holds IMDb's ratings file; one
+ *  MDBList batch per type supplies the imdb ids to look them up by. */
 export async function attachRatings(items: any[], config: any): Promise<void> {
   const withIds = items.filter(item => item?.tmdbId);
   if (!withIds.length) return;
@@ -178,14 +165,8 @@ export async function attachRatings(items: any[], config: any): Promise<void> {
   logger.debug(`Ratings: ${known} of ${items.length} from IMDb, the rest from TMDB`);
 }
 
-/**
- * Genres and the name behind each title, for the rows that reach the prompt.
- *
- * Neither source carries them: Simkl's history endpoint returns watch state and
- * a title stub at every `extended` value. Both do carry a TMDB id, so this is
- * one detail read per title rather than a search, and the answers are shared
- * between users and kept for a month.
- */
+/** Genres and credits for the rows that reach the prompt. Neither history source
+ *  carries them, but both carry a TMDB id to read them by. */
 export async function enrichRows(rows: WatchedRow[], config: any): Promise<FactMap> {
   const targets = rows.filter(row => row.tmdbId);
   if (!targets.length) return new Map();
