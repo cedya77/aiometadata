@@ -1666,7 +1666,8 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
   
   if (artProvider === 'anilist' && malId) {
     try {
-      const anilistData = await anilist.getAnimeArtwork(malId);
+      const { getAnilistAccessToken } = require('./anilistUtils');
+      const anilistData = await anilist.getAnimeArtwork(malId, await getAnilistAccessToken(config));
       // logger.debug(`[getAnimeBg] AniList data for MAL ID ${malId}:`, {
       //   hasData: !!anilistData,
       //   hasBannerImage: !!anilistData?.bannerImage,
@@ -1853,7 +1854,8 @@ async function getAnimePoster({ malId, imdbId, tvdbId, tmdbId, malPosterUrl, med
   
   if (artProvider === 'anilist' && malId) {
     try {
-      const anilistData = await anilist.getAnimeArtwork(malId);
+      const { getAnilistAccessToken } = require('./anilistUtils');
+      const anilistData = await anilist.getAnimeArtwork(malId, await getAnilistAccessToken(config));
       if (anilistData) {
         const anilistPoster = anilist.getPosterUrl(anilistData);
         if (anilistPoster) {
@@ -1942,7 +1944,8 @@ async function getBatchAnimeArtwork(malIds, config) {
   
   if (artProvider === 'anilist' && malIds && malIds.length > 0) {
     try {
-      const artworkData = await anilist.getCatalogArtwork(malIds);
+      const { getAnilistAccessToken } = require('./anilistUtils');
+      const artworkData = await anilist.getCatalogArtwork(malIds, await getAnilistAccessToken(config));
       // logger.debug(`[getBatchAnimeArtwork] Retrieved ${artworkData.length} AniList artworks for ${malIds.length} MAL IDs`);
       return artworkData;
     } catch (error) {
@@ -2066,7 +2069,8 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
   const artProvider = resolveArtProvider('anime', 'poster', config);
   if (artProvider === 'anilist' && malId) {
     try {
-      const anilistData = await anilist.getAnimeArtwork(malId);
+      const { getAnilistAccessToken } = require('./anilistUtils');
+      const anilistData = await anilist.getAnimeArtwork(malId, await getAnilistAccessToken(config));
       if (anilistData) {
         const anilistPoster = anilist.getPosterUrl(anilistData);
         if (anilistPoster) {
@@ -2249,7 +2253,8 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
       // Fallback to MAL IDs for those without AniList mappings
       if (malIdsWithoutAnilist.length > 0) {
         //console.log(`[parseAnimeCatalogMetaBatch] Fallback to MAL IDs: ${malIdsWithoutAnilist.slice(0, 10).join(', ')}${malIdsWithoutAnilist.length > 10 ? '...' : ''}`);
-        const malResults = await anilist.getBatchAnimeArtwork(malIdsWithoutAnilist, config);
+        const { getAnilistAccessToken } = require('./anilistUtils');
+        const malResults = await anilist.getBatchAnimeArtwork(malIdsWithoutAnilist, await getAnilistAccessToken(config));
         anilistArtwork.push(...malResults);
       }
       

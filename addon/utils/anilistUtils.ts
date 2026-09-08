@@ -10,6 +10,39 @@ import { consola } from 'consola';
 
 const logger = consola.withTag('anilist-utils');
 
+export async function getAnilistAccessToken(config: any): Promise<string | undefined> {
+  const tokenId = config?.apiKeys?.anilistTokenId;
+  if (!tokenId) return undefined;
+  try {
+    const token = await database.getOAuthToken(tokenId);
+    return token?.access_token || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A configuration that has never been saved has no row to load, so the browser
+ *  passes the token id the connect flow handed it. */
+export async function getAnilistAccessTokenById(tokenId?: string): Promise<string | undefined> {
+  if (!tokenId) return undefined;
+  try {
+    const token = await database.getOAuthToken(tokenId);
+    if (!token || token.provider !== 'anilist') return undefined;
+    return token.access_token || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function resolveAnilistAccessToken(source: { tokenId?: string; userUUID?: string }): Promise<string | undefined> {
+  const direct = await getAnilistAccessTokenById(source.tokenId);
+  if (direct) return direct;
+  if (!source.userUUID) return undefined;
+  const { loadConfigFromDatabase }: any = require('../lib/configApi');
+  const config = await loadConfigFromDatabase(source.userUUID).catch(() => null);
+  return getAnilistAccessToken(config);
+}
+
 export async function getAnilistWatchedIds(config: any): Promise<{ anilistIds: Set<number>, malIds: Set<number> } | null> {
   try {
     const anilistTokenId = config.apiKeys?.anilistTokenId;

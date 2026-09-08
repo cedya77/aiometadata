@@ -1,5 +1,19 @@
 const { httpPost } = require('../utils/httpClient');
 const { cacheWrapGlobal } = require('./getCache');
+const { anilistRequiresAuth } = require('../utils/anilistAccess');
+
+/** Artwork cache keys carry no user, so an empty answer to a tokenless request
+ *  would otherwise be served back to everyone who does have a token. */
+function tokenlessCacheGuard(accessToken: string | undefined, hasContent: (result: any) => boolean): any {
+  if (!anilistRequiresAuth()) return {};
+  return {
+    resultClassifier: (result: any) => (hasContent(result)
+      ? { type: 'SUCCESS', ttl: null }
+      : accessToken
+        ? { type: 'EMPTY_RESULT', ttl: 15 * 60 }
+        : { type: 'SKIP_CACHE', ttl: null }),
+  };
+}
 
 const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http') 
   ? process.env.HOST_NAME 
@@ -194,7 +208,7 @@ class AniListAPI {
   /**
    * Fetch all anime lists for a user (names and counts)
    */
-  async fetchUserLists(username: string): Promise<any> {
+  async fetchUserLists(username: string, accessToken?: string): Promise<any> {
     if (!username) {
       throw new Error('Username is required');
     }
@@ -221,7 +235,8 @@ class AniListAPI {
         }, {
           headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
           },
           timeout: 30000
         })
@@ -420,7 +435,7 @@ class AniListAPI {
   /**
    * GraphQL query for getting anime artwork by MAL ID
    */
-  async getAnimeArtworkByMalId(malId: number): Promise<any> {
+  async getAnimeArtworkByMalId(malId: number, accessToken?: string): Promise<any> {
     const query = `
       query ($malId: Int) {
         Media(idMal: $malId, type: ANIME) {
@@ -478,7 +493,8 @@ class AniListAPI {
         }, {
           headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
           },
           timeout: 10000
         })
@@ -499,7 +515,7 @@ class AniListAPI {
   /**
    * GraphQL query for getting multiple anime artworks by AniList IDs (aliasing)
    */
-  async getMultipleAnimeArtworkByAnilistIds(anilistIds: number[]): Promise<any[]> {
+  async getMultipleAnimeArtworkByAnilistIds(anilistIds: number[], accessToken?: string): Promise<any[]> {
     if (!anilistIds || anilistIds.length === 0) {
       return [];
     }
@@ -533,7 +549,8 @@ class AniListAPI {
         }, {
           headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
           },
           timeout: 30000
         })
@@ -567,7 +584,7 @@ class AniListAPI {
   /**
    * GraphQL query for getting multiple anime artworks by MAL IDs (aliasing) - DEPRECATED
    */
-  async getMultipleAnimeArtwork(malIds: number[]): Promise<any[]> {
+  async getMultipleAnimeArtwork(malIds: number[], accessToken?: string): Promise<any[]> {
     if (!malIds || malIds.length === 0) {
       return [];
     }
@@ -601,7 +618,8 @@ class AniListAPI {
         }, {
           headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
           },
           timeout: 30000
         })
@@ -695,18 +713,18 @@ class AniListAPI {
   /**
    * Enhanced artwork getter with global caching
    */
-  async getAnimeArtwork(malId: number | string): Promise<any> {
+  async getAnimeArtwork(malId: number | string, accessToken?: string): Promise<any> {
     return cacheWrapGlobal(`anilist-artwork:${malId}`, async () => {
       console.log(`[AniList] Fetching artwork for MAL ID: ${malId}`);
       const malIdNum = typeof malId === 'string' ? parseInt(malId) : malId;
-      return await this.getAnimeArtworkByMalId(malIdNum);
-    }, 30 * 24 * 60 * 60); // 30 days TTL
+      return await this.getAnimeArtworkByMalId(malIdNum, accessToken);
+    }, 30 * 24 * 60 * 60, tokenlessCacheGuard(accessToken, (result: any) => !!result)); // 30 days TTL
   }
 
   /**
    * Batch artwork getter using AniList IDs with global caching
    */
-  async getBatchAnimeArtworkByAnilistIds(anilistIds: number[]): Promise<any[]> {
+  async getBatchAnimeArtworkByAnilistIds(anilistIds: number[], accessToken?: string): Promise<any[]> {
     if (!anilistIds || anilistIds.length === 0) return [];
     
     const batchSize = 50;
@@ -721,8 +739,8 @@ class AniListAPI {
         // Use global cache for the entire batch
         const batchKey = `anilist-batch-${batch.sort().join('-')}`;
         const batchResults = await cacheWrapGlobal(`anilist-batch:${batchKey}`, async () => {
-          return await this.queueRequest(() => this.getMultipleAnimeArtworkByAnilistIds(batch));
-        }, 30 * 24 * 60 * 60); // 30 days TTL
+          return await this.queueRequest(() => this.getMultipleAnimeArtworkByAnilistIds(batch, accessToken));
+        }, 30 * 24 * 60 * 60, tokenlessCacheGuard(accessToken, (result: any) => Array.isArray(result) && result.length > 0)); // 30 days TTL
         
         allResults.push(...batchResults);
       } catch (error: any) {
@@ -731,7 +749,7 @@ class AniListAPI {
         // Fallback to individual cached requests
         console.warn(`[AniList] Falling back to individual requests for batch of ${batch.length}`);
         const individualResults = await Promise.all(
-          batch.map((anilistId: number) => this.getAnimeArtwork(`anilist:${anilistId}`))
+          batch.map((anilistId: number) => this.getAnimeArtwork(`anilist:${anilistId}`, accessToken))
         );
         allResults.push(...individualResults.filter(Boolean));
       }
@@ -745,7 +763,7 @@ class AniListAPI {
   /**
    * Batch artwork getter with global caching and proper batching (MAL IDs)
    */
-  async getBatchAnimeArtwork(malIds: number[]): Promise<any[]> {
+  async getBatchAnimeArtwork(malIds: number[], accessToken?: string): Promise<any[]> {
     if (!malIds || malIds.length === 0) return [];
     
     let batchSize = 50; // Back to 50 with minimal fields
@@ -760,8 +778,8 @@ class AniListAPI {
         // Use global cache for the entire batch with custom error handling
         const batchKey = `batch-${batch.sort().join('-')}`;
         const batchResults = await cacheWrapGlobal(`anilist-batch:${batchKey}`, async () => {
-          return await this.queueRequest(() => this.getMultipleAnimeArtwork(batch));
-        }, 30 * 24 * 60 * 60); // 30 days TTL - removed custom classifier for now
+          return await this.queueRequest(() => this.getMultipleAnimeArtwork(batch, accessToken));
+        }, 30 * 24 * 60 * 60, tokenlessCacheGuard(accessToken, (result: any) => Array.isArray(result) && result.length > 0)); // 30 days TTL
         
         allResults.push(...batchResults);
           } catch (error: any) {
@@ -778,7 +796,7 @@ class AniListAPI {
         // Fallback to individual cached requests
         console.warn(`[AniList] Falling back to individual requests for batch of ${batch.length}`);
         const individualResults = await Promise.all(
-          batch.map((malId: number) => this.getAnimeArtwork(malId))
+          batch.map((malId: number) => this.getAnimeArtwork(malId, accessToken))
         );
         allResults.push(...individualResults.filter(Boolean));
       }
@@ -792,8 +810,8 @@ class AniListAPI {
   /**
    * Get artwork URLs for catalog usage
    */
-  async getCatalogArtwork(malIds: number[]): Promise<any[]> {
-    const animeData = await this.getBatchAnimeArtwork(malIds);
+  async getCatalogArtwork(malIds: number[], accessToken?: string): Promise<any[]> {
+    const animeData = await this.getBatchAnimeArtwork(malIds, accessToken);
     
     return animeData.map((anime: any) => ({
       malId: anime.idMal,
@@ -934,7 +952,7 @@ class AniListAPI {
    * Search for AniList studios by name.
    * Used by the discover builder's studio search input.
    */
-  async searchStudios(query: string): Promise<Array<{ id: number; name: string; isAnimationStudio: boolean }>> {
+  async searchStudios(query: string, accessToken?: string): Promise<Array<{ id: number; name: string; isAnimationStudio: boolean }>> {
     if (!query || !query.trim()) return [];
 
     const gqlQuery = `
@@ -955,7 +973,11 @@ class AniListAPI {
           query: gqlQuery,
           variables: { search: query.trim(), page: 1, perPage: 20 }
         }, {
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+          },
           timeout: 10000
         })
       );
@@ -995,7 +1017,7 @@ class AniListAPI {
    *   isAdult         - boolean
    *   startDate_greater / startDate_lesser - FuzzyDateInt (YYYYMMDD)
    */
-  async fetchDiscover(params: Record<string, any>, page = 1, pageSize = 50): Promise<any> {
+  async fetchDiscover(params: Record<string, any>, page = 1, pageSize = 50, accessToken?: string): Promise<any> {
     const variables: Record<string, any> = { page, perPage: pageSize };
     const variableDeclarations: string[] = ['$page: Int', '$perPage: Int'];
     const mediaFilters: string[] = ['type: ANIME'];
@@ -1194,7 +1216,7 @@ class AniListAPI {
     try {
       const response = await this.makeRateLimitedRequest(() =>
         httpPost(this.baseURL, { query, variables }, {
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
           timeout: 15000
         })
       );
@@ -1237,7 +1259,7 @@ class AniListAPI {
    * @param {boolean} sfw - If true, filter out adult content (isAdult: false)
    * @returns {Promise<{items: Array, hasMore: boolean, total: number}>}
    */
-  async fetchTrending(page = 1, pageSize = 50, sfw = false, genre?: string): Promise<any> {
+  async fetchTrending(page = 1, pageSize = 50, sfw = false, genre?: string, accessToken?: string): Promise<any> {
     const genreFilter = genre && genre !== 'None' ? `, genre_in: $genres` : '';
     const query = `
       query($page: Int, $perPage: Int${genre && genre !== 'None' ? ', $genres: [String]' : ''}) {
@@ -1295,7 +1317,8 @@ class AniListAPI {
         }, {
           headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
           },
           timeout: 15000
         })

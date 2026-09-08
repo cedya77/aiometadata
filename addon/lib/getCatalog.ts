@@ -32,6 +32,9 @@ import redis from './redisClient.js';
 
 const logger = consola.withTag('Catalog');
 import { cacheWrapMetaSmart } from './getCache.js';
+// @ts-ignore
+import { getAnilistAccessToken } from '../utils/anilistUtils';
+import { anilistRequiresAuth } from '../utils/anilistAccess';
 import { UserConfig } from '../types/index.js';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
@@ -458,7 +461,7 @@ async function getAniListDiscoverCatalog(
       'discover',
       cacheKeySuffix,
       page,
-      async () => anilist.fetchDiscover(rawParams, page, pageSize),
+      async () => anilist.fetchDiscover(rawParams, page, pageSize, await getAnilistAccessToken(config)),
       customCacheTTL,
       { enableErrorCaching: true }
     );
@@ -2355,16 +2358,19 @@ async function getAniListCatalog(
       const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
       const customCacheTTL = catalogConfig?.cacheTTL || null;
       const sfw = config.sfw || false;
-      
+      const accessToken = await getAnilistAccessToken(config);
+
       // Fetch trending anime with caching
       // Include sfw in cache key to prevent mixing SFW and non-SFW results
       const response = await cacheWrapAniListCatalog(
         'trending',
         `trending:sfw:${sfw}:genre:${genre || 'all'}`,
         page,
-        async () => anilist.fetchTrending(page, pageSize, sfw, genre || undefined),
+        async () => anilist.fetchTrending(page, pageSize, sfw, genre || undefined, accessToken),
         customCacheTTL,
-        { enableErrorCaching: true }
+        // The page is shared, so a reader without a token must not cache its
+        // rejection over a copy a token holder could have fetched.
+        { enableErrorCaching: anilistRequiresAuth() ? !!accessToken : true }
       );
       
       // Handle cached error responses

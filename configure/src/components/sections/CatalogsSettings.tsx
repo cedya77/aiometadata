@@ -2994,7 +2994,7 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
   onCustomize?: (catalog: CatalogConfig) => void;
   onDuplicateDiscover?: (catalog: CatalogConfig) => void;
 }) => {
-  const { setConfig, config } = useConfig();
+  const { setConfig, config, anilistRequiresAuth } = useConfig();
   const { toggleSelection, isSelected, selectionCount } = useSelection();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: `${catalog.id}-${catalog.type}`
@@ -3429,6 +3429,15 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
             >
               {catalog.displayType || catalog.type}
             </Badge>
+            {catalog.source === 'anilist' && anilistRequiresAuth && !config.apiKeys?.anilistTokenId && (
+              <Badge
+                variant="outline"
+                className="text-xs shrink-0 border-amber-500/25 bg-amber-500/10 text-amber-200"
+                title="AniList only answers requests from a connected account. Connect AniList to fill this row."
+              >
+                Connect AniList
+              </Badge>
+            )}
             <CatalogTagRow catalog={catalog} mode="button" />
           </div>
           <CatalogTagRow catalog={catalog} mode="chips" className="mt-1.5" />

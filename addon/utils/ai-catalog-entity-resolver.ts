@@ -180,10 +180,14 @@ export async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveCont
 
   if (catalog.source === 'anilist' && resolve.studios?.length) {
     const anilist = require('../lib/anilist');
+    const { getAnilistAccessToken }: any = require('./anilistUtils');
+    const { loadConfigFromDatabase }: any = require('../lib/configApi');
+    const anilistConfig = ctx.userUUID ? await loadConfigFromDatabase(ctx.userUUID).catch(() => null) : null;
+    const anilistToken = await getAnilistAccessToken(anilistConfig);
     const items: Array<{ id: number; label: string }> = [];
     for (const name of resolve.studios) {
       try {
-        const results = await anilist.searchStudios(name);
+        const results = await anilist.searchStudios(name, anilistToken);
         logger.info(`[AICatalog] AniList studio search "${name}": ${results?.length ?? 0} results${results?.[0] ? ` (top: ${results[0].name}, id: ${results[0].id})` : ''}`);
         if (results?.[0]?.id) items.push({ id: results[0].id, label: results[0].name || name });
       } catch (e: any) {

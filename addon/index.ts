@@ -635,6 +635,7 @@ const respond = function (req, res, data, opts?) {
       maxCatalogs: parseInt(getSetting('MAX_CATALOGS') || '', 10) || null,
       collectionImportCatalogCap: parseInt(getSetting('COLLECTION_IMPORT_CATALOG_CAP') || '', 10) || 400,
       simklTrendingPageSizeOptions: resolvedOptions,
+      anilistRequiresAuth: require('./utils/anilistAccess').anilistRequiresAuth(),
       traktSearchEnabled: getSetting('DISABLE_TRAKT_SEARCH') !== 'true',
       simklSearchEnabled: getSetting('DISABLE_SIMKL_SEARCH') !== 'true',
     };
@@ -2083,7 +2084,12 @@ addon.get("/api/anilist/discover/search/studio", async (req, res) => {
     }
 
     const anilist = require('./lib/anilist');
-    const results = await anilist.searchStudios(query);
+    const { resolveAnilistAccessToken }: any = require('./utils/anilistUtils');
+    const accessToken = await resolveAnilistAccessToken({
+      tokenId: String(req.query.tokenId || '').trim(),
+      userUUID: String(req.query.userUUID || '').trim(),
+    });
+    const results = await anilist.searchStudios(query, accessToken);
     res.json({ results });
   } catch (error) {
     console.error('[AniList Discover] Failed to search studios:', error.message);
@@ -2783,7 +2789,12 @@ addon.post("/api/anilist/discover/preview", async (req, res) => {
   try {
     const params = req.body?.params || {};
     const anilist = require('./lib/anilist');
-    const response = await anilist.fetchDiscover(params, 1, 20);
+    const { resolveAnilistAccessToken }: any = require('./utils/anilistUtils');
+    const accessToken = await resolveAnilistAccessToken({
+      tokenId: String(req.body?.tokenId || '').trim(),
+      userUUID: String(req.body?.userUUID || '').trim(),
+    });
+    const response = await anilist.fetchDiscover(params, 1, 20, accessToken);
     const results = (response?.items || []).map(item => ({
       id: item.media.id,
       title: item.media.title?.english || item.media.title?.romaji || '',
@@ -3727,7 +3738,7 @@ addon.post("/api/anilist/lists", async (req, res) => {
     consola.info(`[AniList Lists] Fetching lists for user: ${username}`);
     
     // Fetch user's lists from AniList API
-    const result = await anilist.fetchUserLists(username);
+    const result = await anilist.fetchUserLists(username, token.access_token);
     
     res.json({
       success: true,

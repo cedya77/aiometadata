@@ -14,6 +14,7 @@ import { AlertCircle, AlertTriangle, CircleHelp, Loader2, Search, Trash2, Wand2,
 import { toast } from 'sonner';
 import { apiCache } from '@/utils/apiCache';
 import { CacheTTLField } from '@/components/CacheTTLField';
+import { Callout } from '@/components/settings/Callout';
 import { resolveCatalogTTL } from '@/lib/catalogTTL';
 
 interface DiscoverBuilderDialogProps {
@@ -769,7 +770,7 @@ function LabelWithTooltip({
 }
 
 export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customizeTemplate }: DiscoverBuilderDialogProps) {
-  const { config, setConfig, catalogTTL, auth, hasBuiltInMdblist } = useConfig();
+  const { config, setConfig, catalogTTL, auth, hasBuiltInMdblist, anilistRequiresAuth } = useConfig();
   const tmdbApiKey = config.apiKeys?.tmdb?.trim() || '';
   const tvdbApiKey = config.apiKeys?.tvdb?.trim() || '';
   const mdblistApiKey = config.apiKeys?.mdblist?.trim() || '';
@@ -1961,9 +1962,12 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     }
     setIsSearchingStudios(true);
     try {
-      const cacheKey = `anilist_studio_search_${query.toLowerCase().trim()}`;
+      const cacheKey = `anilist_studio_search_${config.apiKeys?.anilistTokenId || 'anon'}_${query.toLowerCase().trim()}`;
       const data = await apiCache.cachedFetch<any>(cacheKey, async () => {
-        const response = await fetch(`/api/anilist/discover/search/studio?query=${encodeURIComponent(query.trim())}`);
+        const studioParams = new URLSearchParams({ query: query.trim() });
+        if (config.apiKeys?.anilistTokenId) studioParams.set('tokenId', config.apiKeys.anilistTokenId);
+        if (auth.userUUID) studioParams.set('userUUID', auth.userUUID);
+        const response = await fetch(`/api/anilist/discover/search/studio?${studioParams.toString()}`);
         if (!response.ok) throw new Error('Failed to search studios');
         return await response.json();
       }, 10 * 60 * 1000);
@@ -2043,7 +2047,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
         const res = await fetch('/api/anilist/discover/preview', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ params }),
+          body: JSON.stringify({ params, tokenId: config.apiKeys?.anilistTokenId, userUUID: auth.userUUID }),
         });
         const data = await res.json();
         results = data.results || [];
@@ -2911,6 +2915,11 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                         </SelectItem>
                       </SelectContent>
                     </Select>
+                    {discoverSource === 'anilist' && anilistRequiresAuth && !config.apiKeys?.anilistTokenId && (
+                      <Callout variant="warn">
+                        AniList only answers requests from a connected account. Connect AniList from the integrations row above the catalog list, then reopen this dialog to preview results.
+                      </Callout>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label>Content Type</Label>
