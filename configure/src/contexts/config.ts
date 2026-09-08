@@ -76,6 +76,7 @@ export interface CatalogConfig {
     hideWatchedMdblist?: boolean;
     hideWatchedSimkl?: boolean;
     hideUnreleasedDigital?: boolean;
+    hideUnreleasedShows?: boolean;
     identifier?: string;
     url?: string;
     slug?: string;

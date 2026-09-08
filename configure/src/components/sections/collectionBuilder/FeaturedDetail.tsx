@@ -1,7 +1,7 @@
 import { ChevronLeft, Layers, ListOrdered, Rows3 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
-import type { BuilderEntry } from '@/lib/collectionBuilder/types';
+import type { BuilderEntry } from '@shared/types';
 import type { FeaturedCollection } from '@/lib/collectionBuilder/featured';
 
 interface FeaturedDetailProps {

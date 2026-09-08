@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { useConfig } from '@/contexts/ConfigContext';
+import type { CatalogConfig } from '@/contexts/config';
 import { isNativeSource, nativeOrigin } from '@shared/catalogReconstruction';
 import type {
   BuilderEntry,
@@ -48,12 +49,6 @@ interface PreviewMeta {
 }
 
 /** Enough of a catalog for the server to read one page of it. */
-export interface PendingCatalog {
-  id: string;
-  type: string;
-  [key: string]: unknown;
-}
-
 /**
  * Which config the page is editing. `auth.userUUID` is only set once a config has
  * been explicitly loaded or saved, so on a configure URL it is usually null even
@@ -80,7 +75,7 @@ function useCatalogPeek(
   source: SourceDraft | null | undefined,
   userUUID: string | null,
   want: number,
-  pendingCatalogs?: PendingCatalog[]
+  pendingCatalogs?: CatalogConfig[]
 ) {
   const [metas, setMetas] = useState<PreviewMeta[]>([]);
   const catalogId = source && !isNativeSource(source) ? source.catalogId : null;
@@ -458,7 +453,7 @@ function FusionCollectionStage({
 function ClassicRowStage({ entry, target, pendingCatalogs }: {
   entry: ClassicRowDraft;
   target: Target;
-  pendingCatalogs?: PendingCatalog[];
+  pendingCatalogs?: CatalogConfig[];
 }) {
   const cards = Math.min(Math.max(entry.limit, 1), MAX_PREVIEW_CARDS);
   const extra = Math.max(entry.limit - cards, 0);
@@ -543,7 +538,7 @@ export function CollectionPreview({
   target: Target;
   onEditFolder: (folderId: string) => void;
   /** Catalogs an apply would create, so a staged row can still be previewed. */
-  pendingCatalogs?: PendingCatalog[];
+  pendingCatalogs?: CatalogConfig[];
 }) {
   if (!entry) {
     return (
