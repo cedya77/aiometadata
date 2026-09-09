@@ -5106,7 +5106,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
           }
         }
         if (config.customLandscapeUrlPattern) {
-          const resolved = resolveCustomArtUrl(config.customLandscapeUrlPattern, ids, type, config);
+          const resolved = resolveCustomArtUrl(config.customLandscapeUrlPattern, ids, type, config, {
+            userAgent: req.headers['user-agent'] || '',
+            landscape: meta.landscapePoster,
+          });
           if (resolved) {
             if (config.usePosterProxy) {
               const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
@@ -5121,7 +5124,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
           }
         }
         if (config.customLogoUrlPattern) {
-          const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, type, config);
+          const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, type, config, {
+            userAgent: req.headers['user-agent'] || '',
+            logo: meta.logo,
+          });
           if (resolved) {
             if (config.usePosterProxy) {
               const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
@@ -5285,7 +5291,10 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         }
       }
       if (config.customLandscapeUrlPattern) {
-        const resolved = resolveCustomArtUrl(config.customLandscapeUrlPattern, ids, metaType, config, { userAgent });
+        const resolved = resolveCustomArtUrl(config.customLandscapeUrlPattern, ids, metaType, config, {
+          userAgent,
+          landscape: result.meta.landscapePoster,
+        });
         if (resolved) {
           if (config.usePosterProxy) {
             const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
@@ -5300,7 +5309,10 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         }
       }
       if (config.customLogoUrlPattern) {
-        const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, metaType, config, { userAgent });
+        const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, metaType, config, {
+          userAgent,
+          logo: result.meta.logo,
+        });
         if (resolved) {
           if (config.usePosterProxy) {
             const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
