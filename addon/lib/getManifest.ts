@@ -8,6 +8,7 @@ import { getGenresBySelection } from "../static/genres";
 import buildInfo from "./buildInfo";
 import catalogsTranslationsJson from "../static/translations.json";
 import catalogTypesJson from "../static/catalog-types.json";
+import { PLAYBACK_ID_PREFIXES } from "./playbackHandler";
 const jikan: any = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
 const catalogsTranslations: Record<string, Record<string, string>> = catalogsTranslationsJson;
@@ -1634,7 +1635,7 @@ async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise
   const baseName = config.addonName || (nameSuffix ? `AIOMetadata ${nameSuffix}` : "AIOMetadata");
   const addonName = baseName;
 
-  const resources: string[] = ["catalog"];
+  const resources: any[] = ["catalog"];
   if (!config.catalogModeOnly) {
     resources.push("meta");
   }
@@ -1646,6 +1647,18 @@ async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise
     resources.push("stream");
   }
 
+  // Declared only when the user has opted in, since declaring it is what makes
+  // a front-end start delivering. The prefixes are the ones the tracker can
+  // actually parse, so nothing arrives that would only be discarded.
+  const playbackReporting = watchTrackingEnabled && config.playbackReporting === true;
+  if (playbackReporting) {
+    resources.push({
+      name: "playback",
+      types: ["movie", "series"],
+      idPrefixes: PLAYBACK_ID_PREFIXES,
+    });
+  }
+
   const manifest = {
     id: buildInfo.name,
     version: buildInfo.version,
@@ -1654,6 +1667,9 @@ async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise
     name: tags.length > 0 ? `${addonName} · ${formatTagSuffix(tags)}` : addonName,
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
     resources,
+    ...(playbackReporting
+      ? { playback: { version: 1, events: ["start", "stop", "played", "unplayed"] } }
+      : {}),
     types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt", "collection"],
     idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:", "upnext_", "unwatched_", "mdblist_upnext_", "pmdb_resume_", "simkl_upnext_"],
     stremioAddonsConfig: {

@@ -165,6 +165,14 @@ function handleSubtitleRequest(type: string, id: string, config: any, userUUID: 
   try {
     logger.debug(`[Watch Tracking] Subtitle request received, type: ${type}, id: ${id}`);
 
+    // A Jellyfin client asks for subtitles when an item is opened, not when it
+    // is played, so this trigger cannot mean "watching" for anyone whose
+    // playback is reported through the playback resource instead.
+    if (config?.playbackReporting) {
+      logger.debug(`[Watch Tracking] Skipped subtitle check-in, playback is reported by the client, id: ${id}`);
+      return { subtitles: [] };
+    }
+
     const parsedId = parseMediaId(id);
     if (!parsedId) {
       logger.warn(`[Watch Tracking] Failed to parse media ID, id: ${id}, type: ${type}`);
@@ -398,7 +406,16 @@ async function resolveSeriesIds(parsedId: ParsedMediaId, config: any = {}, isSim
   }
 }
 
-async function trackMdblistWatchStatus(parsedId: ParsedMediaId, config: any): Promise<void> {
+/**
+ * `options` selects the MDBList call, matching checkinSimkl. Left out this stays
+ * the check-in the subtitle trigger sends, which derives progress from elapsed
+ * time and so calls anything abandoned watched.
+ */
+async function trackMdblistWatchStatus(
+  parsedId: ParsedMediaId,
+  config: any,
+  options: { action?: 'checkin' | 'start' | 'pause' | 'stop'; progress?: number } = {}
+): Promise<void> {
   try {
     const { checkinMovie, checkinEpisode } = require('../utils/mdbList');
     const apiKey = config.apiKeys.mdblist;
@@ -416,7 +433,7 @@ async function trackMdblistWatchStatus(parsedId: ParsedMediaId, config: any): Pr
       }
 
       logger.debug(`[Mdblist Watch Tracking] Checkin in movie (${buildIdSummary(ids)})`);
-      await checkinMovie(ids, apiKey);
+      await checkinMovie(ids, apiKey, options);
       return;
     }
 
@@ -430,7 +447,7 @@ async function trackMdblistWatchStatus(parsedId: ParsedMediaId, config: any): Pr
       logger.debug(
         `[Mdblist Watch Tracking] Checkin in for episode (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`
       );
-      await checkinEpisode(resolution.ids, resolution.season, resolution.episode, apiKey);
+      await checkinEpisode(resolution.ids, resolution.season, resolution.episode, apiKey, options);
       return;
     }
 
@@ -442,7 +459,17 @@ async function trackMdblistWatchStatus(parsedId: ParsedMediaId, config: any): Pr
   }
 }
 
-async function checkinSimkl(parsedId: ParsedMediaId, config: any): Promise<void> {
+/**
+ * `options` selects the Simkl call. Left out, this is the fire-and-forget
+ * check-in the subtitle trigger has always sent. A playback event passes start
+ * or stop with a real progress instead, which is what stops an abandoned
+ * episode being marked watched when its runtime elapses.
+ */
+async function checkinSimkl(
+  parsedId: ParsedMediaId,
+  config: any,
+  options: { action?: 'checkin' | 'start' | 'stop'; progress?: number } = {}
+): Promise<void> {
   try {
     const { checkinSeries, checkinMovie, getSimklToken } = require('../utils/simklUtils');
     const tokenId = config.apiKeys?.simklTokenId;
@@ -466,7 +493,7 @@ async function checkinSimkl(parsedId: ParsedMediaId, config: any): Promise<void>
       }
 
       logger.debug(`[Simkl Checkin] Tracking movie (${buildIdSummary(ids)})`);
-      await checkinMovie(ids, accessToken);
+      await checkinMovie(ids, accessToken, options);
       return;
     }
 
@@ -480,7 +507,7 @@ async function checkinSimkl(parsedId: ParsedMediaId, config: any): Promise<void>
       logger.debug(
         `[Simkl Checkin] Checkin in episode (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`
       );
-      await checkinSeries(resolution.ids, resolution.season, resolution.episode, accessToken, resolution.fallbackData);
+      await checkinSeries(resolution.ids, resolution.season, resolution.episode, accessToken, resolution.fallbackData, options);
       return;
     }
 
@@ -492,7 +519,16 @@ async function checkinSimkl(parsedId: ParsedMediaId, config: any): Promise<void>
   }
 }
 
-async function checkinTrakt(parsedId: ParsedMediaId, config: any): Promise<void> {
+/**
+ * `options` selects the Trakt call, matching the other trackers. Left out this
+ * is the check-in, which Trakt flips to watched on its own once the runtime has
+ * elapsed, whether or not anybody watched it.
+ */
+async function checkinTrakt(
+  parsedId: ParsedMediaId,
+  config: any,
+  options: { action?: 'checkin' | 'start' | 'pause' | 'stop'; progress?: number } = {}
+): Promise<void> {
   try {
     const { checkinSeries, checkinMovie, getTraktToken } = require('../utils/traktUtils');
     const tokenId = config.apiKeys?.traktTokenId;
@@ -511,7 +547,7 @@ async function checkinTrakt(parsedId: ParsedMediaId, config: any): Promise<void>
       }
 
       logger.debug(`[Trakt Checkin] Tracking movie (${buildIdSummary(ids)})`);
-      await checkinMovie(ids, accessToken);
+      await checkinMovie(ids, accessToken, options);
       return;
     }
 
@@ -525,7 +561,7 @@ async function checkinTrakt(parsedId: ParsedMediaId, config: any): Promise<void>
       logger.debug(
         `[Trakt Checkin] Checkin in episode (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`
       );
-      await checkinSeries(resolution.ids, resolution.season, resolution.episode, accessToken);
+      await checkinSeries(resolution.ids, resolution.season, resolution.episode, accessToken, options);
       return;
     }
 
@@ -537,7 +573,17 @@ async function checkinTrakt(parsedId: ParsedMediaId, config: any): Promise<void>
   }
 }
 
-async function checkinPublicMetaDB(parsedId: ParsedMediaId, config: any): Promise<void> {
+/**
+ * PublicMetaDB holds resume points and watch history, with no session to start.
+ * Without options this stays the immediate mark-watched the subtitle trigger
+ * sends; a stop saves the position, and marks watched only when the sender
+ * judged it finished.
+ */
+async function checkinPublicMetaDB(
+  parsedId: ParsedMediaId,
+  config: any,
+  options: { action?: 'watched' | 'stop'; played?: boolean; positionMs?: number; runtimeMs?: number } = {}
+): Promise<void> {
   try {
     const { checkinMovie, checkinEpisode } = require('../utils/publicmetadbUtils');
     const apiKey = config.apiKeys?.publicmetadb;
@@ -554,7 +600,7 @@ async function checkinPublicMetaDB(parsedId: ParsedMediaId, config: any): Promis
         return;
       }
       logger.debug(`[PublicMetaDB Watch Tracking] Tracking movie (${buildIdSummary(ids)})`);
-      await checkinMovie(ids, apiKey);
+      await checkinMovie(ids, apiKey, options);
       return;
     }
 
@@ -565,7 +611,7 @@ async function checkinPublicMetaDB(parsedId: ParsedMediaId, config: any): Promis
         return;
       }
       logger.debug(`[PublicMetaDB Watch Tracking] Tracking episode (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`);
-      await checkinEpisode(resolution.ids, resolution.season, resolution.episode, apiKey);
+      await checkinEpisode(resolution.ids, resolution.season, resolution.episode, apiKey, options);
       return;
     }
 
@@ -580,12 +626,20 @@ async function checkinPublicMetaDB(parsedId: ParsedMediaId, config: any): Promis
 export {
   handleSubtitleRequest,
   parseMediaId,
+  checkinSimkl,
+  trackMdblistWatchStatus,
+  checkinTrakt,
+  checkinPublicMetaDB,
   shouldTrackMdblistWatch,
   shouldTrackAniList
 };
 module.exports = {
   handleSubtitleRequest,
   parseMediaId,
+  checkinSimkl,
+  trackMdblistWatchStatus,
+  checkinTrakt,
+  checkinPublicMetaDB,
   shouldTrackMdblistWatch,
   shouldTrackAniList
 };

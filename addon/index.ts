@@ -5454,6 +5454,42 @@ addon.get("/stremio/:userUUID/stream/:type/:id.json", async function (req, res) 
   return respond(req, res, { streams: streamUrl ? [{ externalUrl: streamUrl, name: `⭐ Rate Me` }] : [] }, { cacheMaxAge: 0 });
 });
 
+// --- Playback Route (real playback events, Jellyfin front-ends) ---
+// The counterpart to the subtitle trigger: a front-end that knows when playback
+// actually started and stopped posts it here instead of us inferring it.
+addon.post("/stremio/:userUUID/playback/:type/:id.json", async function (req, res) {
+  const { userUUID, type, id } = req.params;
+
+  // A missing configuration has to read as a dropped event, not a server fault:
+  // a 5xx would have the sender retrying it for a day.
+  let config;
+  try {
+    config = await loadConfigFromDatabase(userUUID);
+  } catch {
+    config = null;
+  }
+  if (!config) {
+    return res.status(404).json({ error: "User configuration not found" });
+  }
+
+  if (!config.playbackReporting) {
+    consola.debug(`[Playback] Reporting is off for ${userUUID}, dropping ${type}/${id}`);
+    return res.status(404).json({ error: "Playback reporting is not enabled" });
+  }
+
+  try {
+    const { handlePlaybackReport } = require('./lib/playbackHandler');
+    const outcome = await handlePlaybackReport(type, id, req.body, config, userUUID);
+    if (outcome.status === 204) {
+      return res.status(204).end();
+    }
+    return res.status(outcome.status).json({ error: outcome.reason || 'Rejected' });
+  } catch (error) {
+    consola.error(`[Playback] Failed to handle ${type}/${id}: ${error.message}`);
+    return res.status(500).json({ error: "Failed to record playback" });
+  }
+});
+
 // --- Subtitle Route (for watch tracking) ---
 // Route pattern matches Stremio's subtitle URL format: /:id{/:extra}.json
 // where extra contains filename, videoSize, and videoHash parameters

@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   AlertDialog,
@@ -366,13 +367,59 @@ export function GeneralSettings() {
       <Card>
         <CardHeader>
           <CardTitle>Watch Tracking</CardTitle>
-          <CardDescription>Automatically sync your watch progress to external services when you play content.</CardDescription>
+          <CardDescription>Record what you watch to the services you have connected below.</CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 space-y-2 rounded-lg border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <div className="min-w-[12rem] flex-1">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="playback-detection" className="font-medium">When to record</Label>
+                  {config.playbackReporting ? (
+                    <Badge variant="outline" className="text-[10px] border-amber-400/60 text-amber-400">Jellyfin only</Badge>
+                  ) : null}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Applies to every service below.
+                </p>
+              </div>
+              <Select
+                value={config.playbackReporting ? 'reported' : 'opened'}
+                onValueChange={(v) => setConfig(prev => ({ ...prev, playbackReporting: v === 'reported' }))}
+              >
+                <SelectTrigger id="playback-detection" className="w-full sm:w-[260px] shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="opened">
+                    <span className="flex items-center gap-2">
+                      When a title is opened
+                      <Badge variant="secondary" className="text-[10px]">Any client</Badge>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="reported">
+                    <span className="flex items-center gap-2">
+                      When playback starts and stops
+                      <Badge variant="secondary" className="text-[10px]">Jellyfin only</Badge>
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {config.playbackReporting ? (
+              <p className="text-xs text-muted-foreground">
+                Only a client that reports playback can drive this, which today means Jellyfin ones. In exchange, something you abandon after a few minutes is kept as a resume point rather than being marked watched. <span className="text-amber-400">Watching anywhere else, Stremio included, records nothing at all.</span>
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Recorded as soon as you open a title, which is the only signal most clients give. Simple and works everywhere, but anything you open counts as watched even if you stop a minute in.
+              </p>
+            )}
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
               <div className="min-w-[12rem] flex-1">
-                <Label htmlFor="trakt-watch-tracking" className="font-medium">Trakt Checkin</Label>
+                <Label htmlFor="trakt-watch-tracking" className="font-medium">Trakt</Label>
                 <p className="text-sm text-muted-foreground">{getWatchTrackingMediaTypeSummary(config, 'trakt')}</p>
               </div>
               {renderWatchTrackingControls('trakt', 'trakt-watch-tracking', !!config.traktWatchTracking, handleTraktTrackingChange)}
@@ -380,7 +427,7 @@ export function GeneralSettings() {
 
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
               <div className="min-w-[12rem] flex-1">
-                <Label htmlFor="simkl-watch-tracking" className="font-medium">Simkl Checkin</Label>
+                <Label htmlFor="simkl-watch-tracking" className="font-medium">Simkl</Label>
                 <p className="text-sm text-muted-foreground">{getWatchTrackingMediaTypeSummary(config, 'simkl')}</p>
               </div>
               {renderWatchTrackingControls('simkl', 'simkl-watch-tracking', !!config.simklWatchTracking, handleSimklTrackingChange)}
@@ -388,7 +435,7 @@ export function GeneralSettings() {
 
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
               <div className="min-w-[12rem] flex-1">
-                <Label htmlFor="anilist-watch-tracking" className="font-medium">AniList Tracking</Label>
+                <Label htmlFor="anilist-watch-tracking" className="font-medium">AniList</Label>
                 <p className="text-sm text-muted-foreground">{getWatchTrackingMediaTypeSummary(config, 'anilist')}</p>
               </div>
               {renderWatchTrackingControls('anilist', 'anilist-watch-tracking', !!config.anilistWatchTracking, handleAniListTrackingChange)}
@@ -396,7 +443,7 @@ export function GeneralSettings() {
 
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
               <div className="min-w-[12rem] flex-1">
-                <Label htmlFor="mal-watch-tracking" className="font-medium">MyAnimeList Tracking</Label>
+                <Label htmlFor="mal-watch-tracking" className="font-medium">MyAnimeList</Label>
                 <p className="text-sm text-muted-foreground">{getWatchTrackingMediaTypeSummary(config, 'mal')}</p>
               </div>
               {renderWatchTrackingControls('mal', 'mal-watch-tracking', !!config.malWatchTracking, handleMalTrackingChange)}
@@ -404,7 +451,7 @@ export function GeneralSettings() {
 
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
               <div className="min-w-[12rem] flex-1">
-                <Label htmlFor="mdblist-watch-tracking" className="font-medium">MDBList Tracking</Label>
+                <Label htmlFor="mdblist-watch-tracking" className="font-medium">MDBList</Label>
                 <p className="text-sm text-muted-foreground">{getWatchTrackingMediaTypeSummary(config, 'mdblist')}</p>
               </div>
               {renderWatchTrackingControls('mdblist', 'mdblist-watch-tracking', !!config.mdblistWatchTracking, handleMDBListTrackingChange)}
@@ -412,7 +459,7 @@ export function GeneralSettings() {
 
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
               <div className="min-w-[12rem] flex-1">
-                <Label htmlFor="publicmetadb-watch-tracking" className="font-medium">PublicMetaDB Tracking</Label>
+                <Label htmlFor="publicmetadb-watch-tracking" className="font-medium">PublicMetaDB</Label>
                 <p className="text-sm text-muted-foreground">{getWatchTrackingMediaTypeSummary(config, 'publicmetadb')}</p>
               </div>
               {renderWatchTrackingControls('publicmetadb', 'publicmetadb-watch-tracking', !!config.publicmetadbWatchTracking, handlePublicMetaDBTrackingChange)}

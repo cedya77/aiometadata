@@ -721,7 +721,20 @@ function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
   return Object.keys(ids).length > 0 ? ids : null;
 }
 
-async function checkinMovie(idInput: MovieIdInput, accessToken: string): Promise<boolean> {
+export interface SimklScrobbleOptions {
+  /** checkin is fire and forget and self-completes; start and stop are a session. */
+  action?: 'checkin' | 'start' | 'stop';
+  /** 0-100. Simkl marks an item watched on stop at 80 or above. */
+  progress?: number;
+}
+
+async function checkinMovie(
+  idInput: MovieIdInput,
+  accessToken: string,
+  options: SimklScrobbleOptions = {}
+): Promise<boolean> {
+  const action = options.action ?? 'checkin';
+  const progress = typeof options.progress === 'number' ? options.progress : 1;
   const normalizedIds = normalizeMovieIdInput(idInput);
 
   if (!normalizedIds || !accessToken) {
@@ -734,11 +747,11 @@ async function checkinMovie(idInput: MovieIdInput, accessToken: string): Promise
 
   try {
 
-    const url = `${SIMKL_BASE_URL}/scrobble/checkin`;
+    const url = `${SIMKL_BASE_URL}/scrobble/${action}`;
     const watchedAt = new Date().toISOString();
 
     const payload = {
-      progress: 1,
+      progress,
       movie:
         {
           ids: normalizedIds,
@@ -795,8 +808,11 @@ async function checkinSeries(
   season: number,
   episode: number,
   accessToken: string,
-  fallbackData?: any // Made optional
+  fallbackData?: any, // Made optional
+  options: SimklScrobbleOptions = {}
 ): Promise<boolean> {
+  const action = options.action ?? 'checkin';
+  const progress = typeof options.progress === 'number' ? options.progress : 1;
   const normalizedIds = normalizeEpisodeIdInput(idInput);
 
   if (!normalizedIds || !accessToken || season < 1 || episode < 1) {
@@ -816,9 +832,9 @@ async function checkinSeries(
   };
 
   const doCheckin = async (ids: Record<string, string | number>, attemptLabel: string, seasonNumber: number, episodeNumber:number) => {
-      const url = `${SIMKL_BASE_URL}/scrobble/checkin`;
+      const url = `${SIMKL_BASE_URL}/scrobble/${action}`;
       const payload = {
-        progress: 1,
+        progress,
         show: { ids: ids },
         episode: { season: seasonNumber, number: episodeNumber }
       };
@@ -832,10 +848,18 @@ async function checkinSeries(
       });
   
       if (response.status >= 200 && response.status < 300) {
-        logger.info(`[Simkl Checkin] Checked into episode (${attemptLabel})`, { ids, seasonNumber, episodeNumber });
+        logger.info(`[Simkl ${action}] Reported episode (${attemptLabel})`, { ids, seasonNumber, episodeNumber });
         return true;
       }
-      
+
+      // Stopping a session Simkl already finalised in the past hour answers 409.
+      // A client reporting one stop twice is expected, so that is the same
+      // outcome as having stopped it, not a failure to retry.
+      if (action === 'stop' && response.status === 409) {
+        logger.debug(`[Simkl stop] Session already finalised (${attemptLabel})`);
+        return true;
+      }
+
       throw { response }; 
   };
 

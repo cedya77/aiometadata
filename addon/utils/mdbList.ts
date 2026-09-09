@@ -1535,20 +1535,38 @@ async function parseMDBListUpNextItems(
   return validMetas;
 }
 
-async function checkinMovie(idInput: Record<string, string | number>, apiKey: string): Promise<boolean> {
+export interface MdblistScrobbleOptions {
+  /** checkin derives progress from elapsed time; start, pause and stop carry it. */
+  action?: 'checkin' | 'start' | 'pause' | 'stop';
+  /** 0-100. Stopping at 80 or above marks the item watched. */
+  progress?: number;
+}
+
+function scrobbleUrl(action: string, apiKey: string): string {
+  const path = action === 'checkin' ? 'checkin' : `scrobble/${action}`;
+  return `https://api.mdblist.com/${path}?apikey=${apiKey}`;
+}
+
+async function checkinMovie(
+  idInput: Record<string, string | number>,
+  apiKey: string,
+  options: MdblistScrobbleOptions = {}
+): Promise<boolean> {
   if (!idInput || !apiKey) return false;
 
+  const action = options.action ?? 'checkin';
   try {
-    const url = `https://api.mdblist.com/checkin?apikey=${apiKey}`;
+    const url = scrobbleUrl(action, apiKey);
     const payload = {
       movie: {
         ids: idInput
       },
+      ...(action === 'checkin' ? {} : { progress: options.progress ?? 0 }),
       app_version: `AIOMetadata ${buildInfo.version}`,
       app_date: new Date().toISOString().split('T')[0]
     };
 
-    logger.debug(`[MDBList Checkin] Checking in movie: ${formatIdSummary(idInput)}`);
+    logger.debug(`[MDBList ${action}] Reporting movie: ${formatIdSummary(idInput)}`);
 
     await makeRateLimitedRequest(
       () => httpPost(url, payload, {
@@ -1579,12 +1597,14 @@ async function checkinEpisode(
   idInput: Record<string, string | number>,
   season: number,
   episode: number,
-  apiKey: string
+  apiKey: string,
+  options: MdblistScrobbleOptions = {}
 ): Promise<boolean> {
   if (!idInput || !apiKey) return false;
 
+  const action = options.action ?? 'checkin';
   try {
-    const url = `https://api.mdblist.com/checkin?apikey=${apiKey}`;
+    const url = scrobbleUrl(action, apiKey);
     
     // Note: MDBList uses a nested structure for episode check-ins
     const payload = {
@@ -1597,11 +1617,12 @@ async function checkinEpisode(
           }
         }
       },
+      ...(action === 'checkin' ? {} : { progress: options.progress ?? 0 }),
       app_version: `AIOMetadata ${buildInfo.version}`,
       app_date: new Date().toISOString().split('T')[0]
     };
 
-    logger.debug(`[MDBList Checkin] Checking in episode: ${formatIdSummary(idInput)} S${season}E${episode}`);
+    logger.debug(`[MDBList ${action}] Reporting episode: ${formatIdSummary(idInput)} S${season}E${episode}`);
 
     await makeRateLimitedRequest(
       () => httpPost(url, payload, {

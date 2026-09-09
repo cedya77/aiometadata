@@ -334,6 +334,8 @@ export interface AppConfig {
   hideStremioCatalogs?: boolean;
   /** Install URL of a stream addon the Jellyfin server delegates playback to. */
   jellyfinStreamUrl?: string;
+  /** Playback is reported by the client, so the subtitle trigger is not used. */
+  playbackReporting?: boolean;
   customPosterUrlPattern?: string;
   customBackgroundUrlPattern?: string;
   customLandscapeUrlPattern?: string;

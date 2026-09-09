@@ -3175,13 +3175,19 @@ export async function getTraktToken(tokenId: string): Promise<string | null> {
   return getTraktAccessToken({ apiKeys: { traktTokenId: tokenId } });
 }
 
-export async function checkinMovie(idInput: Record<string, string | number>, accessToken: string): Promise<boolean> {
+export async function checkinMovie(
+  idInput: Record<string, string | number>,
+  accessToken: string,
+  options: TraktScrobbleOptions = {}
+): Promise<boolean> {
+  const action = options.action ?? 'checkin';
   try {
-    const url = 'https://api.trakt.tv/checkin';
+    const url = traktScrobbleUrl(action);
     const payload = {
       movie: {
         ids: idInput
       },
+      ...(action === 'checkin' ? {} : { progress: options.progress ?? 0 }),
       app_version: "1.0",
       app_date: new Date().toISOString().split('T')[0]
     };
@@ -3212,14 +3218,29 @@ export async function checkinMovie(idInput: Record<string, string | number>, acc
   }
 }
 
+export interface TraktScrobbleOptions {
+  /** checkin flips to watched once the runtime elapses; scrobble decides at stop. */
+  action?: 'checkin' | 'start' | 'pause' | 'stop';
+  /** 0-100. Stopping above 80 scrobbles it; 1 to 79 is saved as a pause. */
+  progress?: number;
+}
+
+function traktScrobbleUrl(action: string): string {
+  return action === 'checkin'
+    ? 'https://api.trakt.tv/checkin'
+    : `https://api.trakt.tv/scrobble/${action}`;
+}
+
 export async function checkinSeries(
   idInput: Record<string, string | number>,
   season: number,
   episode: number,
-  accessToken: string
+  accessToken: string,
+  options: TraktScrobbleOptions = {}
 ): Promise<boolean> {
+  const action = options.action ?? 'checkin';
   try {
-    const url = 'https://api.trakt.tv/checkin';
+    const url = traktScrobbleUrl(action);
     const payload = {
       episode: {
         season: season,
@@ -3228,6 +3249,7 @@ export async function checkinSeries(
       show: {
         ids: idInput
       },
+      ...(action === 'checkin' ? {} : { progress: options.progress ?? 0 }),
       app_version: "1.0",
       app_date: new Date().toISOString().split('T')[0]
     };

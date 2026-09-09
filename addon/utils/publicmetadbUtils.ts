@@ -363,7 +363,74 @@ async function parsePickItems(
 
 // --- Watch tracking (called from subtitleHandler) ---
 
-async function checkinMovie(ids: Record<string, any>, apiKey: string): Promise<boolean> {
+export interface PmdbPlaybackOptions {
+  /** Omitted, this stays the immediate mark-watched the subtitle trigger sends. */
+  action?: 'watched' | 'stop';
+  /** Whether the sender judged it finished. Only meaningful with action 'stop'. */
+  played?: boolean;
+  positionMs?: number;
+  runtimeMs?: number;
+}
+
+/**
+ * Saves a playback position. Under 2% is ignored by the server, and at 80% or
+ * above the resume point is deleted and `action: 'completed'` comes back, which
+ * is a prompt to mark it watched rather than the server having done so.
+ */
+async function saveResume(
+  apiKey: string,
+  tmdbId: number,
+  mediaType: 'movie' | 'tv',
+  positionMs: number,
+  runtimeMs: number,
+  season?: number,
+  episode?: number
+): Promise<any> {
+  const body: any = {
+    tmdb_id: tmdbId,
+    media_type: mediaType,
+    position_ms: Math.max(0, Math.round(positionMs)),
+    runtime_ms: Math.max(1, Math.round(runtimeMs)),
+  };
+  if (mediaType === 'tv' && season != null && episode != null) {
+    body.season = season;
+    body.episode = episode;
+  }
+  return makeRequest('/api/external/resume', apiKey, 'POST', body);
+}
+
+/**
+ * A stop saves the position; only one the sender called played is also marked
+ * watched. Without options this is the old behaviour, which marks watched the
+ * moment a title is opened.
+ */
+async function reportPlayback(
+  apiKey: string,
+  tmdbId: number,
+  mediaType: 'movie' | 'tv',
+  options: PmdbPlaybackOptions,
+  season?: number,
+  episode?: number
+): Promise<boolean> {
+  if (options.action === 'stop') {
+    const position = options.positionMs ?? 0;
+    const runtime = options.runtimeMs ?? 0;
+    if (runtime > 0) {
+      const result = await saveResume(apiKey, tmdbId, mediaType, position, runtime, season, episode);
+      logger.debug(`[Watch Tracking] Resume point ${result?.action ?? 'sent'} for tmdb:${tmdbId}`);
+    }
+    if (!options.played) return true;
+  }
+
+  const result = await markWatched(apiKey, tmdbId, mediaType, season, episode);
+  return !!result?.success;
+}
+
+async function checkinMovie(
+  ids: Record<string, any>,
+  apiKey: string,
+  options: PmdbPlaybackOptions = {}
+): Promise<boolean> {
   try {
     let tmdbId = ids.tmdb;
     if (!tmdbId && ids.imdb) {
@@ -375,12 +442,12 @@ async function checkinMovie(ids: Record<string, any>, apiKey: string): Promise<b
       return false;
     }
 
-    const result = await markWatched(apiKey, tmdbId, 'movie');
-    if (!result?.success) {
+    const ok = await reportPlayback(apiKey, tmdbId, 'movie', options);
+    if (!ok) {
       logger.warn(`[Watch Tracking] Movie watch not confirmed: tmdb:${tmdbId}`);
       return false;
     }
-    logger.info(`[Watch Tracking] Movie marked as watched: tmdb:${tmdbId}`);
+    logger.info(`[Watch Tracking] Movie reported: tmdb:${tmdbId}`);
     return true;
   } catch (err: any) {
     logger.error(`[Watch Tracking] Movie tracking failed: ${err.message}`);
@@ -392,7 +459,8 @@ async function checkinEpisode(
   ids: Record<string, any>,
   season: number,
   episode: number,
-  apiKey: string
+  apiKey: string,
+  options: PmdbPlaybackOptions = {}
 ): Promise<boolean> {
   try {
     let tmdbId = ids.tmdb;
@@ -405,12 +473,12 @@ async function checkinEpisode(
       return false;
     }
 
-    const result = await markWatched(apiKey, tmdbId, 'tv', season, episode);
-    if (!result?.success) {
+    const ok = await reportPlayback(apiKey, tmdbId, 'tv', options, season, episode);
+    if (!ok) {
       logger.warn(`[Watch Tracking] Episode watch not confirmed: tmdb:${tmdbId} S${season}E${episode}`);
       return false;
     }
-    logger.info(`[Watch Tracking] Episode marked as watched: tmdb:${tmdbId} S${season}E${episode}`);
+    logger.info(`[Watch Tracking] Episode reported: tmdb:${tmdbId} S${season}E${episode}`);
     return true;
   } catch (err: any) {
     logger.error(`[Watch Tracking] Episode tracking failed: ${err.message}`);
@@ -425,6 +493,7 @@ function getMemoryStats() {
 export {
   validateKey,
   fetchResume,
+  saveResume,
   fetchLists,
   fetchListItems,
   fetchPicks,
