@@ -371,6 +371,15 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     default: true,
   },
   {
+    key: 'JELLYFIN_API_ENABLED',
+    envVar: 'JELLYFIN_API_ENABLED',
+    label: 'Jellyfin API',
+    description: 'Serve a Jellyfin-compatible API at /jellyfin/<config>, so Jellyfin clients can browse catalogs and metadata. Clients sign in with the configuration password.',
+    category: 'Features',
+    type: 'boolean',
+    default: false,
+  },
+  {
     key: 'CACHE_COMPRESSION_ENABLED',
     envVar: 'CACHE_COMPRESSION_ENABLED',
     label: 'Cache Compression',

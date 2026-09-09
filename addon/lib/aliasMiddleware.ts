@@ -2,6 +2,7 @@ import { looksLikeAlias } from './userAliases.js';
 
 const ALIAS_PATH_PREFIXES = new Set([
   'stremio',
+  'jellyfin',
   'api/config/load',
   'api/config/update',
   'api/config/is-trusted',

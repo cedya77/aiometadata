@@ -297,6 +297,18 @@ export function ConfigurationManager() {
     return `${identity.installUrl}?${params.join('&')}`;
   }, [identity, selectedTags]);
 
+  const [jellyfinEnabled, setJellyfinEnabled] = useState(false);
+  const [urlTab, setUrlTab] = useState<'stremio' | 'jellyfin'>('stremio');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/config")
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (!cancelled) setJellyfinEnabled(Boolean(data?.jellyfinEnabled)); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
   const toggleTag = (name: string) => {
     setSelectedTagNames(prev =>
       prev.includes(name) ? prev.filter(t => t !== name) : [...prev, name]
@@ -487,7 +499,79 @@ export function ConfigurationManager() {
                 </div>
               </div>
               <div>
-                <Label className="text-sm font-medium">Install URL</Label>
+                {jellyfinEnabled ? (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setUrlTab('stremio')}
+                      aria-pressed={urlTab === 'stremio'}
+                      className={cn(
+                        'rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
+                        urlTab === 'stremio'
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-muted-foreground/30 text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      Install URL
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUrlTab('jellyfin')}
+                      aria-pressed={urlTab === 'jellyfin'}
+                      className={cn(
+                        'flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
+                        urlTab === 'jellyfin'
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-muted-foreground/30 text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      <img src="/jellyfin_icon.svg" alt="" aria-hidden="true" className="h-3.5 w-3.5 object-contain" />
+                      Jellyfin
+                    </button>
+                  </div>
+                ) : (
+                  <Label className="text-sm font-medium">Install URL</Label>
+                )}
+                {urlTab === 'jellyfin' && jellyfinEnabled ? (
+                  <div className="space-y-2 mt-2">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={`${window.location.origin}/jellyfin/${identity.userUUID}`}
+                        readOnly
+                        className="font-mono text-sm"
+                        aria-label="Jellyfin server address"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copyToClipboard(`${window.location.origin}/jellyfin/${identity.userUUID}`, 'Jellyfin server address')}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Add this as a server in your Jellyfin client, then sign in with any username and this configuration's password.
+                    </p>
+                    <p className="text-xs text-amber-400">
+                      Anyone with this address and your password can browse your catalogs. Treat it like the install URL.
+                    </p>
+
+                    <div className="space-y-1.5 border-t pt-3">
+                      <Label htmlFor="jellyfin-stream-url" className="text-sm font-medium">Stream addon</Label>
+                      <Input
+                        id="jellyfin-stream-url"
+                        value={config.jellyfinStreamUrl ?? ''}
+                        placeholder="https://your-aiostreams/stremio/<config>/manifest.json"
+                        className="font-mono text-xs"
+                        onChange={(e) => setConfig(prev => ({ ...prev, jellyfinStreamUrl: e.target.value }))}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Paste a stream addon's install URL, such as your AIOStreams. Without one, titles browse but will not play. AIOMetadata never serves the video itself; the client fetches it from that addon directly.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                <>
                 {profileTags.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                     <span className="text-xs text-muted-foreground mr-1">Profile:</span>
@@ -567,6 +651,8 @@ export function ConfigurationManager() {
                       : 'Profiles that hide titles with no rating hide them from search too.'}{' '}
                     Search results rarely carry a rating, so expect search to return very little.
                   </p>
+                )}
+                </>
                 )}
               </div>
             </div>

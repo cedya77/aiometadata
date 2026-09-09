@@ -332,6 +332,8 @@ export interface AppConfig {
   tags?: TagDef[];
   catalogModeOnly?: boolean;
   hideStremioCatalogs?: boolean;
+  /** Install URL of a stream addon the Jellyfin server delegates playback to. */
+  jellyfinStreamUrl?: string;
   customPosterUrlPattern?: string;
   customBackgroundUrlPattern?: string;
   customLandscapeUrlPattern?: string;

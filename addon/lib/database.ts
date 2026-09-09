@@ -217,6 +217,12 @@ class Database {
       `CREATE INDEX IF NOT EXISTS idx_id_mappings_imdb ON id_mappings(imdb_id)`,
       `CREATE INDEX IF NOT EXISTS idx_id_mappings_tvmaze ON id_mappings(tvmaze_id)`,
       `CREATE INDEX IF NOT EXISTS idx_id_mappings_content_type ON id_mappings(content_type)`,
+      `CREATE TABLE IF NOT EXISTS jellyfin_ids (
+        id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        codec_version INTEGER NOT NULL DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid TEXT UNIQUE NOT NULL,
         trusted_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -300,6 +306,12 @@ class Database {
       `CREATE INDEX IF NOT EXISTS idx_id_mappings_imdb ON id_mappings(imdb_id)`,
       `CREATE INDEX IF NOT EXISTS idx_id_mappings_tvmaze ON id_mappings(tvmaze_id)`,
       `CREATE INDEX IF NOT EXISTS idx_id_mappings_content_type ON id_mappings(content_type)`,
+      `CREATE TABLE IF NOT EXISTS jellyfin_ids (
+        id VARCHAR(32) PRIMARY KEY,
+        payload TEXT NOT NULL,
+        codec_version INTEGER NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid VARCHAR(255) UNIQUE NOT NULL,
         trusted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -788,6 +800,35 @@ class Database {
     const query = 'SELECT COUNT(*) as count FROM id_mappings';
     const result = await this.getQuery(query);
     return result ? result.count : 0;
+  }
+
+  async rememberJellyfinIds(
+    rows: Array<{ id: string; payload: any; codecVersion: number }>
+  ): Promise<void> {
+    if (!rows.length) return;
+
+    const query = this.type === 'sqlite'
+      ? 'INSERT OR IGNORE INTO jellyfin_ids (id, payload, codec_version) VALUES (?, ?, ?)'
+      : 'INSERT INTO jellyfin_ids (id, payload, codec_version) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING';
+
+    for (const row of rows) {
+      await this.runQuery(query, [row.id, JSON.stringify(row.payload), row.codecVersion]);
+    }
+  }
+
+  async lookupJellyfinId(id: string): Promise<any | null> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT payload FROM jellyfin_ids WHERE id = ?'
+      : 'SELECT payload FROM jellyfin_ids WHERE id = $1';
+    const row = await this.getQuery(query, [id]);
+    if (!row) return null;
+
+    try {
+      return typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
+    } catch (error) {
+      logger.error('Error parsing jellyfin id payload:', error);
+      return null;
+    }
   }
 
   async getIdMappingsBatch(offset: number, limit: number): Promise<any[]> {

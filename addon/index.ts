@@ -636,6 +636,7 @@ const respond = function (req, res, data, opts?) {
       collectionImportCatalogCap: parseInt(getSetting('COLLECTION_IMPORT_CATALOG_CAP') || '', 10) || 400,
       simklTrendingPageSizeOptions: resolvedOptions,
       anilistRequiresAuth: require('./utils/anilistAccess').anilistRequiresAuth(),
+      jellyfinEnabled: String(getSetting('JELLYFIN_API_ENABLED') || '').trim().toLowerCase() === 'true',
       traktSearchEnabled: getSetting('DISABLE_TRAKT_SEARCH') !== 'true',
       simklSearchEnabled: getSetting('DISABLE_SIMKL_SEARCH') !== 'true',
     };
@@ -660,6 +661,12 @@ const respond = function (req, res, data, opts?) {
 require('./lib/authRoutes').register(addon, {
   rateLimit: configLoadRateLimitMiddleware,
   requireAdmin: requireDashboardAdmin,
+});
+
+// --- Jellyfin API ---
+require('./lib/jellyfin').register(addon, {
+  loginRateLimit: configLoadRateLimitMiddleware,
+  enabled: () => String(getSetting('JELLYFIN_API_ENABLED') || '').trim().toLowerCase() === 'true',
 });
 const { requireSigninForAppPages, requireSigninForApi, isAuthenticatedRequest, respondIfSigninRequired } = require('./lib/signinGate');
 const { runWithRequestAuth } = require('./lib/requestSession');
