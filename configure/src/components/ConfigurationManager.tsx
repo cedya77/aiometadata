@@ -4,6 +4,7 @@ import { useSave } from "@/contexts/SaveContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -300,6 +301,27 @@ export function ConfigurationManager() {
   const [jellyfinEnabled, setJellyfinEnabled] = useState(false);
   const [urlTab, setUrlTab] = useState<'stremio' | 'jellyfin'>('stremio');
 
+  // Only services that store a playback position can answer the Continue
+  // Watching row, and only when they are connected and tracking is on.
+  const resumeSourceOptions = useMemo(() => {
+    const candidates: Array<{ value: string; label: string; ready: boolean }> = [
+      { value: 'mdblist', label: 'MDBList', ready: Boolean(config.apiKeys?.mdblist) && config.mdblistWatchTracking !== false },
+      { value: 'trakt', label: 'Trakt', ready: Boolean(config.apiKeys?.traktTokenId) && config.traktWatchTracking !== false },
+      { value: 'simkl', label: 'Simkl', ready: Boolean(config.apiKeys?.simklTokenId) && config.simklWatchTracking !== false },
+      { value: 'publicmetadb', label: 'PublicMetaDB', ready: Boolean(config.apiKeys?.publicmetadb) && config.publicmetadbWatchTracking !== false },
+    ];
+    return candidates.filter((c) => c.ready);
+  }, [
+    config.apiKeys?.mdblist,
+    config.apiKeys?.traktTokenId,
+    config.apiKeys?.simklTokenId,
+    config.apiKeys?.publicmetadb,
+    config.mdblistWatchTracking,
+    config.traktWatchTracking,
+    config.simklWatchTracking,
+    config.publicmetadbWatchTracking,
+  ]);
+
   useEffect(() => {
     let cancelled = false;
     fetch("/api/config")
@@ -557,7 +579,17 @@ export function ConfigurationManager() {
                     </p>
 
                     <div className="space-y-1.5 border-t pt-3">
-                      <Label htmlFor="jellyfin-stream-url" className="text-sm font-medium">Stream addon</Label>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label htmlFor="jellyfin-stream-url" className="text-sm font-medium">Playback</Label>
+                        <span className={cn(
+                          'rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                          config.jellyfinStreamUrl
+                            ? 'border-emerald-500/40 text-emerald-400'
+                            : 'border-amber-500/40 text-amber-400',
+                        )}>
+                          {config.jellyfinStreamUrl ? 'Stream addon set' : 'Browse only'}
+                        </span>
+                      </div>
                       <Input
                         id="jellyfin-stream-url"
                         value={config.jellyfinStreamUrl ?? ''}
@@ -568,6 +600,33 @@ export function ConfigurationManager() {
                       <p className="text-xs text-muted-foreground">
                         Paste a stream addon's install URL, such as your AIOStreams. Without one, titles browse but will not play. AIOMetadata never serves the video itself; the client fetches it from that addon directly.
                       </p>
+                    </div>
+
+                    <div className="space-y-1.5 border-t pt-3">
+                      <Label htmlFor="jellyfin-resume-source" className="text-sm font-medium">Continue Watching</Label>
+                      <Select
+                        value={config.jellyfinResumeSource ?? 'auto'}
+                        onValueChange={(value) => setConfig(prev => ({ ...prev, jellyfinResumeSource: value as NonNullable<typeof prev.jellyfinResumeSource> }))}
+                      >
+                        <SelectTrigger id="jellyfin-resume-source" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Automatic</SelectItem>
+                          {resumeSourceOptions.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
+                          <SelectItem value="off">Off</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Which tracker the client's Continue Watching row is built from. Only services that store a playback position can answer, so AniList and MyAnimeList are not offered. Automatic uses whichever connected service can.
+                      </p>
+                      {resumeSourceOptions.length === 0 && (
+                        <p className="text-xs text-amber-400">
+                          No connected service stores playback positions yet. Connect MDBList, Trakt, Simkl or PublicMetaDB for the row to fill.
+                        </p>
+                      )}
                     </div>
                   </div>
                 ) : (
