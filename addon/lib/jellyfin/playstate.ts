@@ -86,7 +86,14 @@ function reportFor(
   return {
     // Keyed on position, not a clock bucket: pausing and resuming inside a
     // minute are real transitions a time bucket would collapse into one.
-    id: `jellyfin|${session.videoId}|${event}|${positionMs ?? 0}`,
+    // A mark carries no position, so keying on it alone made every later mark of
+    // the same title read as the first one being retried and it was dropped.
+    // Nothing retries on this path, a client calls once, so each mark is its own
+    // event and repeats are caught by the decision it carries instead.
+    id:
+      event === 'played' || event === 'unplayed'
+        ? `jellyfin|${session.videoId}|${event}|${Date.now()}`
+        : `jellyfin|${session.videoId}|${event}|${positionMs ?? 0}`,
     event,
     at: Math.floor(Date.now() / 1000),
     metaId: d.i,
@@ -166,9 +173,16 @@ async function report(
   // resume shelf and the watched ticks read from are dropped rather than left
   // serving what they cached before the event.
   const { invalidateResume } = require('./resume');
-  const { invalidateWatched } = require('./watched');
+  const { invalidateWatched, noteWatched } = require('./watched');
   invalidateResume(userUUID);
-  if (event !== 'pause' && event !== 'start') {
+
+  // Recorded rather than refetched: dropping the snapshot would send us back to
+  // a tracker that has not published the write yet, and the answer would be the
+  // state from before. The tracker becomes the truth again on its own cadence.
+  const marksWatched = event === 'played' || (event === 'stop' && played === true);
+  if (marksWatched || event === 'unplayed') {
+    noteWatched(session.videoId, event !== 'unplayed');
+  } else if (event !== 'pause' && event !== 'start') {
     await invalidateWatched(config).catch(() => undefined);
   }
 }

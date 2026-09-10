@@ -237,15 +237,17 @@ async function getSimklRatings(
 // Paused sessions across every type, which is the shape a continue watching
 // row wants. Anime entries carry their own kitsu numbering alongside the TVDB
 // one, so an episode needs no mapping to name it the way the meta does.
-// The whole library in one call, movies, shows and anime together, with the
-// per-episode watched dates. Simkl suspends a client_id for polling this, so a
-// caller gates the refetch on the activities digest.
+// The whole library in one call, movies, shows and anime together. Episodes are
+// only loaded for the in-progress buckets unless every status is asked for, so a
+// finished show would otherwise arrive as a bare count, and the anime variant
+// carries each episode's broadcast numbering beside its own. Simkl suspends a
+// client_id for polling this, so a caller gates the refetch on the digest.
 async function fetchSimklAllItems(accessToken: string): Promise<any> {
   if (!accessToken) return null;
 
   try {
     const response = await makeAuthenticatedSimklRequest(
-      `${SIMKL_BASE_URL}/sync/all-items?extended=full&episode_watched_at=yes`,
+      `${SIMKL_BASE_URL}/sync/all-items?extended=full_anime_seasons&episode_watched_at=yes&include_all_episodes=yes`,
       accessToken,
       'Simkl fetchSimklAllItems'
     );

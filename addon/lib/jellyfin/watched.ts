@@ -97,22 +97,33 @@ function collectShow(entry: any, snapshot: WatchedSnapshot, isAnime: boolean): v
   };
   for (const key of keys) snapshot.series.set(key, counts);
 
-  // Anime is numbered inside its own entry, which is the numbering the meta
-  // publishes; a regular show is numbered by season, as TVDB and IMDb have it.
-  const bases = isAnime && ids.kitsu
-    ? [`kitsu:${ids.kitsu}`]
-    : [ids.imdb, ids.tvdb ? `tvdb:${ids.tvdb}` : null].filter(Boolean).map(String);
+  // An anime entry is numbered inside itself, which is how a catalog keyed on
+  // kitsu publishes it. The same show keyed on IMDb or TVDB is split into
+  // broadcast seasons, and which one a user sees depends on their providers, so
+  // a watch is registered under both rather than only the one Simkl counts in.
+  const seasoned = [ids.imdb, ids.tvdb ? `tvdb:${ids.tvdb}` : null].filter(Boolean).map(String);
+  const absolute = isAnime && ids.kitsu ? `kitsu:${ids.kitsu}` : null;
 
-  if (!bases.length) return;
+  if (!seasoned.length && !absolute) return;
 
   for (const season of Array.isArray(entry?.seasons) ? entry.seasons : []) {
     for (const episode of Array.isArray(season?.episodes) ? season.episodes : []) {
       const number = Number(episode?.number);
       if (!Number.isFinite(number)) continue;
 
-      for (const base of bases) {
-        if (isAnime && ids.kitsu) snapshot.episodes.add(`${base}:${number}`);
-        else snapshot.episodes.add(`${base}:${Number(season.number)}:${number}`);
+      if (absolute) snapshot.episodes.add(`${absolute}:${number}`);
+
+      if (!seasoned.length) continue;
+
+      // Anime episodes carry the broadcast numbering the other id spaces use,
+      // which is not the numbering the entry counts in.
+      const broadcast = episode?.tvdb
+        ? { season: Number(episode.tvdb.season), episode: Number(episode.tvdb.episode) }
+        : { season: Number(season.number), episode: number };
+
+      if (!Number.isFinite(broadcast.season) || !Number.isFinite(broadcast.episode)) continue;
+      for (const base of seasoned) {
+        snapshot.episodes.add(`${base}:${broadcast.season}:${broadcast.episode}`);
       }
     }
   }
@@ -128,6 +139,11 @@ interface RawSnapshot {
 async function build(accessToken: string): Promise<RawSnapshot> {
   const { fetchSimklAllItems } = require('../../utils/simklUtils');
   const data = await fetchSimklAllItems(accessToken);
+
+  // A failed read is not an empty library. Returning empty here would be cached
+  // and served as though nothing had ever been watched, so every tick would
+  // disappear until it expired.
+  if (!data) throw new Error('The watched library could not be read');
 
   const snapshot: WatchedSnapshot = {
     episodes: new Set(),
@@ -189,13 +205,19 @@ async function buildMdblist(apiKey: string): Promise<RawSnapshot> {
     return collected;
   };
 
-  for (const entry of await read('movie')) {
+  const movieRows = await read('movie');
+  const episodeRows = await read('episode');
+  if (!movieRows.length && !episodeRows.length) {
+    throw new Error('The watched history could not be read');
+  }
+
+  for (const entry of movieRows) {
     const ids = entry?.movie?.ids ?? {};
     if (ids.imdb) movies.add(String(ids.imdb));
     if (ids.tmdb) movies.add(`tmdb:${ids.tmdb}`);
   }
 
-  for (const entry of await read('episode')) {
+  for (const entry of episodeRows) {
     const episode = entry?.episode;
     const season = Number(episode?.season);
     const number = Number(episode?.number);
@@ -288,7 +310,7 @@ export async function watchedSnapshot(userUUID: string, config: any): Promise<Wa
 
     const key = `${tokenHash}:${fingerprint}`;
     const memo = hydrated.get(key);
-    if (memo) return memo;
+    if (memo) return applyDecisions(memo);
 
     const { cacheWrapGlobal } = require('../getCache');
     const raw: RawSnapshot = await cacheWrapGlobal(
@@ -305,11 +327,11 @@ export async function watchedSnapshot(userUUID: string, config: any): Promise<Wa
       nextUp: raw?.nextUp ?? [],
       fingerprint,
     };
-    hydrated.set(key, snapshot);
+    if (snapshot.episodes.size || snapshot.movies.size || snapshot.series.size) hydrated.set(key, snapshot);
     logger.debug(
       `Watched snapshot for ${userUUID}: ${snapshot.episodes.size} episodes, ${snapshot.movies.size} films`
     );
-    return snapshot;
+    return applyDecisions(snapshot);
   } catch (error: any) {
     logger.warn(`Watched snapshot failed: ${error?.message || error}`);
     return EMPTY;
@@ -370,11 +392,11 @@ async function mdblistSnapshot(userUUID: string, apiKey: string): Promise<Watche
       nextUp: raw?.nextUp ?? [],
       fingerprint: key,
     };
-    hydrated.set(key, snapshot);
+    if (snapshot.episodes.size || snapshot.movies.size || snapshot.series.size) hydrated.set(key, snapshot);
     logger.debug(
       `Watched snapshot for ${userUUID} from mdblist: ${snapshot.episodes.size} episodes, ${snapshot.movies.size} films`
     );
-    return snapshot;
+    return applyDecisions(snapshot);
   } catch (error: any) {
     logger.warn(`Watched snapshot from mdblist failed: ${error?.message || error}`);
     return EMPTY;
@@ -416,6 +438,34 @@ export async function invalidateWatched(config: any): Promise<void> {
   } catch (error: any) {
     logger.debug(`Could not invalidate the watched snapshot: ${error?.message || error}`);
   }
+}
+
+/**
+ * A watch this server just recorded is true before the tracker admits it: the
+ * digest a snapshot is keyed on can lag its own write by minutes, so waiting
+ * for it means a tick that only appears once the page is left and reopened.
+ * Held apart from the snapshots rather than written into one, because a
+ * snapshot is rebuilt and evicted freely and the decision has to outlive that.
+ */
+const decided = new LRUCache<string, boolean>({
+  max: envInt('JELLYFIN_WATCHED_OVERRIDE_MAX', 5000, 1),
+  ttl: envInt('JELLYFIN_WATCHED_OVERRIDE_TTL', 30 * 60, 60) * 1000,
+});
+
+export function noteWatched(videoId: string, watched: boolean): void {
+  if (videoId) decided.set(videoId, watched);
+}
+
+function applyDecisions(snapshot: WatchedSnapshot): WatchedSnapshot {
+  if (!decided.size) return snapshot;
+
+  for (const [videoId, watched] of decided.entries()) {
+    const set = /:\d+$/.test(videoId) ? snapshot.episodes : snapshot.movies;
+    if (watched) set.add(videoId);
+    else set.delete(videoId);
+  }
+
+  return snapshot;
 }
 
 export function isWatched(snapshot: WatchedSnapshot, stremioId: string): boolean {

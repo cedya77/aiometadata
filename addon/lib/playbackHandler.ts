@@ -60,6 +60,13 @@ export function parsePlaybackReport(body: any): PlaybackReport | null {
   };
 }
 
+// Kept apart from the sender's idempotency ids: this one remembers the last
+// decision about a title, not that a particular message was seen.
+const decisions = new LRUCache<string, 'watched' | 'unwatched'>({
+  max: envInt('PLAYBACK_DEDUPE_MAX', 10000, 1),
+  ttl: envInt('PLAYBACK_DEDUPE_TTL', 6 * 60 * 60, 60) * 1000,
+});
+
 export function isDuplicate(userUUID: string, report: PlaybackReport): boolean {
   if (!report.id) return false;
   const key = `${userUUID}:${report.id}`;
@@ -73,9 +80,15 @@ export function isDuplicate(userUUID: string, report: PlaybackReport): boolean {
 export function isRepeatWatched(userUUID: string, report: PlaybackReport): boolean {
   const video = report.videoId ?? report.metaId;
   if (!video) return false;
-  const key = `watched:${userUUID}:${video}:${Math.floor(Date.now() / 60000)}`;
-  if (seen.has(key)) return true;
-  seen.set(key, true);
+
+  // Only a repeat of the same decision is dropped. Marking something watched and
+  // then unwatched is two decisions about one title, and collapsing them left
+  // the second one unrecorded.
+  const intent = intentOf(report) === 'unwatched' ? 'unwatched' : 'watched';
+  const key = `watched:${userUUID}:${video}`;
+  if (decisions.get(key) === intent) return true;
+
+  decisions.set(key, intent);
   return false;
 }
 
