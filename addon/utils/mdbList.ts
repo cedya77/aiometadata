@@ -1535,6 +1535,56 @@ async function parseMDBListUpNextItems(
   return validMetas;
 }
 
+// An episode always names its season and number: a show sent bare cascades to
+// every season and episode it has.
+async function historySync(
+  path: 'watched' | 'watched/remove',
+  idInput: Record<string, string | number>,
+  apiKey: string,
+  season?: number,
+  episode?: number
+): Promise<boolean> {
+  const payload =
+    season != null && episode != null
+      ? { shows: [{ ids: idInput, seasons: [{ number: season, episodes: [{ number: episode }] }] }] }
+      : { movies: [{ ids: idInput }] };
+
+  try {
+    await makeRateLimitedRequest(
+      () => httpPost(`https://api.mdblist.com/sync/${path}?apikey=${apiKey}`, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+        dispatcher: mdblistDispatcher,
+      }),
+      apiKey,
+      `MDBList /sync/${path} (${formatIdSummary(idInput)})`
+    );
+    logger.info(`[MDBList] ${path === 'watched' ? 'Added to' : 'Removed from'} history`, { ids: idInput, season, episode });
+    return true;
+  } catch (error: any) {
+    logger.error(`[MDBList] /sync/${path} failed: ${error.message}`);
+    return false;
+  }
+}
+
+async function addToHistory(
+  idInput: Record<string, string | number>,
+  apiKey: string,
+  season?: number,
+  episode?: number
+): Promise<boolean> {
+  return historySync('watched', idInput, apiKey, season, episode);
+}
+
+async function removeFromHistory(
+  idInput: Record<string, string | number>,
+  apiKey: string,
+  season?: number,
+  episode?: number
+): Promise<boolean> {
+  return historySync('watched/remove', idInput, apiKey, season, episode);
+}
+
 export interface MdblistScrobbleOptions {
   /** checkin derives progress from elapsed time; start, pause and stop carry it. */
   action?: 'checkin' | 'start' | 'pause' | 'stop';
@@ -1756,6 +1806,8 @@ export {
   fetchMdbListSearchItems,
   checkinMovie,
   checkinEpisode,
+  addToHistory,
+  removeFromHistory,
   fetchMDBListCatalog
 };
 

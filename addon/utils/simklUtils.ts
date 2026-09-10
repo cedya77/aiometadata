@@ -721,9 +721,77 @@ function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
   return Object.keys(ids).length > 0 ? ids : null;
 }
 
+export async function addToHistory(
+  idInput: Record<string, string | number>,
+  accessToken: string,
+  season?: number,
+  episode?: number
+): Promise<boolean> {
+  const payload =
+    season != null && episode != null
+      ? { shows: [{ ids: idInput, seasons: [{ number: season, episodes: [{ number: episode }] }] }] }
+      : { movies: [{ ids: idInput }] };
+
+  try {
+    const response = await httpPost(`${SIMKL_BASE_URL}/sync/history`, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'simkl-api-key': SIMKL_CLIENT_ID,
+      },
+      dispatcher: simklDispatcher,
+      timeout: 10000,
+    });
+    if (response.status >= 200 && response.status < 300) {
+      logger.info('[Simkl] Added to history', { ids: idInput, season, episode });
+      return true;
+    }
+    logger.warn(`[Simkl] Add to history answered ${response.status}`);
+    return false;
+  } catch (error: any) {
+    logger.error(`[Simkl] Failed to add to history: ${error.message}`);
+    return false;
+  }
+}
+
+// A show sent with no seasons is removed from the library entirely, so an
+// episode always names both its season and its number.
+export async function removeFromHistory(
+  idInput: Record<string, string | number>,
+  accessToken: string,
+  season?: number,
+  episode?: number
+): Promise<boolean> {
+  const payload =
+    season != null && episode != null
+      ? { shows: [{ ids: idInput, seasons: [{ number: season, episodes: [{ number: episode }] }] }] }
+      : { movies: [{ ids: idInput }] };
+
+  try {
+    const response = await httpPost(`${SIMKL_BASE_URL}/sync/history/remove`, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'simkl-api-key': SIMKL_CLIENT_ID,
+      },
+      dispatcher: simklDispatcher,
+      timeout: 10000,
+    });
+    if (response.status >= 200 && response.status < 300) {
+      logger.info('[Simkl] Removed from history', { ids: idInput, season, episode });
+      return true;
+    }
+    logger.warn(`[Simkl] Remove from history answered ${response.status}`);
+    return false;
+  } catch (error: any) {
+    logger.error(`[Simkl] Failed to remove from history: ${error.message}`);
+    return false;
+  }
+}
+
 export interface SimklScrobbleOptions {
   /** checkin is fire and forget and self-completes; start and stop are a session. */
-  action?: 'checkin' | 'start' | 'stop';
+  action?: 'checkin' | 'start' | 'pause' | 'stop';
   /** 0-100. Simkl marks an item watched on stop at 80 or above. */
   progress?: number;
 }

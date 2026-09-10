@@ -26,14 +26,8 @@ const catalogCache = new LRUCache<string, CatalogRef[]>({
   ttl: Math.max(1, viewsTtlSeconds()) * 1000,
 });
 
-/**
- * Jellyfin only understands a handful of library kinds. Anything AIOM types
- * outside movies and shows is left without a CollectionType, which renders as a
- * mixed library rather than one wearing the wrong chrome.
- *
- * `anime` is one of those: it carries movies and series alike, so mal.top_movies
- * and mal.top_series share it. Items still render by their own Type.
- */
+// Types outside movies and shows are left without a CollectionType, which
+// renders as a mixed library rather than one wearing the wrong chrome.
 export function collectionTypeFor(type: string): string | null {
   switch (type) {
     case 'movie':
@@ -63,11 +57,8 @@ export async function getCatalogs(userUUID: string, config: any): Promise<Catalo
   }
 }
 
-/**
- * A catalog with a required extra cannot be listed, only queried: the four
- * search catalogs, MAL's va_id and genre_id lookups, and calendar-videos all
- * declare one. They make empty libraries, so only the rest become views.
- */
+// A catalog with a required extra cannot be listed, only queried, so it would
+// make an empty library.
 export function isBrowsable(catalog: CatalogRef): boolean {
   return !(catalog.extra ?? []).some((e: any) => e?.isRequired);
 }
@@ -81,6 +72,13 @@ export function getSearchCatalogs(catalogs: CatalogRef[]): CatalogRef[] {
     const required = requiredExtras(c);
     return required.length === 1 && required[0] === 'search';
   });
+}
+
+// Everything accepting a search term, not only the catalogs that demand one.
+export function getSearchableCatalogs(catalogs: CatalogRef[]): CatalogRef[] {
+  return catalogs.filter((c) =>
+    (c.extra ?? []).some((e: any) => e?.name === 'search')
+  );
 }
 
 export function viewIdFor(catalog: CatalogRef): string {

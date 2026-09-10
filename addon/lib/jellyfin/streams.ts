@@ -1,5 +1,6 @@
 import consola from 'consola';
 import { createHash } from 'crypto';
+import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 
 const logger = consola.withTag('Jellyfin');
@@ -18,10 +19,7 @@ function requestTimeoutMs(): number {
   return envInt('JELLYFIN_STREAM_TIMEOUT_MS', 15000, 1000);
 }
 
-/**
- * Accepts whatever a user pastes: a manifest URL, a base with or without a
- * trailing slash, or one already ending in /stream.
- */
+// Accepts a manifest URL, a bare base, or one already ending in /stream.
 export function normaliseStreamBase(raw: string): string | null {
   if (!raw || typeof raw !== 'string') return null;
   let base = raw.trim();
@@ -53,11 +51,8 @@ function containerOf(stream: any): string | null {
   return ext && ext !== 'json' ? ext : null;
 }
 
-/**
- * A Jellyfin client fetches the media URL itself and cannot attach arbitrary
- * headers, so a stream that needs them is unplayable rather than merely awkward
- * and is dropped instead of being offered and failing at play time.
- */
+// A client fetches the media URL itself and cannot attach headers, so a stream
+// needing them is dropped rather than offered and failing at play time.
 function needsHeaders(stream: any): boolean {
   const hints = stream?.behaviorHints?.proxyHeaders;
   if (!hints) return false;
@@ -66,8 +61,18 @@ function needsHeaders(stream: any): boolean {
   return Boolean(request || response);
 }
 
+// The upstream mints a fresh playback URL per resolve, so an id derived from it
+// stops matching once the memo expires and the client's saved MediaSourceId then
+// selects a different file mid-playback.
 export function mediaSourceIdFor(stream: any): string {
-  return createHash('md5').update(String(stream?.url || '')).digest('hex');
+  const size = Number(stream?.behaviorHints?.videoSize);
+  const parts = [
+    String(stream?.behaviorHints?.filename || ''),
+    Number.isFinite(size) && size > 0 ? String(size) : '',
+    String(stream?.name || ''),
+    String(stream?.title || stream?.description || ''),
+  ];
+  return createHash('md5').update(parts.join('\u0000')).digest('hex');
 }
 
 export function toPlayable(stream: any): PlayableStream | null {
@@ -87,6 +92,31 @@ export function toPlayable(stream: any): PlayableStream | null {
     container: containerOf(stream),
     size: Number.isFinite(size) && size > 0 ? size : null,
   };
+}
+
+// A client resolves the same item twice: opening it, then pressing play.
+const resolved = new LRUCache<string, any[]>({
+  max: envInt('JELLYFIN_STREAM_CACHE_MAX', 2000, 1),
+  ttl: envInt('JELLYFIN_STREAM_CACHE_TTL', 60, 1) * 1000,
+});
+
+const inFlight = new Map<string, Promise<any[]>>();
+
+export function rememberStreams(key: string, streams: any[]): void {
+  resolved.set(key, streams);
+}
+
+export function recallStreams(key: string): any[] | undefined {
+  return resolved.get(key);
+}
+
+export function coalesce(key: string, work: () => Promise<any[]>): Promise<any[]> {
+  const running = inFlight.get(key);
+  if (running) return running;
+
+  const started = work().finally(() => inFlight.delete(key));
+  inFlight.set(key, started);
+  return started;
 }
 
 export async function fetchStreams(
@@ -156,12 +186,8 @@ const CODECS: Array<[RegExp, string]> = [
   [/\bav1\b/i, 'av1'],
 ];
 
-/**
- * A client builds its playback plan from the tracks, so a source with no video
- * stream is treated as unplayable however good its URL is. Nothing here knows
- * the real file, so the label is read off the stream name and the numbers stay
- * absent rather than invented.
- */
+// A source with no video stream is treated as unplayable however good its URL
+// is. Nothing here knows the real file, so numbers stay absent, not invented.
 function buildMediaStreams(playable: PlayableStream): any[] {
   const label = foldLabel(playable.name);
   const resolution = RESOLUTIONS.find(([re]) => re.test(label));
@@ -253,12 +279,8 @@ export function runtimeTicksFrom(meta: any): number | null {
 
 const PLACEHOLDER_PATH = '/jellyfin/placeholder.mp4';
 
-/**
- * A client treats an item with no MediaSources as unplayable and never asks for
- * playback, so every playable item carries one. Resolving streams for a whole
- * list would fan out a request per item, so a listed item gets this instead and
- * the real sources arrive from PlaybackInfo when someone presses play.
- */
+// An item with no MediaSources is treated as unplayable and never reaches
+// PlaybackInfo, so a listed item carries this rather than a request per item.
 export function placeholderMediaSource(id: string, name: string): any {
   return {
     Protocol: 'Http',

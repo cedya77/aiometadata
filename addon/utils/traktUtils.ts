@@ -3218,6 +3218,76 @@ export async function checkinMovie(
   }
 }
 
+export async function addToHistory(
+  idInput: Record<string, string | number>,
+  accessToken: string,
+  season?: number,
+  episode?: number
+): Promise<boolean> {
+  const payload =
+    season != null && episode != null
+      ? { shows: [{ ids: idInput, seasons: [{ number: season, episodes: [{ number: episode }] }] }] }
+      : { movies: [{ ids: idInput }] };
+
+  try {
+    await makeRateLimitedRequest(
+      () => httpPost('https://api.trakt.tv/sync/history', payload, {
+        dispatcher: traktDispatcher,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+          'trakt-api-version': '2',
+          'trakt-api-key': process.env.TRAKT_CLIENT_ID
+        }
+      }),
+      'Trakt addToHistory',
+      3,
+      accessToken
+    );
+    logger.info('[Trakt] Added to history', { ids: idInput, season, episode });
+    return true;
+  } catch (error: any) {
+    logger.error(`[Trakt] Failed to add to history: ${error.message}`);
+    return false;
+  }
+}
+
+// Trakt adds a history entry per scrobble, so removal is by item, not entry,
+// and an episode must name its season: a show sent bare clears the whole show.
+export async function removeFromHistory(
+  idInput: Record<string, string | number>,
+  accessToken: string,
+  season?: number,
+  episode?: number
+): Promise<boolean> {
+  const payload =
+    season != null && episode != null
+      ? { shows: [{ ids: idInput, seasons: [{ number: season, episodes: [{ number: episode }] }] }] }
+      : { movies: [{ ids: idInput }] };
+
+  try {
+    await makeRateLimitedRequest(
+      () => httpPost('https://api.trakt.tv/sync/history/remove', payload, {
+        dispatcher: traktDispatcher,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+          'trakt-api-version': '2',
+          'trakt-api-key': process.env.TRAKT_CLIENT_ID
+        }
+      }),
+      'Trakt removeFromHistory',
+      3,
+      accessToken
+    );
+    logger.info('[Trakt] Removed from history', { ids: idInput, season, episode });
+    return true;
+  } catch (error: any) {
+    logger.error(`[Trakt] Failed to remove from history: ${error.message}`);
+    return false;
+  }
+}
+
 export interface TraktScrobbleOptions {
   /** checkin flips to watched once the runtime elapses; scrobble decides at stop. */
   action?: 'checkin' | 'start' | 'pause' | 'stop';

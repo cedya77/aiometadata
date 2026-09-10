@@ -365,11 +365,28 @@ async function parsePickItems(
 
 export interface PmdbPlaybackOptions {
   /** Omitted, this stays the immediate mark-watched the subtitle trigger sends. */
-  action?: 'watched' | 'stop';
+  action?: 'watched' | 'stop' | 'unwatch';
   /** Whether the sender judged it finished. Only meaningful with action 'stop'. */
   played?: boolean;
   positionMs?: number;
   runtimeMs?: number;
+}
+
+// Each mark-watched creates a play rather than setting a flag, so unmarking
+// deletes them all: removing one by record id would leave a rewatch behind.
+async function removeWatched(
+  apiKey: string,
+  tmdbId: number,
+  mediaType: 'movie' | 'tv',
+  season?: number,
+  episode?: number
+): Promise<any> {
+  const params = new URLSearchParams({ tmdb_id: String(tmdbId), media_type: mediaType });
+  if (mediaType === 'tv' && season != null && episode != null) {
+    params.set('season', String(season));
+    params.set('episode', String(episode));
+  }
+  return makeRequest(`/api/external/watched?${params.toString()}`, apiKey, 'DELETE');
 }
 
 /**
@@ -412,6 +429,12 @@ async function reportPlayback(
   season?: number,
   episode?: number
 ): Promise<boolean> {
+  if (options.action === 'unwatch') {
+    const result = await removeWatched(apiKey, tmdbId, mediaType, season, episode);
+    logger.info(`[Watch Tracking] Cleared ${result?.deleted ?? 0} play(s): tmdb:${tmdbId}`);
+    return result?.success !== false;
+  }
+
   if (options.action === 'stop') {
     const position = options.positionMs ?? 0;
     const runtime = options.runtimeMs ?? 0;
@@ -494,6 +517,7 @@ export {
   validateKey,
   fetchResume,
   saveResume,
+  removeWatched,
   fetchLists,
   fetchListItems,
   fetchPicks,

@@ -4,7 +4,7 @@ import { envInt } from '../utils/envNumber';
 
 const logger = consola.withTag('Playback');
 
-export const PLAYBACK_EVENTS = ['start', 'progress', 'stop', 'played', 'unplayed'] as const;
+export const PLAYBACK_EVENTS = ['start', 'progress', 'pause', 'stop', 'played', 'unplayed'] as const;
 export type PlaybackEvent = (typeof PLAYBACK_EVENTS)[number];
 
 /** The id prefixes parseMediaId accepts, which is what we can act on. */
@@ -68,6 +68,17 @@ export function isDuplicate(userUUID: string, report: PlaybackReport): boolean {
   return false;
 }
 
+// Some clients send a finished stop and a mark-watched for one viewing, and the
+// sender's key cannot collapse them because it carries the event kind.
+export function isRepeatWatched(userUUID: string, report: PlaybackReport): boolean {
+  const video = report.videoId ?? report.metaId;
+  if (!video) return false;
+  const key = `watched:${userUUID}:${video}:${Math.floor(Date.now() / 60000)}`;
+  if (seen.has(key)) return true;
+  seen.set(key, true);
+  return false;
+}
+
 export interface PlaybackOutcome {
   status: number;
   reason?: string;
@@ -108,6 +119,11 @@ export async function handlePlaybackReport(
       (report.played !== null ? ` played=${report.played}` : '')
   );
 
+  if (intentOf(report) === 'watched' && isRepeatWatched(userUUID, report)) {
+    logger.debug(`Already recorded as watched this minute: ${type}/${id}`);
+    return { status: 204 };
+  }
+
   await Promise.all([
     scrobbleSimkl(type, id, report, progress, config).catch((error: any) => {
       logger.error(`Simkl scrobble failed for ${id}: ${error.message}`);
@@ -124,6 +140,12 @@ export async function handlePlaybackReport(
     reportPublicMetaDB(type, id, report, config).catch((error: any) => {
       logger.error(`PublicMetaDB report failed for ${id}: ${error.message}`);
     }),
+    unwatchEverywhere(type, id, report, config).catch((error: any) => {
+      logger.error(`Unwatch failed for ${id}: ${error.message}`);
+    }),
+    creditWatchEverywhere(type, id, report, config).catch((error: any) => {
+      logger.error(`Crediting a watch failed for ${id}: ${error.message}`);
+    }),
   ]);
 
   return { status: 204 };
@@ -135,7 +157,10 @@ export async function handlePlaybackReport(
  * progress Simkl will mark watched, whatever the position said.
  */
 function watchedProgressFor(report: PlaybackReport, progress: number | null): number {
-  if (report.event === 'stop' && report.played === true) {
+  // Intent, not event: a mark-watched carries no position, so reading the event
+  // name here would report it at 0% and have every service store a resume point
+  // instead of a watch.
+  if (intentOf(report) === 'watched') {
     return progress !== null && progress >= WATCHED_AT ? progress : 100;
   }
   return progress ?? 0;
@@ -143,6 +168,25 @@ function watchedProgressFor(report: PlaybackReport, progress: number | null): nu
 
 /** Simkl, MDBList and Trakt all mark an item watched on stop at 80 or above. */
 const WATCHED_AT = 80;
+
+export type PlaybackIntent = 'watching' | 'paused' | 'partial' | 'watched' | 'unwatched' | 'none';
+
+export function intentOf(report: PlaybackReport): PlaybackIntent {
+  switch (report.event) {
+    case 'start':
+      return 'watching';
+    case 'pause':
+      return 'paused';
+    case 'stop':
+      return report.played === true ? 'watched' : 'partial';
+    case 'played':
+      return 'watched';
+    case 'unplayed':
+      return 'unwatched';
+    default:
+      return 'none';
+  }
+}
 
 /** Trakt answers 422 to a scrobble under 1% and records nothing. */
 const TRAKT_MIN_PROGRESS = 1;
@@ -170,12 +214,54 @@ const TRAKT_MIN_PROGRESS = 1;
  * to report on pause, stop or close and never during playback. A stop saves the
  * position, and only a played one is also written to history.
  */
+// Only Trakt and Simkl can unmark a watch; the rest are add-only here.
+// A mark-watched on an item nobody played: /sync/history, not a scrobble.
+async function creditWatchEverywhere(
+  type: string,
+  id: string,
+  report: PlaybackReport,
+  config: any
+): Promise<void> {
+  if (intentOf(report) !== 'watched' || report.event === 'stop') return;
+
+  const { parseMediaId, creditWatch } = require('./subtitleHandler');
+  const { normalizeWatchTrackingMediaType } = require('./watchTracking');
+
+  const parsedId = parseMediaId(id);
+  if (!parsedId) return;
+  if (!normalizeWatchTrackingMediaType(type, parsedId.type)) return;
+
+  await creditWatch(parsedId, config);
+}
+
+async function unwatchEverywhere(
+  type: string,
+  id: string,
+  report: PlaybackReport,
+  config: any
+): Promise<void> {
+  if (intentOf(report) !== 'unwatched') return;
+
+  const { parseMediaId, unwatch } = require('./subtitleHandler');
+  const { normalizeWatchTrackingMediaType } = require('./watchTracking');
+
+  const parsedId = parseMediaId(id);
+  if (!parsedId) return;
+  if (!normalizeWatchTrackingMediaType(type, parsedId.type)) return;
+
+  await unwatch(parsedId, config);
+}
+
 async function reportPublicMetaDB(
   type: string,
   id: string,
   report: PlaybackReport,
   config: any
 ): Promise<void> {
+  const intent = intentOf(report);
+  if (intent !== 'partial' && intent !== 'watched') return;
+  // Only a stop has a position to save. A bare mark-watched is credited through
+  // history, and going through here as well would report it twice.
   if (report.event !== 'stop') return;
 
   const { parseMediaId, checkinPublicMetaDB } = require('./subtitleHandler');
@@ -189,7 +275,7 @@ async function reportPublicMetaDB(
 
   await checkinPublicMetaDB(parsedId, config, {
     action: 'stop',
-    played: report.played === true,
+    played: intent === 'watched',
     positionMs: report.positionMs ?? 0,
     runtimeMs: report.durationMs ?? 0,
   });
@@ -202,7 +288,7 @@ async function advanceAnimeLists(
   config: any,
   userUUID: string
 ): Promise<void> {
-  if (report.event !== 'stop' || report.played !== true) return;
+  if (intentOf(report) !== 'watched') return;
 
   const { parseMediaId } = require('./subtitleHandler');
   const { shouldTrackServiceMediaType, normalizeWatchTrackingMediaType } = require('./watchTracking');
@@ -243,7 +329,9 @@ async function scrobbleTrakt(
   progress: number | null,
   config: any
 ): Promise<void> {
-  if (report.event !== 'start' && report.event !== 'stop') return;
+  const intent = intentOf(report);
+  if (intent === 'none' || intent === 'unwatched') return;
+  if (intent === 'watched' && report.event !== 'stop') return;
 
   const { parseMediaId, checkinTrakt } = require('./subtitleHandler');
   const { shouldTrackServiceMediaType, normalizeWatchTrackingMediaType } = require('./watchTracking');
@@ -255,12 +343,15 @@ async function scrobbleTrakt(
   if (!mediaType || !shouldTrackServiceMediaType(config, 'trakt', mediaType)) return;
 
   const value = watchedProgressFor(report, progress);
-  if (report.event === 'stop' && value < TRAKT_MIN_PROGRESS) {
+  if (intent !== 'watching' && value < TRAKT_MIN_PROGRESS) {
     logger.debug(`Skipping Trakt stop for ${id}, ${value}% is below the 1% Trakt accepts`);
     return;
   }
 
-  await checkinTrakt(parsedId, config, { action: report.event, progress: value });
+  await checkinTrakt(parsedId, config, {
+    action: intent === 'watching' ? 'start' : intent === 'paused' ? 'pause' : 'stop',
+    progress: value,
+  });
 }
 
 async function scrobbleMdblist(
@@ -270,7 +361,9 @@ async function scrobbleMdblist(
   progress: number | null,
   config: any
 ): Promise<void> {
-  if (report.event !== 'start' && report.event !== 'stop') return;
+  const intent = intentOf(report);
+  if (intent === 'none' || intent === 'unwatched') return;
+  if (intent === 'watched' && report.event !== 'stop') return;
 
   const { parseMediaId, trackMdblistWatchStatus } = require('./subtitleHandler');
   const { shouldTrackServiceMediaType, normalizeWatchTrackingMediaType } = require('./watchTracking');
@@ -282,7 +375,7 @@ async function scrobbleMdblist(
   if (!mediaType || !shouldTrackServiceMediaType(config, 'mdblist', mediaType)) return;
 
   await trackMdblistWatchStatus(parsedId, config, {
-    action: report.event,
+    action: intent === 'watching' ? 'start' : intent === 'paused' ? 'pause' : 'stop',
     progress: watchedProgressFor(report, progress),
   });
 }
@@ -294,7 +387,10 @@ async function scrobbleSimkl(
   progress: number | null,
   config: any
 ): Promise<void> {
-  if (report.event !== 'start' && report.event !== 'stop') return;
+  const intent = intentOf(report);
+  if (intent === 'none' || intent === 'unwatched') return;
+  // A bare mark-watched is credited through history, not the scrobble lifecycle.
+  if (intent === 'watched' && report.event !== 'stop') return;
 
   const { parseMediaId, checkinSimkl } = require('./subtitleHandler');
   const { shouldTrackServiceMediaType, normalizeWatchTrackingMediaType } = require('./watchTracking');
@@ -309,7 +405,7 @@ async function scrobbleSimkl(
   if (!mediaType || !shouldTrackServiceMediaType(config, 'simkl', mediaType)) return;
 
   await checkinSimkl(parsedId, config, {
-    action: report.event,
+    action: intent === 'watching' ? 'start' : intent === 'paused' ? 'pause' : 'stop',
     progress: watchedProgressFor(report, progress),
   });
 }

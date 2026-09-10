@@ -459,6 +459,82 @@ async function trackMdblistWatchStatus(
   }
 }
 
+// A scrobble stop would open and finalise a session for something nobody
+// played, so this goes to /sync/history instead.
+async function creditWatch(parsedId: ParsedMediaId, config: any): Promise<void> {
+  const mediaType = parsedId.type === 'movie' ? 'movie' : 'series';
+
+  await eachHistoryService(parsedId, config, mediaType, 'addToHistory', 'Crediting a watch');
+  await publicMetaDbHistory(parsedId, config, mediaType, 'watched');
+}
+
+// PublicMetaDB keeps plays rather than a watched flag and is keyed on TMDB.
+async function publicMetaDbHistory(
+  parsedId: ParsedMediaId,
+  config: any,
+  mediaType: 'movie' | 'series',
+  action: 'watched' | 'unwatch'
+): Promise<void> {
+  if (!shouldTrackServiceMediaType(config, 'publicmetadb', mediaType)) return;
+  try {
+    await checkinPublicMetaDB(parsedId, config, { action });
+  } catch (error: any) {
+    logger.error(`[PublicMetaDB] ${action} failed: ${error.message}`);
+  }
+}
+
+async function eachHistoryService(
+  parsedId: ParsedMediaId,
+  config: any,
+  mediaType: 'movie' | 'series',
+  method: 'addToHistory' | 'removeFromHistory',
+  what: string
+): Promise<void> {
+  for (const service of ['trakt', 'simkl', 'mdblist'] as const) {
+    if (!shouldTrackServiceMediaType(config, service, mediaType)) continue;
+    try {
+      let utils: any;
+      let credential: string | undefined;
+
+      if (service === 'mdblist') {
+        utils = require('../utils/mdbList');
+        credential = config.apiKeys?.mdblist;
+      } else {
+        utils = service === 'trakt'
+          ? require('../utils/traktUtils')
+          : require('../utils/simklUtils');
+        const tokenId = service === 'trakt'
+          ? config.apiKeys?.traktTokenId
+          : config.apiKeys?.simklTokenId;
+        if (!tokenId) continue;
+        const token = service === 'trakt'
+          ? await utils.getTraktToken(tokenId)
+          : await utils.getSimklToken(tokenId);
+        credential = token?.access_token;
+      }
+      if (!credential) continue;
+
+      if (parsedId.type === 'movie') {
+        const ids = normalizeIdsForMovie(parsedId);
+        if (ids) await utils[method](ids, credential);
+      } else {
+        const resolution = await resolveSeriesIds(parsedId, config, service === 'simkl');
+        if (resolution) {
+          await utils[method](resolution.ids, credential, resolution.season, resolution.episode);
+        }
+      }
+    } catch (error: any) {
+      logger.error(`[${service}] ${what} failed: ${error.message}`);
+    }
+  }
+}
+
+async function unwatch(parsedId: ParsedMediaId, config: any): Promise<void> {
+  const mediaType = parsedId.type === 'movie' ? 'movie' : 'series';
+  await eachHistoryService(parsedId, config, mediaType, 'removeFromHistory', 'Unwatch');
+  await publicMetaDbHistory(parsedId, config, mediaType, 'unwatch');
+}
+
 /**
  * `options` selects the Simkl call. Left out, this is the fire-and-forget
  * check-in the subtitle trigger has always sent. A playback event passes start
@@ -468,7 +544,7 @@ async function trackMdblistWatchStatus(
 async function checkinSimkl(
   parsedId: ParsedMediaId,
   config: any,
-  options: { action?: 'checkin' | 'start' | 'stop'; progress?: number } = {}
+  options: { action?: 'checkin' | 'start' | 'pause' | 'stop'; progress?: number } = {}
 ): Promise<void> {
   try {
     const { checkinSeries, checkinMovie, getSimklToken } = require('../utils/simklUtils');
@@ -582,7 +658,7 @@ async function checkinTrakt(
 async function checkinPublicMetaDB(
   parsedId: ParsedMediaId,
   config: any,
-  options: { action?: 'watched' | 'stop'; played?: boolean; positionMs?: number; runtimeMs?: number } = {}
+  options: { action?: 'watched' | 'stop' | 'unwatch'; played?: boolean; positionMs?: number; runtimeMs?: number } = {}
 ): Promise<void> {
   try {
     const { checkinMovie, checkinEpisode } = require('../utils/publicmetadbUtils');
@@ -630,6 +706,8 @@ export {
   trackMdblistWatchStatus,
   checkinTrakt,
   checkinPublicMetaDB,
+  unwatch,
+  creditWatch,
   shouldTrackMdblistWatch,
   shouldTrackAniList
 };
@@ -640,6 +718,8 @@ module.exports = {
   trackMdblistWatchStatus,
   checkinTrakt,
   checkinPublicMetaDB,
+  unwatch,
+  creditWatch,
   shouldTrackMdblistWatch,
   shouldTrackAniList
 };

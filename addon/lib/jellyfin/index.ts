@@ -19,12 +19,13 @@ import {
   userDto,
   SERVER_NAME,
 } from './dto';
-import { buildViews, collectionTypeFor, findCatalogByViewId, getCatalogs, isBrowsable } from './views';
+import { buildViews, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBrowsable } from './views';
 import { decodeJellyfinId } from './ids';
 import { buildEpisodes, buildSeasons, fetchMeta, fetchWindow, filterByIncludeTypes, metaToBaseItem, recallImages } from './items';
 import { encodeJellyfinId, normaliseJellyfinId, stremioIdFor } from './ids';
-import { fetchStreams, mediaSourceFor, normaliseStreamBase, toPlayable } from './streams';
+import { coalesce, fetchStreams, mediaSourceFor, normaliseStreamBase, recallStreams, rememberStreams, toPlayable } from './streams';
 import { registerStubs } from './stubs';
+import { recordPlayed, recordPlaying, recordProgress, recordStopped, recordUnplayed } from './playstate';
 
 const database: any = require('../database');
 
@@ -178,8 +179,42 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   router.get(['/Users/:userId/Views', '/UserViews'], viewsHandler);
   router.get('/Library/MediaFolders', viewsHandler);
 
-  router.get('/Users/:userId/GroupingOptions', (_req: any, res: any) => {
-    res.json([]);
+  // Part of at least one client's startup, so a 404 here is fatal.
+  router.get('/Library/VirtualFolders', async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const config = await loadConfig(req);
+    if (!config) {
+      res.json([]);
+      return;
+    }
+    const views = await buildViews(userUUID, serverIdFor(userUUID), config);
+    res.json(
+      views.map((view: any) => ({
+        Name: view.Name,
+        Locations: [view.Path],
+        CollectionType: view.CollectionType ?? null,
+        LibraryOptions: {
+          Enabled: true,
+          EnableRealtimeMonitor: false,
+          PathInfos: [],
+        },
+        ItemId: view.Id,
+        PrimaryImageItemId: view.Id,
+        RefreshStatus: 'Idle',
+      }))
+    );
+  });
+
+  // Both spellings: newer clients ask the /UserViews form, and a 404 is fatal.
+  router.get(['/UserViews/GroupingOptions', '/Users/:userId/GroupingOptions'], async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const config = await loadConfig(req);
+    if (!config) {
+      res.json([]);
+      return;
+    }
+    const views = await buildViews(userUUID, serverIdFor(userUUID), config);
+    res.json(views.map((v: any) => ({ Name: v.Name, Id: v.Id })));
   });
 
   const qInt = (req: any, name: string, fallback: number): number => {
@@ -236,10 +271,24 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
 
     if (!parentId) {
+      // Clients build search rows here, one call per section: /Search/Hints is
+      // a single flat list with no way to express them.
+      if (searchTerm) {
+        const found = await searchAcross(
+          userUUID,
+          config,
+          serverId,
+          String(searchTerm),
+          startIndex + limit,
+          includeItemTypes
+        );
+        const page = found.slice(startIndex, startIndex + limit);
+        res.json(itemList(page, found.length, startIndex));
+        return;
+      }
+
       // A cross-library query means "newest across the server", which needs a
-      // library and an added-date. Catalogs have neither, and answering with a
-      // slice of arbitrary catalogs puts a grab bag under a Recently Added
-      // heading, so the row is left empty for the client to hide.
+      // library and an added-date. Catalogs have neither, so the row is empty.
       res.json(itemList([], 0, startIndex));
       return;
     }
@@ -312,7 +361,15 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     if (!stremioId) return [];
 
     const stremioType = descriptor.k === 'movie' ? 'movie' : 'series';
-    const streams = await fetchStreams(base, stremioType, stremioId);
+    const cacheKey = `${req.params.userUUID}:${stremioType}:${stremioId}`;
+
+    const streams =
+      recallStreams(cacheKey) ??
+      (await coalesce(cacheKey, async () => {
+        const fetched = await fetchStreams(base, stremioType, stremioId);
+        if (fetched.length) rememberStreams(cacheKey, fetched);
+        return fetched;
+      }));
 
     const seen = new Set<string>();
     const sources: any[] = [];
@@ -390,6 +447,55 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.json({ MediaSources: sources, PlaySessionId: randomUUID() });
   };
 
+  // Some clients never fetch the URL a MediaSource carries: they ask the server
+  // for the video and expect to be sent on.
+  const videoStreamHandler = async (req: any, res: any) => {
+    const itemId = String(req.params.itemId);
+    const descriptor = await decodeJellyfinId(itemId);
+    if (!descriptor || (descriptor.k !== 'movie' && descriptor.k !== 'episode')) {
+      res.status(404).json({ Message: 'Item not found' });
+      return;
+    }
+
+    const sources = withDefaultSourceId(await resolveMediaSources(req, descriptor, null), itemId);
+    if (!sources.length) {
+      res.status(404).json({ Message: 'No playable stream' });
+      return;
+    }
+
+    const requested = req.query.MediaSourceId ?? req.query.mediaSourceId;
+    const wanted =
+      typeof requested === 'string' && requested
+        ? sources.find((s: any) => normaliseJellyfinId(s.Id) === normaliseJellyfinId(requested))
+        : undefined;
+
+    if (requested && !wanted) {
+      logger.debug(`Source ${requested} is no longer offered for ${itemId}`);
+      res.status(404).json({ Message: 'Media source not found' });
+      return;
+    }
+
+    const chosen = wanted ?? sources[0];
+    if (!chosen?.Path) {
+      res.status(404).json({ Message: 'No playable stream' });
+      return;
+    }
+
+    logger.debug(`Redirecting ${itemId} to its source`);
+    res.redirect(302, chosen.Path);
+  };
+
+  router.get(
+    [
+      '/Videos/:itemId/stream',
+      '/Videos/:itemId/stream.:ext',
+      '/Videos/:itemId/stream/:filename',
+      '/Videos/:itemId/original',
+      '/Videos/:itemId/original.:ext',
+    ],
+    videoStreamHandler
+  );
+
   router.get('/Items/:itemId/PlaybackInfo', playbackHandler);
   router.post('/Items/:itemId/PlaybackInfo', playbackHandler);
   router.get('/Items/:itemId/MediaSources', async (req: any, res: any) => {
@@ -418,6 +524,101 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       genres: options.filter((g: any) => typeof g === 'string' && g && g !== 'None'),
     };
   };
+
+  // Each catalog returns its own ranked list, so results are interleaved rather
+  // than concatenated: one catalog's weak matches would bury another's best.
+  const searchAcross = async (
+    userUUID: string,
+    config: any,
+    serverId: string,
+    term: string,
+    limit: number,
+    includeItemTypes: any
+  ): Promise<any[]> => {
+    // Only catalogs whose type could answer: asking a movie-only catalog for
+    // Series spends a request on a result that would be filtered away.
+    const wanted = includeItemTypes
+      ? new Set(String(includeItemTypes).split(',').map((t) => t.trim()).filter(Boolean))
+      : null;
+    const catalogs = getSearchableCatalogs(await getCatalogs(userUUID, config)).filter(
+      (catalog: any) => {
+        if (!wanted || !wanted.size) return true;
+        const kind = collectionTypeFor(catalog.type);
+        if (kind === 'movies') return wanted.has('Movie');
+        if (kind === 'tvshows') return wanted.has('Series');
+        return true;
+      }
+    );
+
+    const pages = await Promise.all(
+      catalogs.map((catalog: any) =>
+        fetchWindow(userUUID, catalog, 0, limit, { search: term })
+          .then((window) => ({ catalog, items: window.items }))
+          .catch(() => ({ catalog, items: [] as any[] }))
+      )
+    );
+
+    const seen = new Set<string>();
+    const items: any[] = [];
+    const depth = Math.max(0, ...pages.map((p) => p.items.length));
+    for (let rank = 0; rank < depth; rank++) {
+      for (const page of pages) {
+        const meta = page.items[rank];
+        if (!meta?.id) continue;
+        // The same title reaches us from more than one catalog under different
+        // ids, so identity alone cannot spot the repeat. Only the leading year
+        // is compared: one catalog says '2023-' where another says '2023-2024'.
+        const year = String(meta.year ?? meta.releaseInfo ?? '').slice(0, 4);
+        const title = `${String(meta.name || '').toLowerCase()}|${year}`;
+        if (seen.has(String(meta.id)) || (meta.name && seen.has(title))) continue;
+        seen.add(String(meta.id));
+        if (meta.name) seen.add(title);
+        items.push(metaToBaseItem(meta, page.catalog.type, serverId, null));
+      }
+    }
+
+    return filterByIncludeTypes(items, includeItemTypes ? String(includeItemTypes) : undefined);
+  };
+
+  router.get('/Search/Hints', async (req: any, res: any) => {
+    const term = String(req.query.SearchTerm ?? req.query.searchTerm ?? '').trim();
+    const limit = Math.min(Math.max(1, qInt(req, 'Limit', 20)), 50);
+    const includeItemTypes = req.query.IncludeItemTypes ?? req.query.includeItemTypes;
+
+    if (!term) {
+      res.json({ SearchHints: [], TotalRecordCount: 0 });
+      return;
+    }
+
+    const config = await loadConfig(req);
+    if (!config) {
+      res.json({ SearchHints: [], TotalRecordCount: 0 });
+      return;
+    }
+
+    const userUUID = req.params.userUUID;
+    const serverId = serverIdFor(userUUID);
+    const items = await searchAcross(userUUID, config, serverId, term, limit, includeItemTypes);
+
+    const filtered = items.slice(0, limit);
+
+    res.json({
+      SearchHints: filtered.map((item: any) => ({
+        ItemId: item.Id,
+        Id: item.Id,
+        Name: item.Name,
+        Type: item.Type,
+        MediaType: item.MediaType ?? 'Video',
+        ProductionYear: item.ProductionYear,
+        PrimaryImageTag: item.ImageTags?.Primary,
+        BackdropImageTag: item.BackdropImageTags?.[0],
+        BackdropImageItemId: item.Id,
+        PrimaryImageAspectRatio: item.PrimaryImageAspectRatio,
+        RunTimeTicks: item.RunTimeTicks,
+      })),
+      TotalRecordCount: filtered.length,
+    });
+  });
 
   router.get('/Genres', async (req: any, res: any) => {
     const parentId = req.query.ParentId ?? req.query.parentId;
@@ -525,8 +726,46 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.redirect(302, url);
   });
 
-  router.get(['/Items/Latest', '/Users/:userId/Items/Latest'], (_req: any, res: any) => {
-    res.json([]);
+  // A bare array, not a list. Some clients build their whole view from this and
+  // never call /Items, so an empty answer reads as a server with no content.
+  router.get(['/Items/Latest', '/Users/:userId/Items/Latest'], async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const parentId = req.query.ParentId ?? req.query.parentId;
+    const limit = Math.min(Math.max(1, qInt(req, 'Limit', 20)), 100);
+    const includeItemTypes = req.query.IncludeItemTypes ?? req.query.includeItemTypes;
+
+    if (!parentId) {
+      res.json([]);
+      return;
+    }
+
+    const config = await loadConfig(req);
+    if (!config) {
+      res.json([]);
+      return;
+    }
+
+    const descriptor = await decodeJellyfinId(String(parentId));
+    if (!descriptor || descriptor.k !== 'view') {
+      res.json([]);
+      return;
+    }
+
+    const catalog = await findCatalogByViewId(userUUID, config, descriptor.t, descriptor.c);
+    if (!catalog) {
+      res.json([]);
+      return;
+    }
+
+    const serverId = serverIdFor(userUUID);
+    const window = await fetchWindow(userUUID, catalog, 0, limit);
+    const items = window.items
+      .filter((meta: any) => meta && meta.id)
+      .map((meta: any) => metaToBaseItem(meta, catalog.type, serverId, String(parentId)));
+
+    res.json(
+      filterByIncludeTypes(items, includeItemTypes ? String(includeItemTypes) : undefined).slice(0, limit)
+    );
   });
 
   router.get(['/UserItems/Resume', '/Users/:userId/Items/Resume'], (_req: any, res: any) => {
@@ -724,6 +963,56 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
   router.get(['/Localization/Cultures', '/Localization/Countries', '/Localization/ParentalRatings'], (_req: any, res: any) => {
     res.json([]);
+  });
+
+  // A client reports its own playback to the server it is signed into, which is
+  // this one, so the events the hand-off exists to relay arrive here directly.
+  // Answering must never block playback, so each is acknowledged and acted on
+  // after the response.
+  const ack = (res: any) => res.status(204).end();
+
+  router.post(['/Sessions/Playing', '/PlayingItems/:itemId'], (req: any, res: any) => {
+    ack(res);
+    recordPlaying(req, req.body).catch((error: any) =>
+      logger.debug(`Playing report failed: ${error.message}`)
+    );
+  });
+
+  router.post(['/Sessions/Playing/Progress', '/PlayingItems/:itemId/Progress'], (req: any, res: any) => {
+    ack(res);
+    recordProgress(req, req.body).catch((error: any) =>
+      logger.debug(`Progress report failed: ${error.message}`)
+    );
+  });
+
+  router.post('/Sessions/Playing/Stopped', (req: any, res: any) => {
+    ack(res);
+    recordStopped(req, req.body).catch((error: any) =>
+      logger.debug(`Stopped report failed: ${error.message}`)
+    );
+  });
+
+  router.delete('/PlayingItems/:itemId', (req: any, res: any) => {
+    ack(res);
+    recordStopped(req, req.body || {}).catch((error: any) =>
+      logger.debug(`Stopped report failed: ${error.message}`)
+    );
+  });
+
+  router.post('/Sessions/Playing/Ping', (_req: any, res: any) => ack(res));
+
+  router.post(['/Users/:userId/PlayedItems/:itemId', '/UserPlayedItems/:itemId'], (req: any, res: any) => {
+    ack(res);
+    recordPlayed(req, { ItemId: req.params.itemId }).catch((error: any) =>
+      logger.debug(`Played report failed: ${error.message}`)
+    );
+  });
+
+  router.delete(['/Users/:userId/PlayedItems/:itemId', '/UserPlayedItems/:itemId'], (req: any, res: any) => {
+    ack(res);
+    recordUnplayed(req, { ItemId: req.params.itemId }).catch((error: any) =>
+      logger.debug(`Unplayed report failed: ${error.message}`)
+    );
   });
 
   registerStubs(router);
