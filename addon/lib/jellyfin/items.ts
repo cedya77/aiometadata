@@ -109,8 +109,18 @@ export interface Window {
   hasMore: boolean;
 }
 
-function maxPages(): number {
-  return envInt('JELLYFIN_CATALOG_MAX_PAGES', 10, 1);
+/**
+ * A flat ceiling silently truncates a window: a client asking for 200 with a
+ * page of 20 needs ten pages before a single duplicate or filtered entry is
+ * accounted for, and comes up short, which reads as the end of the list. The
+ * budget follows what was asked for, with room for what gets dropped.
+ */
+function maxPages(needed = 0, pageLength = 0): number {
+  const floor = envInt('JELLYFIN_CATALOG_MAX_PAGES', 10, 1);
+  if (!needed || !pageLength) return floor;
+
+  const slack = envInt('JELLYFIN_CATALOG_PAGE_SLACK', 5, 0);
+  return Math.max(floor, Math.ceil(needed / pageLength) + slack);
 }
 
 const pageLengths = new LRUCache<string, number>({
@@ -154,7 +164,7 @@ export async function fetchWindow(
   let pages = 0;
   let exhausted = false;
 
-  while (collected.length < offset + limit && pages < maxPages()) {
+  while (collected.length < offset + limit && pages < maxPages(offset + limit, pageLength || 0)) {
     const page = await fetchCatalogPage(userUUID, catalog.type, catalog.id, {
       ...extras,
       ...(skip > 0 ? { skip: String(skip) } : {}),
