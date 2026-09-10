@@ -131,7 +131,8 @@ export async function fetchWindow(
   catalog: CatalogRef,
   startIndex: number,
   limit: number,
-  extras: Record<string, string> = {}
+  extras: Record<string, string> = {},
+  keep?: (meta: any) => boolean
 ): Promise<Window> {
   const lengthKey = `${catalog.type}|${catalog.id}|${extras.genre ?? ''}|${extras.search ?? ''}`;
   let pageLength = pageLengths.get(lengthKey);
@@ -174,6 +175,10 @@ export async function fetchWindow(
       const key = meta?.id ? String(meta.id) : null;
       if (!key || seen.has(key)) continue;
       seen.add(key);
+      // Filtered here rather than after the window is cut, so a start index
+      // counts the items a client actually receives. A movie list holding a
+      // series would otherwise return a short page, which reads as the end.
+      if (keep && !keep(meta)) continue;
       collected.push(meta);
     }
 
@@ -325,6 +330,19 @@ export function metaToBaseItem(
   };
 }
 
+/** The same decision filterByIncludeTypes makes, taken on a meta. */
+export function includeTypesFilter(
+  mediaType: string,
+  includeItemTypes: string | undefined
+): ((meta: any) => boolean) | undefined {
+  if (!includeItemTypes) return undefined;
+
+  const wanted = new Set(includeItemTypes.split(',').map((t) => t.trim()).filter(Boolean));
+  if (!wanted.size || (!wanted.has('Movie') && !wanted.has('Series'))) return undefined;
+
+  return (meta: any) => wanted.has(jellyfinTypeFor(meta?.type || mediaType));
+}
+
 export function filterByIncludeTypes(items: any[], includeItemTypes: string | undefined): any[] {
   if (!includeItemTypes) return items;
   const wanted = new Set(
@@ -369,9 +387,22 @@ export function buildSeasons(
   serverId: string
 ): any[] {
   const videos = Array.isArray(meta?.videos) ? meta.videos : [];
-  return seasonNumbersFrom(videos).map((season) => {
+  const numbers = seasonNumbersFrom(videos);
+
+  // The posters arrive as a bare list with the season numbers dropped, so they
+  // are only trusted when there is exactly one for each season the meta
+  // publishes. Anything else falls back to the series poster rather than
+  // hanging the wrong season's art on a season.
+  const posters = Array.isArray(meta?.app_extras?.seasonPosters) ? meta.app_extras.seasonPosters : [];
+  const aligned = posters.length === numbers.length;
+
+  return numbers.map((season, index) => {
     const id = encodeJellyfinId({ k: 'season', t: mediaType, i: String(meta.id), s: season });
     const episodes = videos.filter((v: any) => v.season === season);
+
+    const primary = (aligned ? posters[index] : undefined) || meta.poster || undefined;
+    if (primary) rememberImages(serverId, id, { primary, backdrop: meta.background || undefined });
+
     return {
       Name: season === 0 ? 'Specials' : `Season ${season}`,
       Id: id,
@@ -387,7 +418,7 @@ export function buildSeasons(
       ChildCount: episodes.length,
       RecursiveItemCount: episodes.length,
       UserData: { ...EMPTY_USER_DATA, Key: id },
-      ImageTags: {},
+      ImageTags: primary ? { Primary: 'p' } : {},
       BackdropImageTags: [],
       ImageBlurHashes: {},
       LocationType: 'FileSystem',

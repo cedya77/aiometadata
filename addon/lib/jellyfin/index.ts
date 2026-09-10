@@ -22,7 +22,7 @@ import {
 } from './dto';
 import { buildViews, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBrowsable } from './views';
 import { decodeJellyfinId } from './ids';
-import { buildEpisodes, buildSeasons, fetchMeta, fetchWindow, filterByIncludeTypes, metaToBaseItem, recallImages } from './items';
+import { buildEpisodes, buildSeasons, fetchMeta, fetchWindow, filterByIncludeTypes, includeTypesFilter, metaToBaseItem, recallImages } from './items';
 import { encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { coalesce, fetchStreams, mediaSourceFor, normaliseStreamBase, recallStreams, rememberStreams, toPlayable } from './streams';
 import { resumeSnapshot, resumeUserData } from './resume';
@@ -332,7 +332,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           catalog,
           Math.max(0, startIndex - offset),
           limit - collected.length + Math.max(0, offset - startIndex),
-          extras
+          extras,
+          includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined)
         ).catch(() => ({ items: [] as any[], hasMore: false }));
 
         const viewId = encodeJellyfinId({ k: 'view', t: catalog.type, c: catalog.id });
@@ -396,7 +397,14 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       catalog = found;
     }
 
-    const window = await fetchWindow(userUUID, catalog, startIndex, limit, extras);
+    const window = await fetchWindow(
+      userUUID,
+      catalog,
+      startIndex,
+      limit,
+      extras,
+      includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined)
+    );
     const hasMore = window.hasMore;
 
     const items = window.items
@@ -1146,6 +1154,34 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
 
       res.json(episode);
+      return;
+    }
+
+    // A season is an item a client opens directly, and answering 404 leaves it
+    // waiting on a page it will never get.
+    if (descriptor.k === 'season') {
+      const meta = await fetchMeta(userUUID, 'series', descriptor.i);
+      if (!meta) {
+        res.status(404).json({ Message: 'Item not found' });
+        return;
+      }
+
+      const serverId = serverIdFor(userUUID);
+      const seriesId = encodeSeriesId(descriptor);
+      const season = buildSeasons(meta, descriptor.t, seriesId, serverId)
+        .find((entry: any) => entry.IndexNumber === descriptor.s);
+
+      if (!season) {
+        res.status(404).json({ Message: 'Item not found' });
+        return;
+      }
+
+      const seasonConfig = await loadConfig(req);
+      if (seasonConfig) {
+        await applyWatchedState([season], await watchedSnapshot(userUUID, seasonConfig));
+      }
+
+      res.json(season);
       return;
     }
 
