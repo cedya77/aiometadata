@@ -532,7 +532,38 @@ async function eachHistoryService(
 async function unwatch(parsedId: ParsedMediaId, config: any): Promise<void> {
   const mediaType = parsedId.type === 'movie' ? 'movie' : 'series';
   await eachHistoryService(parsedId, config, mediaType, 'removeFromHistory', 'Unwatch');
+  await clearMdblistResumePoint(parsedId, config, mediaType);
   await publicMetaDbHistory(parsedId, config, mediaType, 'unwatch');
+}
+
+// MDBList holds a resume point apart from watched status, so removing the watch
+// leaves the item sitting in continue-watching until the session is cleared.
+async function clearMdblistResumePoint(
+  parsedId: ParsedMediaId,
+  config: any,
+  mediaType: 'movie' | 'series'
+): Promise<void> {
+  if (!shouldTrackServiceMediaType(config, 'mdblist', mediaType)) return;
+
+  const apiKey = config.apiKeys?.mdblist;
+  if (!apiKey) return;
+
+  try {
+    const { clearScrobbleSession } = require('../utils/mdbList');
+
+    if (parsedId.type === 'movie') {
+      const ids = normalizeIdsForMovie(parsedId);
+      if (ids) await clearScrobbleSession(ids, apiKey);
+      return;
+    }
+
+    const resolution = await resolveSeriesIds(parsedId, config, false);
+    if (resolution) {
+      await clearScrobbleSession(resolution.ids, apiKey, resolution.season, resolution.episode);
+    }
+  } catch (error: any) {
+    logger.error(`[MDBList] Clearing the resume point failed: ${error.message}`);
+  }
 }
 
 /**

@@ -1585,6 +1585,39 @@ async function removeFromHistory(
   return historySync('watched/remove', idInput, apiKey, season, episode);
 }
 
+// A resume point is held separately from watched status, so clearing a watch
+// leaves the item in continue-watching until the session is cleared as well.
+async function clearScrobbleSession(
+  idInput: Record<string, string | number>,
+  apiKey: string,
+  season?: number,
+  episode?: number
+): Promise<boolean> {
+  if (!idInput || !apiKey) return false;
+
+  const payload =
+    season != null && episode != null
+      ? { show: { ids: idInput, season: { number: season, episode: { number: episode } } } }
+      : { movie: { ids: idInput } };
+
+  try {
+    await makeRateLimitedRequest(
+      () => httpPost(`https://api.mdblist.com/scrobble/clear?apikey=${apiKey}`, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+        dispatcher: mdblistDispatcher,
+      }),
+      apiKey,
+      `MDBList /scrobble/clear (${formatIdSummary(idInput)})`
+    );
+    logger.info('[MDBList] Cleared the resume point', { ids: idInput, season, episode });
+    return true;
+  } catch (error: any) {
+    logger.error(`[MDBList] Clearing the resume point failed: ${error.message}`);
+    return false;
+  }
+}
+
 export interface MdblistScrobbleOptions {
   /** checkin derives progress from elapsed time; start, pause and stop carry it. */
   action?: 'checkin' | 'start' | 'pause' | 'stop';
@@ -1808,6 +1841,7 @@ export {
   checkinEpisode,
   addToHistory,
   removeFromHistory,
+  clearScrobbleSession,
   fetchMDBListCatalog
 };
 

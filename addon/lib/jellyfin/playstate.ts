@@ -145,6 +145,14 @@ async function report(
     positions.set(key, { positionMs, at: Date.now(), paused: event === 'pause' });
   }
 
+  // A pause at zero is what a collapsed position looks like, and a real one says
+  // nothing a tracker can use, so it is remembered without writing a resume
+  // point every service would then show as continue-watching from the start.
+  if (event === 'pause' && positionMs <= 0) {
+    logger.debug(`Not reporting a pause at zero for ${session.videoId}`);
+    return;
+  }
+
   const { handlePlaybackReport } = require('../playbackHandler');
   await handlePlaybackReport(
     session.stremioType,
