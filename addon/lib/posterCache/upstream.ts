@@ -127,7 +127,27 @@ function parseUpstreamUrl(rawUrl: string): URL {
 }
 
 /** Resolves the host; rejects private-space answers unless the host is allowlisted or vouched for. */
-export async function resolvePublicUrl(rawUrl: string, opts: ResolveOptions = {}): Promise<ValidatedUpstream> {
+export const IMAGE_TYPES: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  gif: 'image/gif',
+};
+
+function imageTypeFromPath(url: string): string {
+  try {
+    const path = new URL(url).pathname.toLowerCase();
+    const dot = path.lastIndexOf('.');
+    if (dot < 0) return '';
+    return IMAGE_TYPES[path.slice(dot + 1)] ?? '';
+  } catch {
+    return '';
+  }
+}
+
+async function resolvePublicUrl(rawUrl: string, opts: ResolveOptions = {}): Promise<ValidatedUpstream> {
   const parsed = parseUpstreamUrl(rawUrl);
 
   const host = parsed.hostname.replace(/^\[|\]$/g, '');
@@ -418,10 +438,15 @@ export async function openImageStream(rawUrl: string, opts: FetchOptions = {}): 
       continue;
     }
 
-    const contentType = String(response.headers['content-type'] || '').split(';')[0].trim();
+    const header = String(response.headers['content-type'] || '').split(';')[0].trim();
+    // Some CDNs fronting the art providers send no content type at all and the
+    // bytes are still an image, so the extension decides when the header is
+    // silent rather than the response being thrown away.
+    const contentType = header || imageTypeFromPath(current);
+
     if (!contentType.startsWith('image/')) {
       response.data?.destroy?.();
-      throw new UpstreamRejected(`Upstream returned non-image content: ${contentType || 'unknown'}`, 502);
+      throw new UpstreamRejected(`Upstream returned non-image content: ${header || 'unknown'}`, 502);
     }
 
     return { response, contentType, upstream: parseUpstreamCacheMeta(response.headers), notModified: false };
