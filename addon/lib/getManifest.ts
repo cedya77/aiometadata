@@ -1093,6 +1093,13 @@ async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise
       if (isSimkl(userCatalog.id)) {
         return true;
       }
+      if (userCatalog.id.startsWith('recommendations.')) {
+        // Needs a history to read and a model to read it with.
+        const hasHistory = !!(config.apiKeys?.simklTokenId || config.apiKeys?.mdblist);
+        const hasModel = !!(config.apiKeys?.gemini || config.apiKeys?.openrouter
+          || process.env.GEMINI_API_KEY || process.env.BUILT_IN_GEMINI_API_KEY || process.env.OPENROUTER_API_KEY);
+        return hasHistory && hasModel;
+      }
       if (userCatalog.id.startsWith('movielens.')) {
         return !!config.apiKeys?.movieLensCredId;
       }
@@ -1161,6 +1168,18 @@ async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise
           const result = await createSimklCatalog(userCatalog, showPrefix, prefixName);
           logger.debug(`Simkl catalog result:`, result ? 'success' : 'failed');
           return result;
+      }
+      if (userCatalog.id.startsWith('recommendations.')) {
+          logger.debug(`Processing recommendation catalog: ${userCatalog.id}`);
+          // No genre filter: the selection is the whole point, and one page of it.
+          return {
+            id: userCatalog.id,
+            type: userCatalog.displayType || userCatalog.type,
+            name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
+            pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20,
+            extra: [{ name: 'skip' }],
+            showInHome: userCatalog.showInHome
+          };
       }
       if (userCatalog.id.startsWith('movielens.')) {
           logger.debug(`Processing MovieLens catalog: ${userCatalog.id}`);

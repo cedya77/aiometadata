@@ -1412,6 +1412,36 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
     catalogConfig.streaming = config.streaming || [];
   }
 
+  // What a recommendation row contains is decided by the model that wrote it, so
+  // the model belongs in the key. Without it, switching provider or model leaves
+  // the previous one's picks being served for the rest of the catalog TTL, which
+  // reads as the setting having done nothing.
+  if (idOnly.startsWith('recommendations.')) {
+    const { RECOMMENDATION_EPOCH, pickOrder, voteFloor }: any = require('../utils/recommendations/provider');
+    catalogConfig.recommendations = {
+      epoch: RECOMMENDATION_EPOCH,
+      provider: config.recommendations?.provider || '',
+      geminiModel: config.recommendations?.gemini_model || '',
+      openrouterModel: config.recommendations?.openrouter_model || '',
+      hasGemini: !!config.apiKeys?.gemini,
+      hasOpenrouter: !!config.apiKeys?.openrouter,
+      sources: config.recommendations?.sources || '',
+      // Every setting that moves the picks has to move the page as well.
+      webSearch: config.recommendations?.web_search === true,
+      reasoningEffort: config.recommendations?.reasoning_effort || '',
+      stalledWeight: config.recommendations?.stalled_weight || '',
+      staleAfterDays: config.recommendations?.stale_after_days || '',
+      refreshHours: config.recommendations?.refresh_hours || '',
+      // Ordering is applied to a built row, so it changes the page but not the
+      // picks: the page has to notice, and nothing needs writing again.
+      // The resolved values, not the raw settings: the gear sets these per
+      // catalog so two rows must not share a page, and a page whose setting is
+      // simply unset still has to notice when the default itself moves.
+      order: pickOrder(config, idOnly),
+      minVotes: voteFloor(config, idOnly),
+    };
+  }
+
   const catalogConfigString = JSON.stringify(catalogConfig);
   const configHash = hashConfig(catalogConfigString);
 
@@ -1445,6 +1475,15 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
     { label: 'SimKL', matches: idOnly.startsWith('simkl.') },
     { label: 'discover', matches: isDiscoverCatalog },
   ];
+
+  // The page and the picks it was built from expire together, so refresh-ahead
+  // rewrites both once per interval. Held apart, the shorter of the two decided
+  // the cadence: a page on the instance default rebuilt the row roughly twice a
+  // day whatever the viewer had chosen, and each rebuild is a model call.
+  if (idOnly.startsWith('recommendations.')) {
+    const { refreshTtl }: any = require('../utils/recommendations/provider');
+    cacheTTL = refreshTtl(config);
+  }
 
   const ttlSource = ttlOverrideSources.find(source => source.matches);
   if (ttlSource) {

@@ -1593,13 +1593,40 @@ async function enrichMalEpisodes(videos, kitsuId, preserveIds = false) {
  * @param {string} type - The Stremio type ('movie' or 'series') to help disambiguate.
  * @returns {object|null} - The best matching mapping object, or null.
  */
+/**
+ * Whether an entry's TMDB id belongs to the space the caller is asking about.
+ *
+ * TMDB numbers films and shows separately, so the same number is usually a valid
+ * id on both sides: 10494 is the film Perfect Blue and the series Nowhere Man.
+ * `themoviedb_type` records which side an entry's id came from, and without
+ * checking it a series lookup matched an anime film and the meta came back as
+ * that film. Only `movie` and `series` are decided here; anything else, or an
+ * entry with nothing recorded, is left to the caller as before.
+ */
+function tmdbNamespaceMatches(item, type) {
+  if (type !== 'movie' && type !== 'series') return true;
+  const wanted = type === 'movie' ? 'movie' : 'tv';
+
+  if (item.themoviedb_type) return item.themoviedb_type === wanted;
+
+  // Older entries predate the namespace being recorded, so their own shape is
+  // the next best evidence.
+  if (!item.type) return true;
+  const seriesLike = seriesLikeTypes.has(String(item.type).toLowerCase());
+  return wanted === 'tv' ? seriesLike : !seriesLike;
+}
+
 function getMappingByTmdbId(tmdbId, type) {
   if (!isInitialized) return null;
 
   const numericTmdbId = parseInt(tmdbId, 10);
-  const allMatches = tmdbIdToAnimeListMap.get(numericTmdbId) || [];
+  const indexed = tmdbIdToAnimeListMap.get(numericTmdbId) || [];
+  const allMatches = indexed.filter(item => tmdbNamespaceMatches(item, type));
 
   if (allMatches.length === 0) {
+    if (indexed.length) {
+      logger.debug(`[ID Mapper] TMDB ID ${numericTmdbId} is anime on the other side of the id space, not as '${type}'`);
+    }
     return null;
   }
   

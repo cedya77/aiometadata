@@ -44,13 +44,32 @@ interface GenerateContentOptions {
   prompt: string;
   systemPrompt?: string;
   timeout?: number;
+  /**
+   * Without this OpenRouter reserves the model's full output window and refuses
+   * the request unless the balance covers that worst case, which on a big model
+   * is tens of thousands of tokens for a reply of a few hundred.
+   */
+  maxTokens?: number;
+  /**
+   * Thinking is billed and counted against maxTokens, and several models refuse
+   * to turn it off, so it is capped rather than disabled.
+   */
+  reasoningEffort?: string;
 }
 
 interface GenerateContentResult {
   text: string | null;
+  /** Normalised where OpenRouter provides it, otherwise the provider's own. */
+  finishReason: string | null;
+  /**
+   * Token counts and cost as OpenRouter billed them. The prompt count is the
+   * only way to see whether an `:online` model pasted search results in, since
+   * nothing else in the reply says that it searched.
+   */
+  usage: { promptTokens?: number; completionTokens?: number; cost?: number } | null;
 }
 
-async function generateContent({ apiKey, model, prompt, systemPrompt, timeout = 30000 }: GenerateContentOptions): Promise<GenerateContentResult> {
+async function generateContent({ apiKey, model, prompt, systemPrompt, timeout = 30000, maxTokens = 8192, reasoningEffort }: GenerateContentOptions): Promise<GenerateContentResult> {
   const url = `${OPENROUTER_BASE_URL}/chat/completions`;
   const startTime = Date.now();
 
@@ -58,10 +77,15 @@ async function generateContent({ apiKey, model, prompt, systemPrompt, timeout = 
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
   messages.push({ role: 'user', content: prompt });
 
-  const body = {
+  const body: any = {
     model,
     messages,
+    max_tokens: maxTokens,
   };
+
+  if (reasoningEffort) {
+    body.reasoning = { effort: reasoningEffort };
+  }
 
   try {
     const { statusCode, body: responseBody } = await request(url, {
@@ -93,9 +117,20 @@ async function generateContent({ apiKey, model, prompt, systemPrompt, timeout = 
     const requestTracker = require('../lib/requestTracker');
     requestTracker.trackProviderCall('openrouter', responseTime, true);
 
-    const text = data?.choices?.[0]?.message?.content || null;
+    const choice = data?.choices?.[0];
+    const text = choice?.message?.content || null;
 
-    return { text };
+    return {
+      text,
+      finishReason: choice?.finish_reason || choice?.native_finish_reason || null,
+      usage: data?.usage
+        ? {
+          promptTokens: data.usage.prompt_tokens,
+          completionTokens: data.usage.completion_tokens,
+          cost: data.usage.cost,
+        }
+        : null,
+    };
   } catch (error: any) {
     const responseTime = Date.now() - startTime;
 
