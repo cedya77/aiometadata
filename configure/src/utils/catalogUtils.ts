@@ -268,6 +268,8 @@ export interface LetterboxdCatalogOptions {
   url: string;
   cacheTTL?: number;
   displayTypeOverrides?: { movie?: string; series?: string };
+  /** Entry kinds the list actually holds, from the source's own per-item type. */
+  contentType?: 'movie' | 'series' | 'all';
 }
 
 /**
@@ -275,6 +277,21 @@ export interface LetterboxdCatalogOptions {
  * @param options - Configuration options for the Letterboxd catalog
  * @returns CatalogConfig object ready to be added to the config
  */
+/**
+ * The kinds a Letterboxd list holds, from the per-item type the source returns.
+ * A list is typed by its contents rather than by the assumption that
+ * Letterboxd means films: a mixed one typed as movies has its shows filtered
+ * out by anything that asks for a single kind.
+ */
+export function letterboxdContentType(items: any[]): 'movie' | 'series' | 'all' {
+  const entries = Array.isArray(items) ? items : [];
+  const hasShows = entries.some((item) => item?.type === 'show');
+  const hasMovies = entries.some((item) => item?.type && item.type !== 'show');
+
+  if (hasShows && hasMovies) return 'all';
+  return hasShows ? 'series' : 'movie';
+}
+
 export function createLetterboxdCatalog(options: LetterboxdCatalogOptions): CatalogConfig {
   const {
     identifier,
@@ -284,13 +301,18 @@ export function createLetterboxdCatalog(options: LetterboxdCatalogOptions): Cata
     url,
     cacheTTL,
     displayTypeOverrides,
+    contentType = 'movie',
   } = options;
 
-  const displayType = getDisplayTypeOverride('movie', displayTypeOverrides);
+  // A list holding both kinds has to say so: a catalog typed movie is asked
+  // only for films by anything that filters, and its shows become unreachable.
+  const displayType = contentType === 'all'
+    ? undefined
+    : getDisplayTypeOverride(contentType, displayTypeOverrides);
 
   return {
     id: `letterboxd.${identifier}`,
-    type: 'movie', // Letterboxd is primarily movies
+    type: contentType,
     name: title,
     enabled: true,
     showInHome: true,

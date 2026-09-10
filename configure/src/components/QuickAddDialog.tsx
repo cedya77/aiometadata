@@ -14,6 +14,7 @@ import {
   createMDBListCatalog,
   createTraktCatalog,
   createLetterboxdCatalog,
+  letterboxdContentType,
   createTvdbListCatalogs,
   createTmdbCollectionCatalog,
   createCustomManifestCatalog,
@@ -562,7 +563,8 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
 
       const listData = await listResponse.json();
       const listTitle = listData.data?.title || (isWatchlist ? 'Watchlist' : 'Letterboxd List');
-      const itemCount = listData.data?.items?.length || 0;
+      const listItems: any[] = listData.data?.items ?? [];
+      const itemCount = listItems.length;
 
       const newCatalog = createLetterboxdCatalog({
         identifier,
@@ -571,6 +573,7 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
         isWatchlist,
         url: parsedUrl.url,
         displayTypeOverrides: config.displayTypeOverrides,
+        contentType: letterboxdContentType(listItems),
       });
 
       setConfig(prev => ({

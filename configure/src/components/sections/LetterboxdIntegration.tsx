@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Loader2, ExternalLink, AlertCircle } from 'lucide-react';
 import { toast } from "sonner";
-import { createLetterboxdCatalog } from '@/utils/catalogUtils';
+import { createLetterboxdCatalog, letterboxdContentType } from '@/utils/catalogUtils';
 import { CacheTTLField } from '@/components/CacheTTLField';
 
 interface LetterboxdIntegrationProps {
@@ -92,7 +92,9 @@ export function LetterboxdIntegration({ isOpen, onClose }: LetterboxdIntegration
 
       const listData = await listResponse.json();
       const listTitle = listData.data?.title || (isWatchlist ? 'Watchlist' : 'Letterboxd List');
-      const itemCount = listData.data?.items?.length || 0;
+      const listItems: any[] = listData.data?.items ?? [];
+      const itemCount = listItems.length;
+      const contentType = letterboxdContentType(listItems);
 
       // Step 3: Create catalog
       const catalogId = `letterboxd.${identifier}`;
@@ -114,6 +116,7 @@ export function LetterboxdIntegration({ isOpen, onClose }: LetterboxdIntegration
         url: listUrl,
         cacheTTL: defaultCacheTTL ?? undefined,
         displayTypeOverrides: config.displayTypeOverrides,
+        contentType,
       });
 
       setConfig(prev => ({
