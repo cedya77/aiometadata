@@ -234,6 +234,44 @@ async function getSimklRatings(
   }
 }
 
+// Paused sessions across every type, which is the shape a continue watching
+// row wants. Anime entries carry their own kitsu numbering alongside the TVDB
+// one, so an episode needs no mapping to name it the way the meta does.
+// The whole library in one call, movies, shows and anime together, with the
+// per-episode watched dates. Simkl suspends a client_id for polling this, so a
+// caller gates the refetch on the activities digest.
+async function fetchSimklAllItems(accessToken: string): Promise<any> {
+  if (!accessToken) return null;
+
+  try {
+    const response = await makeAuthenticatedSimklRequest(
+      `${SIMKL_BASE_URL}/sync/all-items?extended=full&episode_watched_at=yes`,
+      accessToken,
+      'Simkl fetchSimklAllItems'
+    );
+    return response?.data ?? null;
+  } catch (error: any) {
+    logger.error(`[Simkl] Fetching the library failed: ${error.message}`);
+    return null;
+  }
+}
+
+async function fetchPlaybackSessions(accessToken: string): Promise<any[]> {
+  if (!accessToken) return [];
+
+  try {
+    const response = await makeAuthenticatedSimklRequest(
+      `${SIMKL_BASE_URL}/sync/playback`,
+      accessToken,
+      'Simkl fetchPlaybackSessions'
+    );
+    return Array.isArray(response?.data) ? response.data : [];
+  } catch (error: any) {
+    logger.error(`[Simkl] Fetching playback sessions failed: ${error.message}`);
+    return [];
+  }
+}
+
 async function makeRateLimitedSimklRequest(url: string, context: string = 'Simkl Proxy'): Promise<any> {
   const headers = {
     'Content-Type': 'application/json',
@@ -1874,6 +1912,8 @@ export {
   makeAuthenticatedSimklRequest,
   getSimklRatings,
   getSimklToken,
+  fetchPlaybackSessions,
+  fetchSimklAllItems,
   getSimklWatchedIds,
   getSimklActivityFingerprint,
   fetchSimklTrendingItems,

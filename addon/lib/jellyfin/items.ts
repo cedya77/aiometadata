@@ -4,6 +4,7 @@ import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId, parseStremioId } from './ids';
 import { EMPTY_USER_DATA } from './dto';
 import { placeholderSources } from './streams';
+import redis from '../redisClient';
 import type { CatalogRef } from './views';
 
 const logger = consola.withTag('Jellyfin');
@@ -19,17 +20,52 @@ export interface ItemImages {
 
 const imageCache = new LRUCache<string, ItemImages>({
   max: envInt('JELLYFIN_IMAGE_CACHE_MAX', 20000, 1),
-  ttl: envInt('JELLYFIN_IMAGE_CACHE_TTL', 6 * 60 * 60, 60) * 1000,
+  ttl: envInt('JELLYFIN_IMAGE_MEMO_TTL', 6 * 60 * 60, 60) * 1000,
 });
 
-export function rememberImages(itemId: string, images: ItemImages): void {
-  if (images.primary || images.backdrop || images.logo || images.thumb) {
-    imageCache.set(itemId, images);
+/**
+ * Scoped per server id, which is derived from the configuration: art depends on
+ * a user's providers and language, so two configurations must not read each
+ * other's. Held in Redis as well as in process, because a client keeps its item
+ * ids across a restart and asks for their art before anything has rebuilt them.
+ */
+function imageKey(scope: string, itemId: string): string {
+  return `${scope}|${itemId}`;
+}
+
+function imageTtl(): number {
+  return envInt('JELLYFIN_IMAGE_CACHE_TTL', 7 * 24 * 60 * 60, 60);
+}
+
+export function rememberImages(scope: string, itemId: string, images: ItemImages): void {
+  if (!images.primary && !images.backdrop && !images.logo && !images.thumb) return;
+
+  const key = imageKey(scope, itemId);
+  imageCache.set(key, images);
+
+  if (redis) {
+    redis
+      .set(`jf:img:${key}`, JSON.stringify(images), 'EX', imageTtl())
+      .catch(() => undefined);
   }
 }
 
-export function recallImages(itemId: string): ItemImages | undefined {
-  return imageCache.get(itemId);
+export async function recallImages(scope: string, itemId: string): Promise<ItemImages | undefined> {
+  const key = imageKey(scope, itemId);
+  const local = imageCache.get(key);
+  if (local) return local;
+
+  if (!redis) return undefined;
+
+  try {
+    const stored = await redis.get(`jf:img:${key}`);
+    if (!stored) return undefined;
+    const images = JSON.parse(stored) as ItemImages;
+    imageCache.set(key, images);
+    return images;
+  } catch {
+    return undefined;
+  }
 }
 
 function localBase(): string {
@@ -175,13 +211,13 @@ function providerIds(meta: any): Record<string, string> {
   return ids;
 }
 
-function peopleFrom(meta: any): any[] {
+function peopleFrom(meta: any, serverId: string): any[] {
   const cast = Array.isArray(meta.app_extras?.cast) ? meta.app_extras.cast : [];
   const people = cast.slice(0, 20).map((member: any) => {
     const id = encodeJellyfinId({ k: 'person', n: String(member?.name || '') });
     // A client only asks for a portrait when the tag is present, so registering
     // the photo and setting it have to happen together.
-    if (member?.photo) rememberImages(id, { primary: member.photo });
+    if (member?.photo) rememberImages(serverId, id, { primary: member.photo });
     return {
       Name: member?.name,
       Id: id,
@@ -236,7 +272,7 @@ export function metaToBaseItem(
     logo: meta.logo || undefined,
     thumb: meta.landscapePoster || undefined,
   };
-  rememberImages(id, images);
+  rememberImages(serverId, id, images);
 
   const imageTags: Record<string, string> = {};
   if (images.primary) imageTags.Primary = 'p';
@@ -264,7 +300,7 @@ export function metaToBaseItem(
     OfficialRating: meta.app_extras?.certification || null,
     RunTimeTicks: parseRuntimeTicks(meta.runtime),
     ProviderIds: providerIds(meta),
-    People: peopleFrom(meta),
+    People: peopleFrom(meta, serverId),
     Studios: [],
     Taglines: [],
     RemoteTrailers: (Array.isArray(meta.trailerStreams) ? meta.trailerStreams : [])
@@ -395,7 +431,7 @@ export function buildEpisodes(
       ? encodeJellyfinId({ k: 'season', t: mediaType, i: String(meta.id), s: video.season })
       : seriesId;
 
-    if (video.thumbnail) rememberImages(id, { primary: video.thumbnail });
+    if (video.thumbnail) rememberImages(serverId, id, { primary: video.thumbnail });
 
     return {
       Name: video.title || `Episode ${video.episode}`,

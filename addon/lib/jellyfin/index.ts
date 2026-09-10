@@ -12,6 +12,7 @@ import {
 import { mintToken, readToken, revokeToken } from './tokens';
 import {
   collectionFolder,
+  EMPTY_USER_DATA,
   itemList,
   publicSystemInfo,
   sessionInfo,
@@ -22,8 +23,10 @@ import {
 import { buildViews, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBrowsable } from './views';
 import { decodeJellyfinId } from './ids';
 import { buildEpisodes, buildSeasons, fetchMeta, fetchWindow, filterByIncludeTypes, metaToBaseItem, recallImages } from './items';
-import { encodeJellyfinId, normaliseJellyfinId, stremioIdFor } from './ids';
+import { encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { coalesce, fetchStreams, mediaSourceFor, normaliseStreamBase, recallStreams, rememberStreams, toPlayable } from './streams';
+import { resumeSnapshot, resumeUserData } from './resume';
+import { applyWatchedState, isWatched, watchedSnapshot } from './watched';
 import { registerStubs } from './stubs';
 import { recordPlayed, recordPlaying, recordProgress, recordStopped, recordUnplayed } from './playstate';
 
@@ -104,6 +107,12 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
   router.get('/Branding/Splashscreen', (_req: any, res: any) => {
     res.status(404).end();
+  });
+
+  // The web client asks for this while the sign-in page is still loading, so it
+  // has to answer before there is a token to answer with.
+  router.get(['/Branding/Css', '/Branding/Css.css'], (_req: any, res: any) => {
+    res.type('text/css').send('');
   });
 
   router.get('/Users/Public', (_req: any, res: any) => {
@@ -287,9 +296,72 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return;
       }
 
-      // A cross-library query means "newest across the server", which needs a
-      // library and an added-date. Catalogs have neither, so the row is empty.
-      res.json(itemList([], 0, startIndex));
+      const recursive = String(req.query.Recursive ?? req.query.recursive ?? '')
+        .toLowerCase() === 'true';
+
+      if (!recursive) {
+        const views = await buildViews(userUUID, serverId, config);
+        res.json(itemList(views.slice(startIndex, startIndex + limit), views.length, startIndex));
+        return;
+      }
+
+      // Nothing here carries an added-date, so a cross-library row is the
+      // catalogs of that type walked in order, with one running offset across
+      // all of them so paging does not restart at every catalog boundary.
+      const wanted = includeItemTypes
+        ? new Set(String(includeItemTypes).split(',').map((t) => t.trim()).filter(Boolean))
+        : null;
+
+      const pool = (await getCatalogs(userUUID, config)).filter(isBrowsable).filter((catalog: any) => {
+        if (!wanted || !wanted.size) return true;
+        const kind = collectionTypeFor(catalog.type);
+        if (kind === 'movies') return wanted.has('Movie');
+        if (kind === 'tvshows') return wanted.has('Series');
+        return true;
+      });
+
+      const collected: any[] = [];
+      let offset = 0;
+      let more = false;
+
+      for (const catalog of pool) {
+        if (collected.length >= limit) break;
+
+        const page = await fetchWindow(
+          userUUID,
+          catalog,
+          Math.max(0, startIndex - offset),
+          limit - collected.length + Math.max(0, offset - startIndex),
+          extras
+        ).catch(() => ({ items: [] as any[], hasMore: false }));
+
+        const viewId = encodeJellyfinId({ k: 'view', t: catalog.type, c: catalog.id });
+        for (const meta of page.items) {
+          if (!meta?.id) continue;
+          if (offset >= startIndex && collected.length < limit) {
+            collected.push(metaToBaseItem(meta, catalog.type, serverId, viewId));
+          }
+          offset += 1;
+        }
+
+        if (page.hasMore) {
+          offset += 1;
+          more = true;
+        }
+        if (page.hasMore && collected.length >= limit) break;
+      }
+
+      const across = filterByIncludeTypes(
+        collected,
+        includeItemTypes ? String(includeItemTypes) : undefined
+      );
+      await applyWatchedState(across, await watchedSnapshot(userUUID, config));
+
+      res.json(itemList(
+        across,
+        more && across.length >= limit ? startIndex + across.length + limit : startIndex + across.length,
+        startIndex
+      ));
       return;
     }
 
@@ -306,6 +378,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         const children = descriptor.k === 'season'
           ? buildEpisodes(meta, descriptor.t, encodeSeriesId(descriptor), serverId, descriptor.s)
           : buildSeasons(meta, descriptor.t, String(parentId), serverId);
+        await applyWatchedState(children, await watchedSnapshot(userUUID, config));
         const page = children.slice(startIndex, startIndex + limit);
         res.json(itemList(page, children.length, startIndex));
         return;
@@ -340,6 +413,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       ? startIndex + filtered.length + limit
       : startIndex + filtered.length;
 
+    await applyWatchedState(filtered, await watchedSnapshot(userUUID, config));
     res.json(itemList(filtered, total, startIndex));
   });
 
@@ -705,8 +779,77 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     });
   });
 
+  /**
+   * Images are remembered as items are built, which a client outlives: it holds
+   * ids across a restart and asks for their art before anything has rebuilt
+   * them. Resolving from the id keeps posters working instead of every one
+   * turning into a 404 until the list happens to be walked again.
+   */
+  const imagesFor = async (req: any, itemId: string): Promise<any | undefined> => {
+    const userUUID = req.params.userUUID;
+    const scope = serverIdFor(userUUID);
+
+    const known = await recallImages(scope, itemId);
+    if (known) return known;
+
+    const descriptor = await decodeJellyfinId(itemId);
+    if (!descriptor) return undefined;
+    if (descriptor.k === 'movie' || descriptor.k === 'series' || descriptor.k === 'season') {
+      const stremioType = descriptor.k === 'movie' ? 'movie' : 'series';
+      const meta = await fetchMeta(userUUID, stremioType, descriptor.i);
+      if (!meta) return undefined;
+      metaToBaseItem(meta, descriptor.t, scope, null);
+      return (await recallImages(scope, itemId)) ?? {
+        primary: meta.poster || undefined,
+        backdrop: meta.background || undefined,
+        logo: meta.logo || undefined,
+        thumb: meta.landscapePoster || undefined,
+      };
+    }
+
+    if (descriptor.k === 'episode') {
+      const meta = await fetchMeta(userUUID, 'series', descriptor.i);
+      if (!meta) return undefined;
+      const seriesId = encodeSeriesId(descriptor);
+      buildEpisodes(meta, descriptor.t, seriesId, scope, null);
+      return (await recallImages(scope, itemId)) ?? { primary: meta.poster || undefined };
+    }
+
+    return undefined;
+  };
+
+  // Walked for a breadcrumb when a client opens an item. A season names its
+  // series, an episode both, and anything else has no parent worth naming.
+  router.get('/Items/:itemId/Ancestors', async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const descriptor = await decodeJellyfinId(String(req.params.itemId));
+    if (!descriptor || (descriptor.k !== 'episode' && descriptor.k !== 'season')) {
+      res.json([]);
+      return;
+    }
+
+    const meta = await fetchMeta(userUUID, 'series', descriptor.i);
+    if (!meta) {
+      res.json([]);
+      return;
+    }
+
+    const serverId = serverIdFor(userUUID);
+    const series = metaToBaseItem(meta, descriptor.t, serverId, null);
+    const chain: any[] = [];
+
+    if (descriptor.k === 'episode' && descriptor.s !== null && descriptor.s !== undefined) {
+      const season = buildSeasons(meta, descriptor.t, series.Id, serverId)
+        .find((entry: any) => entry.IndexNumber === descriptor.s);
+      if (season) chain.push(season);
+    }
+
+    chain.push(series);
+    res.json(chain);
+  });
+
   router.get('/Items/:itemId/Images/:imageType', async (req: any, res: any) => {
-    const images = recallImages(String(req.params.itemId));
+    const images = await imagesFor(req, String(req.params.itemId));
     if (!images) {
       res.status(404).end();
       return;
@@ -768,8 +911,74 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     );
   });
 
-  router.get(['/UserItems/Resume', '/Users/:userId/Items/Resume'], (_req: any, res: any) => {
-    res.json(itemList([], 0, 0));
+  router.get(['/UserItems/Resume', '/Users/:userId/Items/Resume'], async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const config = await loadConfig(req);
+    if (!config) {
+      res.json(itemList([], 0, 0));
+      return;
+    }
+
+    const startIndex = Math.max(0, qInt(req, 'StartIndex', 0));
+    const limit = Math.min(Math.max(1, qInt(req, 'Limit', 20)), 100);
+    const rows = await resumeSnapshot(userUUID, config);
+    if (!rows.length) {
+      res.json(itemList([], 0, startIndex));
+      return;
+    }
+
+    const serverId = serverIdFor(userUUID);
+    const window = rows.slice(startIndex, startIndex + limit);
+    const watched = await watchedSnapshot(userUUID, config);
+
+    // One meta per title, not per row: a show with several part-watched
+    // episodes is the normal shape of this list.
+    const metas = new Map<string, any>();
+    await Promise.all(
+      [...new Set(window.map((row) => row.metaId))].map(async (metaId) => {
+        const row = window.find((r) => r.metaId === metaId)!;
+        const meta = await fetchMeta(userUUID, row.kind === 'movie' ? 'movie' : 'series', metaId);
+        if (meta) metas.set(metaId, meta);
+      })
+    );
+
+    const items: any[] = [];
+    for (const row of window) {
+      const meta = metas.get(row.metaId);
+      if (!meta) continue;
+
+      if (row.kind === 'movie') {
+        const item = metaToBaseItem(meta, row.mediaType, serverId, null);
+        item.UserData = resumeUserData(item.Id, row, item.RunTimeTicks ?? null, isWatched(watched, row.videoId));
+        items.push(item);
+        continue;
+      }
+
+      const parsed = parseStremioId(row.videoId);
+      if (!parsed) continue;
+
+      const seriesId = encodeJellyfinId({ k: 'series', t: row.mediaType, i: String(meta.id) });
+      const wantedId = encodeJellyfinId({
+        k: 'episode',
+        t: row.mediaType,
+        i: parsed.base,
+        s: parsed.season,
+        e: parsed.episode as number,
+      });
+
+      const episodes = buildEpisodes(meta, row.mediaType, seriesId, serverId, null);
+      const target = episodes.find((episode: any) => episode.Id === wantedId);
+
+      if (!target) {
+        logger.debug(`Resume row ${row.videoId} is not in its meta`);
+        continue;
+      }
+
+      target.UserData = resumeUserData(target.Id, row, target.RunTimeTicks ?? null, isWatched(watched, row.videoId));
+      items.push(target);
+    }
+
+    res.json(itemList(items, rows.length, startIndex));
   });
 
   const seriesMetaFor = async (req: any) => {
@@ -815,11 +1024,71 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       serverIdFor(req.params.userUUID),
       season
     );
+    const episodesConfig = await loadConfig(req);
+    if (episodesConfig) {
+      await applyWatchedState(episodes, await watchedSnapshot(req.params.userUUID, episodesConfig));
+    }
     res.json(itemList(episodes, episodes.length, 0));
   });
 
-  router.get('/Shows/NextUp', (_req: any, res: any) => {
-    res.json(itemList([], 0, 0));
+  router.get('/Shows/NextUp', async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const config = await loadConfig(req);
+    const startIndex = Math.max(0, qInt(req, 'StartIndex', 0));
+    const limit = Math.min(Math.max(1, qInt(req, 'Limit', 20)), 100);
+
+    if (!config) {
+      res.json(itemList([], 0, startIndex));
+      return;
+    }
+
+    const snapshot = await watchedSnapshot(userUUID, config);
+    const rows = snapshot.nextUp;
+    if (!rows.length) {
+      res.json(itemList([], 0, startIndex));
+      return;
+    }
+
+    const serverId = serverIdFor(userUUID);
+    const window = rows.slice(startIndex, startIndex + limit);
+
+    const items: any[] = [];
+    await Promise.all(
+      window.map(async (row, index) => {
+        const meta = await fetchMeta(userUUID, 'series', row.metaId);
+        if (!meta) return;
+
+        const seriesId = encodeJellyfinId({ k: 'series', t: row.mediaType, i: String(meta.id) });
+        const episodes = buildEpisodes(meta, row.mediaType, seriesId, serverId, null);
+
+        // Matched on the video id where the tracker gave one, and on the
+        // numbering otherwise, because a season is not always in the same
+        // space as the id the meta publishes.
+        const target = row.videoId
+          ? episodes.find((episode: any) => {
+              const parsed = parseStremioId(row.videoId as string);
+              if (!parsed) return false;
+              return episode.Id === encodeJellyfinId({
+                k: 'episode',
+                t: row.mediaType,
+                i: parsed.base,
+                s: parsed.season,
+                e: parsed.episode as number,
+              });
+            })
+          : episodes.find(
+              (episode: any) =>
+                episode.IndexNumber === row.episode &&
+                (row.season === null || episode.ParentIndexNumber === row.season)
+            );
+
+        if (target) items[index] = target;
+      })
+    );
+
+    const found = items.filter(Boolean);
+    await applyWatchedState(found, snapshot);
+    res.json(itemList(found, rows.length, startIndex));
   });
 
   router.get('/Items/Counts', (_req: any, res: any) => {
@@ -871,6 +1140,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         await attachSources(req, episode, descriptor, String(req.params.itemId));
       }
 
+      const episodeConfig = await loadConfig(req);
+      if (episodeConfig) {
+        await applyWatchedState([episode], await watchedSnapshot(userUUID, episodeConfig));
+      }
+
       res.json(episode);
       return;
     }
@@ -897,6 +1171,12 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         item.ChildCount = seasons.length;
         item.RecursiveItemCount = (Array.isArray(meta.videos) ? meta.videos : []).length;
       }
+
+      const itemConfig = await loadConfig(req);
+      if (itemConfig) {
+        await applyWatchedState([item], await watchedSnapshot(userUUID, itemConfig));
+      }
+
       res.json(item);
       return;
     }
@@ -1001,15 +1281,32 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
   router.post('/Sessions/Playing/Ping', (_req: any, res: any) => ack(res));
 
+  // A client reads the new state back out of the response here rather than
+  // trusting a bare acknowledgement, and reports the server as not supporting
+  // the operation when the body is empty.
+  const playedState = (itemId: string, played: boolean): any => {
+    const id = normaliseJellyfinId(itemId);
+    return {
+      ...EMPTY_USER_DATA,
+      Key: id,
+      ItemId: id,
+      Played: played,
+      PlayCount: played ? 1 : 0,
+      PlaybackPositionTicks: 0,
+      PlayedPercentage: played ? 100 : 0,
+      LastPlayedDate: played ? new Date().toISOString() : null,
+    };
+  };
+
   router.post(['/Users/:userId/PlayedItems/:itemId', '/UserPlayedItems/:itemId'], (req: any, res: any) => {
-    ack(res);
+    res.json(playedState(String(req.params.itemId), true));
     recordPlayed(req, { ItemId: req.params.itemId }).catch((error: any) =>
       logger.debug(`Played report failed: ${error.message}`)
     );
   });
 
   router.delete(['/Users/:userId/PlayedItems/:itemId', '/UserPlayedItems/:itemId'], (req: any, res: any) => {
-    ack(res);
+    res.json(playedState(String(req.params.itemId), false));
     recordUnplayed(req, { ItemId: req.params.itemId }).catch((error: any) =>
       logger.debug(`Unplayed report failed: ${error.message}`)
     );

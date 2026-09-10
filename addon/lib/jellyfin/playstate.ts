@@ -161,6 +161,16 @@ async function report(
     config,
     userUUID
   );
+
+  // The trackers now hold state this server just changed, so the snapshots the
+  // resume shelf and the watched ticks read from are dropped rather than left
+  // serving what they cached before the event.
+  const { invalidateResume } = require('./resume');
+  const { invalidateWatched } = require('./watched');
+  invalidateResume(userUUID);
+  if (event !== 'pause' && event !== 'start') {
+    await invalidateWatched(config).catch(() => undefined);
+  }
 }
 
 export async function recordPlaying(req: any, body: any): Promise<void> {
