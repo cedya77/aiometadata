@@ -1585,6 +1585,12 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   const tmdbSeasonPosters = tmdbSeasons.map(season => {
     return season.poster_path ? tmdbImageUrl(tmdbPosterSize(), season.poster_path) : null;
   });
+  // Keyed by season, because the list alone cannot say which season a poster
+  // belongs to once specials or gaps are filtered out of it.
+  const tmdbSeasonPosterByNumber = {};
+  tmdbSeasons.forEach((season, index) => {
+    if (tmdbSeasonPosters[index]) tmdbSeasonPosterByNumber[season.season_number] = tmdbSeasonPosters[index];
+  });
 
   if(includeVideos) {
     const seasonToKitsuIdMap = new Map();
@@ -1940,7 +1946,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       defaultVideoId: null,
       hasScheduledVideos: true,
     },
-    app_extras: { cast: Utils.parseCast(credits), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters, certification: certification, certificationLocal: certificationLocal },
+    app_extras: { cast: Utils.parseCast(credits), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters, seasonPosterByNumber: tmdbSeasonPosterByNumber, certification: certification, certificationLocal: certificationLocal },
     ...stampIds(allIds),
   };
   if (runtime) {
@@ -2330,6 +2336,10 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   episodeList = normalizedData.episodes;
 
   const seasonPosters = officialSeasons.map(s => s.image);
+  const seasonPosterByNumber = {};
+  officialSeasons.forEach(season => {
+    if (season.image) seasonPosterByNumber[season.number] = season.image;
+  });
 
   if(includeVideos) {
     const seasonToKitsuIdMap = new Map();
@@ -2552,7 +2562,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
 
     links: links,
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tvdbCredits, undefined, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters, certification: certification, certificationLocal: certificationLocal },
+    app_extras: { cast: Utils.parseCast(tvdbCredits, undefined, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters, seasonPosterByNumber: seasonPosterByNumber, certification: certification, certificationLocal: certificationLocal },
     ...stampIds(allIds),
   };
   //console.log(Utils.parseCast(tmdbLikeCredits, castCount));
