@@ -569,8 +569,10 @@ export function ConfigurationManager() {
                 )}
                 {urlTab === 'jellyfin' && jellyfinEnabled ? (
                   <div className="space-y-2 mt-2">
+                    <Label htmlFor="jellyfin-server-address" className="text-sm font-medium">Server address</Label>
                     <div className="flex items-center gap-2">
                       <Input
+                        id="jellyfin-server-address"
                         value={`${window.location.origin}/jellyfin/${identity.userUUID}`}
                         readOnly
                         className="font-mono text-sm"
@@ -588,14 +590,19 @@ export function ConfigurationManager() {
                       Add this as a server in your Jellyfin client, then sign in with any username and this configuration's password.
                     </p>
 
-                    <div className="space-y-1.5 rounded-md border border-dashed p-2.5">
-                      <Label className="text-xs font-medium">Client password</Label>
+                    <p className="text-xs text-amber-400">
+                      Anyone with this address and your password can browse your catalogs. Treat it like the install URL.
+                    </p>
+
+                    <div className="space-y-1.5 border-t pt-3">
+                      <Label htmlFor="jellyfin-client-password" className="text-sm font-medium">Client password</Label>
                       {config.jellyfinAppPassword ? (
                         <div className="flex items-center gap-2">
                           <Input
+                            id="jellyfin-client-password"
                             value={config.jellyfinAppPassword}
                             readOnly
-                            className="font-mono text-xs"
+                            className="font-mono text-sm"
                             aria-label="Jellyfin client password"
                           />
                           <Button
@@ -606,7 +613,7 @@ export function ConfigurationManager() {
                             <Copy className="h-4 w-4" />
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
                             onClick={() => setConfig(prev => ({ ...prev, jellyfinAppPassword: newClientPassword() }))}
                           >
@@ -617,18 +624,16 @@ export function ConfigurationManager() {
                         <Button
                           variant="outline"
                           size="sm"
+                          className="w-full sm:w-auto"
                           onClick={() => setConfig(prev => ({ ...prev, jellyfinAppPassword: newClientPassword() }))}
                         >
-                          Generate a client password
+                          Generate
                         </Button>
                       )}
                       <p className="text-xs text-muted-foreground">
-                        Sign in with this instead, for accounts that never set a configuration password. It works only on this address, and replacing it signs the clients out.
+                        Sign in with this instead of the configuration password, which an account created through a sign-in provider never set. It works only on this address, and replacing it signs the clients out.
                       </p>
                     </div>
-                    <p className="text-xs text-amber-400">
-                      Anyone with this address and your password can browse your catalogs. Treat it like the install URL.
-                    </p>
 
                     <div className="space-y-1.5 border-t pt-3">
                       <div className="flex items-center justify-between gap-2">
