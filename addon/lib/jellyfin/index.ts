@@ -271,6 +271,36 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
     }
 
+    // A client builds one row per kind by ruling out the kinds another row owns.
+    // Where that leaves nothing this server publishes, the row wants to be empty
+    // rather than filled with the same titles under a heading they do not belong
+    // to. Only movies and episodes are video; a series is a folder.
+    const queryList = (...values: any[]): Set<string> =>
+      new Set(
+        values
+          .flat()
+          .filter(Boolean)
+          .flatMap((value: any) => String(value).split(','))
+          .map((value: string) => value.trim())
+          .filter(Boolean)
+      );
+
+    const excluded = queryList(req.query.ExcludeItemTypes ?? req.query.excludeItemTypes);
+    const wantedMedia = queryList(req.query.MediaTypes ?? req.query.mediaTypes);
+
+    if (excluded.size || wantedMedia.size) {
+      const survives = (['Movie', 'Series', 'Episode'] as const).some((kind) => {
+        if (excluded.has(kind)) return false;
+        if (!wantedMedia.size) return true;
+        return wantedMedia.has(kind === 'Series' ? 'Unknown' : 'Video');
+      });
+
+      if (!survives) {
+        res.json(itemList([], 0, startIndex));
+        return;
+      }
+    }
+
     const extras: Record<string, string> = {};
     if (genreNames.length) extras.genre = genreNames[0];
     if (searchTerm) extras.search = String(searchTerm);
