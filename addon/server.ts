@@ -187,6 +187,9 @@ async function startServer(): Promise<void> {
   });
   shutdownSequence.register('http server', () => closeHttpServer(server), { phase: 'traffic' });
 
+  const { attachJellyfinSocket } = require('./lib/jellyfin/socket');
+  attachJellyfinSocket(server);
+
   // Storage
   await database.initialize();
   shutdownSequence.register('database', () => database.close());
