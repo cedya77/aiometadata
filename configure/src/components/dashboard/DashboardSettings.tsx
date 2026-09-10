@@ -103,6 +103,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   "Rate Limits": "Request throttling and concurrency ceilings",
   "Data Updates": "Intervals for refreshing external id mappings",
   "Proxy": "HTTP and SOCKS proxy routing",
+  "Features": "Optional surfaces the addon can expose, off unless turned on",
   "Diagnostics": "Logging, health checks and monitoring",
   "Server & Storage": "Ports, database and Redis. Most of these need a restart",
 };
@@ -110,6 +111,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
 const CATEGORY_ORDER = [
   "API Keys", "OAuth", "Sign-In & Access",
   "Appearance", "Catalogs & Search", "Images & Art", "Providers",
+  "Features",
   "Cache", "Cold Store",
   "Warming: Popular", "Warming: Full", "Warming: MAL",
   "Rate Limits", "Data Updates", "Proxy", "Diagnostics", "Server & Storage",
@@ -509,10 +511,14 @@ export function DashboardSettings({ data }: DashboardSettingsProps) {
     return map;
   }, [visible]);
 
-  const categories = useMemo(
-    () => CATEGORY_ORDER.filter((c) => grouped.has(c)),
-    [grouped]
-  );
+  // Ordering is deliberate for the categories named above, but a registry entry
+  // must never be unreachable because its category was not one of them, so
+  // anything unlisted is shown after them rather than dropped.
+  const categories = useMemo(() => {
+    const known = CATEGORY_ORDER.filter((c) => grouped.has(c));
+    const rest = [...grouped.keys()].filter((c) => !CATEGORY_ORDER.includes(c)).sort();
+    return [...known, ...rest];
+  }, [grouped]);
 
   const pendingLabels = useMemo(
     () => settings.filter((s) => s.requiresRestart && s.changedSinceBoot).map((s) => s.label),
