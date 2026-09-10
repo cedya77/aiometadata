@@ -1,7 +1,7 @@
 import express from 'express';
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
-import { randomUUID } from 'crypto';
+import { randomUUID, timingSafeEqual } from 'crypto';
 import {
   attachJellyfinContext,
   clientInfo,
@@ -121,11 +121,29 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
   // --- Authentication ---
 
+  /** Compared in constant time so a wrong guess reveals nothing by how long it took. */
+  const matchesAppPassword = (stored: string, supplied: string): boolean => {
+    const a = Buffer.from(String(stored));
+    const b = Buffer.from(supplied);
+    return a.length === b.length && timingSafeEqual(a, b);
+  };
+
   router.post('/Users/AuthenticateByName', loginRateLimit, async (req: any, res: any) => {
     const userUUID = req.params.userUUID;
     const password = req.body?.Pw ?? req.body?.pw ?? req.body?.Password ?? '';
 
-    const config = await database.verifyUserAndGetConfig(userUUID, String(password));
+    let config = await database.verifyUserAndGetConfig(userUUID, String(password));
+
+    // An account that signs in through a provider has no configuration password
+    // to type, and a client's sign-in form cannot run that flow, so a password
+    // issued for these clients is accepted here as well.
+    if (!config) {
+      const stored = await database.getUserConfig(userUUID).catch(() => null);
+      if (stored?.jellyfinAppPassword && matchesAppPassword(stored.jellyfinAppPassword, String(password))) {
+        config = stored;
+      }
+    }
+
     if (!config) {
       logger.debug(`Rejected Jellyfin login for ${userUUID}`);
       res.status(401).json({ Message: 'Invalid username or password' });

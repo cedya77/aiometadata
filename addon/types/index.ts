@@ -6,6 +6,8 @@ export interface UserConfig {
   jellyfinStreamUrl?: string;
   /** Playback is reported by the client, so the subtitle trigger is not used. */
   playbackReporting?: boolean;
+  /** Password a Jellyfin client signs in with, for accounts that have no configuration password. */
+  jellyfinAppPassword?: string;
   /** Tracker the Jellyfin resume shelf reads from. `auto` picks a capable one. */
   jellyfinResumeSource?: 'auto' | 'off' | 'mdblist' | 'trakt' | 'simkl' | 'publicmetadb';
   providers?: {

@@ -54,6 +54,19 @@ function ConfigurationSectionFallback() {
   );
 }
 
+/**
+ * Typed by hand on a TV remote as often as pasted, so the alphabet leaves out
+ * the characters that are read wrong and the groups keep the place visible.
+ */
+function newClientPassword(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+
+  const chars = Array.from(bytes, (b) => alphabet[b % alphabet.length]);
+  return [0, 4, 8, 12].map((i) => chars.slice(i, i + 4).join('')).join('-');
+}
+
 export function ConfigurationManager() {
   const { config, setConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, hasBuiltInGemini, isLoading: contextLoading, manifestChangedSinceInstall, markManifestInstalled } = useConfig();
   const { requestSave, isSaving, error, savedConfig, canSave, missingKeys, openInstall } = useSave();
@@ -574,6 +587,45 @@ export function ConfigurationManager() {
                     <p className="text-xs text-muted-foreground">
                       Add this as a server in your Jellyfin client, then sign in with any username and this configuration's password.
                     </p>
+
+                    <div className="space-y-1.5 rounded-md border border-dashed p-2.5">
+                      <Label className="text-xs font-medium">Client password</Label>
+                      {config.jellyfinAppPassword ? (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={config.jellyfinAppPassword}
+                            readOnly
+                            className="font-mono text-xs"
+                            aria-label="Jellyfin client password"
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => copyToClipboard(config.jellyfinAppPassword ?? '', 'Client password')}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setConfig(prev => ({ ...prev, jellyfinAppPassword: newClientPassword() }))}
+                          >
+                            Replace
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setConfig(prev => ({ ...prev, jellyfinAppPassword: newClientPassword() }))}
+                        >
+                          Generate a client password
+                        </Button>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Sign in with this instead, for accounts that never set a configuration password. It works only on this address, and replacing it signs the clients out.
+                      </p>
+                    </div>
                     <p className="text-xs text-amber-400">
                       Anyone with this address and your password can browse your catalogs. Treat it like the install URL.
                     </p>
