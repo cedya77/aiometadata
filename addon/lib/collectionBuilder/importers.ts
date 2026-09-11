@@ -17,6 +17,7 @@ import {
 import {
   dedupeBlueprints,
   fromEmbedded,
+  lookupKey,
   fromFusionNativeSource,
   fromNativeSource,
   fusionNativePassthrough,
@@ -331,12 +332,15 @@ function fusionSource(
     return null;
   }
 
-  blueprints.push(...fromEmbedded(payload, label));
+  const embedded = fromEmbedded(payload, label);
+  blueprints.push(...embedded);
 
+  // The tile title names the tile; the catalog it carries names the source.
+  const own = embedded.find((b) => lookupKey(b.id, b.type) === lookupKey(split.catalogId, split.type));
   return {
     catalogId: split.catalogId,
     type: split.type,
-    name: trimmed(label) || split.catalogId,
+    name: (own && own.name !== own.id ? own.name : '') || trimmed(label) || split.catalogId,
     genre: trimmed(payload.genre) || split.genre,
   };
 }
