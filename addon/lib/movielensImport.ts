@@ -17,11 +17,22 @@ function csvField(v: string | number | null | undefined): string {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+// MovieLens rejects the whole file over a single malformed row, so only a
+// well-formed id gets through.
 function normalizeImdb(raw: any): string | null {
-  if (!raw) return null;
-  const s = String(raw).trim();
-  if (!s) return null;
-  return s.startsWith('tt') ? s : `tt${s}`;
+  return imdbIdsIn(raw)[0] ?? null;
+}
+
+// Simkl keeps a multi-part anime film as one entry and lists every part's IMDb
+// id in the field, comma separated.
+function imdbIdsIn(raw: any): string[] {
+  if (raw === null || raw === undefined) return [];
+  const ids: string[] = [];
+  for (const match of String(raw).matchAll(/(?:^|[^0-9])(?:tt)?(\d{5,10})(?![0-9])/g)) {
+    const id = `tt${match[1]}`;
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
 }
 
 function validRating(r: any): boolean {
@@ -75,16 +86,24 @@ function fromSimklRatings(items: any[]): NormalizedRating[] {
   for (const it of items || []) {
     if (it?.anime_type && !ANIME_FILM_TYPES.has(it.anime_type)) continue;
     const media = it?.movie || it?.show;
-    const imdb = normalizeImdb(media?.ids?.imdb) || mappedFilmImdb(media?.ids);
     const rating = it?.user_rating ?? it?.rating;
-    if (!imdb || !validRating(rating)) continue;
-    out.push({
-      imdb,
-      rating,
-      ratedAt: it?.user_rated_at || it?.last_watched_at || it?.rated_at || '',
-      title: media?.title || '',
-      year: media?.year ?? null,
-    });
+    if (!validRating(rating)) continue;
+
+    // A rating given to the entry as a whole is a rating of each of its parts.
+    let imdbIds = imdbIdsIn(media?.ids?.imdb);
+    if (imdbIds.length === 0) {
+      const mapped = mappedFilmImdb(media?.ids);
+      if (mapped) imdbIds = [mapped];
+    }
+    for (const imdb of imdbIds) {
+      out.push({
+        imdb,
+        rating,
+        ratedAt: it?.user_rated_at || it?.last_watched_at || it?.rated_at || '',
+        title: media?.title || '',
+        year: media?.year ?? null,
+      });
+    }
   }
   return out;
 }
