@@ -222,8 +222,19 @@ function parseRating(value: any): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+const PER_ENTRY_ANIME = /^(kitsu|mal|anilist|anidb):/i;
+
+// A season-per-entry anime shares the series' IMDb, TMDB and TVDB ids with its
+// siblings, and a client folds items with the same provider ids into one.
 function providerIds(meta: any): Record<string, string> {
   const ids: Record<string, string> = {};
+  if (PER_ENTRY_ANIME.test(String(meta.id ?? ''))) {
+    if (meta._malId) ids.MyAnimeList = String(meta._malId);
+    if (meta._kitsuId) ids.Kitsu = String(meta._kitsuId);
+    if (meta._anilistId) ids.AniList = String(meta._anilistId);
+    if (meta._anidbId) ids.AniDB = String(meta._anidbId);
+    return ids;
+  }
   if (meta._imdbId || meta.imdb_id) ids.Imdb = String(meta._imdbId || meta.imdb_id);
   if (meta._tmdbId) ids.Tmdb = String(meta._tmdbId);
   if (meta._tvdbId) ids.Tvdb = String(meta._tvdbId);
