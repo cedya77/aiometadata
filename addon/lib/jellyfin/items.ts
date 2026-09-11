@@ -180,7 +180,9 @@ export async function fetchWindow(
       break;
     }
 
-    if (pages === 1 && !pageLength) {
+    // No catalog pages in fewer than this, so a shorter page is the last one.
+    const minPage = envInt('JELLYFIN_CATALOG_MIN_PAGE', 10, 1);
+    if (pages === 1 && !pageLength && page.length >= minPage) {
       pageLength = page.length;
       pageLengths.set(lengthKey, pageLength);
     }
@@ -197,6 +199,10 @@ export async function fetchWindow(
     }
 
     skip += page.length;
+    if (page.length < (pageLength || minPage)) {
+      exhausted = true;
+      break;
+    }
   }
 
   // Duplicates are dropped above, so trimming by count would cut into the window

@@ -102,7 +102,7 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, onChange, on
         <>
           {allTags.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-muted-foreground mr-1">Profiles:</span>
+              <span className="text-xs text-muted-foreground mr-1">Tags:</span>
               {allTags.map((t) => (
                 <TagChip
                   key={t.name}
@@ -119,7 +119,7 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, onChange, on
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span>
               {chosen.length === 0
-                ? 'No profile picked: every catalog'
+                ? 'No tag picked: every catalog'
                 : `${catalogCount} catalog${catalogCount === 1 ? '' : 's'}`}
             </span>
             {caps.length ? <span className="rounded-full border border-amber-500/40 px-1.5 text-[11px] text-amber-400">{caps.join(', ')} and lower</span> : null}
@@ -273,7 +273,7 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
           <div className="space-y-2 border-t pt-3">
             <Label className="text-sm font-medium">Users</Label>
             <p className="text-xs text-muted-foreground">
-              Users appear on the client's sign-in screen. A user is made of the profiles you pick for it: it sees the catalogs carrying any of them, under their rating limit. Someone else gets their own watch history and Continue Watching; a user that is you shares yours. Profiles themselves are made in Catalogs.
+              Users appear on the client's sign-in screen. A user is made of the tags you pick for it: it sees the catalogs carrying any of them, under their rating limit. Someone else gets their own watch history and Continue Watching; a user that is you shares yours. Tags themselves are made in Catalogs.
             </p>
             <UserRow
               main

@@ -276,6 +276,15 @@ class Database {
         PRIMARY KEY (user_uuid, profile, video_id)
       )`,
       `CREATE INDEX IF NOT EXISTS idx_jellyfin_playstate_recent ON jellyfin_playstate(user_uuid, profile, updated_at DESC)`,
+      `CREATE TABLE IF NOT EXISTS jellyfin_preferences (
+        user_uuid TEXT NOT NULL,
+        profile TEXT NOT NULL DEFAULT '',
+        pref_id TEXT NOT NULL,
+        client TEXT NOT NULL DEFAULT '',
+        data TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_uuid, profile, pref_id, client)
+      )`,
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid TEXT UNIQUE NOT NULL,
         trusted_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -378,6 +387,15 @@ class Database {
         PRIMARY KEY (user_uuid, profile, video_id)
       )`,
       `CREATE INDEX IF NOT EXISTS idx_jellyfin_playstate_recent ON jellyfin_playstate(user_uuid, profile, updated_at DESC)`,
+      `CREATE TABLE IF NOT EXISTS jellyfin_preferences (
+        user_uuid VARCHAR(64) NOT NULL,
+        profile TEXT NOT NULL DEFAULT '',
+        pref_id TEXT NOT NULL,
+        client TEXT NOT NULL DEFAULT '',
+        data TEXT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        PRIMARY KEY (user_uuid, profile, pref_id, client)
+      )`,
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid VARCHAR(255) UNIQUE NOT NULL,
         trusted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -949,6 +967,28 @@ class Database {
            play_count = EXCLUDED.play_count, last_played_at = EXCLUDED.last_played_at, updated_at = EXCLUDED.updated_at`;
 
     await this.runQuery(query, [userUUID, profile, videoId, positionMs, runtimeMs, played ? 1 : 0, playCount, lastPlayedAt, now]);
+  }
+
+  async getPreferences(userUUID: string, profile: string, prefId: string, client: string): Promise<any | null> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT data FROM jellyfin_preferences WHERE user_uuid = ? AND profile = ? AND pref_id = ? AND client = ?'
+      : 'SELECT data FROM jellyfin_preferences WHERE user_uuid = $1 AND profile = $2 AND pref_id = $3 AND client = $4';
+    const row = await this.getQuery(query, [userUUID, profile, prefId, client]);
+    if (!row?.data) return null;
+    try {
+      return JSON.parse(row.data);
+    } catch {
+      return null;
+    }
+  }
+
+  async savePreferences(userUUID: string, profile: string, prefId: string, client: string, data: any): Promise<void> {
+    const query = this.type === 'sqlite'
+      ? `INSERT INTO jellyfin_preferences (user_uuid, profile, pref_id, client, data, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (user_uuid, profile, pref_id, client) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
+      : `INSERT INTO jellyfin_preferences (user_uuid, profile, pref_id, client, data, updated_at) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (user_uuid, profile, pref_id, client) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`;
+    await this.runQuery(query, [userUUID, profile, prefId, client, JSON.stringify(data), Date.now()]);
   }
 
   async deletePlaystate(userUUID: string, videoId: string, profile = ''): Promise<void> {

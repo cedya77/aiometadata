@@ -149,8 +149,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.json(quickConnectResult(request));
   });
 
+  // A client styles itself with whatever the server hands out here.
+  const customCss = (): string => String(require('../settingsService').getSetting('JELLYFIN_CUSTOM_CSS') || '');
+
   router.get('/Branding/Configuration', (_req: any, res: any) => {
-    res.json({ LoginDisclaimer: '', CustomCss: '', SplashscreenEnabled: false });
+    res.json({ LoginDisclaimer: '', CustomCss: customCss(), SplashscreenEnabled: false });
   });
 
   router.get('/Branding/Splashscreen', (_req: any, res: any) => {
@@ -160,7 +163,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   // The web client asks for this while the sign-in page is still loading, so it
   // has to answer before there is a token to answer with.
   router.get(['/Branding/Css', '/Branding/Css.css'], (_req: any, res: any) => {
-    res.type('text/css').send('');
+    res.type('text/css').send(customCss());
   });
 
   router.get('/Users/Public', async (req: any, res: any) => {
@@ -1111,8 +1114,44 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       res.status(404).end();
       return;
     }
-    res.redirect(302, url);
+    const cached = throughPosterCache(url, kind);
+    if (cached) {
+      res.redirect(302, cached);
+      return;
+    }
+    await streamImage(res, url);
   });
+
+  // A script fetching art needs a same-origin answer with CORS headers, which a
+  // redirect straight to a CDN does not give it.
+  const throughPosterCache = (url: string, kind: string): string | null => {
+    const posterCache = require('../posterCache/config');
+    if (!/^https?:\/\//i.test(url)) return url;
+    const prefix: string = posterCache.getPosterProxyPrefix?.() || '';
+    const selfOrigin: string = posterCache.getSelfOrigin?.() || '';
+    if ((prefix && url.startsWith(prefix)) || (selfOrigin && url.startsWith(selfOrigin))) return url;
+    if (!prefix) return null;
+    const imageClass = kind === 'backdrop' ? 'background' : kind === 'logo' ? 'logo' : kind === 'thumb' ? 'landscape' : 'poster';
+    return posterCache.buildCachedUrl(prefix, imageClass, url);
+  };
+
+  const streamImage = async (res: any, url: string): Promise<void> => {
+    try {
+      const { openImageStream } = require('../posterCache/upstream');
+      const upstream = await openImageStream(url);
+      if (upstream.notModified) {
+        res.status(404).end();
+        return;
+      }
+      res.set('Content-Type', upstream.contentType);
+      res.set('Cache-Control', 'public, max-age=86400');
+      upstream.response.data.on('error', () => res.end());
+      upstream.response.data.pipe(res);
+    } catch (error: any) {
+      logger.debug(`Image stream failed for ${url}: ${error?.message || error}`);
+      res.status(404).end();
+    }
+  };
 
   // A bare array, not a list. Some clients build their whole view from this and
   // never call /Items, so an empty answer reads as a server with no content.
@@ -1376,8 +1415,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.json(itemList(found, rows.length, startIndex));
   });
 
-  // Episodes airing soon for the shows a user is partway through. A tracker
-  // has no user-scoped calendar, and the metas already carry the air dates.
+  // A new season of a show the user follows, and a watchlist film not out yet.
   router.get('/Shows/Upcoming', async (req: any, res: any) => {
     const userUUID = req.params.userUUID;
     const config = await loadConfig(req);
@@ -1389,31 +1427,57 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return;
     }
 
-    const [snapshot, resume] = await Promise.all([watchedSnapshot(userUUID, config), resumeSnapshot(userUUID, config)]);
+    const now = Date.now();
+    const horizon = now + envInt('JELLYFIN_UPCOMING_DAYS', 90, 1) * 24 * 60 * 60 * 1000;
+    const serverId = serverIdFor(userUUID);
+    const profile = profileKey(config);
+    const premiereAt = (item: any): number => Date.parse(item?.PremiereDate || '');
+    const within = (at: number): boolean => Number.isFinite(at) && at >= now && at <= horizon;
+
+    const [snapshot, resume, own] = await Promise.all([
+      watchedSnapshot(userUUID, config),
+      resumeSnapshot(userUUID, config),
+      ownNextUpRows(userUUID, profile),
+    ]);
     const shows = new Map<string, string>();
-    for (const row of [...snapshot.nextUp, ...resume.filter((r) => r.kind === 'episode')]) {
+    for (const row of [...own, ...snapshot.nextUp, ...resume.filter((r) => r.kind === 'episode')]) {
       if (!shows.has(row.metaId)) shows.set(row.metaId, row.mediaType);
     }
     const followed = [...shows.entries()].slice(0, envInt('JELLYFIN_UPCOMING_SHOWS', 60, 1));
 
-    const now = Date.now();
-    const horizon = now + envInt('JELLYFIN_UPCOMING_DAYS', 14, 1) * 24 * 60 * 60 * 1000;
-    const serverId = serverIdFor(userUUID);
-
-    const episodes: any[] = [];
+    const seen = new Set<string>();
+    const premieres: any[] = [];
     await mapWithConcurrency(followed, shelfConcurrency(), async ([metaId, mediaType]) => {
       const meta = await fetchMeta(userUUID, 'series', metaId);
       if (!meta) return;
+      const identity = meta._tmdbId ? `tmdb:${meta._tmdbId}` : meta._imdbId ? `imdb:${meta._imdbId}` : String(meta.id);
+      if (seen.has(identity)) return;
+      seen.add(identity);
       const seriesId = encodeJellyfinId({ k: 'series', t: mediaType, i: String(meta.id) });
-      for (const episode of buildEpisodes(meta, mediaType, seriesId, serverId, null)) {
-        const at = Date.parse(episode.PremiereDate || '');
-        if (Number.isFinite(at) && at >= now && at <= horizon) episodes.push(episode);
+      const first = buildEpisodes(meta, mediaType, seriesId, serverId, null)
+        .find((episode: any) => episode.IndexNumber === 1 && episode.ParentIndexNumber > 0 && within(premiereAt(episode)));
+      if (first) premieres.push(first);
+    });
+
+    const watchlists = (await getCatalogs(userUUID, config)).filter(
+      (catalog: any) => /\.watchlist\b/.test(catalog.id) && collectionTypeFor(catalog.type) === 'movies'
+    );
+    const films: any[] = [];
+    await mapWithConcurrency(watchlists, 2, async (catalog: any) => {
+      const window = await fetchWindow(userUUID, catalog, 0, envInt('JELLYFIN_UPCOMING_WATCHLIST_LIMIT', 100, 1), {}, undefined, profileTags(config))
+        .catch(() => ({ items: [] as any[], hasMore: false }));
+      for (const meta of window.items) {
+        const item = metaToBaseItem(meta, catalog.type, serverId, null);
+        if (item.Type === 'Movie' && within(premiereAt(item)) && !seen.has(item.Id)) {
+          seen.add(item.Id);
+          films.push(item);
+        }
       }
     });
 
-    const ordered = episodes
+    const ordered = [...premieres, ...films]
       .filter(keepsUnderProfileCap(config))
-      .sort((a, b) => Date.parse(a.PremiereDate) - Date.parse(b.PremiereDate));
+      .sort((a, b) => premiereAt(a) - premiereAt(b));
     res.json(itemList(ordered.slice(startIndex, startIndex + limit), ordered.length, startIndex));
   });
 
@@ -1572,9 +1636,14 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.status(204).end();
   });
 
-  router.get('/DisplayPreferences/:id', (req: any, res: any) => {
+  // Home rows, sort choices and the like live here per user and client.
+  const prefsClient = (req: any): string => String(req.query.client ?? req.query.Client ?? '');
+  const prefsScope = async (req: any): Promise<[string, string]> => [req.params.userUUID, profileKey(await loadConfig(req))];
+
+  router.get('/DisplayPreferences/:id', async (req: any, res: any) => {
+    const [userUUID, profile] = await prefsScope(req);
+    const stored = await database.getPreferences(userUUID, profile, String(req.params.id), prefsClient(req)).catch(() => null);
     res.json({
-      Id: req.params.id,
       SortBy: 'SortName',
       SortOrder: 'Ascending',
       RememberIndexing: false,
@@ -1584,12 +1653,20 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       ScrollDirection: 'Horizontal',
       ShowBackdrop: true,
       ShowSidebar: false,
-      Client: 'emby',
+      Client: prefsClient(req) || 'emby',
       CustomPrefs: {},
+      ...(stored || {}),
+      Id: req.params.id,
     });
   });
 
-  router.post('/DisplayPreferences/:id', (_req: any, res: any) => {
+  router.post('/DisplayPreferences/:id', async (req: any, res: any) => {
+    const [userUUID, profile] = await prefsScope(req);
+    if (req.body && typeof req.body === 'object') {
+      await database.savePreferences(userUUID, profile, String(req.params.id), prefsClient(req), req.body).catch((error: any) =>
+        logger.debug(`Preferences save failed: ${error?.message || error}`)
+      );
+    }
     res.status(204).end();
   });
 
