@@ -1,4 +1,6 @@
 import type { BuilderEntry } from '@shared/types';
+import type { CatalogConfig } from '@/contexts/config';
+import { deriveManifestCatalog } from './manifestSources';
 
 export interface CollectionUsage {
   /** How many source rows across all collections point at one of the keys. */
@@ -8,7 +10,20 @@ export interface CollectionUsage {
 }
 
 export function catalogUsageKey(catalogId: string, type: string): string {
-  return `${catalogId}:${type}`;
+  return `${catalogId}:${String(type).toLowerCase()}`;
+}
+
+/**
+ * A source addresses a catalog as the manifest spells it, which a displayType
+ * renames, so a catalog answers to its config spelling and its manifest one.
+ */
+export function catalogUsageKeys(catalog: CatalogConfig): string[] {
+  const manifest = deriveManifestCatalog(catalog);
+  return [...new Set([catalogUsageKey(catalog.id, catalog.type), catalogUsageKey(manifest.id, manifest.type)])];
+}
+
+export function isCollected(collected: Set<string>, catalog: CatalogConfig): boolean {
+  return catalogUsageKeys(catalog).some(key => collected.has(key));
 }
 
 /**

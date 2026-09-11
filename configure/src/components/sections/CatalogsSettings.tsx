@@ -46,7 +46,8 @@ import { SelectionProvider, useSelection } from '@/contexts/SelectionContext';
 import { BulkActionBar } from '@/components/BulkActionBar';
 import { ScrollToTopButton } from '@/components/ScrollToTopButton';
 import {
-  catalogUsageKey,
+  catalogUsageKeys,
+  isCollected,
   collectedCatalogKeys,
   describeCollectionUsage,
   findCollectionUsage,
@@ -3251,7 +3252,7 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
     const mergeName = wouldDisbandMerge();
     const usage = findCollectionUsage(
       config.collections,
-      new Set([catalogUsageKey(catalog.id, catalog.type)])
+      new Set(catalogUsageKeys(catalog))
     );
     if (mergeName || usage.sources > 0) {
       setDisbandTargetName(mergeName || '');
@@ -4283,7 +4284,7 @@ function CatalogsSettingsContent({
   const collectionCounts = useMemo(() => {
     let inside = 0;
     for (const cat of visibleCatalogs) {
-      if (collectedKeys.has(catalogUsageKey(cat.id, cat.type))) inside += 1;
+      if (isCollected(collectedKeys, cat)) inside += 1;
     }
     return { in: inside, out: visibleCatalogs.length - inside };
   }, [visibleCatalogs, collectedKeys]);
@@ -4291,7 +4292,7 @@ function CatalogsSettingsContent({
   const filteredCatalogs = useMemo(() => {
     if (collectionFilter === 'all') return visibleCatalogs;
     return visibleCatalogs.filter(cat => {
-      const used = collectedKeys.has(catalogUsageKey(cat.id, cat.type));
+      const used = isCollected(collectedKeys, cat);
       return collectionFilter === 'in' ? used : !used;
     });
   }, [visibleCatalogs, collectionFilter, collectedKeys]);
@@ -5942,7 +5943,7 @@ function CatalogsSettingsContent({
 
           const usage = findCollectionUsage(
             config.collections,
-            new Set([...mergedSelected, ...catalogsToDelete].map(c => catalogUsageKey(c.id, c.type)))
+            new Set([...mergedSelected, ...catalogsToDelete].flatMap(c => catalogUsageKeys(c)))
           );
           if (usage.sources > 0) {
             message += `\n\n${describeCollectionUsage(usage)}`;
@@ -6288,7 +6289,7 @@ export function CatalogsSettings() {
       if (tagFilters.length > 0 && !tagFilters.some(t => cat.tags?.includes(t))) return false;
 
       if (collectionFilter !== 'all') {
-        const used = collectedKeys.has(catalogUsageKey(cat.id, cat.type));
+        const used = isCollected(collectedKeys, cat);
         if (collectionFilter === 'in' ? !used : used) return false;
       }
 
