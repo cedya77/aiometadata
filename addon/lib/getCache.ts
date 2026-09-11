@@ -1840,7 +1840,7 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
    }
 
    if (meta.trailers?.length) {
-     queueComponentCache(componentsToCache, componentCacheKeys.trailers, { trailers: meta.trailers });
+     queueComponentCache(componentsToCache, componentCacheKeys.trailers, { trailers: meta.trailers, trailerStreams: meta.trailerStreams });
    }
 
    const extrasForCache = projectAppExtrasForComponentCache(meta.app_extras);
@@ -2146,6 +2146,7 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
        reconstructedMeta.links = data.links;
      } else if (componentName === 'trailers') {
        if (data.trailers) reconstructedMeta.trailers = data.trailers;
+      if (data.trailerStreams) reconstructedMeta.trailerStreams = data.trailerStreams;
       } else if (componentName === 'extras') {
         if (data.app_extras && typeof data.app_extras === 'object' && !Array.isArray(data.app_extras)) {
           reconstructedMeta.app_extras = {

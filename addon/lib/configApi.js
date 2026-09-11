@@ -1078,6 +1078,9 @@ class ConfigApi {
           });
         }
 
+        if (!config.trailerProvider) {
+          config.trailerProvider = 'default';
+        }
         if (!config.posterRatingProvider) {
           const pattern = (config.customPosterUrlPattern || '').trim();
           if (pattern.includes('ratingposterdb.com')) {

@@ -244,6 +244,12 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 
   // ── Meta Providers — sections/ProvidersSettings.tsx ──
   {
+    id: 'providers.trailerProvider', section: 'providers', anchor: 'trailerProvider',
+    label: 'Trailer Source',
+    description: 'Use the metadata provider\'s trailers, or any Stremio trailer addon.',
+    keywords: ['trailer', 'streailer', 'language'],
+  },
+  {
     id: 'providers.movieProvider', section: 'providers', anchor: 'movie-provider',
     label: 'Movie Provider',
     description: 'Source for movie data.',
