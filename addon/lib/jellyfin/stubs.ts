@@ -20,7 +20,6 @@ const LIST_ROUTES = [
   '/Trailers',
   '/Items/Suggestions',
   '/Users/:userId/Suggestions',
-  '/Shows/Upcoming',
   '/Items/:itemId/Intros',
   '/Users/:userId/Items/Intros',
   '/Users/:userId/Items/:itemId/Intros',

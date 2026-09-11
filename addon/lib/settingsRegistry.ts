@@ -391,6 +391,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_UPCOMING_DAYS',
+    envVar: 'JELLYFIN_UPCOMING_DAYS',
+    label: 'Jellyfin Upcoming Window (days)',
+    description: 'How far ahead the Upcoming row looks for episodes of the shows a user is partway through.',
+    category: 'Features',
+    type: 'number',
+    default: 14,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_API_ENABLED',
     envVar: 'JELLYFIN_API_ENABLED',
     label: 'Jellyfin API',

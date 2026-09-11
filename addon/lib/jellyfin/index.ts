@@ -1353,6 +1353,47 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.json(itemList(found, rows.length, startIndex));
   });
 
+  // Episodes airing soon for the shows a user is partway through. A tracker
+  // has no user-scoped calendar, and the metas already carry the air dates.
+  router.get('/Shows/Upcoming', async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const config = await loadConfig(req);
+    const startIndex = Math.max(0, qInt(req, 'StartIndex', 0));
+    const limit = Math.min(Math.max(1, qInt(req, 'Limit', 20)), 100);
+
+    if (!config) {
+      res.json(itemList([], 0, startIndex));
+      return;
+    }
+
+    const [snapshot, resume] = await Promise.all([watchedSnapshot(userUUID, config), resumeSnapshot(userUUID, config)]);
+    const shows = new Map<string, string>();
+    for (const row of [...snapshot.nextUp, ...resume.filter((r) => r.kind === 'episode')]) {
+      if (!shows.has(row.metaId)) shows.set(row.metaId, row.mediaType);
+    }
+    const followed = [...shows.entries()].slice(0, envInt('JELLYFIN_UPCOMING_SHOWS', 60, 1));
+
+    const now = Date.now();
+    const horizon = now + envInt('JELLYFIN_UPCOMING_DAYS', 14, 1) * 24 * 60 * 60 * 1000;
+    const serverId = serverIdFor(userUUID);
+
+    const episodes: any[] = [];
+    await mapWithConcurrency(followed, shelfConcurrency(), async ([metaId, mediaType]) => {
+      const meta = await fetchMeta(userUUID, 'series', metaId);
+      if (!meta) return;
+      const seriesId = encodeJellyfinId({ k: 'series', t: mediaType, i: String(meta.id) });
+      for (const episode of buildEpisodes(meta, mediaType, seriesId, serverId, null)) {
+        const at = Date.parse(episode.PremiereDate || '');
+        if (Number.isFinite(at) && at >= now && at <= horizon) episodes.push(episode);
+      }
+    });
+
+    const ordered = episodes
+      .filter(keepsUnderProfileCap(config))
+      .sort((a, b) => Date.parse(a.PremiereDate) - Date.parse(b.PremiereDate));
+    res.json(itemList(ordered.slice(startIndex, startIndex + limit), ordered.length, startIndex));
+  });
+
   router.get('/Items/Counts', (_req: any, res: any) => {
     res.json({
       MovieCount: 0,
