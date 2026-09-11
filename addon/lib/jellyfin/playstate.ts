@@ -2,7 +2,8 @@ import consola from 'consola';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import redis from '../redisClient';
-import { decodeJellyfinId, normaliseJellyfinId, stremioIdFor } from './ids';
+import { decodeJellyfinId, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
+import { mapWithConcurrency } from '../../utils/concurrency';
 import { fetchMeta } from './items';
 
 const logger = consola.withTag('JellyfinPlaystate');
@@ -263,12 +264,43 @@ export async function recordStopped(req: any, body: any): Promise<void> {
 }
 
 /** The mark-watched a client offers on an item, taken without it being played. */
+// A client marks a season or a whole series with one call on that item's id;
+// the mark applies to each aired episode in it.
+async function markEach(req: any, body: any, event: 'played' | 'unplayed'): Promise<void> {
+  const userUUID = req.params?.userUUID;
+  const itemId = bodyItemId(req, body);
+  if (!userUUID || !itemId) return;
+
+  const descriptor = await decodeJellyfinId(itemId);
+  if (!descriptor || (descriptor.k !== 'season' && descriptor.k !== 'series')) {
+    await report(req, body, event);
+    return;
+  }
+
+  const meta = await fetchMeta(userUUID, 'series', descriptor.i);
+  const videos: any[] = Array.isArray(meta?.videos) ? meta.videos : [];
+  const now = Date.now();
+  const inScope = videos.filter((v: any) => {
+    if (descriptor.k === 'season' ? v.season !== descriptor.s : v.season === 0) return false;
+    const aired = Date.parse(v.released || '');
+    return !Number.isFinite(aired) || aired <= now;
+  });
+
+  await mapWithConcurrency(inScope, 3, async (video: any) => {
+    const parsed = parseStremioId(String(video.id ?? ''));
+    const episodeId = parsed
+      ? encodeJellyfinId({ k: 'episode', t: descriptor.t, i: parsed.base, s: parsed.season, e: parsed.episode as number })
+      : null;
+    if (episodeId) await report(req, { ItemId: episodeId }, event);
+  });
+}
+
 export async function recordPlayed(req: any, body: any): Promise<void> {
-  await report(req, body, 'played');
+  await markEach(req, body, 'played');
 }
 
 export async function recordUnplayed(req: any, body: any): Promise<void> {
-  await report(req, body, 'unplayed');
+  await markEach(req, body, 'unplayed');
 }
 
 /**
