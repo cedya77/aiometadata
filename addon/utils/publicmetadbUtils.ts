@@ -513,8 +513,30 @@ function getMemoryStats() {
   return { rateLimitStates: rateLimitStates.size };
 }
 
+export interface PmdbSkip {
+  intro_start_ms?: number | null;
+  intro_end_ms?: number | null;
+  credits_start_ms?: number | null;
+  credits_end_ms?: number | null;
+  source?: string;
+}
+
+async function fetchSkips(
+  apiKey: string,
+  query: { tmdbId: string | number; mediaType: 'movie' | 'tv'; season?: number | null; episode?: number | null }
+): Promise<PmdbSkip[]> {
+  const params = new URLSearchParams({ tmdb_id: String(query.tmdbId), media_type: query.mediaType });
+  if (query.mediaType === 'tv') {
+    if (query.season !== null && query.season !== undefined) params.set('season', String(query.season));
+    if (query.episode !== null && query.episode !== undefined) params.set('episode', String(query.episode));
+  }
+  const data = await makeRequest(`/api/external/skips?${params.toString()}`, apiKey);
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
 export {
   validateKey,
+  fetchSkips,
   fetchResume,
   saveResume,
   removeWatched,

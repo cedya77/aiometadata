@@ -32,7 +32,6 @@ const LIST_ROUTES = [
   '/Items/:itemId/Chapters',
   '/Items/:itemId/Similar',
   '/Videos/:itemId/AdditionalParts',
-  '/MediaSegments/:itemId',
   '/System/ActivityLog/Entries',
   '/LiveTv/Programs',
   '/LiveTv/Recordings',

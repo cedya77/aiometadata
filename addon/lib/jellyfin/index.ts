@@ -29,6 +29,7 @@ import { coalesce, fetchStreams, mediaSourceFor, normaliseStreamBase, recallIssu
 import { resumeSnapshot, resumeUserData } from './resume';
 import { authorizeQuickConnect, claimQuickConnect, initiateQuickConnect, quickConnectResult, readQuickConnect } from './quickConnect';
 import { avatarTag, keepsUnderProfileCap, listProfiles, profileById, profileByName, profileByUserId, profileKey, profileTags, type Profile } from './profiles';
+import { segmentId, segmentsFor, type SegmentType } from './segments';
 import { applyWatchedState, isWatched, ownNextUpRows, watchedSnapshot } from './watched';
 import { registerStubs } from './stubs';
 import { recordPlayed, recordPlaying, recordProgress, recordStopped, recordUnplayed } from './playstate';
@@ -1479,6 +1480,47 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       .filter(keepsUnderProfileCap(config))
       .sort((a, b) => premiereAt(a) - premiereAt(b));
     res.json(itemList(ordered.slice(startIndex, startIndex + limit), ordered.length, startIndex));
+  });
+
+  // Skip markers, from PublicMetaDB when the user has a key and IntroDB otherwise.
+  router.get('/MediaSegments/:itemId', async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const itemId = normaliseJellyfinId(String(req.params.itemId));
+    const config = await loadConfig(req);
+    const descriptor = await decodeJellyfinId(itemId);
+    if (!config || !descriptor || (descriptor.k !== 'movie' && descriptor.k !== 'episode')) {
+      res.json(itemList([], 0, 0));
+      return;
+    }
+
+    const meta = await fetchMeta(userUUID, descriptor.k === 'movie' ? 'movie' : 'series', descriptor.i);
+    if (!meta) {
+      res.json(itemList([], 0, 0));
+      return;
+    }
+
+    const wanted = String(req.query.includeSegmentTypes ?? req.query.IncludeSegmentTypes ?? '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const segments = await segmentsFor(config, {
+      imdbId: meta._imdbId || meta.imdb_id || null,
+      tmdbId: meta._tmdbId || null,
+      kind: descriptor.k,
+      season: descriptor.k === 'episode' ? descriptor.s ?? null : null,
+      episode: descriptor.k === 'episode' ? descriptor.e ?? null : null,
+    });
+
+    const items = segments
+      .filter((segment) => !wanted.length || wanted.includes(segment.type))
+      .map((segment) => ({
+        Id: segmentId(itemId, segment.type as SegmentType),
+        ItemId: itemId,
+        Type: segment.type,
+        StartTicks: Math.round(segment.startMs * 10000),
+        EndTicks: Math.round(segment.endMs * 10000),
+      }));
+    res.json(itemList(items, items.length, 0));
   });
 
   router.get('/Items/Counts', (_req: any, res: any) => {
