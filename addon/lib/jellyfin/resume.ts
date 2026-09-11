@@ -226,11 +226,20 @@ async function ownRows(userUUID: string, profile: string): Promise<ResumeRow[]> 
 
 export async function resumeSnapshot(userUUID: string, config: any): Promise<ResumeRow[]> {
   const { profileKey, readsTrackers } = require('./profiles');
-  // A tracker only adds what this server never saw, such as another device.
-  const own = await ownRows(userUUID, profileKey(config));
+  const database: any = require('../database');
+  const profile = profileKey(config);
+
+  // A tracker only adds what this server never saw, such as another device. A
+  // video the table knows at all is the table's call, finished or not.
+  const own = await ownRows(userUUID, profile);
   const tracker = readsTrackers(config) ? await trackerSnapshot(userUUID, config) : [];
-  const seen = new Set(own.map((r) => r.videoId));
-  return [...own, ...tracker.filter((r) => !seen.has(r.videoId))].sort((a, b) => b.updatedAt - a.updatedAt);
+  let known = new Map<string, any>();
+  try {
+    known = await database.getPlaystates(userUUID, tracker.map((r) => r.videoId), profile);
+  } catch (error: any) {
+    logger.debug(`Own playstate rows unavailable: ${error?.message || error}`);
+  }
+  return [...own, ...tracker.filter((r) => !known.has(r.videoId))].sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function trackerSnapshot(userUUID: string, config: any): Promise<ResumeRow[]> {

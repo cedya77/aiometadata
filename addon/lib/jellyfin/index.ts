@@ -1,6 +1,7 @@
 import express from 'express';
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
+import { mapWithConcurrency } from '../../utils/concurrency';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import {
   attachJellyfinContext,
@@ -51,6 +52,11 @@ function localAddress(req: any): string {
 
 function baseFor(req: any): string {
   return `${localAddress(req)}/jellyfin/${req.params.userUUID}`;
+}
+
+/** Metas a shelf hydrates at once; each cold anime meta is several Jikan calls. */
+function shelfConcurrency(): number {
+  return envInt('JELLYFIN_SHELF_META_CONCURRENCY', 4, 1);
 }
 
 /** The profile a signed-in request belongs to, or the unrestricted user. */
@@ -1173,13 +1179,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     // One meta per title, not per row: a show with several part-watched
     // episodes is the normal shape of this list.
     const metas = new Map<string, any>();
-    await Promise.all(
-      [...new Set(window.map((row) => row.metaId))].map(async (metaId) => {
-        const row = window.find((r) => r.metaId === metaId)!;
-        const meta = await fetchMeta(userUUID, row.kind === 'movie' ? 'movie' : 'series', metaId);
-        if (meta) metas.set(metaId, meta);
-      })
-    );
+    await mapWithConcurrency([...new Set(window.map((row) => row.metaId))], shelfConcurrency(), async (metaId) => {
+      const row = window.find((r) => r.metaId === metaId)!;
+      const meta = await fetchMeta(userUUID, row.kind === 'movie' ? 'movie' : 'series', metaId);
+      if (meta) metas.set(metaId, meta);
+    });
 
     const items: any[] = [];
     for (const row of window) {
@@ -1313,8 +1317,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const window = rows.slice(startIndex, startIndex + limit);
 
     const items: any[] = [];
-    await Promise.all(
-      window.map(async (row, index) => {
+    await mapWithConcurrency(window, shelfConcurrency(), async (row, index) => {
         const meta = await fetchMeta(userUUID, 'series', row.metaId);
         if (!meta) return;
 
@@ -1343,8 +1346,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
             );
 
         if (target) items[index] = target;
-      })
-    );
+    });
 
     const found = items.filter(Boolean).filter(keepsUnderProfileCap(config));
     await applyWatchedState(found, snapshot, userUUID, profileKey(config));

@@ -2,6 +2,7 @@ import consola from 'consola';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId, parseStremioId } from './ids';
+import { normaliseJellyfinId } from './idsCodec';
 import { EMPTY_USER_DATA } from './dto';
 import { placeholderSources } from './streams';
 import redis from '../redisClient';
@@ -30,7 +31,7 @@ const imageCache = new LRUCache<string, ItemImages>({
  * ids across a restart and asks for their art before anything has rebuilt them.
  */
 function imageKey(scope: string, itemId: string): string {
-  return `${scope}|${itemId}`;
+  return `${scope}|${normaliseJellyfinId(itemId)}`;
 }
 
 function imageTtl(): number {

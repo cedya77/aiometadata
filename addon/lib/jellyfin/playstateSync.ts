@@ -17,9 +17,10 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
 
   const resume = await trackerSnapshot(userUUID, config);
   for (const row of resume) {
-    // A finished row with no position can still take one: that is a rewatch.
+    // A finished row with no position can still take one, a rewatch, but only
+    // from activity newer than the row: an older point is what the mark replaced.
     const existing = await database.getPlaystate(userUUID, row.videoId);
-    if (existing && (Number(existing.position_ms) > 0 || !existing.played)) {
+    if (existing && (Number(existing.position_ms) > 0 || !existing.played || (row.updatedAt || 0) <= Number(existing.updated_at))) {
       skipped += 1;
       continue;
     }

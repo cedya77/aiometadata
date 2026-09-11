@@ -465,6 +465,7 @@ async function creditWatch(parsedId: ParsedMediaId, config: any): Promise<void> 
   const mediaType = parsedId.type === 'movie' ? 'movie' : 'series';
 
   await eachHistoryService(parsedId, config, mediaType, 'addToHistory', 'Crediting a watch');
+  await clearMdblistResumePoint(parsedId, config, mediaType);
   await publicMetaDbHistory(parsedId, config, mediaType, 'watched');
 }
 
@@ -536,7 +537,7 @@ async function unwatch(parsedId: ParsedMediaId, config: any): Promise<void> {
   await publicMetaDbHistory(parsedId, config, mediaType, 'unwatch');
 }
 
-// MDBList holds a resume point apart from watched status, so removing the watch
+// MDBList holds a resume point apart from watched status, so a mark either way
 // leaves the item sitting in continue-watching until the session is cleared.
 async function clearMdblistResumePoint(
   parsedId: ParsedMediaId,

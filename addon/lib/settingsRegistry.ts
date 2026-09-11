@@ -381,6 +381,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 60,
   },
   {
+    key: 'JELLYFIN_SHELF_META_CONCURRENCY',
+    envVar: 'JELLYFIN_SHELF_META_CONCURRENCY',
+    label: 'Jellyfin Shelf Meta Concurrency',
+    description: 'How many titles the Continue Watching and Next Up shelves fetch metadata for at once. A cold anime title costs several Jikan requests, and MyAnimeList blocks a burst of them.',
+    category: 'Features',
+    type: 'number',
+    default: 4,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_API_ENABLED',
     envVar: 'JELLYFIN_API_ENABLED',
     label: 'Jellyfin API',
