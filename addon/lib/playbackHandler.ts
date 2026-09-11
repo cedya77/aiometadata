@@ -132,8 +132,12 @@ export async function handlePlaybackReport(
       (report.played !== null ? ` played=${report.played}` : '')
   );
 
-  if (intentOf(report) === 'watched' && isRepeatWatched(userUUID, report)) {
-    logger.debug(`Already recorded as watched this minute: ${type}/${id}`);
+  // Every decision is recorded, including a reversal: otherwise the last one
+  // remembered stays "watched" and a mark that follows an unmark reads as a
+  // repeat of the first and never reaches a tracker.
+  const intent = intentOf(report);
+  if ((intent === 'watched' || intent === 'unwatched') && isRepeatWatched(userUUID, report)) {
+    logger.debug(`Already recorded as ${intent}: ${type}/${id}`);
     return { status: 204 };
   }
 

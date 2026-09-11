@@ -1631,19 +1631,19 @@ async function clearScrobbleSession(
       ? { show: { ids: idInput, season: { number: season, episode: { number: episode } } } }
       : { movie: { ids: idInput } };
 
+  // Not through the rate-limited wrapper: it counts every 4xx as a failed call
+  // and logs it, and the usual answer here is 404. A title marked watched by
+  // hand was never paused, so it holds no session, and that is not a failure.
   try {
-    await makeRateLimitedRequest(
-      () => httpPost(`https://api.mdblist.com/scrobble/clear?apikey=${apiKey}`, payload, {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 10000,
-        dispatcher: mdblistDispatcher,
-      }),
-      apiKey,
-      `MDBList /scrobble/clear (${formatIdSummary(idInput)})`
-    );
+    await httpPost(`https://api.mdblist.com/scrobble/clear?apikey=${apiKey}`, payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000,
+      dispatcher: mdblistDispatcher,
+    });
     logger.info('[MDBList] Cleared the resume point', { ids: idInput, season, episode });
     return true;
   } catch (error: any) {
+    if (error?.response?.status === 404) return true;
     logger.error(`[MDBList] Clearing the resume point failed: ${error.message}`);
     return false;
   }
