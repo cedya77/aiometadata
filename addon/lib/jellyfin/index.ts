@@ -29,7 +29,7 @@ import { coalesce, fetchStreams, mediaSourceFor, normaliseStreamBase, recallIssu
 import { resumeSnapshot, resumeUserData } from './resume';
 import { authorizeQuickConnect, claimQuickConnect, initiateQuickConnect, quickConnectResult, readQuickConnect } from './quickConnect';
 import { avatarTag, keepsUnderProfileCap, listProfiles, profileById, profileByName, profileByUserId, profileKey, profileTags, type Profile } from './profiles';
-import { applyWatchedState, isWatched, watchedSnapshot } from './watched';
+import { applyWatchedState, isWatched, ownNextUpRows, watchedSnapshot } from './watched';
 import { registerStubs } from './stubs';
 import { recordPlayed, recordPlaying, recordProgress, recordStopped, recordUnplayed } from './playstate';
 
@@ -1300,7 +1300,13 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       ? null
       : new Set((await resumeSnapshot(userUUID, config)).map((r) => r.metaId));
 
-    const rows = snapshot.nextUp.filter((row) => {
+    // The table first; a tracker adds the shows it knows that the table does not.
+    const own = await ownNextUpRows(userUUID, profileKey(config));
+    const known = new Set(own.map((row) => row.metaId));
+    const merged = [...own, ...snapshot.nextUp.filter((row) => !known.has(row.metaId))]
+      .sort((a, b) => b.lastWatchedAt - a.lastWatchedAt);
+
+    const rows = merged.filter((row) => {
       if (resumable && resumable.has(row.metaId)) return false;
       if (!includeRewatching) {
         const counts = snapshot.series.get(row.metaId);
@@ -1317,10 +1323,13 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const window = rows.slice(startIndex, startIndex + limit);
 
     const items: any[] = [];
+    const identity: string[] = [];
     await mapWithConcurrency(window, shelfConcurrency(), async (row, index) => {
         const meta = await fetchMeta(userUUID, 'series', row.metaId);
         if (!meta) return;
 
+        // The table and a tracker can name one show in different id spaces.
+        identity[index] = meta._tmdbId ? `tmdb:${meta._tmdbId}` : meta._imdbId ? `imdb:${meta._imdbId}` : String(meta.id);
         const seriesId = encodeJellyfinId({ k: 'series', t: row.mediaType, i: String(meta.id) });
         const episodes = buildEpisodes(meta, row.mediaType, seriesId, serverId, null);
 
@@ -1345,11 +1354,25 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
                 (row.season === null || episode.ParentIndexNumber === row.season)
             );
 
-        if (target) items[index] = target;
+        if (!target) return;
+
+        // The tracker's next episode may already be played here; the table wins.
+        await applyWatchedState(episodes, snapshot, userUUID, profileKey(config));
+        const from = episodes.indexOf(target);
+        const next = episodes
+          .slice(from)
+          .find((episode: any, i: number) => episode.UserData?.Played !== true && (i === 0 || episode.ParentIndexNumber !== 0));
+        if (next) items[index] = next;
     });
 
-    const found = items.filter(Boolean).filter(keepsUnderProfileCap(config));
-    await applyWatchedState(found, snapshot, userUUID, profileKey(config));
+    const shown = new Set<string>();
+    const found = items
+      .filter((item, index) => {
+        if (!item || shown.has(identity[index])) return false;
+        shown.add(identity[index]);
+        return true;
+      })
+      .filter(keepsUnderProfileCap(config));
     res.json(itemList(found, rows.length, startIndex));
   });
 

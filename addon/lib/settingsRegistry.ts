@@ -391,6 +391,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_NEXTUP_OWN_DAYS',
+    envVar: 'JELLYFIN_NEXTUP_OWN_DAYS',
+    label: 'Jellyfin Next Up Window (days)',
+    description: 'How far back the Next Up row looks for episodes finished through this server. A connected tracker adds its own view on top.',
+    category: 'Features',
+    type: 'number',
+    default: 120,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_UPCOMING_DAYS',
     envVar: 'JELLYFIN_UPCOMING_DAYS',
     label: 'Jellyfin Upcoming Window (days)',

@@ -913,6 +913,14 @@ class Database {
     return (await this.allQuery(query, [userUUID, profile, limit])) || [];
   }
 
+  // Only plays with a time: history a sync copied from a tracker carries none.
+  async listRecentlyPlayed(userUUID: string, since: number, limit: number, profile = ''): Promise<any[]> {
+    const query = this.type === 'sqlite'
+      ? "SELECT * FROM jellyfin_playstate WHERE user_uuid = ? AND profile = ? AND played = 1 AND last_played_at >= ? AND video_id LIKE '%:%:%' ORDER BY last_played_at DESC LIMIT ?"
+      : "SELECT * FROM jellyfin_playstate WHERE user_uuid = $1 AND profile = $2 AND played = 1 AND last_played_at >= $3 AND video_id LIKE '%:%:%' ORDER BY last_played_at DESC LIMIT $4";
+    return (await this.allQuery(query, [userUUID, profile, since, limit])) || [];
+  }
+
   async upsertPlaystate(
     userUUID: string,
     videoId: string,

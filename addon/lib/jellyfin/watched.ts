@@ -7,6 +7,38 @@ import { videoIdFor } from './resume';
 
 const logger = consola.withTag('Jellyfin');
 
+/** Shows this server saw finished, newest first; the shelf moves on from the named episode. */
+export async function ownNextUpRows(userUUID: string, profile: string): Promise<NextUpRow[]> {
+  const database: any = require('../database');
+  const { parseStremioId } = require('./ids');
+  const { envInt } = require('../../utils/envNumber');
+
+  let records: any[] = [];
+  try {
+    const since = Date.now() - envInt('JELLYFIN_NEXTUP_OWN_DAYS', 120, 1) * 24 * 60 * 60 * 1000;
+    records = await database.listRecentlyPlayed(userUUID, since, envInt('JELLYFIN_NEXTUP_OWN_LIMIT', 300, 1), profile);
+  } catch {
+    return [];
+  }
+
+  const rows: NextUpRow[] = [];
+  const seen = new Set<string>();
+  for (const r of records) {
+    const parsed = parseStremioId(String(r.video_id));
+    if (!parsed || parsed.episode === null || parsed.episode === undefined || seen.has(parsed.base)) continue;
+    seen.add(parsed.base);
+    rows.push({
+      metaId: parsed.base,
+      videoId: String(r.video_id),
+      season: parsed.season ?? null,
+      episode: parsed.episode,
+      mediaType: parsed.idType === 'kitsu' || parsed.idType === 'mal' || parsed.idType === 'anilist' ? 'anime' : 'series',
+      lastWatchedAt: Number(r.last_played_at) || Number(r.updated_at) || 0,
+    });
+  }
+  return rows;
+}
+
 export interface NextUpRow {
   metaId: string;
   /** Set when the tracker names the episode exactly, as anime does. */
