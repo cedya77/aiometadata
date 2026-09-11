@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.17.1](https://github.com/cedya77/aiometadata/compare/v2.17.0...v2.17.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* **anime:** list episodes for MAL titles that carry only a count ([b4b4668](https://github.com/cedya77/aiometadata/commit/b4b4668840b47cd0b4243b531efb281cb65d4d37))
+* **catalogs:** count a catalog as in a collection however the source spells it ([c8a7a52](https://github.com/cedya77/aiometadata/commit/c8a7a522fd639d1352e0cd1c49f0f4bb8d3b8100))
+* **collections:** label an imported source after its catalog, not its tile ([0d7b9a5](https://github.com/cedya77/aiometadata/commit/0d7b9a53f809a263d4fc259f8b5b70075db68689))
+* **collections:** name every list in the Unified Media Experience collection ([57d6e82](https://github.com/cedya77/aiometadata/commit/57d6e82b256324f66ddce83d4558d6b7f2de23a9))
+* **collections:** name the Unified Media Experience lists as their services do ([0d7b9a5](https://github.com/cedya77/aiometadata/commit/0d7b9a53f809a263d4fc259f8b5b70075db68689))
+* **mal:** back off when MyAnimeList refuses a burst with 405 ([b4b4668](https://github.com/cedya77/aiometadata/commit/b4b4668840b47cd0b4243b531efb281cb65d4d37))
+* **movielens:** rate every part of a multi-part film and skip malformed IMDb ids ([78e095f](https://github.com/cedya77/aiometadata/commit/78e095f151eacdde1ea80aab6283a91b7f923c0b))
+
 ## [2.17.0](https://github.com/cedya77/aiometadata/compare/v2.16.5...v2.17.0) (2026-09-10)
 
 
