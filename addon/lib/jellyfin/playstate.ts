@@ -281,7 +281,9 @@ export async function recordProgress(req: any, body: any): Promise<void> {
   const positionMs = ticksToMs(body?.PositionTicks ?? body?.positionTicks);
   if (!userUUID || !itemId || positionMs === null) return;
 
-  const key = `${userUUID}:${itemId}`;
+  const { loadConfig } = require('./context');
+  const { profileKey } = require('./profiles');
+  const key = `${userUUID}:${profileKey(await loadConfig(req))}:${itemId}`;
   const previous = await getPosition(key);
   const paused = body?.IsPaused === true || body?.isPaused === true;
 
