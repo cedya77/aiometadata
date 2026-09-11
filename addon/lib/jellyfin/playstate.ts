@@ -141,6 +141,7 @@ function reportFor(
 
 async function recordPlaystate(
   userUUID: string,
+  profile: string,
   session: ResolvedSession,
   event: 'start' | 'pause' | 'stop' | 'played' | 'unplayed',
   positionMs: number,
@@ -152,18 +153,18 @@ async function recordPlaystate(
 
   try {
     if (event === 'unplayed') {
-      await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, played: false, lastPlayedAt: null });
+      await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, played: false, lastPlayedAt: null }, profile);
       return;
     }
     if (event === 'played') {
-      await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now() });
+      await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now() }, profile);
       return;
     }
     if (event === 'stop' && played === true) {
-      await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now() });
+      await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now() }, profile);
       return;
     }
-    await database.upsertPlaystate(userUUID, videoId, { positionMs, runtimeMs, lastPlayedAt: Date.now() });
+    await database.upsertPlaystate(userUUID, videoId, { positionMs, runtimeMs, lastPlayedAt: Date.now() }, profile);
   } catch (error: any) {
     logger.warn(`Playstate write failed for ${videoId}: ${error?.message || error}`);
   }
@@ -188,7 +189,9 @@ async function report(
     return;
   }
 
-  const key = `${userUUID}:${itemId}`;
+  const { profileKey, readsTrackers } = require('./profiles');
+  const profile = profileKey(config);
+  const key = `${userUUID}:${profile}:${itemId}`;
   const known = await getPosition(key);
   const reported = ticksToMs(body?.PositionTicks ?? body?.positionTicks);
   const positionMs = reported ?? known?.positionMs ?? 0;
@@ -215,7 +218,10 @@ async function report(
   }
 
   // The table is written before any tracker is told, so a read never waits on one.
-  await recordPlaystate(userUUID, session, event, positionMs, played);
+  await recordPlaystate(userUUID, profile, session, event, positionMs, played);
+
+  // A separate viewer's plays are not the account's history.
+  if (!readsTrackers(config)) return;
 
   // A pause at zero is what a collapsed position looks like, and a real one says
   // nothing a tracker can use, so it is remembered without writing a resume

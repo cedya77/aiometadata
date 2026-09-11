@@ -1,4 +1,5 @@
-export const JELLYFIN_VERSION = '10.10.7';
+// The official Kotlin SDK refuses anything below 12.0.0.
+export const JELLYFIN_VERSION = '12.0.0';
 export const SERVER_NAME = 'AIOMetadata';
 
 export function publicSystemInfo(serverId: string, localAddress: string): any {
@@ -62,6 +63,9 @@ export function userPolicy(): any {
     IsAdministrator: false,
     IsHidden: true,
     IsDisabled: false,
+    EnableCollectionManagement: false,
+    EnableSubtitleManagement: false,
+    EnableLyricManagement: false,
     BlockedTags: [],
     EnableUserPreferenceAccess: true,
     AccessSchedules: [],
@@ -102,12 +106,13 @@ export function userPolicy(): any {
   };
 }
 
-export function userDto(userId: string, serverId: string, name: string): any {
+export function userDto(userId: string, serverId: string, name: string, primaryImageTag?: string): any {
   const now = new Date().toISOString();
   return {
     Name: name,
     ServerId: serverId,
     Id: userId,
+    ...(primaryImageTag ? { PrimaryImageTag: primaryImageTag } : {}),
     HasPassword: true,
     HasConfiguredPassword: true,
     HasConfiguredEasyPassword: false,
@@ -144,6 +149,7 @@ export function sessionInfo(
     NowPlayingQueueFullItems: [],
     AdditionalUsers: [],
     LastActivityDate: new Date().toISOString(),
+    LastPlaybackCheckIn: new Date().toISOString(),
   };
 }
 
@@ -188,7 +194,7 @@ export function collectionFolder(
     Studios: [],
     GenreItems: [],
     LocalTrailerCount: 0,
-    UserData: { ...EMPTY_USER_DATA, Key: id },
+    UserData: { ...EMPTY_USER_DATA, Key: id, ItemId: id },
     ChildCount: childCount,
     DisplayPreferencesId: id,
     Tags: [],

@@ -10,6 +10,10 @@ export interface UserConfig {
   jellyfinAppPassword?: string;
   /** Tracker the Jellyfin resume shelf reads from. `auto` picks a capable one. */
   jellyfinResumeSource?: 'auto' | 'off' | 'mdblist' | 'trakt' | 'simkl' | 'publicmetadb';
+  /** Name and picture of the main Jellyfin user, the configuration itself. */
+  jellyfinUserName?: string;
+  jellyfinUserAvatar?: string;
+  jellyfinUsers?: Array<{ id: string; name: string; avatar?: string; tags: string[]; trackers?: boolean }>;
   providers?: {
     movie?: string;
     series?: string;

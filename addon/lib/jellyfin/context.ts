@@ -1,5 +1,6 @@
 import consola from 'consola';
-import { readToken } from './tokens';
+import { readTokenSession } from './tokens';
+import { scopeConfigToProfile } from './profiles';
 import { normaliseJellyfinId } from './idsCodec';
 
 const database: any = require('../database');
@@ -57,7 +58,7 @@ export function serverIdFor(userUUID: string): string {
 
 export async function attachJellyfinContext(req: any, _res: any, next: any): Promise<void> {
   const userUUID = req.params?.userUUID;
-  req.jellyfin = { userUUID, token: extractToken(req), authenticated: false, config: null };
+  req.jellyfin = { userUUID, token: extractToken(req), authenticated: false, config: null, profileId: null };
 
   if (!userUUID) {
     next();
@@ -71,9 +72,10 @@ export async function attachJellyfinContext(req: any, _res: any, next: any): Pro
   }
 
   try {
-    const owner = await readToken(token);
-    if (owner && owner === userUUID) {
+    const session = await readTokenSession(token);
+    if (session && session.userUUID === userUUID) {
       req.jellyfin.authenticated = true;
+      req.jellyfin.profileId = session.profileId;
     }
   } catch (error: any) {
     logger.debug(`Token resolution failed: ${error.message}`);
@@ -82,20 +84,22 @@ export async function attachJellyfinContext(req: any, _res: any, next: any): Pro
   next();
 }
 
+/** The configuration as the signed-in profile sees it. */
 export async function loadConfig(req: any): Promise<any> {
   if (req.jellyfin?.config) return req.jellyfin.config;
-  const config = await database.getUserConfig(req.jellyfin.userUUID);
-  if (config) {
-    config.userUUID = req.jellyfin.userUUID;
-    req.jellyfin.config = config;
-  }
+  const stored = await database.getUserConfig(req.jellyfin.userUUID);
+  if (!stored) return null;
+
+  const config = scopeConfigToProfile(stored, req.jellyfin.userUUID, req.jellyfin.profileId ?? null);
+  config.userUUID = req.jellyfin.userUUID;
+  req.jellyfin.config = config;
   return config;
 }
 
 // Artwork is anonymous in Jellyfin, because a client renders it with a plain
 // image tag that cannot carry a token. Requiring one leaves every poster blank
 // in the clients that do not put the key in the query.
-const ANONYMOUS_PATH = /\/Items\/[^/]+\/Images\//i;
+const ANONYMOUS_PATH = /\/(Items|Users)\/[^/]+\/Images\//i;
 
 export function requireAuth(req: any, res: any, next: any): void {
   if (req.jellyfin?.authenticated || ANONYMOUS_PATH.test(String(req.path || ''))) {

@@ -283,6 +283,9 @@ async function mdblistNextUp(apiKey: string): Promise<NextUpRow[]> {
  * cache however often a client asks.
  */
 export async function watchedSnapshot(userUUID: string, config: any): Promise<WatchedSnapshot> {
+  const { readsTrackers } = require('./profiles');
+  if (!readsTrackers(config)) return EMPTY;
+
   const service = sourceFor(config);
   if (!service) return EMPTY;
 
@@ -453,7 +456,8 @@ export function isWatched(snapshot: WatchedSnapshot, stremioId: string): boolean
 export async function applyWatchedState(
   items: any[],
   snapshot: WatchedSnapshot,
-  userUUID?: string
+  userUUID?: string,
+  profile = ''
 ): Promise<void> {
   if (!items.length) return;
 
@@ -478,7 +482,7 @@ export async function applyWatchedState(
       .filter(Boolean) as string[];
     try {
       const database: any = require('../database');
-      own = await database.getPlaystates(userUUID, videoIds);
+      own = await database.getPlaystates(userUUID, videoIds, profile);
     } catch {
       own = new Map();
     }

@@ -15,6 +15,7 @@ import { TagChip } from "@/components/TagChip";
 import { AGE_RATING_ORDER } from "@/lib/ageRatings";
 import type { TagDef } from "@/contexts/config";
 import { ManagerSync } from "@/components/ManagerSync";
+import { JellyfinDialog } from "@/components/JellyfinDialog";
 import { cn } from "@/lib/utils";
 import { keyStatuses } from "@/lib/configStatus";
 import { Callout } from "@/components/settings/Callout";
@@ -52,19 +53,6 @@ function ConfigurationSectionFallback() {
       <Skeleton className="h-24 w-full" />
     </div>
   );
-}
-
-/**
- * Typed by hand on a TV remote as often as pasted, so the alphabet leaves out
- * the characters that are read wrong and the groups keep the place visible.
- */
-function newClientPassword(): string {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-
-  const chars = Array.from(bytes, (b) => alphabet[b % alphabet.length]);
-  return [0, 4, 8, 12].map((i) => chars.slice(i, i + 4).join('')).join('-');
 }
 
 export function ConfigurationManager() {
@@ -312,28 +300,7 @@ export function ConfigurationManager() {
   }, [identity, selectedTags]);
 
   const [jellyfinEnabled, setJellyfinEnabled] = useState(false);
-  const [urlTab, setUrlTab] = useState<'stremio' | 'jellyfin'>('stremio');
-
-  // Only services that store a playback position can answer the Continue
-  // Watching row, and only when they are connected and tracking is on.
-  const resumeSourceOptions = useMemo(() => {
-    const candidates: Array<{ value: string; label: string; ready: boolean }> = [
-      { value: 'mdblist', label: 'MDBList', ready: Boolean(config.apiKeys?.mdblist) && config.mdblistWatchTracking !== false },
-      { value: 'trakt', label: 'Trakt', ready: Boolean(config.apiKeys?.traktTokenId) && config.traktWatchTracking !== false },
-      { value: 'simkl', label: 'Simkl', ready: Boolean(config.apiKeys?.simklTokenId) && config.simklWatchTracking !== false },
-      { value: 'publicmetadb', label: 'PublicMetaDB', ready: Boolean(config.apiKeys?.publicmetadb) && config.publicmetadbWatchTracking !== false },
-    ];
-    return candidates.filter((c) => c.ready);
-  }, [
-    config.apiKeys?.mdblist,
-    config.apiKeys?.traktTokenId,
-    config.apiKeys?.simklTokenId,
-    config.apiKeys?.publicmetadb,
-    config.mdblistWatchTracking,
-    config.traktWatchTracking,
-    config.simklWatchTracking,
-    config.publicmetadbWatchTracking,
-  ]);
+  const [showJellyfin, setShowJellyfin] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -534,160 +501,7 @@ export function ConfigurationManager() {
                 </div>
               </div>
               <div>
-                {jellyfinEnabled ? (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setUrlTab('stremio')}
-                      aria-pressed={urlTab === 'stremio'}
-                      className={cn(
-                        'rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
-                        urlTab === 'stremio'
-                          ? 'border-primary bg-primary text-primary-foreground'
-                          : 'border-muted-foreground/30 text-muted-foreground hover:text-foreground',
-                      )}
-                    >
-                      Install URL
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setUrlTab('jellyfin')}
-                      aria-pressed={urlTab === 'jellyfin'}
-                      className={cn(
-                        'flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
-                        urlTab === 'jellyfin'
-                          ? 'border-primary bg-primary text-primary-foreground'
-                          : 'border-muted-foreground/30 text-muted-foreground hover:text-foreground',
-                      )}
-                    >
-                      <img src="/jellyfin_icon.svg" alt="" aria-hidden="true" className="h-3.5 w-3.5 object-contain" />
-                      Jellyfin
-                    </button>
-                  </div>
-                ) : (
-                  <Label className="text-sm font-medium">Install URL</Label>
-                )}
-                {urlTab === 'jellyfin' && jellyfinEnabled ? (
-                  <div className="space-y-2 mt-2">
-                    <Label htmlFor="jellyfin-server-address" className="text-sm font-medium">Server address</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        id="jellyfin-server-address"
-                        value={`${window.location.origin}/jellyfin/${identity.userUUID}`}
-                        readOnly
-                        className="font-mono text-sm"
-                        aria-label="Jellyfin server address"
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => copyToClipboard(`${window.location.origin}/jellyfin/${identity.userUUID}`, 'Jellyfin server address')}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Add this as a server in your Jellyfin client, then sign in with any username and this configuration's password.
-                    </p>
-
-                    <p className="text-xs text-amber-400">
-                      Anyone with this address and your password can browse your catalogs. Treat it like the install URL.
-                    </p>
-
-                    <div className="space-y-1.5 border-t pt-3">
-                      <Label htmlFor="jellyfin-client-password" className="text-sm font-medium">Client password</Label>
-                      {config.jellyfinAppPassword ? (
-                        <div className="flex items-center gap-2">
-                          <Input
-                            id="jellyfin-client-password"
-                            value={config.jellyfinAppPassword}
-                            readOnly
-                            className="font-mono text-sm"
-                            aria-label="Jellyfin client password"
-                          />
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => copyToClipboard(config.jellyfinAppPassword ?? '', 'Client password')}
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setConfig(prev => ({ ...prev, jellyfinAppPassword: newClientPassword() }))}
-                          >
-                            Replace
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full sm:w-auto"
-                          onClick={() => setConfig(prev => ({ ...prev, jellyfinAppPassword: newClientPassword() }))}
-                        >
-                          Generate
-                        </Button>
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        Sign in with this instead of the configuration password, which an account created through a sign-in provider never set. It works only on this address, and replacing it signs the clients out.
-                      </p>
-                    </div>
-
-                    <div className="space-y-1.5 border-t pt-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <Label htmlFor="jellyfin-stream-url" className="text-sm font-medium">Playback</Label>
-                        <span className={cn(
-                          'rounded-full border px-2 py-0.5 text-[11px] font-medium',
-                          config.jellyfinStreamUrl
-                            ? 'border-emerald-500/40 text-emerald-400'
-                            : 'border-amber-500/40 text-amber-400',
-                        )}>
-                          {config.jellyfinStreamUrl ? 'Stream addon set' : 'Browse only'}
-                        </span>
-                      </div>
-                      <Input
-                        id="jellyfin-stream-url"
-                        value={config.jellyfinStreamUrl ?? ''}
-                        placeholder="https://your-aiostreams/stremio/<config>/manifest.json"
-                        className="font-mono text-xs"
-                        onChange={(e) => setConfig(prev => ({ ...prev, jellyfinStreamUrl: e.target.value }))}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Paste a stream addon's install URL, such as your AIOStreams. Without one, titles browse but will not play. AIOMetadata never serves the video itself; the client fetches it from that addon directly.
-                      </p>
-                    </div>
-
-                    <div className="space-y-1.5 border-t pt-3">
-                      <Label htmlFor="jellyfin-resume-source" className="text-sm font-medium">Also read from</Label>
-                      <Select
-                        value={config.jellyfinResumeSource ?? 'auto'}
-                        onValueChange={(value) => setConfig(prev => ({ ...prev, jellyfinResumeSource: value as NonNullable<typeof prev.jellyfinResumeSource> }))}
-                      >
-                        <SelectTrigger id="jellyfin-resume-source" className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="auto">Automatic</SelectItem>
-                          {resumeSourceOptions.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                          ))}
-                          <SelectItem value="off">This server only</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">
-                        Anything played through this server is remembered here and shows in Continue Watching and as watched on its own. A connected tracker adds what was played elsewhere, such as on a phone. Only services that store a playback position can, so AniList and MyAnimeList are not offered. Automatic uses whichever connected service can.
-                      </p>
-                      {resumeSourceOptions.length === 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          No connected service stores playback positions, so only what is played through this server is shown. That is enough for a single client.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                <>
+                <Label className="text-sm font-medium">Install URL</Label>
                 {profileTags.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                     <span className="text-xs text-muted-foreground mr-1">Profile:</span>
@@ -768,17 +582,19 @@ export function ConfigurationManager() {
                     Search results rarely carry a rating, so expect search to return very little.
                   </p>
                 )}
-                </>
-                )}
               </div>
             </div>
             <Callout variant="info">
               <strong>Important:</strong> Save your UUID and password. You'll need both to access your configuration later.
             </Callout>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              {identity && jellyfinEnabled ? (
+                <JellyfinDialog open={showJellyfin} onOpenChange={setShowJellyfin} userUUID={identity.userUUID} />
+              ) : null}
               <Dialog open={showLoadDialog} onOpenChange={setShowLoadDialog}>
                 <Button
                   variant="outline"
+                  className="w-full sm:w-auto"
                   onClick={() => setShowLoadDialog(true)}
                   disabled={isLoadingLoad}
                 >
@@ -848,7 +664,7 @@ export function ConfigurationManager() {
                   </div>
                 </DialogContent>
               </Dialog>
-              <Button onClick={() => openInstall(taggedInstallUrl)}>
+              <Button className="w-full sm:w-auto" onClick={() => openInstall(taggedInstallUrl)}>
                 <Download className="h-4 w-4 mr-2" /> Install
               </Button>
               <ManagerSync
@@ -856,6 +672,11 @@ export function ConfigurationManager() {
                 currentProfileTags={selectedTags}
                 onSynced={() => { markManifestInstalled(); }}
               />
+              {jellyfinEnabled ? (
+                <Button variant="outline" className="w-full sm:w-auto" onClick={() => setShowJellyfin(true)}>
+                  <img src="/jellyfin_icon.svg" alt="" aria-hidden="true" className="h-4 w-4 mr-2 object-contain" /> Jellyfin
+                </Button>
+              ) : null}
             </div>
           </CardContent>
         </Card>

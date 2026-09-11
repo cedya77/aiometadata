@@ -82,13 +82,15 @@ export async function fetchCatalogPage(
   userUUID: string,
   type: string,
   catalogId: string,
-  extras: Record<string, string> = {}
+  extras: Record<string, string> = {},
+  tags: string[] = []
 ): Promise<any[]> {
   const parts = Object.entries(extras)
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`);
   const extraSegment = parts.length ? `/${parts.join('&')}` : '';
-  const url = `${localBase()}/stremio/${encodeURIComponent(userUUID)}/catalog/${encodeURIComponent(type)}/${encodeURIComponent(catalogId)}${extraSegment}.json`;
+  const profile = tags.length ? `?${tags.map((t) => `tag=${encodeURIComponent(t)}`).join('&')}` : '';
+  const url = `${localBase()}/stremio/${encodeURIComponent(userUUID)}/catalog/${encodeURIComponent(type)}/${encodeURIComponent(catalogId)}${extraSegment}.json${profile}`;
 
   try {
     const response = await fetch(url, { headers: { accept: 'application/json' } });
@@ -142,13 +144,14 @@ export async function fetchWindow(
   startIndex: number,
   limit: number,
   extras: Record<string, string> = {},
-  keep?: (meta: any) => boolean
+  keep?: (meta: any) => boolean,
+  tags: string[] = []
 ): Promise<Window> {
-  const lengthKey = `${catalog.type}|${catalog.id}|${extras.genre ?? ''}|${extras.search ?? ''}`;
+  const lengthKey = `${catalog.type}|${catalog.id}|${extras.genre ?? ''}|${extras.search ?? ''}|${tags.join(',')}`;
   let pageLength = pageLengths.get(lengthKey);
 
   if (!pageLength && startIndex > 0) {
-    const probe = await fetchCatalogPage(userUUID, catalog.type, catalog.id, extras);
+    const probe = await fetchCatalogPage(userUUID, catalog.type, catalog.id, extras, tags);
     if (probe.length > 0) {
       pageLength = probe.length;
       pageLengths.set(lengthKey, pageLength);
@@ -168,7 +171,7 @@ export async function fetchWindow(
     const page = await fetchCatalogPage(userUUID, catalog.type, catalog.id, {
       ...extras,
       ...(skip > 0 ? { skip: String(skip) } : {}),
-    });
+    }, tags);
     pages++;
 
     if (page.length === 0) {
@@ -325,7 +328,7 @@ export function metaToBaseItem(
     ImageTags: imageTags,
     BackdropImageTags: images.backdrop ? ['b'] : [],
     ImageBlurHashes: {},
-    UserData: { ...EMPTY_USER_DATA, Key: id },
+    UserData: { ...EMPTY_USER_DATA, Key: id, ItemId: id },
     LocationType: 'FileSystem',
     PrimaryImageAspectRatio: itemType === 'Movie' ? 0.6666666666666666 : 0.6666666666666666,
     CanDelete: false,
@@ -428,7 +431,7 @@ export function buildSeasons(
       IndexNumber: season,
       ChildCount: episodes.length,
       RecursiveItemCount: episodes.length,
-      UserData: { ...EMPTY_USER_DATA, Key: id },
+      UserData: { ...EMPTY_USER_DATA, Key: id, ItemId: id },
       ImageTags: primary ? { Primary: 'p' } : {},
       BackdropImageTags: [],
       ImageBlurHashes: {},
@@ -487,6 +490,7 @@ export function buildEpisodes(
       SeasonId: hasSeason ? parentSeasonId : null,
       SeriesId: seriesId,
       SeriesName: meta.name,
+      OfficialRating: meta.app_extras?.certification || null,
       ParentIndexNumber: hasSeason ? video.season : null,
       IndexNumber: Number(video.episode),
       Overview: video.overview || null,
@@ -496,7 +500,7 @@ export function buildEpisodes(
       ImageTags: video.thumbnail ? { Primary: 'p' } : {},
       BackdropImageTags: [],
       ImageBlurHashes: {},
-      UserData: { ...EMPTY_USER_DATA, Key: id },
+      UserData: { ...EMPTY_USER_DATA, Key: id, ItemId: id },
       LocationType: 'FileSystem',
       PrimaryImageAspectRatio: 1.7777777777777777,
       CanDelete: false,

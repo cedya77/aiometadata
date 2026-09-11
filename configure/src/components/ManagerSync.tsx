@@ -58,7 +58,7 @@ const MANAGERS: ManagerDef[] = [
 
 const CUSTOM_INSTANCE = 'custom';
 
-const SYNC_BUTTON_CLASSES = "border-violet-400/30 bg-violet-500/15 text-violet-600 dark:text-violet-300 hover:bg-violet-500/25 hover:text-violet-700 dark:hover:text-violet-200";
+const SYNC_BUTTON_CLASSES = "w-full sm:w-auto border-violet-400/30 bg-violet-500/15 text-violet-600 dark:text-violet-300 hover:bg-violet-500/25 hover:text-violet-700 dark:hover:text-violet-200";
 
 interface ManagerSyncProps {
   /** Install URL without a tag query. Each account appends the profile it is bound to. */

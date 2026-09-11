@@ -23,9 +23,11 @@ import {
 import { buildViews, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBrowsable } from './views';
 import { decodeJellyfinId } from './ids';
 import { buildEpisodes, buildSeasons, fetchMeta, fetchWindow, filterByIncludeTypes, includeTypesFilter, metaToBaseItem, recallImages } from './items';
-import { encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
+import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { coalesce, fetchStreams, mediaSourceFor, normaliseStreamBase, recallIssued, recallStreams, rememberStreams, toPlayable } from './streams';
 import { resumeSnapshot, resumeUserData } from './resume';
+import { authorizeQuickConnect, claimQuickConnect, initiateQuickConnect, quickConnectResult, readQuickConnect } from './quickConnect';
+import { avatarTag, keepsUnderProfileCap, listProfiles, profileById, profileByName, profileByUserId, profileKey, profileTags, type Profile } from './profiles';
 import { applyWatchedState, isWatched, watchedSnapshot } from './watched';
 import { registerStubs } from './stubs';
 import { recordPlayed, recordPlaying, recordProgress, recordStopped, recordUnplayed } from './playstate';
@@ -51,8 +53,13 @@ function baseFor(req: any): string {
   return `${localAddress(req)}/jellyfin/${req.params.userUUID}`;
 }
 
-function userNameFor(config: any, userUUID: string): string {
-  return config?.jellyfinUserName || config?.addonName || userUUID.slice(0, 8);
+/** The profile a signed-in request belongs to, or the unrestricted user. */
+function sessionProfile(req: any, config: any): Profile {
+  return profileById(config, req.params.userUUID, req.jellyfin?.profileId ?? null);
+}
+
+function userFor(profile: Profile, serverId: string): any {
+  return userDto(profile.userId, serverId, profile.name, avatarTag(profile));
 }
 
 export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): any {
@@ -85,6 +92,27 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     next();
   });
 
+  // The official SDK parses ids as UUIDs and refuses the bare form. ServerId is
+  // a plain string, but a client matches it to the Id it saw at discovery.
+  const ID_FIELD = /^(Id|ItemId|ParentId|SeriesId|SeasonId|UserId|ServerId|AlbumId|ChannelId|ParentLogoItemId|ParentBackdropItemId|ParentThumbItemId|ParentPrimaryImageItemId|Key|DisplayPreferencesId|PlaylistItemId|MediaSourceId)$/;
+  const BARE_GUID = /^[0-9a-f]{32}$/i;
+  const dashIds = (value: any): any => {
+    if (Array.isArray(value)) return value.map(dashIds);
+    if (!value || typeof value !== 'object') return value;
+    const out: any = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (typeof v === 'string' && BARE_GUID.test(v) && (ID_FIELD.test(k) || k.endsWith('Ids'))) out[k] = dashedGuid(v);
+      else if (Array.isArray(v) && k.endsWith('Ids')) out[k] = v.map((x) => (typeof x === 'string' && BARE_GUID.test(x) ? dashedGuid(x) : x));
+      else out[k] = dashIds(v);
+    }
+    return out;
+  };
+  router.use((_req: any, res: any, next: any) => {
+    const json = res.json.bind(res);
+    res.json = (body: any) => json(dashIds(body));
+    next();
+  });
+
   router.use(attachJellyfinContext);
 
   // --- Handshake ---
@@ -98,7 +126,21 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   });
 
   router.get('/QuickConnect/Enabled', (_req: any, res: any) => {
-    res.json(false);
+    res.json(true);
+  });
+
+  router.post('/QuickConnect/Initiate', loginRateLimit, async (req: any, res: any) => {
+    const request = await initiateQuickConnect(req.params.userUUID, clientInfo(req));
+    res.json(quickConnectResult(request));
+  });
+
+  router.get('/QuickConnect/Connect', async (req: any, res: any) => {
+    const request = await readQuickConnect(req.params.userUUID, String(req.query.secret ?? req.query.Secret ?? ''));
+    if (!request) {
+      res.status(404).json({ Message: 'Unknown quick connect secret' });
+      return;
+    }
+    res.json(quickConnectResult(request));
   });
 
   router.get('/Branding/Configuration', (_req: any, res: any) => {
@@ -115,13 +157,49 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.type('text/css').send('');
   });
 
-  router.get('/Users/Public', (_req: any, res: any) => {
-    res.json([]);
+  router.get('/Users/Public', async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const config = await database.getUserConfig(userUUID).catch(() => null);
+    if (!config) {
+      res.json([]);
+      return;
+    }
+    const serverId = serverIdFor(userUUID);
+    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId)));
+  });
+
+  // Anonymous, like item art: a client renders it with a plain image tag.
+  router.get(['/Users/:userId/Images/Primary', '/Users/:userId/Images/Primary/:index'], async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const config = await database.getUserConfig(userUUID).catch(() => null);
+    const profile = config && profileByUserId(config, userUUID, req.params.userId);
+    if (!profile) {
+      res.status(404).end();
+      return;
+    }
+
+    if (!profile.avatar) {
+      res.status(404).end();
+      return;
+    }
+    res.redirect(302, profile.avatar);
   });
 
   // --- Authentication ---
 
   /** Compared in constant time so a wrong guess reveals nothing by how long it took. */
+  const signIn = async (req: any, res: any, userUUID: string, config: any, profile: Profile): Promise<void> => {
+    const serverId = serverIdFor(userUUID);
+    const token = await mintToken(userUUID, profile.id);
+
+    res.json({
+      User: userFor(profile, serverId),
+      SessionInfo: sessionInfo(profile.userId, serverId, profile.name, clientInfo(req)),
+      AccessToken: token,
+      ServerId: serverId,
+    });
+  };
+
   const matchesAppPassword = (stored: string, supplied: string): boolean => {
     const a = Buffer.from(String(stored));
     const b = Buffer.from(supplied);
@@ -150,17 +228,24 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return;
     }
 
-    const serverId = serverIdFor(userUUID);
-    const userId = serverId;
-    const name = userNameFor(config, userUUID);
-    const token = await mintToken(userUUID);
+    await signIn(req, res, userUUID, config, profileByName(config, userUUID, req.body?.Username ?? req.body?.username));
+  });
 
-    res.json({
-      User: userDto(userId, serverId, name),
-      SessionInfo: sessionInfo(userId, serverId, name, clientInfo(req)),
-      AccessToken: token,
-      ServerId: serverId,
-    });
+  router.post('/Users/AuthenticateWithQuickConnect', loginRateLimit, async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const request = await claimQuickConnect(userUUID, String(req.body?.Secret ?? req.body?.secret ?? ''));
+    if (!request) {
+      res.status(401).json({ Message: 'Quick connect request is not approved' });
+      return;
+    }
+
+    const config = await database.getUserConfig(userUUID).catch(() => null);
+    if (!config) {
+      res.status(401).json({ Message: 'Unknown configuration' });
+      return;
+    }
+
+    await signIn(req, res, userUUID, config, profileById(config, userUUID, request.profileId));
   });
 
   router.post('/Sessions/Logout', async (req: any, res: any) => {
@@ -176,6 +261,18 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.json(systemInfo(serverIdFor(req.params.userUUID), baseFor(req)));
   });
 
+  router.post('/QuickConnect/Authorize', async (req: any, res: any) => {
+    const config = await loadConfig(req);
+    const asked = req.query.userId ?? req.query.UserId;
+    const profile = (asked && profileByUserId(config, req.params.userUUID, asked)) || sessionProfile(req, config);
+    const request = await authorizeQuickConnect(req.params.userUUID, String(req.query.code ?? req.query.Code ?? ''), profile.id);
+    if (!request) {
+      res.status(404).json({ Message: 'Unknown quick connect code' });
+      return;
+    }
+    res.json(true);
+  });
+
   router.get('/System/Endpoint', (_req: any, res: any) => {
     res.json({ IsLocal: false, IsInNetwork: false });
   });
@@ -188,9 +285,16 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const userUUID = req.params.userUUID;
     const serverId = serverIdFor(userUUID);
     const config = await database.getUserConfig(userUUID);
-    res.json(userDto(serverId, serverId, userNameFor(config, userUUID)));
+    const profile = (req.params.userId && profileByUserId(config, userUUID, req.params.userId)) || sessionProfile(req, config);
+    res.json(userFor(profile, serverId));
   };
   router.get('/Users/Me', meHandler);
+  router.get('/Users', async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const config = await database.getUserConfig(userUUID);
+    const serverId = serverIdFor(userUUID);
+    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId)));
+  });
   router.get('/Users/:userId', meHandler);
 
   const viewsHandler = async (req: any, res: any) => {
@@ -403,7 +507,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           Math.max(0, startIndex - offset),
           limit - collected.length + Math.max(0, offset - startIndex),
           extras,
-          includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined)
+          includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined),
+          profileTags(config)
         ).catch(() => ({ items: [] as any[], hasMore: false }));
 
         const viewId = encodeJellyfinId({ k: 'view', t: catalog.type, c: catalog.id });
@@ -426,7 +531,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         collected,
         includeItemTypes ? String(includeItemTypes) : undefined
       );
-      await applyWatchedState(across, await watchedSnapshot(userUUID, config), userUUID);
+      await applyWatchedState(across, await watchedSnapshot(userUUID, config), userUUID, profileKey(config));
 
       res.json(itemList(
         across,
@@ -455,7 +560,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         let children = wantsEpisodes
           ? buildEpisodes(meta, descriptor.t, encodeSeriesId(descriptor), serverId, descriptor.k === 'season' ? descriptor.s : null)
           : buildSeasons(meta, descriptor.t, String(parentId), serverId);
-        await applyWatchedState(children, await watchedSnapshot(userUUID, config), userUUID);
+        await applyWatchedState(children, await watchedSnapshot(userUUID, config), userUUID, profileKey(config));
 
         const filters = String(req.query.Filters ?? req.query.filters ?? '').split(',').map((f) => f.trim());
         if (filters.includes('IsPlayed')) children = children.filter((c: any) => c.UserData?.Played === true);
@@ -487,13 +592,20 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       catalog = found;
     }
 
+    // A few catalogs list nothing without a genre; a browsing client never sends one.
+    if (!extras.genre && (await needsDefaultGenre(userUUID, catalog, profileTags(config)))) {
+      const genreExtra = (catalog.extra ?? []).find((e: any) => e?.name === 'genre' && e?.default);
+      if (genreExtra) extras.genre = String(genreExtra.default);
+    }
+
     const window = await fetchWindow(
       userUUID,
       catalog,
       startIndex,
       limit,
       extras,
-      includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined)
+      includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined),
+      profileTags(config)
     );
     const hasMore = window.hasMore;
 
@@ -511,9 +623,24 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       ? startIndex + filtered.length + limit
       : startIndex + filtered.length;
 
-    await applyWatchedState(filtered, await watchedSnapshot(userUUID, config), userUUID);
+    await applyWatchedState(filtered, await watchedSnapshot(userUUID, config), userUUID, profileKey(config));
     res.json(itemList(filtered, total, startIndex));
   });
+
+  const genreNeeded = new Map<string, boolean>();
+  const needsDefaultGenre = async (userUUID: string, catalog: any, tags: string[]): Promise<boolean> => {
+    const genreExtra = (catalog.extra ?? []).find((e: any) => e?.name === 'genre' && e?.default && e.default !== 'None');
+    if (!genreExtra) return false;
+
+    const key = `${catalog.type}|${catalog.id}|${tags.join(',')}`;
+    const known = genreNeeded.get(key);
+    if (known !== undefined) return known;
+
+    const probe = await fetchWindow(userUUID, catalog, 0, 1, {}, undefined, tags);
+    const needed = probe.items.length === 0;
+    genreNeeded.set(key, needed);
+    return needed;
+  };
 
   const resolveMediaSources = async (
     req: any,
@@ -738,7 +865,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     const pages = await Promise.all(
       catalogs.map((catalog: any) =>
-        fetchWindow(userUUID, catalog, 0, limit, { search: term })
+        fetchWindow(userUUID, catalog, 0, limit, { search: term }, undefined, profileTags(config))
           .then((window) => ({ catalog, items: window.items }))
           .catch(() => ({ catalog, items: [] as any[] }))
       )
@@ -960,7 +1087,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.json(chain);
   });
 
-  router.get('/Items/:itemId/Images/:imageType', async (req: any, res: any) => {
+  router.get(['/Items/:itemId/Images/:imageType', '/Items/:itemId/Images/:imageType/:index'], async (req: any, res: any) => {
     const images = await imagesFor(req, String(req.params.itemId));
     if (!images) {
       res.status(404).end();
@@ -1013,7 +1140,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
 
     const serverId = serverIdFor(userUUID);
-    const window = await fetchWindow(userUUID, catalog, 0, limit);
+    const window = await fetchWindow(userUUID, catalog, 0, limit, {}, undefined, profileTags(config));
     const items = window.items
       .filter((meta: any) => meta && meta.id)
       .map((meta: any) => metaToBaseItem(meta, catalog.type, serverId, String(parentId)));
@@ -1090,7 +1217,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       items.push(target);
     }
 
-    res.json(itemList(items, rows.length, startIndex));
+    res.json(itemList(items.filter(keepsUnderProfileCap(config)), rows.length, startIndex));
   });
 
   const seriesMetaFor = async (req: any) => {
@@ -1138,7 +1265,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     );
     const episodesConfig = await loadConfig(req);
     if (episodesConfig) {
-      await applyWatchedState(episodes, await watchedSnapshot(req.params.userUUID, episodesConfig), req.params.userUUID);
+      await applyWatchedState(episodes, await watchedSnapshot(req.params.userUUID, episodesConfig), req.params.userUUID, profileKey(episodesConfig));
     }
     res.json(itemList(episodes, episodes.length, 0));
   });
@@ -1219,8 +1346,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       })
     );
 
-    const found = items.filter(Boolean);
-    await applyWatchedState(found, snapshot, userUUID);
+    const found = items.filter(Boolean).filter(keepsUnderProfileCap(config));
+    await applyWatchedState(found, snapshot, userUUID, profileKey(config));
     res.json(itemList(found, rows.length, startIndex));
   });
 
@@ -1275,7 +1402,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
       const episodeConfig = await loadConfig(req);
       if (episodeConfig) {
-        await applyWatchedState([episode], await watchedSnapshot(userUUID, episodeConfig), userUUID);
+        await applyWatchedState([episode], await watchedSnapshot(userUUID, episodeConfig), userUUID, profileKey(episodeConfig));
       }
 
       res.json(episode);
@@ -1303,7 +1430,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
       const seasonConfig = await loadConfig(req);
       if (seasonConfig) {
-        await applyWatchedState([season], await watchedSnapshot(userUUID, seasonConfig), userUUID);
+        await applyWatchedState([season], await watchedSnapshot(userUUID, seasonConfig), userUUID, profileKey(seasonConfig));
       }
 
       res.json(season);
@@ -1335,7 +1462,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
       const itemConfig = await loadConfig(req);
       if (itemConfig) {
-        await applyWatchedState([item], await watchedSnapshot(userUUID, itemConfig), userUUID);
+        await applyWatchedState([item], await watchedSnapshot(userUUID, itemConfig), userUUID, profileKey(itemConfig));
       }
 
       res.json(item);
@@ -1371,7 +1498,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const userUUID = req.params.userUUID;
     const serverId = serverIdFor(userUUID);
     const config = await database.getUserConfig(userUUID);
-    res.json([sessionInfo(serverId, serverId, userNameFor(config, userUUID), clientInfo(req))]);
+    const profile = sessionProfile(req, config);
+    res.json([sessionInfo(profile.userId, serverId, profile.name, clientInfo(req))]);
   });
 
   router.post(['/Sessions/Capabilities', '/Sessions/Capabilities/Full'], (_req: any, res: any) => {
@@ -1496,6 +1624,31 @@ export function register(addon: any, options: { loginRateLimit?: any; enabled?: 
   };
 
   addon.use('/jellyfin/:userUUID', gate, createJellyfinRouter({ loginRateLimit: options.loginRateLimit }));
+
+  // Approved from the configuration page, by session or configuration password.
+  const approveRateLimit = options.loginRateLimit || ((_req: any, _res: any, next: any) => next());
+  addon.post('/api/jellyfin/:userUUID/quick-connect/approve', gate, approveRateLimit, async (req: any, res: any) => {
+    const userUUID = String(req.params.userUUID);
+    const password = req.body?.password;
+
+    const accountId = req.session?.accountId;
+    const owns = Boolean(accountId) && (await database.ownsConfig(accountId, userUUID));
+    const verified = !owns && password ? await database.verifyUserAndGetConfig(userUUID, String(password)) : null;
+    if (!owns && !verified) {
+      res.status(401).json({ error: 'Sign in or enter the configuration password to approve a device' });
+      return;
+    }
+
+    const config = verified ?? (await database.getUserConfig(userUUID).catch(() => null));
+    const profile = profileById(config, userUUID, typeof req.body?.profile === 'string' ? req.body.profile : null);
+    const request = await authorizeQuickConnect(userUUID, String(req.body?.code ?? ''), profile.id);
+    if (!request) {
+      res.status(404).json({ error: 'No device is waiting with that code. Codes expire after a few minutes.' });
+      return;
+    }
+
+    res.json({ approved: true, device: request.deviceName, app: request.appName, profile: profile.name });
+  });
 }
 
 export { readToken };

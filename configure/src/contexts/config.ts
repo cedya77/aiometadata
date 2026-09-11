@@ -15,6 +15,18 @@ export interface TagDef {
   allowUnratedContent?: boolean;
 }
 
+/** A user on the Jellyfin sign-in screen, made of the profile tags it picks. */
+export interface JellyfinUser {
+  id: string;
+  name: string;
+  /** Picture address. Absent shows the client's own placeholder. */
+  avatar?: string;
+  /** Catalogs carrying any of these are in; none means every catalog. */
+  tags: string[];
+  /** Whether this user is the same person as the account, sharing its watch history and trackers. */
+  trackers?: boolean;
+}
+
 export interface CatalogConfig {
   id: string;
   name: string;
@@ -383,6 +395,10 @@ export interface AppConfig {
   jellyfinAppPassword?: string;
   /** Tracker the Jellyfin resume shelf reads from. `auto` picks a capable one. */
   jellyfinResumeSource?: 'auto' | 'off' | 'mdblist' | 'trakt' | 'simkl' | 'publicmetadb';
+  /** Name and picture of the main Jellyfin user, the configuration itself. */
+  jellyfinUserName?: string;
+  jellyfinUserAvatar?: string;
+  jellyfinUsers?: JellyfinUser[];
   customPosterUrlPattern?: string;
   customBackgroundUrlPattern?: string;
   customLandscapeUrlPattern?: string;

@@ -3,6 +3,7 @@ import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId } from './ids';
 import { collectionFolder } from './dto';
+import { profileTags } from './profiles';
 
 const { getManifest } = require('../getManifest');
 
@@ -42,12 +43,13 @@ export function collectionTypeFor(type: string): string | null {
 }
 
 export async function getCatalogs(userUUID: string, config: any): Promise<CatalogRef[]> {
-  const key = `${userUUID}:${config?.configVersion ?? ''}`;
+  const tags = profileTags(config);
+  const key = `${userUUID}:${tags.map((t) => t.toLowerCase()).sort().join(',')}:${config?.configVersion ?? ''}`;
   const cached = catalogCache.get(key);
   if (cached) return cached;
 
   try {
-    const manifest = await getManifest(config, { tags: [] });
+    const manifest = await getManifest(config, { tags });
     const catalogs: CatalogRef[] = Array.isArray(manifest?.catalogs) ? manifest.catalogs : [];
     catalogCache.set(key, catalogs);
     return catalogs;
