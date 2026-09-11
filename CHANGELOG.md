@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.17.2](https://github.com/cedya77/aiometadata/compare/v2.17.1...v2.17.2) (2026-09-11)
+
+
+### Bug Fixes
+
+* **cache:** fetch only the art when a user's art profile has none for a cached meta ([02262d9](https://github.com/cedya77/aiometadata/commit/02262d97c421e65fdbcd3bcb5f2a9d6ae07bc67f))
+* **trakt:** answer the hide-watched filter from the last known set while Trakt is rate limited ([02262d9](https://github.com/cedya77/aiometadata/commit/02262d97c421e65fdbcd3bcb5f2a9d6ae07bc67f))
+
 ## [2.17.1](https://github.com/cedya77/aiometadata/compare/v2.17.0...v2.17.1) (2026-09-11)
 
 
