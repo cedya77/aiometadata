@@ -175,12 +175,32 @@ addon.get('/health/live', (req, res) => {
   });
 });
 
-addon.get('/health/ready', (req, res) => {
+// Startup readiness latches once a component reports ready, so the live
+// dependency probes below are what a monitor watches after boot.
+addon.get('/health/ready', async (req, res) => {
   const snapshot = readiness.snapshot();
-  res.status(snapshot.ready ? 200 : 503).json({
-    status: snapshot.ready ? 'ready' : 'starting',
+  const { deepHealth }: any = require('./lib/lifecycle/deepHealth');
+
+  let dependencies: any = null;
+  let counters: any = null;
+  let dependenciesOk = true;
+  try {
+    const report = await deepHealth();
+    dependencies = report.dependencies;
+    counters = report.counters;
+    dependenciesOk = report.status === 'healthy';
+  } catch (error: any) {
+    dependencies = { probe: { state: 'failed', latencyMs: 0, detail: error?.message || String(error) } };
+    dependenciesOk = false;
+  }
+
+  const healthy = snapshot.ready && dependenciesOk;
+  res.status(healthy ? 200 : 503).json({
+    status: !snapshot.ready ? 'starting' : (healthy ? 'ready' : 'degraded'),
     ready: snapshot.ready,
     components: snapshot.components,
+    dependencies,
+    counters,
     timestamp: new Date().toISOString(),
     version: ADDON_VERSION,
   });

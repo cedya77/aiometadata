@@ -875,7 +875,7 @@ function sortTvdbSearchResults(results, query) {
   return filteredResults.map(p => p.originalItem);
 }
 
-function getTvdbCertification(contentRatings, countryCode, contentType) {
+function getTvdbCertification(contentRatings, countryCode, contentType, fallbackToUsa = true) {
   if (!contentRatings || !Array.isArray(contentRatings)) {
     return null;
   }
@@ -890,7 +890,7 @@ function getTvdbCertification(contentRatings, countryCode, contentType) {
     (!contentType || rating.contentType === contentType || rating.contentType === '')
   ) : null;
 
-  if (!certification) {
+  if (!certification && fallbackToUsa) {
     certification = contentRatings.find(rating =>
       rating.country?.toLowerCase() === 'usa' &&
       (!contentType || rating.contentType === contentType || rating.contentType === '')

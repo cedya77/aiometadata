@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.17.0](https://github.com/cedya77/aiometadata/compare/v2.16.5...v2.17.0) (2026-09-10)
+
+
+### Features
+
+* **catalogs:** filter the list by whether a catalog is in a collection ([4f4f15c](https://github.com/cedya77/aiometadata/commit/4f4f15c37fe0e3de6eae833b1aabdfd7ddc1be4c))
+* **collections:** browse featured collections in their own tab ([fa62b33](https://github.com/cedya77/aiometadata/commit/fa62b336ebde812f318e2fdf5198745ee10265d1))
+* **collections:** rename a catalog from its source row ([87aa568](https://github.com/cedya77/aiometadata/commit/87aa568e2772c9b953a66c6042b4f7f23d4537f9))
+* **collections:** serve a catalog preview the browser can read ([a7c8462](https://github.com/cedya77/aiometadata/commit/a7c8462b4a6bdec8bc2f2786192e669777a73c2a))
+* **collections:** show a real preview and reach the menu by press ([0207079](https://github.com/cedya77/aiometadata/commit/0207079e740d4595d1677a0fe6bfd72a64b9212c))
+* **health:** probe dependencies on the readiness endpoint ([ecb9cf4](https://github.com/cedya77/aiometadata/commit/ecb9cf49252d3037a381d305938e827adda58c6e))
+* **watch-tracking:** record from real playback where a client reports it ([0b70cb4](https://github.com/cedya77/aiometadata/commit/0b70cb42cbd769da134372a4f2d30397c557e853))
+
+
+### Bug Fixes
+
+* **anilist:** read a named user's lists with an account token ([fff67be](https://github.com/cedya77/aiometadata/commit/fff67be1b83afc7ec793fec68fe8a1916238560a))
+* **anilist:** resolve an account token for studio search and previews ([43469e2](https://github.com/cedya77/aiometadata/commit/43469e2e1e086969f7f4b2859e2659bb861ceff7))
+* **anilist:** send a referer so anonymous reads go through ([8d3a428](https://github.com/cedya77/aiometadata/commit/8d3a4283653dcde03cd95c8aa8adf2e0c3b0b759))
+* **auth:** keep the auth endpoints out of caches ([7b3c67c](https://github.com/cedya77/aiometadata/commit/7b3c67cc44ba000cc0c78d3821f3e772908d26d9))
+* **catalogs:** carry the age rating on anime catalog rows ([921dec3](https://github.com/cedya77/aiometadata/commit/921dec3e4b5b3dd451fbf6b59787c42c781891bd)), closes [#704](https://github.com/cedya77/aiometadata/issues/704)
+* **collections:** move export out of the tab strip ([0207079](https://github.com/cedya77/aiometadata/commit/0207079e740d4595d1677a0fe6bfd72a64b9212c))
+* **collections:** name an imported catalog after the tile carrying it ([296ee50](https://github.com/cedya77/aiometadata/commit/296ee504114f5c8f306b72ce68e79b9dace8d9b6))
+* **configure:** clear the frontend type errors ([7664308](https://github.com/cedya77/aiometadata/commit/7664308420005822dfdb8480af5b386bb6a78723))
+* **configure:** open a loaded configuration on its own URL ([642ab91](https://github.com/cedya77/aiometadata/commit/642ab91e6daa5d6609fafea0e04db1b7ee6873a2))
+* **kitsu:** drop the expiring signature from cached Kitsu image urls ([#706](https://github.com/cedya77/aiometadata/issues/706)) ([8a3af00](https://github.com/cedya77/aiometadata/commit/8a3af00aad62841f715b5b4c58a04b15a917b552))
+* **meta:** ask both providers for the viewer's own age rating ([f063544](https://github.com/cedya77/aiometadata/commit/f063544579c1bc5a4fb378a5297f66d17a6a3b10))
+* **watch-tracking:** say when progress is recorded, once, instead of per service ([0b70cb4](https://github.com/cedya77/aiometadata/commit/0b70cb42cbd769da134372a4f2d30397c557e853))
+
 ## [2.16.5](https://github.com/cedya77/aiometadata/compare/v2.16.4...v2.16.5) (2026-09-02)
 
 

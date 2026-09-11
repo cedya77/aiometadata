@@ -199,11 +199,14 @@ export function Header() {
 
   /** No password: the session already proved this configuration is theirs. */
   const handleLoadProfile = async (userUUID: string, options: { quiet?: boolean } = {}): Promise<boolean> => {
-    // The address bar names a configuration, and loading a different one in
-    // place would leave the two disagreeing about what is on screen and what a
-    // save would write to. Go to its own URL instead; it opens on arrival.
-    if (uuidFromUrl && uuidFromUrl !== userUUID) {
-      window.location.href = `/stremio/${encodeURIComponent(userUUID)}/configure`;
+    // A configuration is only restored on refresh if the address bar names it.
+    // Loading one in place while the URL names another leaves the two
+    // disagreeing; loading one while the URL names nothing survives until the
+    // next reload and then looks like being signed out. Either way, go to its
+    // own URL, which opens it on arrival and keeps the section in view.
+    if (uuidFromUrl !== userUUID) {
+      const section = window.location.hash || '';
+      window.location.href = `/stremio/${encodeURIComponent(userUUID)}/configure${section}`;
       return false;
     }
 

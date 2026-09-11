@@ -2061,23 +2061,32 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
 
 
   let release_dates = null;
-  let certification = null;
-  let certificationLocal = null;
+  let certification;
+  let certificationLocal;
   const userCountry = language?.split('-')[1];
+  const wantsLocal = !!userCountry && userCountry !== 'US';
+  let tmdbBase = null;
+  let tmdbLocal = null;
   if (tmdbId) {
     try {
       const releaseDatesData = await moviedb.movieReleaseDates(String(tmdbId), config);
       if (releaseDatesData) {
         release_dates = releaseDatesData;
-        certification = Utils.getTmdbMovieCertificationForCountry(releaseDatesData);
-        certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbMovieCertificationForCountry(releaseDatesData, userCountry) || certification) : certification;
+        tmdbBase = Utils.getTmdbMovieCertificationForCountry(releaseDatesData);
+        if (wantsLocal) tmdbLocal = Utils.getTmdbMovieCertificationForCountry(releaseDatesData, userCountry);
       }
     } catch (e) {}
   }
-  if (!certification) {
-    certification = Utils.getTvdbCertification(movieData.contentRatings, 'usa', 'movie');
-    certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTvdbCertification(movieData.contentRatings, userCountry, 'movie') || certification) : certification;
+  // A provider holding the US rating does not mean it holds the viewer's, so the
+  // other one is still asked for the country before falling back.
+  let tvdbBase = null;
+  let tvdbLocal = null;
+  if (!tmdbBase || (wantsLocal && !tmdbLocal)) {
+    if (!tmdbBase) tvdbBase = Utils.getTvdbCertification(movieData.contentRatings, 'usa', 'movie');
+    if (wantsLocal) tvdbLocal = Utils.getTvdbCertification(movieData.contentRatings, userCountry, 'movie', false);
   }
+  certification = tmdbBase || tvdbBase;
+  certificationLocal = wantsLocal ? (tmdbLocal || tvdbLocal || certification) : certification;
   let links = Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb');
   if (!Array.isArray(links)) links = [];
   else links = [...links];
@@ -2502,22 +2511,31 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     tvdbShow.status?.name === 'Continuing'
   ) || year || "";
 
-  let certification = null;
-  let certificationLocal = null;
+  let certification;
+  let certificationLocal;
   const userCountry = language?.split('-')[1];
+  const wantsLocal = !!userCountry && userCountry !== 'US';
+  let tmdbBase = null;
+  let tmdbLocal = null;
   if (tmdbId) {
     try {
       const contentRatingsData = await moviedb.tvContentRatings(String(tmdbId), config);
       if (contentRatingsData) {
-        certification = Utils.getTmdbTvCertificationForCountry(contentRatingsData);
-        certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbTvCertificationForCountry(contentRatingsData, userCountry) || certification) : certification;
+        tmdbBase = Utils.getTmdbTvCertificationForCountry(contentRatingsData);
+        if (wantsLocal) tmdbLocal = Utils.getTmdbTvCertificationForCountry(contentRatingsData, userCountry);
       }
     } catch (e) {}
   }
-  if (!certification) {
-    certification = Utils.getTvdbCertification(tvdbShow.contentRatings, 'usa', 'tv');
-    certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTvdbCertification(tvdbShow.contentRatings, userCountry, 'tv') || certification) : certification;
+  // A provider holding the US rating does not mean it holds the viewer's, so the
+  // other one is still asked for the country before falling back.
+  let tvdbBase = null;
+  let tvdbLocal = null;
+  if (!tmdbBase || (wantsLocal && !tmdbLocal)) {
+    if (!tmdbBase) tvdbBase = Utils.getTvdbCertification(tvdbShow.contentRatings, 'usa', 'tv');
+    if (wantsLocal) tvdbLocal = Utils.getTvdbCertification(tvdbShow.contentRatings, userCountry, 'tv', false);
   }
+  certification = tmdbBase || tvdbBase;
+  certificationLocal = wantsLocal ? (tmdbLocal || tvdbLocal || certification) : certification;
   let links = Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb');
   if (!Array.isArray(links)) links = [];
   else links = [...links];
@@ -2872,6 +2890,12 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     }
     
     
+    // MAL has no episode list for some older titles but still knows the count.
+    if (stremioType === 'series' && malData.status === 'Finished Airing' && (!episodeData || episodeData.length === 0) && Number(malData.episodes) > 0) {
+      const aired = malData.aired?.from || null;
+      episodeData = Array.from({ length: Number(malData.episodes) }, (_, i) => ({ mal_id: i + 1, title: null, synopsis: '', aired }));
+    }
+
     // Process episodes while API calls are running
     if (stremioType === 'series' && malData.status !== 'Not yet aired' && episodeData && episodeData.length > 0) {      // Filter episodes once
       

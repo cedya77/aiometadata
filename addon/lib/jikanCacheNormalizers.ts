@@ -28,6 +28,7 @@ const DETAIL_KEYS = [
   'score',
   'duration',
   'status',     
+  'episodes',
   'rating',   
   'year',
   'synopsis',

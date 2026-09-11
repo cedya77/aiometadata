@@ -203,6 +203,17 @@ export function register(addon: any, options: { rateLimit?: any; requireAdmin?: 
 
   addon.use(attachSession);
 
+  // These answer from the session cookie alone, so a cached copy is a copy of
+  // somebody's sign-in state. Express adds an ETag to every JSON response and
+  // the default Vary does not mention Cookie, which leaves the answer eligible
+  // for reuse across a sign-in.
+  addon.use('/api/auth', (_req: any, res: any, next: any) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Vary', 'Cookie');
+    next();
+  });
+
   addon.get('/api/auth/status', (req: any, res: any) => {
     const config = readOidcConfig();
     res.json({

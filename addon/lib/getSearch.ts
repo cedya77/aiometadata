@@ -31,31 +31,6 @@ const { parse }: any = require("path");
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
 
-function getTvdbCertification(contentRatings: any[], countryCode: string, contentType: string): string | null {
-  if (!contentRatings || !Array.isArray(contentRatings)) {
-    return null;
-  }
-
-  let code = countryCode?.toLowerCase();
-  if (code && code.length === 2) {
-    try { code = require('country-iso-2-to-3')(code.toUpperCase())?.toLowerCase(); } catch {}
-  }
-
-  let certification = code ? contentRatings.find((rating: any) =>
-    rating.country?.toLowerCase() === code &&
-    (!contentType || rating.contentType === contentType || rating.contentType === '')
-  ) : null;
-
-  if (!certification) {
-    certification = contentRatings.find((rating: any) =>
-      rating.country?.toLowerCase() === 'usa' &&
-      (!contentType || rating.contentType === contentType || rating.contentType === '')
-    );
-  }
-
-  return certification?.name || null;
-}
-
 
 const SIMKL_SEARCH_PROVIDERS = new Set(['simkl.search', 'simkl.search.movie', 'simkl.search.series']);
 
@@ -147,34 +122,39 @@ async function parseTvdbSearchResult(type: string, extendedRecord: any, language
       const langParts = language.split('-');
       const userCountry = langParts[1] || langParts[0];
       const contentType = type === 'movie' ? 'movie' : '';
+      const wantsLocal = !!userCountry && userCountry.toUpperCase() !== 'US';
+
+      let tmdbBase: string | null = null;
+      let tmdbLocal: string | null = null;
 
       if (tmdbId) {
         if (type === 'movie') {
           const releaseDatesData = await moviedb.movieReleaseDates(String(tmdbId), config);
           if (releaseDatesData) {
             movieReleaseDates = releaseDatesData;
-            certification = Utils.getTmdbMovieCertificationForCountry(releaseDatesData);
-            certificationLocal = userCountry && userCountry.toUpperCase() !== 'US'
-              ? (Utils.getTmdbMovieCertificationForCountry(releaseDatesData, userCountry) || certification)
-              : certification;
+            tmdbBase = Utils.getTmdbMovieCertificationForCountry(releaseDatesData);
+            if (wantsLocal) tmdbLocal = Utils.getTmdbMovieCertificationForCountry(releaseDatesData, userCountry);
           }
         } else {
           const contentRatingsData = await moviedb.tvContentRatings(String(tmdbId), config);
           if (contentRatingsData) {
-            certification = Utils.getTmdbTvCertificationForCountry(contentRatingsData);
-            certificationLocal = userCountry && userCountry.toUpperCase() !== 'US'
-              ? (Utils.getTmdbTvCertificationForCountry(contentRatingsData, userCountry) || certification)
-              : certification;
+            tmdbBase = Utils.getTmdbTvCertificationForCountry(contentRatingsData);
+            if (wantsLocal) tmdbLocal = Utils.getTmdbTvCertificationForCountry(contentRatingsData, userCountry);
           }
         }
       }
 
-      if (!certification && extendedRecord.contentRatings) {
-        certification = getTvdbCertification(extendedRecord.contentRatings, 'usa', contentType);
-        certificationLocal = userCountry && userCountry.toUpperCase() !== 'US'
-          ? (getTvdbCertification(extendedRecord.contentRatings, userCountry, contentType) || certification)
-          : certification;
+      // A provider holding the US rating does not mean it holds the viewer's, so
+      // the other one is still asked for the country before falling back.
+      let tvdbBase: string | null = null;
+      let tvdbLocal: string | null = null;
+      if (extendedRecord.contentRatings && (!tmdbBase || (wantsLocal && !tmdbLocal))) {
+        if (!tmdbBase) tvdbBase = Utils.getTvdbCertification(extendedRecord.contentRatings, 'usa', contentType);
+        if (wantsLocal) tvdbLocal = Utils.getTvdbCertification(extendedRecord.contentRatings, userCountry, contentType, false);
       }
+
+      certification = tmdbBase || tvdbBase;
+      certificationLocal = wantsLocal ? (tmdbLocal || tvdbLocal || certification) : certification;
     } catch (error: any) {
       logger.warn(`Failed to get TVDB certification for ${type} ${tvdbId}:`, error.message);
     }
