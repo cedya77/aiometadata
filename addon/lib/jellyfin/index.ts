@@ -24,7 +24,7 @@ import { buildViews, collectionTypeFor, findCatalogByViewId, getCatalogs, getSea
 import { decodeJellyfinId } from './ids';
 import { buildEpisodes, buildSeasons, fetchMeta, fetchWindow, filterByIncludeTypes, includeTypesFilter, metaToBaseItem, recallImages } from './items';
 import { encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
-import { coalesce, fetchStreams, mediaSourceFor, normaliseStreamBase, recallStreams, rememberStreams, toPlayable } from './streams';
+import { coalesce, fetchStreams, mediaSourceFor, normaliseStreamBase, recallIssued, recallStreams, rememberStreams, toPlayable } from './streams';
 import { resumeSnapshot, resumeUserData } from './resume';
 import { applyWatchedState, isWatched, watchedSnapshot } from './watched';
 import { registerStubs } from './stubs';
@@ -587,19 +587,33 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return;
     }
 
+    const requested = req.query.MediaSourceId ?? req.query.mediaSourceId;
+    const wantedId = typeof requested === 'string' && requested ? normaliseJellyfinId(requested) : null;
+
+    // A source the client already holds is sent to the URL it was issued with.
+    // The stream addon's URL stands on its own, so nothing is resolved again: a
+    // fresh search can come back without the file, and did, mid-playback.
+    if (wantedId && wantedId !== normaliseJellyfinId(itemId)) {
+      const pinned = await recallIssued(wantedId);
+      if (pinned) {
+        res.redirect(302, pinned);
+        return;
+      }
+    }
+
+    // No pin for it, so it is resolved: a client that never called PlaybackInfo
+    // or has outlived the pin gets the source matched from a fresh list.
     const sources = withDefaultSourceId(await resolveMediaSources(req, descriptor, null), itemId);
     if (!sources.length) {
       res.status(404).json({ Message: 'No playable stream' });
       return;
     }
 
-    const requested = req.query.MediaSourceId ?? req.query.mediaSourceId;
-    const wanted =
-      typeof requested === 'string' && requested
-        ? sources.find((s: any) => normaliseJellyfinId(s.Id) === normaliseJellyfinId(requested))
-        : undefined;
+    const wanted = wantedId
+      ? sources.find((s: any) => normaliseJellyfinId(s.Id) === wantedId)
+      : undefined;
 
-    if (requested && !wanted) {
+    if (wantedId && !wanted) {
       logger.debug(`Source ${requested} is no longer offered for ${itemId}`);
       res.status(404).json({ Message: 'Media source not found' });
       return;

@@ -1,6 +1,7 @@
 import consola from 'consola';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
+import redis from '../redisClient';
 import { decodeJellyfinId, normaliseJellyfinId, stremioIdFor } from './ids';
 import { fetchMeta } from './items';
 
@@ -20,11 +21,42 @@ interface SessionPosition {
 }
 
 // A client that dies never sends a stop, so the last tick is kept and a stop
-// arriving without a position can still say where it got to.
+// arriving without a position can still say where it got to. Kept in Redis so
+// a session survives this process restarting under it: otherwise the resume
+// after a restart reads as the first event and is swallowed as no transition.
 const positions = new LRUCache<string, SessionPosition>({
   max: envInt('JELLYFIN_SESSION_CACHE_MAX', 5000, 1),
   ttl: envInt('JELLYFIN_SESSION_CACHE_TTL', 12 * 60 * 60, 60) * 1000,
 });
+
+function sessionTtlSeconds(): number {
+  return envInt('JELLYFIN_SESSION_CACHE_TTL', 12 * 60 * 60, 60);
+}
+
+async function getPosition(key: string): Promise<SessionPosition | undefined> {
+  const local = positions.get(key);
+  if (local) return local;
+  if (!redis) return undefined;
+  try {
+    const stored = await redis.get(`jf:pos:${key}`);
+    if (!stored) return undefined;
+    const parsed = JSON.parse(stored) as SessionPosition;
+    positions.set(key, parsed);
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function setPosition(key: string, value: SessionPosition): void {
+  positions.set(key, value);
+  if (redis) redis.set(`jf:pos:${key}`, JSON.stringify(value), 'EX', sessionTtlSeconds()).catch(() => undefined);
+}
+
+function deletePosition(key: string): void {
+  positions.delete(key);
+  if (redis) redis.del(`jf:pos:${key}`).catch(() => undefined);
+}
 
 function ticksToMs(value: any): number | null {
   const ticks = typeof value === 'number' ? value : parseInt(String(value), 10);
@@ -127,14 +159,14 @@ async function report(
   }
 
   const key = `${userUUID}:${itemId}`;
-  const known = positions.get(key);
+  const known = await getPosition(key);
   const reported = ticksToMs(body?.PositionTicks ?? body?.positionTicks);
   const positionMs = reported ?? known?.positionMs ?? 0;
 
   // A client re-sends Playing while it runs; reopening an already-playing
   // session is noise. A resume comes through the pause edge instead.
   if (event === 'start' && known && known.paused === false) {
-    positions.set(key, { positionMs, at: Date.now(), paused: false });
+    setPosition(key, { positionMs, at: Date.now(), paused: false });
     return;
   }
 
@@ -145,11 +177,11 @@ async function report(
       session.runtimeMs && session.runtimeMs > 0
         ? (positionMs / session.runtimeMs) * 100 >= watchedAtPercent()
         : false;
-    positions.delete(key);
+    deletePosition(key);
   } else {
     // Recorded as playing, not unknown: a following tick reporting the same
     // state would otherwise read as a change and reopen the session.
-    positions.set(key, { positionMs, at: Date.now(), paused: event === 'pause' });
+    setPosition(key, { positionMs, at: Date.now(), paused: event === 'pause' });
   }
 
   // A pause at zero is what a collapsed position looks like, and a real one says
@@ -215,7 +247,7 @@ export async function recordProgress(req: any, body: any): Promise<void> {
   if (!userUUID || !itemId || positionMs === null) return;
 
   const key = `${userUUID}:${itemId}`;
-  const previous = positions.get(key);
+  const previous = await getPosition(key);
   const paused = body?.IsPaused === true || body?.isPaused === true;
 
   // A client keeps reporting every few seconds while paused, so only the change
@@ -225,7 +257,7 @@ export async function recordProgress(req: any, body: any): Promise<void> {
   const changed = previous !== undefined && previous.paused !== paused;
   const startsPaused = previous === undefined && paused;
   if (!changed && !startsPaused) {
-    positions.set(key, { positionMs, at: Date.now(), paused });
+    setPosition(key, { positionMs, at: Date.now(), paused });
     return;
   }
 

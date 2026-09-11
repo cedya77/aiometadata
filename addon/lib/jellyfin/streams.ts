@@ -2,6 +2,7 @@ import consola from 'consola';
 import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
+import redis from '../redisClient';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -13,6 +14,7 @@ export interface PlayableStream {
   name: string;
   container: string | null;
   size: number | null;
+  filename: string | null;
 }
 
 function requestTimeoutMs(): number {
@@ -63,16 +65,66 @@ function needsHeaders(stream: any): boolean {
 
 // The upstream mints a fresh playback URL per resolve, so an id derived from it
 // stops matching once the memo expires and the client's saved MediaSourceId then
-// selects a different file mid-playback.
+// selects a different file mid-playback. The name and description are no better:
+// they are presentation, and the upstream rewrites them as state changes, for
+// one adding a marker once the file lands in the debrid cache, which starting
+// to play it is exactly what causes. Only the file itself names a release.
 export function mediaSourceIdFor(stream: any): string {
   const size = Number(stream?.behaviorHints?.videoSize);
-  const parts = [
-    String(stream?.behaviorHints?.filename || ''),
-    Number.isFinite(size) && size > 0 ? String(size) : '',
-    String(stream?.name || ''),
-    String(stream?.title || stream?.description || ''),
-  ];
+  const filename = String(stream?.behaviorHints?.filename || '');
+  const parts = [filename, Number.isFinite(size) && size > 0 ? String(size) : ''];
+
+  // A stream with no filename has nothing stable to be named by, so the text
+  // is used with the volatile markers folded out of it.
+  if (!filename) {
+    parts.push(
+      foldLabel(String(stream?.name || '')),
+      foldLabel(String(stream?.title || stream?.description || ''))
+    );
+  }
+
   return createHash('md5').update(parts.join('\u0000')).digest('hex');
+}
+
+/**
+ * The playback URL each source id was handed out with. The stream addon's URL
+ * is self-contained, it names the file and needs no search to serve it, so
+ * once a client holds one it is served the same URL for as long as it keeps
+ * asking, rather than the whole list being resolved again and hoped to still
+ * contain the file. Resolving is for choosing a source, not for playing one.
+ *
+ * Held in Redis so a playback survives this process restarting under it, with
+ * memory behind it for the case where Redis is not there.
+ */
+const issued = new LRUCache<string, string>({
+  max: envInt('JELLYFIN_ISSUED_SOURCE_MAX', 5000, 1),
+  ttl: envInt('JELLYFIN_ISSUED_SOURCE_TTL', 12 * 60 * 60, 60) * 1000,
+});
+
+function issuedTtlSeconds(): number {
+  return envInt('JELLYFIN_ISSUED_SOURCE_TTL', 12 * 60 * 60, 60);
+}
+
+export function rememberIssued(id: string, url: string): void {
+  if (!id || !url) return;
+  issued.set(id, url);
+  if (redis) {
+    redis.set(`jf:src:${id}`, url, 'EX', issuedTtlSeconds()).catch(() => undefined);
+  }
+}
+
+export async function recallIssued(id: string): Promise<string | undefined> {
+  const local = issued.get(id);
+  if (local) return local;
+
+  if (!redis) return undefined;
+  try {
+    const stored = await redis.get(`jf:src:${id}`);
+    if (stored) issued.set(id, stored);
+    return stored ?? undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function toPlayable(stream: any): PlayableStream | null {
@@ -84,13 +136,17 @@ export function toPlayable(stream: any): PlayableStream | null {
     .join('\n');
 
   const size = Number(stream?.behaviorHints?.videoSize);
+  const id = mediaSourceIdFor(stream);
+  const filename = String(stream?.behaviorHints?.filename || '');
+  rememberIssued(id, stream.url);
 
   return {
-    id: mediaSourceIdFor(stream),
+    id,
     url: stream.url,
     name: label || 'Stream',
     container: containerOf(stream),
     size: Number.isFinite(size) && size > 0 ? size : null,
+    filename: filename || null,
   };
 }
 
