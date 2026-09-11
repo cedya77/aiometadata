@@ -218,7 +218,7 @@ async function ownRows(userUUID: string): Promise<ResumeRow[]> {
       kind: isEpisode ? 'episode' : 'movie',
       progress: Math.min(100, (positionMs / runtimeMs) * 100),
       runtimeMinutes: Math.round(runtimeMs / 60000),
-      updatedAt: Number(r.updated_at) || 0,
+      updatedAt: Number(r.last_played_at) || Number(r.updated_at) || 0,
     });
   }
   return rows;

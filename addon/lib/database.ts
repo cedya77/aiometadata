@@ -862,10 +862,12 @@ class Database {
   }
 
   // A finished title with a position is a rewatch under way, so it belongs here.
+  // Ordered by when it was played, not when the row was written: a sync writes
+  // a whole history at once and would put it all at the top.
   async listResume(userUUID: string, limit: number): Promise<any[]> {
     const query = this.type === 'sqlite'
-      ? 'SELECT * FROM jellyfin_playstate WHERE user_uuid = ? AND position_ms > 0 ORDER BY updated_at DESC LIMIT ?'
-      : 'SELECT * FROM jellyfin_playstate WHERE user_uuid = $1 AND position_ms > 0 ORDER BY updated_at DESC LIMIT $2';
+      ? 'SELECT * FROM jellyfin_playstate WHERE user_uuid = ? AND position_ms > 0 ORDER BY COALESCE(last_played_at, updated_at) DESC LIMIT ?'
+      : 'SELECT * FROM jellyfin_playstate WHERE user_uuid = $1 AND position_ms > 0 ORDER BY COALESCE(last_played_at, updated_at) DESC LIMIT $2';
     return (await this.allQuery(query, [userUUID, limit])) || [];
   }
 

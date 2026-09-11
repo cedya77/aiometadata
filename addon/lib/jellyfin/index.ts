@@ -272,6 +272,28 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const serverId = serverIdFor(userUUID);
     const searchTerm = req.query.SearchTerm ?? req.query.searchTerm;
 
+    // Particular items by id, not a listing of whichever library comes first.
+    const idsRaw = req.query.Ids ?? req.query.ids;
+    if (idsRaw) {
+      const ids = String(idsRaw).split(',').map((id) => id.trim()).filter(Boolean);
+      const items: any[] = [];
+      for (const id of ids) {
+        const captured: any[] = [];
+        // query and params are prototype getters, so a spread would lose them.
+        const forged = Object.create(req, {
+          params: { value: { ...req.params, itemId: id }, enumerable: true },
+          query: { value: req.query, enumerable: true },
+        });
+        await singleItemHandler(
+          forged,
+          { json: (body: any) => captured.push(body), status: () => ({ json: () => undefined, end: () => undefined }) }
+        );
+        if (captured[0]?.Id) items.push(captured[0]);
+      }
+      res.json(itemList(items, items.length, 0));
+      return;
+    }
+
     // Clients send Genres pipe-delimited, or GenreIds holding our own guids.
     // A catalog's genre extra takes exactly one value, so only the first is
     // passed on rather than silently dropping the filter altogether.
@@ -424,10 +446,30 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           res.json(itemList([], 0, startIndex));
           return;
         }
-        const children = descriptor.k === 'season'
-          ? buildEpisodes(meta, descriptor.t, encodeSeriesId(descriptor), serverId, descriptor.s)
+        // Episodes across a series is how a client finds the last one played.
+        const wantsEpisodes =
+          descriptor.k === 'season' ||
+          (String(req.query.Recursive ?? req.query.recursive ?? '').toLowerCase() === 'true' &&
+            String(includeItemTypes ?? '').split(',').map((t) => t.trim()).includes('Episode'));
+
+        let children = wantsEpisodes
+          ? buildEpisodes(meta, descriptor.t, encodeSeriesId(descriptor), serverId, descriptor.k === 'season' ? descriptor.s : null)
           : buildSeasons(meta, descriptor.t, String(parentId), serverId);
         await applyWatchedState(children, await watchedSnapshot(userUUID, config), userUUID);
+
+        const filters = String(req.query.Filters ?? req.query.filters ?? '').split(',').map((f) => f.trim());
+        if (filters.includes('IsPlayed')) children = children.filter((c: any) => c.UserData?.Played === true);
+        if (filters.includes('IsUnplayed')) children = children.filter((c: any) => c.UserData?.Played !== true);
+
+        const sortBy = String(req.query.SortBy ?? req.query.sortBy ?? '');
+        const descending = String(req.query.SortOrder ?? req.query.sortOrder ?? '').toLowerCase() === 'descending';
+        if (sortBy.includes('IndexNumber')) {
+          children.sort((a: any, b: any) =>
+            ((a.ParentIndexNumber ?? 0) - (b.ParentIndexNumber ?? 0)) || ((a.IndexNumber ?? 0) - (b.IndexNumber ?? 0))
+          );
+          if (descending) children.reverse();
+        }
+
         const page = children.slice(startIndex, startIndex + limit);
         res.json(itemList(page, children.length, startIndex));
         return;
@@ -1113,7 +1155,28 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
 
     const snapshot = await watchedSnapshot(userUUID, config);
-    const rows = snapshot.nextUp;
+
+    // The client's recency cutoff is deliberately not applied: the tracker's own
+    // view of what is in progress is the one people expect to see.
+    const flag = (name: string, fallback: boolean): boolean => {
+      const raw = req.query[name] ?? req.query[name.charAt(0).toLowerCase() + name.slice(1)];
+      return raw === undefined ? fallback : String(raw).toLowerCase() === 'true';
+    };
+    const includeResumable = flag('EnableResumable', true);
+    const includeRewatching = flag('EnableRewatching', false);
+
+    const resumable = includeResumable
+      ? null
+      : new Set((await resumeSnapshot(userUUID, config)).map((r) => r.metaId));
+
+    const rows = snapshot.nextUp.filter((row) => {
+      if (resumable && resumable.has(row.metaId)) return false;
+      if (!includeRewatching) {
+        const counts = snapshot.series.get(row.metaId);
+        if (counts && counts.total > 0 && counts.watched >= counts.total) return false;
+      }
+      return true;
+    });
     if (!rows.length) {
       res.json(itemList([], 0, startIndex));
       return;
@@ -1178,7 +1241,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     });
   });
 
-  router.get(['/Items/:itemId', '/Users/:userId/Items/:itemId'], async (req: any, res: any) => {
+  async function singleItemHandler(req: any, res: any): Promise<void> {
     const userUUID = req.params.userUUID;
     const descriptor = await decodeJellyfinId(req.params.itemId);
     if (!descriptor) {
@@ -1301,7 +1364,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
 
     res.status(404).json({ Message: 'Item not found' });
-  });
+  }
+  router.get(['/Items/:itemId', '/Users/:userId/Items/:itemId'], singleItemHandler);
 
   router.get('/Sessions', async (req: any, res: any) => {
     const userUUID = req.params.userUUID;
