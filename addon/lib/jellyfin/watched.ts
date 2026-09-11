@@ -310,7 +310,7 @@ export async function watchedSnapshot(userUUID: string, config: any): Promise<Wa
 
     const key = `${tokenHash}:${fingerprint}`;
     const memo = hydrated.get(key);
-    if (memo) return applyDecisions(memo);
+    if (memo) return memo;
 
     const { cacheWrapGlobal } = require('../getCache');
     const raw: RawSnapshot = await cacheWrapGlobal(
@@ -331,7 +331,7 @@ export async function watchedSnapshot(userUUID: string, config: any): Promise<Wa
     logger.debug(
       `Watched snapshot for ${userUUID}: ${snapshot.episodes.size} episodes, ${snapshot.movies.size} films`
     );
-    return applyDecisions(snapshot);
+    return snapshot;
   } catch (error: any) {
     logger.warn(`Watched snapshot failed: ${error?.message || error}`);
     return EMPTY;
@@ -396,7 +396,7 @@ async function mdblistSnapshot(userUUID: string, apiKey: string): Promise<Watche
     logger.debug(
       `Watched snapshot for ${userUUID} from mdblist: ${snapshot.episodes.size} episodes, ${snapshot.movies.size} films`
     );
-    return applyDecisions(snapshot);
+    return snapshot;
   } catch (error: any) {
     logger.warn(`Watched snapshot from mdblist failed: ${error?.message || error}`);
     return EMPTY;
@@ -440,33 +440,6 @@ export async function invalidateWatched(config: any): Promise<void> {
   }
 }
 
-/**
- * A watch this server just recorded is true before the tracker admits it: the
- * digest a snapshot is keyed on can lag its own write by minutes, so waiting
- * for it means a tick that only appears once the page is left and reopened.
- * Held apart from the snapshots rather than written into one, because a
- * snapshot is rebuilt and evicted freely and the decision has to outlive that.
- */
-const decided = new LRUCache<string, boolean>({
-  max: envInt('JELLYFIN_WATCHED_OVERRIDE_MAX', 5000, 1),
-  ttl: envInt('JELLYFIN_WATCHED_OVERRIDE_TTL', 30 * 60, 60) * 1000,
-});
-
-export function noteWatched(videoId: string, watched: boolean): void {
-  if (videoId) decided.set(videoId, watched);
-}
-
-function applyDecisions(snapshot: WatchedSnapshot): WatchedSnapshot {
-  if (!decided.size) return snapshot;
-
-  for (const [videoId, watched] of decided.entries()) {
-    const set = /:\d+$/.test(videoId) ? snapshot.episodes : snapshot.movies;
-    if (watched) set.add(videoId);
-    else set.delete(videoId);
-  }
-
-  return snapshot;
-}
 
 export function isWatched(snapshot: WatchedSnapshot, stremioId: string): boolean {
   return snapshot.episodes.has(stremioId) || snapshot.movies.has(stremioId);
@@ -477,17 +450,43 @@ export function isWatched(snapshot: WatchedSnapshot, stremioId: string): boolean
  * item's own guid, so this stays one pass over a finished list rather than a
  * parameter threaded through every builder.
  */
-export async function applyWatchedState(items: any[], snapshot: WatchedSnapshot): Promise<void> {
-  if (!items.length || (!snapshot.episodes.size && !snapshot.movies.size && !snapshot.series.size)) return;
+export async function applyWatchedState(
+  items: any[],
+  snapshot: WatchedSnapshot,
+  userUUID?: string
+): Promise<void> {
+  if (!items.length) return;
 
   const { decodeJellyfinId } = require('./ids');
   const { stremioIdFor } = require('./idsCodec');
 
+  const descriptors = new Map<string, any>();
   await Promise.all(
     items.map(async (item: any) => {
-      if (!item?.Id || !item.UserData) return;
+      if (item?.Id && item.UserData) {
+        const d = await decodeJellyfinId(String(item.Id));
+        if (d) descriptors.set(String(item.Id), d);
+      }
+    })
+  );
 
-      const descriptor = await decodeJellyfinId(String(item.Id));
+  let own = new Map<string, any>();
+  if (userUUID) {
+    const videoIds = [...descriptors.values()]
+      .filter((d) => d.k === 'movie' || d.k === 'episode')
+      .map((d) => stremioIdFor(d))
+      .filter(Boolean) as string[];
+    try {
+      const database: any = require('../database');
+      own = await database.getPlaystates(userUUID, videoIds);
+    } catch {
+      own = new Map();
+    }
+  }
+
+  await Promise.all(
+    items.map(async (item: any) => {
+      const descriptor = descriptors.get(String(item?.Id));
       if (!descriptor) return;
 
       if (descriptor.k === 'series') {
@@ -506,8 +505,25 @@ export async function applyWatchedState(items: any[], snapshot: WatchedSnapshot)
       }
 
       const stremioId = stremioIdFor(descriptor);
-      if (!stremioId || !isWatched(snapshot, stremioId)) return;
+      if (!stremioId) return;
 
+      const record = own.get(stremioId);
+      if (record) {
+        const runtime = Number(record.runtime_ms) || Number(item.RunTimeTicks || 0) / 10000;
+        const position = Number(record.position_ms) || 0;
+        // A position on a finished title is a rewatch under way.
+        item.UserData = {
+          ...item.UserData,
+          Played: Boolean(record.played),
+          PlayCount: Number(record.play_count) || 0,
+          PlaybackPositionTicks: position * 10000,
+          PlayedPercentage: position > 0 && runtime > 0 ? (position / runtime) * 100 : record.played ? 100 : 0,
+          ...(record.last_played_at ? { LastPlayedDate: new Date(Number(record.last_played_at)).toISOString() } : {}),
+        };
+        return;
+      }
+
+      if (!isWatched(snapshot, stremioId)) return;
       item.UserData = { ...item.UserData, Played: true, PlayCount: 1 };
     })
   );

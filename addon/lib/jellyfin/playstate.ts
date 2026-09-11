@@ -139,6 +139,36 @@ function reportFor(
   };
 }
 
+async function recordPlaystate(
+  userUUID: string,
+  session: ResolvedSession,
+  event: 'start' | 'pause' | 'stop' | 'played' | 'unplayed',
+  positionMs: number,
+  played: boolean | null
+): Promise<void> {
+  const database: any = require('../database');
+  const videoId = session.videoId;
+  const runtimeMs = session.runtimeMs ?? 0;
+
+  try {
+    if (event === 'unplayed') {
+      await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, played: false, lastPlayedAt: null });
+      return;
+    }
+    if (event === 'played') {
+      await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now() });
+      return;
+    }
+    if (event === 'stop' && played === true) {
+      await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now() });
+      return;
+    }
+    await database.upsertPlaystate(userUUID, videoId, { positionMs, runtimeMs, lastPlayedAt: Date.now() });
+  } catch (error: any) {
+    logger.warn(`Playstate write failed for ${videoId}: ${error?.message || error}`);
+  }
+}
+
 async function report(
   req: any,
   body: any,
@@ -184,6 +214,9 @@ async function report(
     setPosition(key, { positionMs, at: Date.now(), paused: event === 'pause' });
   }
 
+  // The table is written before any tracker is told, so a read never waits on one.
+  await recordPlaystate(userUUID, session, event, positionMs, played);
+
   // A pause at zero is what a collapsed position looks like, and a real one says
   // nothing a tracker can use, so it is remembered without writing a resume
   // point every service would then show as continue-watching from the start.
@@ -205,16 +238,12 @@ async function report(
   // resume shelf and the watched ticks read from are dropped rather than left
   // serving what they cached before the event.
   const { invalidateResume } = require('./resume');
-  const { invalidateWatched, noteWatched } = require('./watched');
+  const { invalidateWatched } = require('./watched');
   invalidateResume(userUUID);
 
-  // Recorded rather than refetched: dropping the snapshot would send us back to
-  // a tracker that has not published the write yet, and the answer would be the
-  // state from before. The tracker becomes the truth again on its own cadence.
-  const marksWatched = event === 'played' || (event === 'stop' && played === true);
-  if (marksWatched || event === 'unplayed') {
-    noteWatched(session.videoId, event !== 'unplayed');
-  } else if (event !== 'pause' && event !== 'start') {
+  // Only a finished stop drops the tracker snapshot: the tracker may now know
+  // more than the table, such as a show's next episode.
+  if (event === 'stop' && played === true) {
     await invalidateWatched(config).catch(() => undefined);
   }
 }

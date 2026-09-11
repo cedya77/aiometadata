@@ -244,6 +244,10 @@ async function startServer(): Promise<void> {
 
   require('./lib/authSession').backfillSessionIndex().catch(() => undefined);
 
+  if (require('./lib/settingsService').getSetting('JELLYFIN_API_ENABLED')) {
+    require('./lib/jellyfin/playstateSync').startPlaystateSync();
+  }
+
   // Cache path migration
   await runCachePathMigration();
   ok('cachePathMigration');

@@ -404,7 +404,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         collected,
         includeItemTypes ? String(includeItemTypes) : undefined
       );
-      await applyWatchedState(across, await watchedSnapshot(userUUID, config));
+      await applyWatchedState(across, await watchedSnapshot(userUUID, config), userUUID);
 
       res.json(itemList(
         across,
@@ -427,7 +427,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         const children = descriptor.k === 'season'
           ? buildEpisodes(meta, descriptor.t, encodeSeriesId(descriptor), serverId, descriptor.s)
           : buildSeasons(meta, descriptor.t, String(parentId), serverId);
-        await applyWatchedState(children, await watchedSnapshot(userUUID, config));
+        await applyWatchedState(children, await watchedSnapshot(userUUID, config), userUUID);
         const page = children.slice(startIndex, startIndex + limit);
         res.json(itemList(page, children.length, startIndex));
         return;
@@ -469,7 +469,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       ? startIndex + filtered.length + limit
       : startIndex + filtered.length;
 
-    await applyWatchedState(filtered, await watchedSnapshot(userUUID, config));
+    await applyWatchedState(filtered, await watchedSnapshot(userUUID, config), userUUID);
     res.json(itemList(filtered, total, startIndex));
   });
 
@@ -1096,7 +1096,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     );
     const episodesConfig = await loadConfig(req);
     if (episodesConfig) {
-      await applyWatchedState(episodes, await watchedSnapshot(req.params.userUUID, episodesConfig));
+      await applyWatchedState(episodes, await watchedSnapshot(req.params.userUUID, episodesConfig), req.params.userUUID);
     }
     res.json(itemList(episodes, episodes.length, 0));
   });
@@ -1157,7 +1157,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     );
 
     const found = items.filter(Boolean);
-    await applyWatchedState(found, snapshot);
+    await applyWatchedState(found, snapshot, userUUID);
     res.json(itemList(found, rows.length, startIndex));
   });
 
@@ -1212,7 +1212,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
       const episodeConfig = await loadConfig(req);
       if (episodeConfig) {
-        await applyWatchedState([episode], await watchedSnapshot(userUUID, episodeConfig));
+        await applyWatchedState([episode], await watchedSnapshot(userUUID, episodeConfig), userUUID);
       }
 
       res.json(episode);
@@ -1240,7 +1240,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
       const seasonConfig = await loadConfig(req);
       if (seasonConfig) {
-        await applyWatchedState([season], await watchedSnapshot(userUUID, seasonConfig));
+        await applyWatchedState([season], await watchedSnapshot(userUUID, seasonConfig), userUUID);
       }
 
       res.json(season);
@@ -1272,7 +1272,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
       const itemConfig = await loadConfig(req);
       if (itemConfig) {
-        await applyWatchedState([item], await watchedSnapshot(userUUID, itemConfig));
+        await applyWatchedState([item], await watchedSnapshot(userUUID, itemConfig), userUUID);
       }
 
       res.json(item);

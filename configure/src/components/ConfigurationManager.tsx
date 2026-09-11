@@ -660,7 +660,7 @@ export function ConfigurationManager() {
                     </div>
 
                     <div className="space-y-1.5 border-t pt-3">
-                      <Label htmlFor="jellyfin-resume-source" className="text-sm font-medium">Continue Watching</Label>
+                      <Label htmlFor="jellyfin-resume-source" className="text-sm font-medium">Also read from</Label>
                       <Select
                         value={config.jellyfinResumeSource ?? 'auto'}
                         onValueChange={(value) => setConfig(prev => ({ ...prev, jellyfinResumeSource: value as NonNullable<typeof prev.jellyfinResumeSource> }))}
@@ -673,15 +673,15 @@ export function ConfigurationManager() {
                           {resumeSourceOptions.map((opt) => (
                             <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                           ))}
-                          <SelectItem value="off">Off</SelectItem>
+                          <SelectItem value="off">This server only</SelectItem>
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">
-                        Which tracker the client's Continue Watching row is built from. Only services that store a playback position can answer, so AniList and MyAnimeList are not offered. Automatic uses whichever connected service can.
+                        Anything played through this server is remembered here and shows in Continue Watching and as watched on its own. A connected tracker adds what was played elsewhere, such as on a phone. Only services that store a playback position can, so AniList and MyAnimeList are not offered. Automatic uses whichever connected service can.
                       </p>
                       {resumeSourceOptions.length === 0 && (
-                        <p className="text-xs text-amber-400">
-                          No connected service stores playback positions yet. Connect MDBList, Trakt, Simkl or PublicMetaDB for the row to fill.
+                        <p className="text-xs text-muted-foreground">
+                          No connected service stores playback positions, so only what is played through this server is shown. That is enough for a single client.
                         </p>
                       )}
                     </div>

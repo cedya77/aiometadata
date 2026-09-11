@@ -371,6 +371,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     default: true,
   },
   {
+    key: 'JELLYFIN_PLAYSTATE_SYNC_INTERVAL',
+    envVar: 'JELLYFIN_PLAYSTATE_SYNC_INTERVAL',
+    label: 'Jellyfin Playstate Sync Interval',
+    description: 'How often positions and watches held by a tracker are pulled into the playstate table for titles it has not seen, in seconds. What a client played through this server is recorded immediately regardless.',
+    category: 'Features',
+    type: 'number',
+    default: 1800,
+    min: 60,
+  },
+  {
     key: 'JELLYFIN_API_ENABLED',
     envVar: 'JELLYFIN_API_ENABLED',
     label: 'Jellyfin API',

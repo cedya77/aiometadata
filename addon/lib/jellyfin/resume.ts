@@ -184,7 +184,55 @@ async function rowsFrom(service: Capable, credential: string): Promise<ResumeRow
   return [];
 }
 
+// No id mapping: the video id was recorded in the space the client played it in.
+async function ownRows(userUUID: string): Promise<ResumeRow[]> {
+  const database: any = require('../database');
+  const { parseStremioId } = require('./ids');
+  const limit = envInt('JELLYFIN_RESUME_OWN_LIMIT', 100, 1);
+
+  let records: any[] = [];
+  try {
+    records = await database.listResume(userUUID, limit);
+  } catch (error: any) {
+    logger.debug(`Own resume rows unavailable: ${error?.message || error}`);
+    return [];
+  }
+
+  const rows: ResumeRow[] = [];
+  for (const r of records) {
+    const videoId = String(r.video_id);
+    const runtimeMs = Number(r.runtime_ms) || 0;
+    const positionMs = Number(r.position_ms) || 0;
+    if (runtimeMs <= 0 || positionMs <= 0) continue;
+
+    const parsed = parseStremioId(videoId);
+    const isEpisode = Boolean(parsed && parsed.episode !== null && parsed.episode !== undefined);
+    const mediaType: ResumeRow['mediaType'] = !isEpisode
+      ? 'movie'
+      : parsed.idType === 'kitsu' || parsed.idType === 'mal' || parsed.idType === 'anilist' ? 'anime' : 'series';
+
+    rows.push({
+      metaId: isEpisode ? parsed.base : videoId,
+      videoId,
+      mediaType,
+      kind: isEpisode ? 'episode' : 'movie',
+      progress: Math.min(100, (positionMs / runtimeMs) * 100),
+      runtimeMinutes: Math.round(runtimeMs / 60000),
+      updatedAt: Number(r.updated_at) || 0,
+    });
+  }
+  return rows;
+}
+
 export async function resumeSnapshot(userUUID: string, config: any): Promise<ResumeRow[]> {
+  // A tracker only adds what this server never saw, such as another device.
+  const own = await ownRows(userUUID);
+  const tracker = await trackerSnapshot(userUUID, config);
+  const seen = new Set(own.map((r) => r.videoId));
+  return [...own, ...tracker.filter((r) => !seen.has(r.videoId))].sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export async function trackerSnapshot(userUUID: string, config: any): Promise<ResumeRow[]> {
   const service = sourceFor(config);
   if (!service) return [];
 
