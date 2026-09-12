@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.18.0](https://github.com/cedya77/aiometadata/compare/v2.17.2...v2.18.0) (2026-09-12)
+
+
+### Features
+
+* **watch-tracking:** declare the watch_state resource and take its push spelling ([41f92d6](https://github.com/cedya77/aiometadata/commit/41f92d6e704536bb34b32074c023adb886e3e079))
+
 ## [2.17.2](https://github.com/cedya77/aiometadata/compare/v2.17.1...v2.17.2) (2026-09-11)
 
 
