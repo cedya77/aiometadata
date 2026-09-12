@@ -5567,10 +5567,11 @@ addon.get("/stremio/:userUUID/stream/:type/:id.json", async function (req, res) 
   return respond(req, res, { streams: streamUrl ? [{ externalUrl: streamUrl, name: `⭐ Rate Me` }] : [] }, { cacheMaxAge: 0 });
 });
 
-// --- Playback Route (real playback events, Jellyfin front-ends) ---
+// --- Watch state (real playback events, Jellyfin front-ends) ---
 // The counterpart to the subtitle trigger: a front-end that knows when playback
-// actually started and stopped posts it here instead of us inferring it.
-addon.post("/stremio/:userUUID/playback/:type/:id.json", async function (req, res) {
+// actually started and stopped posts it here instead of us inferring it. The
+// first spelling is the v1 contract, still sent by older front-ends.
+addon.post(["/stremio/:userUUID/watch_state/push/:type/:id.json", "/stremio/:userUUID/playback/:type/:id.json"], async function (req, res) {
   const { userUUID, type, id } = req.params;
 
   // A missing configuration has to read as a dropped event, not a server fault:
@@ -5600,6 +5601,33 @@ addon.post("/stremio/:userUUID/playback/:type/:id.json", async function (req, re
   } catch (error) {
     consola.error(`[Playback] Failed to handle ${type}/${id}: ${error.message}`);
     return res.status(500).json({ error: "Failed to record playback" });
+  }
+});
+
+// What the trackers and this server's own table hold, for a front-end to fill
+// its Continue Watching and Next Up from. Gated on the same opt-in as the push.
+addon.get("/stremio/:userUUID/watch_state/pull.json", async function (req, res) {
+  const { userUUID } = req.params;
+
+  let config;
+  try {
+    config = await loadConfigFromDatabase(userUUID);
+  } catch {
+    config = null;
+  }
+  if (!config || !config.playbackReporting) {
+    return res.status(404).json({ error: "Watch state is not enabled" });
+  }
+
+  try {
+    const { buildWatchStatePull } = require('./lib/watchState');
+    const since = typeof req.query.since === 'string' && req.query.since ? req.query.since : null;
+    const payload = await buildWatchStatePull(userUUID, config, since);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json(payload);
+  } catch (error) {
+    consola.error(`[Watch State] Failed to build the pull for ${userUUID}: ${error.message}`);
+    return res.status(500).json({ error: "Failed to read watch state" });
   }
 });
 

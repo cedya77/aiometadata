@@ -7,8 +7,11 @@ const logger = consola.withTag('Playback');
 export const PLAYBACK_EVENTS = ['start', 'progress', 'pause', 'stop', 'played', 'unplayed'] as const;
 export type PlaybackEvent = (typeof PLAYBACK_EVENTS)[number];
 
-/** The id prefixes parseMediaId accepts, which is what we can act on. */
-export const PLAYBACK_ID_PREFIXES = ['tt', 'tmdb:', 'tvdb:', 'trakt:', 'kitsu:'];
+/** Contract version of the `watch_state` resource this addon answers. */
+export const WATCH_STATE_VERSION = 2;
+
+/** The events acted on; a pause carries nothing a tracker stores beyond the stop's position. */
+export const PLAYBACK_MANIFEST_EVENTS = ['start', 'stop', 'played', 'unplayed'];
 
 export interface PlaybackReport {
   id: string | null;

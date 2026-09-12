@@ -8,7 +8,8 @@ import { getGenresBySelection } from "../static/genres";
 import buildInfo from "./buildInfo";
 import catalogsTranslationsJson from "../static/translations.json";
 import catalogTypesJson from "../static/catalog-types.json";
-import { PLAYBACK_ID_PREFIXES } from "./playbackHandler";
+import { PLAYBACK_MANIFEST_EVENTS, WATCH_STATE_VERSION } from "./playbackHandler";
+import { watchStatePullTtl } from "./watchState";
 const jikan: any = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
 const catalogsTranslations: Record<string, Record<string, string>> = catalogsTranslationsJson;
@@ -1667,15 +1668,11 @@ async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise
   }
 
   // Declared only when the user has opted in, since declaring it is what makes
-  // a front-end start delivering. The prefixes are the ones the tracker can
-  // actually parse, so nothing arrives that would only be discarded.
+  // a front-end start delivering. Named as strings: a reader validates object resources against the names it
+  // knows, and one that has never heard of these would reject the manifest whole.
   const playbackReporting = watchTrackingEnabled && config.playbackReporting === true;
   if (playbackReporting) {
-    resources.push({
-      name: "playback",
-      types: ["movie", "series"],
-      idPrefixes: PLAYBACK_ID_PREFIXES,
-    });
+    resources.push("watch_state", "playback");
   }
 
   const manifest = {
@@ -1687,7 +1684,14 @@ async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
     resources,
     ...(playbackReporting
-      ? { playback: { version: 1, events: ["start", "stop", "played", "unplayed"] } }
+      ? {
+          watchState: {
+            version: WATCH_STATE_VERSION,
+            push: { events: PLAYBACK_MANIFEST_EVENTS },
+            pull: { items: true, watched: true, ttlSeconds: watchStatePullTtl() },
+          },
+          playback: { version: 1, events: PLAYBACK_MANIFEST_EVENTS },
+        }
       : {}),
     types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt", "collection"],
     idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:", "upnext_", "unwatched_", "mdblist_upnext_", "pmdb_resume_", "simkl_upnext_"],

@@ -408,7 +408,7 @@ export function GeneralSettings() {
             </div>
             {config.playbackReporting ? (
               <p className="text-xs text-muted-foreground">
-                Only a client that reports playback can drive this, which today means Jellyfin ones. In exchange, something you abandon after a few minutes is kept as a resume point rather than being marked watched. <span className="text-amber-400">Watching anywhere else, Stremio included, records nothing at all.</span>
+                Only a client that reports playback can drive this, which today means Jellyfin ones. In exchange, something you abandon after a few minutes is kept as a resume point rather than being marked watched, and a client that asks can read back what your trackers hold, so its Continue Watching reflects other devices. <span className="text-amber-400">Watching anywhere else, Stremio included, records nothing at all.</span>
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">
