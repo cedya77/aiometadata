@@ -33,7 +33,7 @@ import { segmentId, segmentsFor, type SegmentType } from './segments';
 import { personByName, personCredits, similarTitles } from './people';
 import { applyWatchedState, isWatched, ownNextUpRows, watchedSnapshot } from './watched';
 import { registerStubs } from './stubs';
-import { recordPlayed, recordPlaying, recordProgress, recordStopped, recordUnplayed } from './playstate';
+import { recordPlayed, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData } from './playstate';
 
 const database: any = require('../database');
 
@@ -1894,18 +1894,39 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     };
   };
 
-  router.post(['/Users/:userId/PlayedItems/:itemId', '/UserPlayedItems/:itemId'], (req: any, res: any) => {
-    res.json(playedState(String(req.params.itemId), true));
-    recordPlayed(req, { ItemId: req.params.itemId }).catch((error: any) =>
+  // Answered once the table holds the mark: the client reads the item back
+  // straight after and would otherwise see the state from before.
+  router.post(['/Users/:userId/PlayedItems/:itemId', '/UserPlayedItems/:itemId'], async (req: any, res: any) => {
+    await recordPlayed(req, { ItemId: req.params.itemId }).catch((error: any) =>
       logger.debug(`Played report failed: ${error.message}`)
     );
+    res.json(playedState(String(req.params.itemId), true));
   });
 
-  router.delete(['/Users/:userId/PlayedItems/:itemId', '/UserPlayedItems/:itemId'], (req: any, res: any) => {
-    res.json(playedState(String(req.params.itemId), false));
-    recordUnplayed(req, { ItemId: req.params.itemId }).catch((error: any) =>
+  router.delete(['/Users/:userId/PlayedItems/:itemId', '/UserPlayedItems/:itemId'], async (req: any, res: any) => {
+    await recordUnplayed(req, { ItemId: req.params.itemId }).catch((error: any) =>
       logger.debug(`Unplayed report failed: ${error.message}`)
     );
+    res.json(playedState(String(req.params.itemId), false));
+  });
+
+  router.post(['/UserItems/:itemId/UserData', '/Users/:userId/Items/:itemId/UserData'], async (req: any, res: any) => {
+    try {
+      const state = await recordUserData(req, req.body || {});
+      if (!state) {
+        res.status(400).end();
+        return;
+      }
+      const id = normaliseJellyfinId(String(req.params.itemId));
+      res.json({
+        ...playedState(id, state.played),
+        PlaybackPositionTicks: state.positionMs * 10000,
+        PlayedPercentage: state.played ? 100 : 0,
+      });
+    } catch (error: any) {
+      logger.debug(`User data update failed: ${error.message}`);
+      res.status(500).end();
+    }
   });
 
   registerStubs(router);

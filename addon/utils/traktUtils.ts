@@ -1,4 +1,4 @@
-import { httpGet, httpPost } from "./httpClient.js";
+import { httpGet, httpPost, httpRequest } from "./httpClient.js";
 import { getMeta } from "../lib/getMeta.js";
 import { mapWithLimit } from "./concurrency.js";
 import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
@@ -3284,6 +3284,47 @@ export async function removeFromHistory(
     return true;
   } catch (error: any) {
     logger.error(`[Trakt] Failed to remove from history: ${error.message}`);
+    return false;
+  }
+}
+
+/** Drops the paused playback entry so the title leaves continue watching. */
+export async function clearPlayback(
+  idInput: Record<string, string | number>,
+  accessToken: string,
+  season?: number,
+  episode?: number
+): Promise<boolean> {
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${accessToken}`,
+    'trakt-api-version': '2',
+    'trakt-api-key': TRAKT_CLIENT_ID
+  };
+
+  try {
+    const response = await makeAuthenticatedRateLimitedTraktRequest(
+      'https://api.trakt.tv/sync/playback',
+      accessToken,
+      'Trakt clearPlayback'
+    );
+    const { playbackEntryMatches } = require('./simklUtils');
+    const matches = (Array.isArray(response?.data) ? response.data : [])
+      .filter((entry: any) => entry?.id && playbackEntryMatches(entry, idInput, season, episode));
+    if (!matches.length) return true;
+
+    for (const entry of matches) {
+      await makeRateLimitedRequest(
+        () => httpRequest(`https://api.trakt.tv/sync/playback/${entry.id}`, { method: 'DELETE', headers, dispatcher: traktDispatcher }),
+        'Trakt clearPlayback',
+        3,
+        accessToken
+      );
+    }
+    logger.info('[Trakt] Cleared the resume point', { ids: idInput, season, episode });
+    return true;
+  } catch (error: any) {
+    logger.error(`[Trakt] Clearing the resume point failed: ${error.message}`);
     return false;
   }
 }

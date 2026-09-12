@@ -1,4 +1,4 @@
-import { httpGet, httpPost } from "./httpClient.js";
+import { httpGet, httpPost, httpRequest } from "./httpClient.js";
 import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
@@ -790,6 +790,55 @@ export async function addToHistory(
     return false;
   } catch (error: any) {
     logger.error(`[Simkl] Failed to add to history: ${error.message}`);
+    return false;
+  }
+}
+
+/** True when a playback entry is the title, and for a show the episode, named. */
+export function playbackEntryMatches(
+  entry: any,
+  idInput: Record<string, string | number>,
+  season?: number,
+  episode?: number
+): boolean {
+  const ids = (entry?.anime ?? entry?.show ?? entry?.movie)?.ids ?? {};
+  const shared = Object.entries(idInput).some(([key, value]) => ids[key] != null && String(ids[key]) === String(value));
+  if (!shared) return false;
+  if (season == null || episode == null) return !entry?.episode;
+
+  const ep = entry?.episode;
+  if (!ep) return false;
+  return (Number(ep.season) === season && Number(ep.number) === episode)
+    || (Number(ep.tvdb_season) === season && Number(ep.tvdb_number) === episode);
+}
+
+/** Drops the paused session so the title leaves continue watching. */
+export async function clearPlayback(
+  idInput: Record<string, string | number>,
+  accessToken: string,
+  season?: number,
+  episode?: number
+): Promise<boolean> {
+  const sessions = await fetchPlaybackSessions(accessToken);
+  const matches = sessions.filter((entry) => entry?.id && playbackEntryMatches(entry, idInput, season, episode));
+  if (!matches.length) return true;
+
+  try {
+    for (const entry of matches) {
+      await httpRequest(`${SIMKL_BASE_URL}/sync/playback/${entry.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'simkl-api-key': SIMKL_CLIENT_ID,
+        },
+        dispatcher: simklDispatcher,
+        timeout: 10000,
+      });
+    }
+    logger.info('[Simkl] Cleared the resume point', { ids: idInput, season, episode });
+    return true;
+  } catch (error: any) {
+    logger.error(`[Simkl] Clearing the resume point failed: ${error.message}`);
     return false;
   }
 }

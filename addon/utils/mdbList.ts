@@ -1874,6 +1874,7 @@ export {
   addToHistory,
   removeFromHistory,
   clearScrobbleSession,
+  clearScrobbleSession as clearPlayback,
   fetchMDBListCatalog
 };
 

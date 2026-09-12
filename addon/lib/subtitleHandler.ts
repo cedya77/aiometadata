@@ -488,7 +488,7 @@ async function eachHistoryService(
   parsedId: ParsedMediaId,
   config: any,
   mediaType: 'movie' | 'series',
-  method: 'addToHistory' | 'removeFromHistory',
+  method: 'addToHistory' | 'removeFromHistory' | 'clearPlayback',
   what: string
 ): Promise<void> {
   for (const service of ['trakt', 'simkl', 'mdblist'] as const) {
@@ -535,6 +535,12 @@ async function unwatch(parsedId: ParsedMediaId, config: any): Promise<void> {
   await eachHistoryService(parsedId, config, mediaType, 'removeFromHistory', 'Unwatch');
   await clearMdblistResumePoint(parsedId, config, mediaType);
   await publicMetaDbHistory(parsedId, config, mediaType, 'unwatch');
+}
+
+/** The resume point on every tracker, and nothing else: the watch stays. */
+async function clearResumePoint(parsedId: ParsedMediaId, config: any): Promise<void> {
+  const mediaType = parsedId.type === 'movie' ? 'movie' : 'series';
+  await eachHistoryService(parsedId, config, mediaType, 'clearPlayback', 'Clear resume point');
 }
 
 // MDBList holds a resume point apart from watched status, so a mark either way
@@ -739,6 +745,7 @@ export {
   checkinTrakt,
   checkinPublicMetaDB,
   unwatch,
+  clearResumePoint,
   creditWatch,
   shouldTrackMdblistWatch,
   shouldTrackAniList
@@ -751,6 +758,7 @@ module.exports = {
   checkinTrakt,
   checkinPublicMetaDB,
   unwatch,
+  clearResumePoint,
   creditWatch,
   shouldTrackMdblistWatch,
   shouldTrackAniList

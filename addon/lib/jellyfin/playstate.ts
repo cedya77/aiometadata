@@ -233,6 +233,17 @@ async function report(
     return;
   }
 
+  await tellTrackers(userUUID, config, session, event, positionMs, played);
+}
+
+async function tellTrackers(
+  userUUID: string,
+  config: any,
+  session: ResolvedSession,
+  event: 'start' | 'pause' | 'stop' | 'played' | 'unplayed',
+  positionMs: number,
+  played: boolean | null
+): Promise<void> {
   const { handlePlaybackReport } = require('../playbackHandler');
   await handlePlaybackReport(
     session.stremioType,
@@ -266,34 +277,55 @@ export async function recordStopped(req: any, body: any): Promise<void> {
 
 /** The mark-watched a client offers on an item, taken without it being played. */
 // A client marks a season or a whole series with one call on that item's id;
-// the mark applies to each aired episode in it.
+// the mark applies to each aired episode in it. The table is written for all
+// of them before this returns, since the client reads the item back straight
+// after and a half-marked season shows no tick; the trackers are told after.
 async function markEach(req: any, body: any, event: 'played' | 'unplayed'): Promise<void> {
   const userUUID = req.params?.userUUID;
   const itemId = bodyItemId(req, body);
   if (!userUUID || !itemId) return;
 
+  const { loadConfig } = require('./context');
+  const config = await loadConfig(req);
+  if (!config?.playbackReporting) return;
+
+  const { profileKey, readsTrackers } = require('./profiles');
+  const profile = profileKey(config);
+  const played = event === 'played';
+
+  const sessions = (await mapWithConcurrency(await markedItemIds(userUUID, itemId), 8, async (id: string) => {
+    const session = await resolveSession(userUUID, id);
+    if (!session) {
+      logger.debug(`No playable session for ${id}`);
+      return null;
+    }
+    deletePosition(`${userUUID}:${profile}:${id}`);
+    await recordPlaystate(userUUID, profile, session, event, 0, played);
+    return session;
+  })).filter((s): s is ResolvedSession => s !== null);
+
+  if (!readsTrackers(config)) return;
+  mapWithConcurrency(sessions, 3, (session: ResolvedSession) => tellTrackers(userUUID, config, session, event, 0, played))
+    .catch((error: any) => logger.debug(`Mark report failed for ${itemId}: ${error?.message || error}`));
+}
+
+/** The item itself, or each aired episode of the season or series it names. */
+async function markedItemIds(userUUID: string, itemId: string): Promise<string[]> {
   const descriptor = await decodeJellyfinId(itemId);
-  if (!descriptor || (descriptor.k !== 'season' && descriptor.k !== 'series')) {
-    await report(req, body, event);
-    return;
-  }
+  if (!descriptor || (descriptor.k !== 'season' && descriptor.k !== 'series')) return [itemId];
 
   const meta = await fetchMeta(userUUID, 'series', descriptor.i);
   const videos: any[] = Array.isArray(meta?.videos) ? meta.videos : [];
   const now = Date.now();
-  const inScope = videos.filter((v: any) => {
-    if (descriptor.k === 'season' ? v.season !== descriptor.s : v.season === 0) return false;
-    const aired = Date.parse(v.released || '');
-    return !Number.isFinite(aired) || aired <= now;
-  });
-
-  await mapWithConcurrency(inScope, 3, async (video: any) => {
+  const ids: string[] = [];
+  for (const video of videos) {
+    if (descriptor.k === 'season' ? video.season !== descriptor.s : video.season === 0) continue;
+    const aired = Date.parse(video.released || '');
+    if (Number.isFinite(aired) && aired > now) continue;
     const parsed = parseStremioId(String(video.id ?? ''));
-    const episodeId = parsed
-      ? encodeJellyfinId({ k: 'episode', t: descriptor.t, i: parsed.base, s: parsed.season, e: parsed.episode as number })
-      : null;
-    if (episodeId) await report(req, { ItemId: episodeId }, event);
-  });
+    if (parsed) ids.push(encodeJellyfinId({ k: 'episode', t: descriptor.t, i: parsed.base, s: parsed.season, e: parsed.episode as number }));
+  }
+  return ids;
 }
 
 export async function recordPlayed(req: any, body: any): Promise<void> {
@@ -332,4 +364,56 @@ export async function recordProgress(req: any, body: any): Promise<void> {
   }
 
   await report(req, body, paused ? 'pause' : 'start');
+}
+
+/**
+ * The one-call edit of an item's state a client offers next to mark-watched: a
+ * played flag, or a resume position, which cleared is what drops the item from
+ * continue watching. Answers the state the item is now in.
+ */
+export async function recordUserData(req: any, body: any): Promise<{ played: boolean; positionMs: number } | null> {
+  const userUUID = req.params?.userUUID;
+  const itemId = bodyItemId(req, body);
+  if (!userUUID || !itemId) return null;
+
+  const played = body?.Played ?? body?.played;
+  if (played === true || played === false) {
+    await markEach(req, { ItemId: itemId }, played ? 'played' : 'unplayed');
+    return { played, positionMs: 0 };
+  }
+
+  const positionMs = ticksToMs(body?.PlaybackPositionTicks ?? body?.playbackPositionTicks);
+  if (positionMs === null) return null;
+
+  const { loadConfig } = require('./context');
+  const config = await loadConfig(req);
+  if (!config?.playbackReporting) return null;
+
+  const session = await resolveSession(userUUID, itemId);
+  if (!session) return null;
+
+  const { profileKey } = require('./profiles');
+  const profile = profileKey(config);
+  deletePosition(`${userUUID}:${profile}:${itemId}`);
+  await upsertPlaystateEverywhere(userUUID, session.videoId, { positionMs, runtimeMs: session.runtimeMs ?? 0 }, profile);
+
+  const { invalidateResume } = require('./resume');
+  invalidateResume(userUUID);
+
+  // Cleared here means cleared on the trackers too, or their copy would come
+  // back through the shelf on any device reading them directly.
+  const { readsTrackers } = require('./profiles');
+  if (positionMs === 0 && readsTrackers(config)) {
+    const { parseMediaId, clearResumePoint } = require('../subtitleHandler');
+    const parsed = parseMediaId(session.videoId);
+    if (parsed) {
+      clearResumePoint(parsed, config).catch((error: any) =>
+        logger.debug(`Clearing the resume point on trackers failed for ${session.videoId}: ${error?.message || error}`)
+      );
+    }
+  }
+
+  const database: any = require('../database');
+  const row = await database.getPlaystate(userUUID, session.videoId, profile);
+  return { played: Boolean(row?.played), positionMs };
 }
