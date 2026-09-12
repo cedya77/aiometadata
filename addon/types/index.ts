@@ -13,6 +13,7 @@ export interface UserConfig {
   /** Name and picture of the main Jellyfin user, the configuration itself. */
   jellyfinUserName?: string;
   jellyfinUserAvatar?: string;
+  jellyfinUserTags?: string[];
   jellyfinUsers?: Array<{ id: string; name: string; avatar?: string; tags: string[]; trackers?: boolean }>;
   providers?: {
     movie?: string;

@@ -57,7 +57,7 @@ export function listProfiles(config: any, userUUID: string): Profile[] {
     name: defaultUserName(config, userUUID),
     userId: profileUserId(userUUID, null),
     avatar: avatarOf(config?.jellyfinUserAvatar),
-    tags: [],
+    tags: knownTags(config, config?.jellyfinUserTags),
     sharesHistory: true,
   }];
   const seen = new Set<string>();
@@ -100,12 +100,13 @@ export function profileByUserId(config: any, userUUID: string, userId: unknown):
 
 /** The same catalogs and cap an install URL naming this user's tags would get. */
 export function scopeConfigToProfile(config: any, userUUID: string, id: string | null): any {
-  if (!id) return config;
-
   const profile = profileById(config, userUUID, id);
-  if (!profile.id) return config;
+  if (!profile.id && !profile.tags.length) return config;
 
-  const scoped = { ...config, jellyfinProfileId: profile.id, jellyfinProfileTags: profile.tags, jellyfinProfileShares: profile.sharesHistory };
+  // The main user keeps its own history and trackers whatever tags it picks.
+  const scoped = profile.id
+    ? { ...config, jellyfinProfileId: profile.id, jellyfinProfileTags: profile.tags, jellyfinProfileShares: profile.sharesHistory }
+    : { ...config, jellyfinProfileTags: profile.tags };
   if (profile.tags.length) {
     const { ageRating, allowUnrated } = resolveInstallFilters(config, { tags: profile.tags });
     if (ageRating) scoped.ageRating = ageRating;

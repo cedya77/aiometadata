@@ -30,3 +30,13 @@ export function sourceFor(config: any): Capable | null {
   }
   return CAPABLE.find((service) => credentialFor(config, service)) ?? null;
 }
+
+/** Every service the resume shelf reads under Automatic; a named choice is that one alone. */
+export function resumeSourcesFor(config: any): Capable[] {
+  const choice = config?.jellyfinResumeSource ?? 'auto';
+  if (choice === 'off') return [];
+  if (choice !== 'auto') {
+    return credentialFor(config, choice as Capable) ? [choice as Capable] : [];
+  }
+  return CAPABLE.filter((service) => credentialFor(config, service));
+}

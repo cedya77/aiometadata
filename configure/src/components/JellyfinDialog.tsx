@@ -96,10 +96,7 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, onChange, on
           />
         </div>
       </div>
-      {main ? (
-        <p className="text-xs text-muted-foreground">You. Every catalog, and your connected trackers.</p>
-      ) : (
-        <>
+      <>
           {allTags.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-xs text-muted-foreground mr-1">Tags:</span>
@@ -123,13 +120,16 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, onChange, on
                 : `${catalogCount} catalog${catalogCount === 1 ? '' : 's'}`}
             </span>
             {caps.length ? <span className="rounded-full border border-amber-500/40 px-1.5 text-[11px] text-amber-400">{caps.join(', ')} and lower</span> : null}
-            <label className="ml-auto flex items-center gap-1.5" title="On: this is you on fewer catalogs, sharing your Continue Watching, watched marks and trackers. Off: someone else, with their own.">
-              <Switch checked={user?.trackers === true} onCheckedChange={(next) => onChange({ trackers: next || undefined })} aria-label={`${name} is the same person as you`} />
-              Same person as you
-            </label>
+            {main ? (
+              <span className="ml-auto">You: your Continue Watching and trackers</span>
+            ) : (
+              <label className="ml-auto flex items-center gap-1.5" title="On: this is you on fewer catalogs, sharing your Continue Watching, watched marks and trackers. Off: someone else, with their own.">
+                <Switch checked={user?.trackers === true} onCheckedChange={(next) => onChange({ trackers: next || undefined })} aria-label={`${name} is the same person as you`} />
+                Same person as you
+              </label>
+            )}
           </div>
-        </>
-      )}
+      </>
     </div>
   );
 }
@@ -279,12 +279,14 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
               main
               name={mainName}
               avatar={config.jellyfinUserAvatar}
+              user={{ id: '', name: mainName, tags: config.jellyfinUserTags ?? [] }}
               allTags={tags}
-              catalogCount={0}
+              catalogCount={catalogCountFor(config.jellyfinUserTags ?? [])}
               onChange={(patch) => setConfig(prev => ({
                 ...prev,
                 ...('name' in patch ? { jellyfinUserName: patch.name } : {}),
                 ...('avatar' in patch ? { jellyfinUserAvatar: patch.avatar } : {}),
+                ...('tags' in patch ? { jellyfinUserTags: patch.tags?.length ? patch.tags : undefined } : {}),
               }))}
             />
             {users.map((user) => (
@@ -437,7 +439,7 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Anything played through this server is remembered here and shows in Continue Watching and as watched on its own. For you, and for users that are you, a connected tracker adds what was played elsewhere, such as on a phone. Only services that store a playback position can, so AniList and MyAnimeList are not offered. Automatic uses whichever connected service can.
+              Anything played through this server is remembered here and shows in Continue Watching and as watched on its own. For you, and for users that are you, a connected tracker adds what was played elsewhere, such as on a phone. Only services that store a playback position can, so AniList and MyAnimeList are not offered. Automatic reads every connected service that can.
             </p>
             {resumeSourceOptions.length === 0 && (
               <p className="text-xs text-muted-foreground">

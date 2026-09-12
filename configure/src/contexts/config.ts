@@ -398,6 +398,7 @@ export interface AppConfig {
   /** Name and picture of the main Jellyfin user, the configuration itself. */
   jellyfinUserName?: string;
   jellyfinUserAvatar?: string;
+  jellyfinUserTags?: string[];
   jellyfinUsers?: JellyfinUser[];
   customPosterUrlPattern?: string;
   customBackgroundUrlPattern?: string;

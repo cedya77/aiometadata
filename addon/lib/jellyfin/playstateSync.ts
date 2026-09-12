@@ -39,22 +39,27 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
     added += 1;
   }
 
+  // A row holding a resume point the tracker no longer has, on a title its
+  // history now lists as watched, was finished elsewhere: the tracker's last
+  // word on it is the watch. A resume point it still holds is a rewatch.
+  const paused = new Set(resume.map((row) => row.videoId));
   const watched = await watchedSnapshot(userUUID, config);
   const finished = [...watched.episodes, ...watched.movies];
   const known = await getPlaystatesAcross(userUUID, finished);
   for (const videoId of finished) {
-    if (known.has(videoId)) {
+    const row = known.get(videoId);
+    if (row && (row.played || paused.has(videoId))) {
       skipped += 1;
       continue;
     }
-    await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: null });
+    await upsertPlaystateEverywhere(userUUID, videoId, row ? { positionMs: 0, played: true } : { positionMs: 0, played: true, lastPlayedAt: null });
     added += 1;
   }
 
   return { added, skipped };
 }
 
-async function runtimeFromMeta(userUUID: string, row: any): Promise<number> {
+export async function runtimeFromMeta(userUUID: string, row: any): Promise<number> {
   const { fetchMeta } = require('./items');
   const { parseStremioId } = require('./ids');
   try {

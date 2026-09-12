@@ -1,7 +1,7 @@
 import consola from 'consola';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
-import { type Capable, credentialFor, sourceFor } from './trackerSource';
+import { type Capable, credentialFor, resumeSourcesFor } from './trackerSource';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -243,10 +243,21 @@ export async function resumeSnapshot(userUUID: string, config: any): Promise<Res
   return [...own, ...tracker.filter((r) => !known.has(r.videoId))].sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+// Each connected service is read: a title paused through one app is only on
+// that app's tracker. The same video on two of them takes the newer position.
 export async function trackerSnapshot(userUUID: string, config: any): Promise<ResumeRow[]> {
-  const service = sourceFor(config);
-  if (!service) return [];
+  const parts = await Promise.all(
+    resumeSourcesFor(config).map((service) => serviceSnapshot(userUUID, config, service))
+  );
+  const merged = new Map<string, ResumeRow>();
+  for (const row of parts.flat()) {
+    const held = merged.get(row.videoId);
+    if (!held || row.updatedAt > held.updatedAt) merged.set(row.videoId, row);
+  }
+  return [...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+}
 
+async function serviceSnapshot(userUUID: string, config: any, service: Capable): Promise<ResumeRow[]> {
   const credential = credentialFor(config, service);
   if (!credential) return [];
 
