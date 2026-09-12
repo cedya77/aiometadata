@@ -1592,6 +1592,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     default: '',
   },
   {
+    key: 'TRAKT_FILTER_MAX_WAIT_MS',
+    envVar: 'TRAKT_FILTER_MAX_WAIT_MS',
+    label: 'Trakt Filter Max Wait (ms)',
+    description: 'How long a catalog waits for a paused Trakt queue before the Hide Watched filter falls back to the last watched set it fetched. After a Trakt rate limit the queue pauses for the time Trakt asks, usually minutes.',
+    category: 'Cache',
+    type: 'number',
+    default: 3000,
+    min: 0,
+  },
+  {
     key: 'SIMKL_ACTIVITIES_TTL',
     envVar: 'SIMKL_ACTIVITIES_TTL',
     label: 'Simkl Activities TTL (sec)',

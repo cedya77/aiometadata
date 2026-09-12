@@ -1,7 +1,7 @@
 import { httpGet, httpPost, httpRequest } from "./httpClient.js";
 import { getMeta } from "../lib/getMeta.js";
 import { mapWithLimit } from "./concurrency.js";
-import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
+import { cacheWrapMetaSmart, cacheWrapGlobal, readGlobalCache, writeGlobalCache } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
 const crypto = require('crypto');
@@ -153,6 +153,10 @@ class RequestQueue {
     if (newResumeTime > this.pausedUntil) {
       this.pausedUntil = newResumeTime;
     }
+  }
+
+  pausedMs(now: number = Date.now()): number {
+    return Math.max(0, this.pausedUntil - now);
   }
 
   private pruneRequestStarts(now: number) {
@@ -338,6 +342,12 @@ function getEpisodeIdPart(ep: any): string {
  * @param retries Number of retries
  * @param queueKey Unique key for the queue. Use accessToken for user requests, or 'global' for generic.
  */
+/** How long a request on this queue would wait before it could even start. */
+function traktWaitMs(queueKey: string): number {
+  const now = Date.now();
+  return Math.max(queueManager.getQueue(queueKey).pausedMs(now), globalRateLimiter.getWaitMs(now));
+}
+
 async function makeRateLimitedRequest<T>(
   requestFn: () => Promise<T>,
   context: string = 'Trakt',
@@ -2413,12 +2423,30 @@ async function fetchTraktCalendarShows(
   }, ttl, { sourceList: true });
 }
 
+/** The last watched set computed for a token, for when Trakt cannot be asked right now. */
+async function lastKnownWatchedIds(tokenHash: string): Promise<{ movieImdbIds: Set<string>, showImdbIds: Set<string> } | null> {
+  const fingerprint = await readGlobalCache(`trakt_watched_ids_latest:${tokenHash}`);
+  const data = fingerprint ? await readGlobalCache(`trakt_watched_ids:${tokenHash}:${fingerprint}`) : null;
+  if (!data) return null;
+  return { movieImdbIds: new Set(data.movieIds), showImdbIds: new Set(data.showIds) };
+}
+
+// A catalog is waiting on this, so it must not sit behind a rate-limit pause.
 async function getTraktWatchedIds(config: any): Promise<{ movieImdbIds: Set<string>, showImdbIds: Set<string> } | null> {
+  let tokenHash: string | null = null;
   try {
     const accessToken = await getTraktAccessToken(config);
     if (!accessToken) return null;
 
-    const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
+    tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
+
+    const budgetMs = parsePositiveInt(process.env.TRAKT_FILTER_MAX_WAIT_MS, 3000);
+    const waitMs = traktWaitMs(accessToken);
+    if (waitMs > budgetMs) {
+      const known = await lastKnownWatchedIds(tokenHash);
+      logger.warn(`[Watched IDs] Trakt paused for ${Math.round(waitMs / 1000)}s; ${known ? 'using the last known watched set' : 'no known set, leaving the catalog unfiltered'}`);
+      return known;
+    }
 
     const activitiesCacheKey = `trakt_activities:${tokenHash}`;
     const activities = await cacheWrapGlobal(activitiesCacheKey, async () => {
@@ -2475,13 +2503,16 @@ async function getTraktWatchedIds(config: any): Promise<{ movieImdbIds: Set<stri
       return { movieIds, showIds };
     }, 86400);
 
+    await writeGlobalCache(`trakt_watched_ids_latest:${tokenHash}`, fingerprint, 86400 * 7);
+
     return {
       movieImdbIds: new Set(watchedData.movieIds),
       showImdbIds: new Set(watchedData.showIds)
     };
   } catch (err: any) {
-    logger.warn(`[Watched IDs] Error fetching Trakt watched IDs: ${err.message}`);
-    return null;
+    const known = tokenHash ? await lastKnownWatchedIds(tokenHash) : null;
+    logger.warn(`[Watched IDs] Error fetching Trakt watched IDs: ${err.message}${known ? '; using the last known watched set' : ''}`);
+    return known;
   }
 }
 

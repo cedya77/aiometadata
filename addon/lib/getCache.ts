@@ -643,6 +643,29 @@ async function cacheWrapInternal(key: string, method: () => Promise<any>, ttl: n
   }
 }
 
+/** What cacheWrapGlobal would return for the key without fetching; null when absent or an error entry. */
+async function readGlobalCache(key: string): Promise<any> {
+  if (!redis) return null;
+  try {
+    const cached = await redis.getBuffer(withGlobalEpoch(key));
+    if (!cached) return null;
+    const parsed = await decodeCachePayload(cached);
+    return parsed && !parsed.error ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Stores a value where readGlobalCache and cacheWrapGlobal will find it, replacing what is there. */
+async function writeGlobalCache(key: string, value: any, ttl: number): Promise<void> {
+  if (!redis) return;
+  try {
+    await redis.set(withGlobalEpoch(key), await encodeCachePayload(value), 'EX', ttl);
+  } catch (error: any) {
+    globalCacheLogger.warn(`Redis SET error for key ${key}: ${error.message}`);
+  }
+}
+
 async function cacheWrapGlobal(key: string, method: () => Promise<any>, ttl: number, options: any = {}): Promise<any> {
   if (!redis) {
     return method();
@@ -1819,29 +1842,14 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
       _hasLogo: !!meta.logo,
       _hasVideos: !!(meta.videos && Array.isArray(meta.videos) && meta.videos.length > 0),
       _hasLinks: !!(meta.links && Array.isArray(meta.links) && meta.links.length > 0),
-      _metaProvider: meta._metaProvider
+      _metaProvider: meta._metaProvider,
+      _providerArt: meta._providerArt || null
    };
 
    queueComponentCache(componentsToCache, componentCacheKeys.basic, basicMeta);
 
    if (meta.poster) {
-    let rawPoster = meta.poster;
-
-    try {
-        const urlObj = new URL(rawPoster);
-
-        if (rawPoster.includes('/poster/') && urlObj.searchParams.has('fallback')) {
-           rawPoster = decodeURIComponent(urlObj.searchParams.get('fallback')!);
-        }
-        else if (urlObj.hostname.includes('top-posters.com') && urlObj.searchParams.has('fallback_url')) {
-           rawPoster = decodeURIComponent(urlObj.searchParams.get('fallback_url')!);
-        }
-
-    } catch (e: any) {}
-
-    if (meta._rawPosterUrl) {
-        rawPoster = meta._rawPosterUrl;
-    }
+    const rawPoster = meta._rawPosterUrl || rawPosterOf(meta.poster);
 
     queueComponentCache(componentsToCache, componentCacheKeys.poster, { poster: rawPoster });
     queueComponentCache(componentsToCache, componentCacheKeys.rawPoster, { _rawPosterUrl: meta._rawPosterUrl });
@@ -2095,38 +2103,15 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
 
     const bd = basicComponent.data;
 
-    if (bd._hasPoster) {
-        const hasPoster = availableComponents.some((c: any) => c.componentName === 'poster');
-        if (!hasPoster) {
-            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required poster.`);
+    const present = (name: string) => availableComponents.some((c: any) => c.componentName === name);
+    const missingArt = ART_COMPONENTS.filter(({ name, flag }) => bd[flag] && !present(name)).map(({ name }) => name);
+    if (missingArt.length > 0) {
+        availableComponents.push(...(await fillArtComponents(config, metaId, bd, missingArt, componentCacheKeys)));
+        const still = missingArt.find((name) => !present(name));
+        if (still) {
+            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required ${still}.`);
             updateCacheHealth(`meta:reconstructed:${metaId}`, 'miss', true);
-            return { errorReason: 'corrupted: missing poster' };
-        }
-    }
-
-    if (bd._hasBackground) {
-        const hasBg = availableComponents.some((c: any) => c.componentName === 'background');
-        if (!hasBg) {
-            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required background.`);
-            updateCacheHealth(`meta:reconstructed:${metaId}`, 'miss', true);
-            return { errorReason: 'corrupted: missing background' };
-        }
-    }
-    if (bd._hasLandscapePoster) {
-        const hasLandscapePoster = availableComponents.some((c: any) => c.componentName === 'landscapePoster');
-        if (!hasLandscapePoster) {
-            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required landscape poster.`);
-            updateCacheHealth(`meta:reconstructed:${metaId}`, 'miss', true);
-            return { errorReason: 'corrupted: missing landscape poster' };
-        }
-    }
-
-    if (bd._hasLogo) {
-        const hasLogo = availableComponents.some((c: any) => c.componentName === 'logo');
-        if (!hasLogo) {
-            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required logo.`);
-            updateCacheHealth(`meta:reconstructed:${metaId}`, 'miss', true);
-            return { errorReason: 'corrupted: missing logo' };
+            return { errorReason: `corrupted: missing ${still}` };
         }
     }
 
@@ -2340,6 +2325,69 @@ async function cacheWrapMetaSmart(userUUID: string, metaId: string, method: () =
       useShowPoster,
     });
   }, cloneJsonCompatibleResult);
+}
+
+/** The upstream image behind a rating-poster or proxy URL, which is what a component stores. */
+function rawPosterOf(poster: string): string {
+  try {
+    const urlObj = new URL(poster);
+    if (poster.includes('/poster/') && urlObj.searchParams.has('fallback')) {
+      return decodeURIComponent(urlObj.searchParams.get('fallback')!);
+    }
+    if (urlObj.hostname.includes('top-posters.com') && urlObj.searchParams.has('fallback_url')) {
+      return decodeURIComponent(urlObj.searchParams.get('fallback_url')!);
+    }
+  } catch {
+    return poster;
+  }
+  return poster;
+}
+
+const ART_COMPONENTS: Array<{ name: string; flag: string; field: string }> = [
+  { name: 'poster', flag: '_hasPoster', field: 'poster' },
+  { name: 'background', flag: '_hasBackground', field: 'background' },
+  { name: 'landscapePoster', flag: '_hasLandscapePoster', field: 'landscapePosterUrl' },
+  { name: 'logo', flag: '_hasLogo', field: 'logo' },
+];
+
+// Art is keyed by the user's art profile while the rest of the meta is shared, so
+// a new profile finds everything but the art. A basic without provider art is
+// left to the rebuild.
+async function fillArtComponents(config: any, metaId: string, basic: any, wanted: string[], componentCacheKeys: Record<string, string>): Promise<any[]> {
+  if (!basic._providerArt) return [];
+
+  const { resolveArtworkForProfile } = require('./getMeta');
+  const ids = {
+    imdbId: basic._imdbId || basic.imdb_id,
+    tmdbId: basic._tmdbId,
+    tvdbId: basic._tvdbId,
+    malId: basic._malId,
+    kitsuId: basic._kitsuId,
+  };
+
+  let art: any;
+  try {
+    art = await resolveArtworkForProfile({ type: basic.type, ids, metaProvider: basic._metaProvider, providerArt: basic._providerArt }, config);
+  } catch (error: any) {
+    cacheLogger.warn(`[Reconstruct] Art lookup failed for ${metaId}: ${error?.message || error}`);
+    return [];
+  }
+
+  const filled: any[] = [];
+  const queued: any[] = [];
+  for (const { name, field } of ART_COMPONENTS) {
+    if (!wanted.includes(name) || !art?.[field]) continue;
+    const value = name === 'poster' ? rawPosterOf(art.poster) : art[field];
+    const data = { [name]: value };
+    filled.push({ componentName: name, data });
+    queueComponentCache(queued, componentCacheKeys[name], data);
+  }
+
+  if (queued.length) {
+    await cacheComponentsPipeline(queued, META_TTL());
+    cacheLogger.info(`[Reconstruct] Filled ${filled.map((c) => c.componentName).join(', ')} for ${metaId} for this art profile`);
+  }
+  return filled;
 }
 
 function queueComponentCache(components: any[], cacheKey: string, componentData: any): void {
@@ -2576,6 +2624,8 @@ async function cacheWrapAniListCatalog(username: string, listName: string, page:
 }
 
 export {
+  readGlobalCache,
+  writeGlobalCache,
   redis,
   cacheWrap,
   cacheWrapGlobal,
@@ -2609,6 +2659,8 @@ export {
   stableStringify,
 };
 module.exports = {
+  readGlobalCache,
+  writeGlobalCache,
   redis,
   cacheWrap,
   cacheWrapGlobal,
