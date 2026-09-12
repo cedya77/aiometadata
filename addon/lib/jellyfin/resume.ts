@@ -235,7 +235,8 @@ export async function resumeSnapshot(userUUID: string, config: any): Promise<Res
   const tracker = readsTrackers(config) ? await trackerSnapshot(userUUID, config) : [];
   let known = new Map<string, any>();
   try {
-    known = await database.getPlaystates(userUUID, tracker.map((r) => r.videoId), profile);
+    const { getPlaystatesAcross } = require('./aliases');
+    known = await getPlaystatesAcross(userUUID, tracker.map((r) => r.videoId), profile);
   } catch (error: any) {
     logger.debug(`Own playstate rows unavailable: ${error?.message || error}`);
   }

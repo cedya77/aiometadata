@@ -1404,9 +1404,26 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const merged = [...own, ...snapshot.nextUp.filter((row) => !known.has(row.metaId))]
       .sort((a, b) => b.lastWatchedAt - a.lastWatchedAt);
 
-    const rows = merged.filter((row) => {
+    // A series page asks for its own next episode; an unplayed show starts at the first.
+    const seriesParam = req.query.SeriesId ?? req.query.seriesId ?? req.query.ParentId ?? req.query.parentId;
+    let scoped = merged;
+    if (seriesParam) {
+      const wanted = await decodeJellyfinId(String(seriesParam));
+      if (!wanted || wanted.k !== 'series') {
+        res.json(itemList([], 0, startIndex));
+        return;
+      }
+      const meta = await fetchMeta(userUUID, 'series', wanted.i);
+      const matches = (row: any) => row.metaId === wanted.i || (meta && row.metaId === String(meta.id));
+      scoped = merged.filter(matches);
+      if (!scoped.length) {
+        scoped = [{ metaId: wanted.i, videoId: null, season: 1, episode: 1, mediaType: wanted.t === 'anime' ? 'anime' : 'series', lastWatchedAt: 0 }];
+      }
+    }
+
+    const rows = scoped.filter((row) => {
       if (resumable && resumable.has(row.metaId)) return false;
-      if (!includeRewatching) {
+      if (!includeRewatching && !seriesParam) {
         const counts = snapshot.series.get(row.metaId);
         if (counts && counts.total > 0 && counts.watched >= counts.total) return false;
       }

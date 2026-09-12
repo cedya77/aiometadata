@@ -514,7 +514,8 @@ export async function applyWatchedState(
       .filter(Boolean) as string[];
     try {
       const database: any = require('../database');
-      own = await database.getPlaystates(userUUID, videoIds, profile);
+      const { getPlaystatesAcross } = require('./aliases');
+      own = await getPlaystatesAcross(userUUID, videoIds, profile);
     } catch {
       own = new Map();
     }

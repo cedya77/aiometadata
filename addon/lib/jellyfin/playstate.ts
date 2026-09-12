@@ -5,6 +5,7 @@ import redis from '../redisClient';
 import { decodeJellyfinId, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { mapWithConcurrency } from '../../utils/concurrency';
 import { fetchMeta } from './items';
+import { upsertPlaystateEverywhere } from './aliases';
 
 const logger = consola.withTag('JellyfinPlaystate');
 
@@ -154,18 +155,18 @@ async function recordPlaystate(
 
   try {
     if (event === 'unplayed') {
-      await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, played: false, lastPlayedAt: null }, profile);
+      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: false, lastPlayedAt: null }, profile);
       return;
     }
     if (event === 'played') {
-      await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now() }, profile);
+      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now() }, profile);
       return;
     }
     if (event === 'stop' && played === true) {
-      await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now() }, profile);
+      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now() }, profile);
       return;
     }
-    await database.upsertPlaystate(userUUID, videoId, { positionMs, runtimeMs, lastPlayedAt: Date.now() }, profile);
+    await upsertPlaystateEverywhere(userUUID, videoId, { positionMs, runtimeMs, lastPlayedAt: Date.now() }, profile);
   } catch (error: any) {
     logger.warn(`Playstate write failed for ${videoId}: ${error?.message || error}`);
   }

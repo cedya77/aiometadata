@@ -1,6 +1,7 @@
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
 import { sourceFor } from './trackerSource';
+import { getPlaystatesAcross, upsertPlaystateEverywhere } from './aliases';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -30,7 +31,7 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
     const runtimeMs = (row.runtimeMinutes ?? 0) * 60000 || (await runtimeFromMeta(userUUID, row));
     if (runtimeMs <= 0) continue;
 
-    await database.upsertPlaystate(userUUID, row.videoId, {
+    await upsertPlaystateEverywhere(userUUID, row.videoId, {
       positionMs: Math.round((runtimeMs * row.progress) / 100),
       runtimeMs,
       lastPlayedAt: row.updatedAt || null,
@@ -40,13 +41,13 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
 
   const watched = await watchedSnapshot(userUUID, config);
   const finished = [...watched.episodes, ...watched.movies];
-  const known = await database.getPlaystates(userUUID, finished);
+  const known = await getPlaystatesAcross(userUUID, finished);
   for (const videoId of finished) {
     if (known.has(videoId)) {
       skipped += 1;
       continue;
     }
-    await database.upsertPlaystate(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: null });
+    await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: null });
     added += 1;
   }
 
