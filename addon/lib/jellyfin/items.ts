@@ -248,32 +248,23 @@ function providerIds(meta: any): Record<string, string> {
 }
 
 function peopleFrom(meta: any, serverId: string): any[] {
-  const cast = Array.isArray(meta.app_extras?.cast) ? meta.app_extras.cast : [];
-  const people = cast.slice(0, 20).map((member: any) => {
+  const extras = meta.app_extras || {};
+  const person = (member: any, type: string, role: string) => {
     const id = encodeJellyfinId({ k: 'person', n: String(member?.name || '') });
     // A client only asks for a portrait when the tag is present, so registering
     // the photo and setting it have to happen together.
     if (member?.photo) rememberImages(serverId, id, { primary: member.photo });
-    return {
-      Name: member?.name,
-      Id: id,
-      Role: member?.character || member?.role || '',
-      Type: 'Actor',
-      PrimaryImageTag: member?.photo ? 'p' : undefined,
-    };
-  });
+    return { Name: member?.name, Id: id, Role: role, Type: type, PrimaryImageTag: member?.photo ? 'p' : undefined };
+  };
+  const list = (value: unknown) => (Array.isArray(value) ? value : []);
 
-  for (const director of Array.isArray(meta.director) ? meta.director : []) {
-    people.push({
-      Name: director,
-      Id: encodeJellyfinId({ k: 'person', n: String(director) }),
-      Role: '',
-      Type: 'Director',
-      PrimaryImageTag: undefined,
-    });
-  }
+  const people = list(extras.cast).slice(0, 20).map((m: any) => person(m, 'Actor', m?.character || m?.role || ''));
+  const directors = list(extras.directors).length ? list(extras.directors) : list(meta.director).map((name: any) => ({ name }));
+  for (const d of directors) people.push(person(d, 'Director', ''));
+  for (const w of list(extras.writers)) people.push(person(w, 'Writer', ''));
 
-  return people.filter((p: any) => p.Name);
+  const seen = new Set<string>();
+  return people.filter((p: any) => p.Name && !seen.has(`${p.Type}|${p.Id}`) && seen.add(`${p.Type}|${p.Id}`));
 }
 
 function premiereDate(meta: any): string | null {
