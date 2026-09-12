@@ -23,13 +23,14 @@ import {
 } from './dto';
 import { buildViews, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBrowsable } from './views';
 import { decodeJellyfinId } from './ids';
-import { buildEpisodes, buildSeasons, fetchMeta, fetchWindow, filterByIncludeTypes, includeTypesFilter, metaToBaseItem, recallImages } from './items';
+import { buildEpisodes, buildSeasons, fetchMeta, fetchWindow, filterByIncludeTypes, includeTypesFilter, metaToBaseItem, recallImages, rememberImages } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { coalesce, fetchStreams, mediaSourceFor, normaliseStreamBase, recallIssued, recallStreams, rememberStreams, toPlayable } from './streams';
 import { resumeSnapshot, resumeUserData } from './resume';
 import { authorizeQuickConnect, claimQuickConnect, initiateQuickConnect, quickConnectResult, readQuickConnect } from './quickConnect';
 import { avatarTag, keepsUnderProfileCap, listProfiles, profileById, profileByName, profileByUserId, profileKey, profileTags, type Profile } from './profiles';
 import { segmentId, segmentsFor, type SegmentType } from './segments';
+import { personByName, personCredits, similarTitles } from './people';
 import { applyWatchedState, isWatched, ownNextUpRows, watchedSnapshot } from './watched';
 import { registerStubs } from './stubs';
 import { recordPlayed, recordPlaying, recordProgress, recordStopped, recordUnplayed } from './playstate';
@@ -114,9 +115,31 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
     return out;
   };
-  router.use((_req: any, res: any, next: any) => {
+  // An Apple client opens the YouTube app's scheme, not a web link; the web client embeds the web link.
+  const APPLE_CLIENT = /swiftfin|tvos|apple ?tv|ios|ipad|iphone/i;
+  const appTrailers = (value: any): any => {
+    if (Array.isArray(value)) return value.map(appTrailers);
+    if (!value || typeof value !== 'object') return value;
+    const out: any = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = k === 'RemoteTrailers' && Array.isArray(v)
+        ? v.map((t: any) => (typeof t?.Url === 'string' ? { ...t, Url: t.Url.replace(/^https?:\/\/(www\.)?youtube\.com\//i, 'youtube://www.youtube.com/') } : t))
+        : appTrailers(v);
+    }
+    return out;
+  };
+
+  const seenClients = new Set<string>();
+  router.use((req: any, res: any, next: any) => {
     const json = res.json.bind(res);
-    res.json = (body: any) => json(dashIds(body));
+    const info = clientInfo(req);
+    const label = `${info.client} | ${info.device}`;
+    if (!seenClients.has(label) && info.client !== 'Unknown') {
+      seenClients.add(label);
+      logger.info(`Client seen: ${label} (${info.version})`);
+    }
+    const apple = APPLE_CLIENT.test(info.client) || APPLE_CLIENT.test(info.device);
+    res.json = (body: any) => json(dashIds(apple ? appTrailers(body) : body));
     next();
   });
 
@@ -461,6 +484,13 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     if (genreNames.length > 1) {
       logger.debug(`Only the first of ${genreNames.length} genres is filterable: ${genreNames[0]}`);
+    }
+
+    const personIds = String(req.query.PersonIds ?? req.query.personIds ?? '').split(',').map((v) => v.trim()).filter(Boolean);
+    if (personIds.length) {
+      const items = await personItems(userUUID, config, serverId, personIds[0], includeItemTypes);
+      res.json(itemList(items.slice(startIndex, startIndex + limit), items.length, startIndex));
+      return;
     }
 
     if (!parentId) {
@@ -850,6 +880,34 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
   // Each catalog returns its own ranked list, so results are interleaved rather
   // than concatenated: one catalog's weak matches would bury another's best.
+  const personItem = (id: string, serverId: string, name: string, person: any): any => {
+    const bare = normaliseJellyfinId(id);
+    if (person?.photo) rememberImages(serverId, bare, { primary: person.photo });
+    return {
+      Name: person?.name || name,
+      Id: bare,
+      ServerId: serverId,
+      Type: 'Person',
+      Overview: person?.biography || '',
+      PremiereDate: person?.birthday || null,
+      EndDate: person?.deathday || null,
+      ProductionLocations: person?.birthplace ? [person.birthplace] : [],
+      ImageTags: person?.photo ? { Primary: 'p' } : {},
+      BackdropImageTags: [],
+      UserData: { ...EMPTY_USER_DATA, Key: bare, ItemId: bare },
+    };
+  };
+
+  const personItems = async (userUUID: string, config: any, serverId: string, personId: string, includeItemTypes: any): Promise<any[]> => {
+    const descriptor = await decodeJellyfinId(personId);
+    if (!descriptor || descriptor.k !== 'person') return [];
+    const person = await personByName(config, descriptor.n);
+    if (!person) return [];
+    const metas = await personCredits(config, person.id);
+    const items = metas.map((meta: any) => metaToBaseItem(meta, meta.type, serverId, null));
+    return filterByIncludeTypes(items, includeItemTypes ? String(includeItemTypes) : undefined).filter(keepsUnderProfileCap(config));
+  };
+
   const searchAcross = async (
     userUUID: string,
     config: any,
@@ -1482,6 +1540,31 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.json(itemList(ordered.slice(startIndex, startIndex + limit), ordered.length, startIndex));
   });
 
+  router.get(['/Items/:itemId/Similar', '/Movies/:itemId/Similar', '/Shows/:itemId/Similar'], async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const limit = Math.min(Math.max(1, qInt(req, 'Limit', 12)), 40);
+    const config = await loadConfig(req);
+    const descriptor = await decodeJellyfinId(String(req.params.itemId));
+    if (!config || !descriptor || (descriptor.k !== 'movie' && descriptor.k !== 'series')) {
+      res.json(itemList([], 0, 0));
+      return;
+    }
+
+    const meta = await fetchMeta(userUUID, descriptor.k, descriptor.i);
+    if (!meta?._tmdbId) {
+      res.json(itemList([], 0, 0));
+      return;
+    }
+
+    const serverId = serverIdFor(userUUID);
+    const metas = await similarTitles(config, String(meta._tmdbId), descriptor.k);
+    const items = metas
+      .map((m: any) => metaToBaseItem(m, m.type, serverId, null))
+      .filter(keepsUnderProfileCap(config))
+      .slice(0, limit);
+    res.json(itemList(items, items.length, 0));
+  });
+
   // Skip markers, from PublicMetaDB when the user has a key and IntroDB otherwise.
   router.get('/MediaSegments/:itemId', async (req: any, res: any) => {
     const userUUID = req.params.userUUID;
@@ -1545,6 +1628,13 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const descriptor = await decodeJellyfinId(req.params.itemId);
     if (!descriptor) {
       res.status(404).json({ Message: 'Item not found' });
+      return;
+    }
+
+    if (descriptor.k === 'person') {
+      const config = await loadConfig(req);
+      const person = config ? await personByName(config, descriptor.n) : null;
+      res.json(personItem(String(req.params.itemId), serverIdFor(userUUID), descriptor.n, person));
       return;
     }
 
@@ -1617,6 +1707,20 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return;
       }
       const item = metaToBaseItem(meta, descriptor.t, serverIdFor(userUUID), null);
+
+      // A meta can resolve to another id than the one it was opened by; the client keys on the one it asked for.
+      const requestedId = normaliseJellyfinId(String(req.params.itemId));
+      if (item.Id !== requestedId) {
+        rememberImages(serverIdFor(userUUID), requestedId, {
+          primary: meta.poster || undefined,
+          backdrop: meta.background || undefined,
+          logo: meta.logo || undefined,
+          thumb: meta.landscapePoster || undefined,
+        });
+        item.Id = requestedId;
+        item.Etag = requestedId;
+        item.UserData = { ...item.UserData, Key: requestedId, ItemId: requestedId };
+      }
 
       // The client reads MediaSources straight off the item when it asks for
       // them in Fields, and reports "no file" without ever calling PlaybackInfo

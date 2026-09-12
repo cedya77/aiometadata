@@ -253,7 +253,49 @@ export function normalizeTmdbTvDetailForCache(series: any) {
   return normalizeTmdbDetailCommonForCache(series);
 }
 
+const RECOMMENDATION_KEYS = ['id', 'title', 'name', 'poster_path', 'backdrop_path', 'release_date', 'first_air_date', 'overview', 'vote_average', 'genre_ids'];
+
+/** A recommendation row is only ever turned into a card, so only what a card shows is kept. */
+export function normalizeTmdbRecommendationsForCache(page: any) {
+  if (!page || typeof page !== 'object') return page;
+  return {
+    page: page.page,
+    total_pages: page.total_pages,
+    results: Array.isArray(page.results) ? page.results.map((row: any) => pickDefined(row, RECOMMENDATION_KEYS)) : [],
+  };
+}
+
+const PERSON_RESULT_KEYS = ['id', 'name', 'profile_path', 'popularity', 'known_for_department'];
+const PERSON_KEYS = ['id', 'name', 'profile_path', 'biography', 'birthday', 'deathday', 'place_of_birth', 'popularity', 'known_for_department'];
+const CREDIT_KEYS = [...RECOMMENDATION_KEYS, 'character', 'job', 'vote_count', 'popularity'];
+
+export function normalizeTmdbPersonSearchForCache(page: any) {
+  if (!page || typeof page !== 'object') return page;
+  return {
+    page: page.page,
+    total_pages: page.total_pages,
+    results: Array.isArray(page.results) ? page.results.map((row: any) => pickDefined(row, PERSON_RESULT_KEYS)) : [],
+  };
+}
+
+export function normalizeTmdbPersonForCache(person: any) {
+  return pickDefined(person, PERSON_KEYS);
+}
+
+export function normalizeTmdbPersonCreditsForCache(credits: any) {
+  if (!credits || typeof credits !== 'object') return credits;
+  return {
+    id: credits.id,
+    cast: Array.isArray(credits.cast) ? credits.cast.map((row: any) => pickDefined(row, CREDIT_KEYS)) : [],
+    crew: Array.isArray(credits.crew) ? credits.crew.map((row: any) => pickDefined(row, CREDIT_KEYS)) : [],
+  };
+}
+
 export const tmdbCacheNormalizers = {
+  normalizeTmdbRecommendationsForCache,
+  normalizeTmdbPersonSearchForCache,
+  normalizeTmdbPersonForCache,
+  normalizeTmdbPersonCreditsForCache,
   normalizeTmdbExternalIdsForCache,
   normalizeTmdbGenreListForCache,
   normalizeTmdbLanguagesForCache,

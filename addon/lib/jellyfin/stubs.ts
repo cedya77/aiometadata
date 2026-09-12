@@ -10,7 +10,6 @@ const EMPTY_LIST = { Items: [] as unknown[], TotalRecordCount: 0, StartIndex: 0 
 const LIST_ROUTES = [
   '/Years',
   '/Studios',
-  '/Persons',
   '/Artists',
   '/Artists/AlbumArtists',
   '/MusicGenres',
@@ -30,7 +29,6 @@ const LIST_ROUTES = [
   '/Items/:itemId/ThemeSongs',
   '/Items/:itemId/ThemeVideos',
   '/Items/:itemId/Chapters',
-  '/Items/:itemId/Similar',
   '/Videos/:itemId/AdditionalParts',
   '/System/ActivityLog/Entries',
   '/LiveTv/Programs',

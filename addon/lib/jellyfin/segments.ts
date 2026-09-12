@@ -1,6 +1,7 @@
 import consola from 'consola';
 import { createHash } from 'crypto';
 import { envInt } from '../../utils/envNumber';
+import { httpGet } from '../../utils/httpClient';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -54,12 +55,12 @@ async function fromPublicMetaDb(apiKey: string, lookup: Lookup): Promise<Segment
 async function fromIntroDb(lookup: Lookup): Promise<Segment[]> {
   if (lookup.kind !== 'episode' || !lookup.imdbId || lookup.season === null || lookup.season === undefined || !lookup.episode) return [];
   const params = new URLSearchParams({ imdb_id: String(lookup.imdbId), season: String(lookup.season), episode: String(lookup.episode) });
-  const response = await fetch(`https://api.introdb.app/segments?${params.toString()}`, {
-    headers: { accept: 'application/json', 'user-agent': 'AIOMetadata' },
-    signal: AbortSignal.timeout(envInt('INTRODB_TIMEOUT_MS', 5000, 500)),
+  const response = await httpGet(`https://api.introdb.app/segments?${params.toString()}`, {
+    headers: { accept: 'application/json' },
+    timeout: envInt('INTRODB_TIMEOUT_MS', 5000, 500),
   });
-  if (!response.ok) return [];
-  const body: any = await response.json();
+  if (response.status !== 200) return [];
+  const body: any = response.data;
   const out: Segment[] = [];
   for (const [key, type] of [['intro', 'Intro'], ['recap', 'Recap'], ['outro', 'Outro']] as Array<[string, SegmentType]>) {
     const segment = range(type, body?.[key]?.start_ms, body?.[key]?.end_ms);
