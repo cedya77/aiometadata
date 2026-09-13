@@ -1,4 +1,5 @@
 import consola from 'consola';
+import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId } from './ids';
@@ -44,7 +45,8 @@ export function collectionTypeFor(type: string): string | null {
 
 export async function getCatalogs(userUUID: string, config: any): Promise<CatalogRef[]> {
   const tags = profileTags(config);
-  const key = `${userUUID}:${tags.map((t) => t.toLowerCase()).sort().join(',')}:${config?.configVersion ?? ''}`;
+  const shape = createHash('md5').update(JSON.stringify(config?.catalogs ?? null)).digest('hex').slice(0, 12);
+  const key = `${userUUID}:${tags.map((t) => t.toLowerCase()).sort().join(',')}:${shape}`;
   const cached = catalogCache.get(key);
   if (cached) return cached;
 
