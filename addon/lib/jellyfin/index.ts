@@ -1452,11 +1452,23 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       serverIdFor(req.params.userUUID),
       season
     );
+    // A play queue starts at the episode being played, not the first.
+    const startItemId = req.query.StartItemId ?? req.query.startItemId;
+    let from = 0;
+    if (startItemId) {
+      const wanted = normaliseJellyfinId(String(startItemId));
+      const at = episodes.findIndex((e: any) => e.Id === wanted);
+      if (at > 0) from = at;
+    }
+    const startIndex = from + Math.max(0, qInt(req, 'StartIndex', 0));
+    const limit = Math.max(1, qInt(req, 'Limit', episodes.length || 1));
+    const page = episodes.slice(startIndex, startIndex + limit);
+
     const episodesConfig = await loadConfig(req);
     if (episodesConfig) {
-      await applyWatchedState(episodes, await watchedSnapshot(req.params.userUUID, episodesConfig), req.params.userUUID, profileKey(episodesConfig));
+      await applyWatchedState(page, await watchedSnapshot(req.params.userUUID, episodesConfig), req.params.userUUID, profileKey(episodesConfig));
     }
-    res.json(itemList(episodes, episodes.length, 0));
+    res.json(itemList(page, episodes.length - from, startIndex - from));
   });
 
   router.get('/Shows/NextUp', async (req: any, res: any) => {
