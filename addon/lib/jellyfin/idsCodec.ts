@@ -7,7 +7,7 @@ const NONE16 = 0xffff;
 const MAX48 = 2 ** 48 - 1;
 
 export type PackableKind = 'movie' | 'series' | 'season' | 'episode';
-export type HashedKind = 'view' | 'genre' | 'person' | 'studio';
+export type HashedKind = 'view' | 'genre' | 'person' | 'studio' | 'collection' | 'boxset';
 export type JellyfinKind = PackableKind | HashedKind;
 
 export type Descriptor =
@@ -16,7 +16,10 @@ export type Descriptor =
   | { k: 'episode'; t: string; i: string; s: number | null; e: number }
   | { k: 'view'; t: string; c: string }
   | { k: 'genre'; t: string; c: string; g: string }
-  | { k: 'person' | 'studio'; n: string };
+  | { k: 'person' | 'studio'; n: string }
+  /** A collection built in the configuration, and one folder tile inside it. */
+  | { k: 'collection'; c: string }
+  | { k: 'boxset'; c: string; f: string };
 
 const KIND_CODES: Record<PackableKind, number> = {
   movie: 1,
@@ -236,6 +239,10 @@ export function canonicalDescriptor(d: Descriptor): string {
     case 'person':
     case 'studio':
       return `${d.k}|${d.n}`;
+    case 'collection':
+      return `collection|${d.c}`;
+    case 'boxset':
+      return `boxset|${d.c}|${d.f}`;
   }
 }
 

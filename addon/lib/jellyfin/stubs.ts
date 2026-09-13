@@ -15,7 +15,7 @@ const LIST_ROUTES = [
   '/MusicGenres',
   '/Channels',
   '/Playlists',
-  '/Collections',
+  '/Items/:itemId/Collections',
   '/Trailers',
   '/Items/Suggestions',
   '/Users/:userId/Suggestions',

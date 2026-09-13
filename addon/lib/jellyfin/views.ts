@@ -87,21 +87,38 @@ export function viewIdFor(catalog: CatalogRef): string {
   return encodeJellyfinId({ k: 'view', t: catalog.type, c: catalog.id });
 }
 
+// Builder entries first, in their order; then every catalog they never named.
 export async function buildViews(
   userUUID: string,
   serverId: string,
   config: any
 ): Promise<any[]> {
+  const { boxSetsFor, collectionView } = require('./collections');
   const catalogs = (await getCatalogs(userUUID, config)).filter(isBrowsable);
-  return catalogs.map((catalog) =>
-    collectionFolder(
-      viewIdFor(catalog),
-      serverId,
-      catalog.name,
-      collectionTypeFor(catalog.type),
-      null
-    )
-  );
+  const catalogView = (catalog: CatalogRef) =>
+    collectionFolder(viewIdFor(catalog), serverId, catalog.name, collectionTypeFor(catalog.type), null);
+
+  const views: any[] = [];
+  const placed = new Set<CatalogRef>();
+  for (const entry of Array.isArray(config?.collections) ? config.collections : []) {
+    if (entry?.kind === 'classicRow') {
+      const source = entry.source;
+      const catalog = catalogs.find(
+        (c) => c.id === String(source?.catalogId ?? '') && c.type.toLowerCase() === String(source?.type ?? '').toLowerCase()
+      );
+      if (catalog && !placed.has(catalog)) {
+        placed.add(catalog);
+        views.push(catalogView(catalog));
+      }
+    } else if (entry?.kind === 'collection' && entry.id && typeof entry.title === 'string') {
+      const folders = await boxSetsFor(userUUID, config, serverId, entry);
+      if (folders.length) views.push(collectionView(serverId, entry, folders.length));
+    }
+  }
+  for (const catalog of catalogs) {
+    if (!placed.has(catalog)) views.push(catalogView(catalog));
+  }
+  return views;
 }
 
 export async function findCatalogByViewId(

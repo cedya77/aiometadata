@@ -31,6 +31,7 @@ import { authorizeQuickConnect, claimQuickConnect, initiateQuickConnect, quickCo
 import { avatarTag, keepsUnderProfileCap, listProfiles, profileById, profileByName, profileByUserId, profileKey, profileTags, type Profile } from './profiles';
 import { segmentId, segmentsFor, type SegmentType } from './segments';
 import { personByName, personCredits, similarTitles } from './people';
+import { allBoxSets, boxSetMembers, boxSetsFor, collectionById, collectionView, folderCoverSize } from './collections';
 import { applyWatchedState, isWatched, ownNextUpRows, watchedSnapshot } from './watched';
 import { registerStubs } from './stubs';
 import { recordPlayed, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData } from './playstate';
@@ -526,6 +527,12 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         ? new Set(String(includeItemTypes).split(',').map((t) => t.trim()).filter(Boolean))
         : null;
 
+      if (wanted?.has('BoxSet')) {
+        const sets = await allBoxSets(userUUID, config, serverId);
+        res.json(itemList(sets.slice(startIndex, startIndex + limit), sets.length, startIndex));
+        return;
+      }
+
       const pool = (await getCatalogs(userUUID, config)).filter(isBrowsable).filter((catalog: any) => {
         if (!wanted || !wanted.size) return true;
         const kind = collectionTypeFor(catalog.type);
@@ -620,7 +627,34 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return;
       }
 
-      if (!descriptor || descriptor.k !== 'view') {
+      if (descriptor?.k === 'collection') {
+        const collection = collectionById(config, descriptor.c);
+        const sets = collection ? await boxSetsFor(userUUID, config, serverId, collection) : [];
+        res.json(itemList(sets.slice(startIndex, startIndex + limit), sets.length, startIndex));
+        return;
+      }
+
+      if (descriptor?.k === 'boxset') {
+        const collection = collectionById(config, descriptor.c);
+        const folder = (collection?.folders ?? []).find((f: any) => f?.id === descriptor.f);
+        if (!collection || !folder) {
+          res.json(itemList([], 0, startIndex));
+          return;
+        }
+        const page = await boxSetMembers(
+          userUUID, config, serverId, collection, folder, startIndex, limit,
+          includeItemTypes ? String(includeItemTypes) : undefined
+        );
+        await applyWatchedState(page.items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config));
+        res.json(itemList(
+          page.items,
+          page.hasMore && page.items.length > 0 ? startIndex + page.items.length + limit : startIndex + page.items.length,
+          startIndex
+        ));
+        return;
+      }
+
+      if (!descriptor || descriptor.k !== 'view' || String(includeItemTypes ?? '') === 'BoxSet') {
         res.json(itemList([], 0, startIndex));
         return;
       }
@@ -1122,6 +1156,15 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return (await recallImages(scope, itemId)) ?? { primary: meta.poster || undefined };
     }
 
+    if (descriptor.k === 'collection' || descriptor.k === 'boxset') {
+      const config = await loadConfig(req);
+      const collection = config ? collectionById(config, descriptor.c) : null;
+      if (!collection) return undefined;
+      if (descriptor.k === 'collection') collectionView(scope, collection, null);
+      else await boxSetsFor(userUUID, config, scope, collection);
+      return recallImages(scope, itemId);
+    }
+
     return undefined;
   };
 
@@ -1173,6 +1216,18 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       res.status(404).end();
       return;
     }
+
+    // A folder cover is cropped to its tile's shape rather than letterboxed by the client.
+    if (kind === 'primary') {
+      const descriptor = await decodeJellyfinId(String(req.params.itemId));
+      if (descriptor?.k === 'boxset') {
+        const config = await loadConfig(req);
+        const size = folderCoverSize(config, descriptor.c, descriptor.f);
+        await streamCropped(res, url, size.width, size.height);
+        return;
+      }
+    }
+
     const cached = throughPosterCache(url, kind);
     if (cached) {
       res.redirect(302, cached);
@@ -1192,6 +1247,32 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     if (!prefix) return null;
     const imageClass = kind === 'backdrop' ? 'background' : kind === 'logo' ? 'logo' : kind === 'thumb' ? 'landscape' : 'poster';
     return posterCache.buildCachedUrl(prefix, imageClass, url);
+  };
+
+  const streamCropped = async (res: any, url: string, width: number, height: number): Promise<void> => {
+    try {
+      const { openImageStream } = require('../posterCache/upstream');
+      const sharp = require('sharp');
+      const upstream = await openImageStream(url);
+      if (upstream.notModified) {
+        res.status(404).end();
+        return;
+      }
+      const transformer = sharp({ sequentialRead: true, limitInputPixels: 10000 * 10000 })
+        .resize(width, height, { fit: 'cover', position: 'centre' })
+        .jpeg({ quality: 90 });
+      res.set('Content-Type', 'image/jpeg');
+      res.set('Cache-Control', 'public, max-age=86400');
+      transformer.on('error', (error: any) => {
+        logger.debug(`Cover crop failed for ${url}: ${error?.message || error}`);
+        res.end();
+      });
+      upstream.response.data.on('error', () => res.end());
+      upstream.response.data.pipe(transformer).pipe(res);
+    } catch (error: any) {
+      logger.debug(`Cover fetch failed for ${url}: ${error?.message || error}`);
+      res.status(404).end();
+    }
   };
 
   const streamImage = async (res: any, url: string): Promise<void> => {
@@ -1232,6 +1313,12 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
 
     const descriptor = await decodeJellyfinId(String(parentId));
+    if (descriptor?.k === 'collection') {
+      const collection = collectionById(config, descriptor.c);
+      const sets = collection ? await boxSetsFor(userUUID, config, serverIdFor(userUUID), collection) : [];
+      res.json(sets.slice(0, limit));
+      return;
+    }
     if (!descriptor || descriptor.k !== 'view') {
       res.json([]);
       return;
@@ -1623,6 +1710,13 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.json(itemList(items, items.length, 0));
   });
 
+  router.post(['/Collections', '/Collections/:collectionId/Items'], (_req: any, res: any) => {
+    res.status(403).json({ Message: 'Collections are edited in the AIOMetadata configuration' });
+  });
+  router.delete('/Collections/:collectionId/Items', (_req: any, res: any) => {
+    res.status(403).json({ Message: 'Collections are edited in the AIOMetadata configuration' });
+  });
+
   router.get('/Items/Counts', (_req: any, res: any) => {
     res.json({
       MovieCount: 0,
@@ -1758,6 +1852,21 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         await applyWatchedState([item], await watchedSnapshot(userUUID, itemConfig), userUUID, profileKey(itemConfig));
       }
 
+      res.json(item);
+      return;
+    }
+
+    if (descriptor.k === 'collection' || descriptor.k === 'boxset') {
+      const config = await loadConfig(req);
+      const collection = config ? collectionById(config, descriptor.c) : null;
+      const sets = collection ? await boxSetsFor(userUUID, config, serverIdFor(userUUID), collection) : [];
+      const item = descriptor.k === 'collection'
+        ? (collection && sets.length ? collectionView(serverIdFor(userUUID), collection, sets.length) : null)
+        : sets.find((set: any) => set.Id === normaliseJellyfinId(String(req.params.itemId))) ?? null;
+      if (!item) {
+        res.status(404).json({ Message: 'Item not found' });
+        return;
+      }
       res.json(item);
       return;
     }
