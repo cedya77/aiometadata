@@ -19,6 +19,8 @@ export interface ResumeRow {
   progress: number;
   runtimeMinutes: number | null;
   updatedAt: number;
+  /** Table rows only: when the row itself was last written. */
+  writtenAt?: number;
 }
 
 const snapshots = new LRUCache<string, ResumeRow[]>({
@@ -219,9 +221,14 @@ async function ownRows(userUUID: string, profile: string): Promise<ResumeRow[]> 
       progress: Math.min(100, (positionMs / runtimeMs) * 100),
       runtimeMinutes: Math.round(runtimeMs / 60000),
       updatedAt: Number(r.last_played_at) || Number(r.updated_at) || 0,
+      writtenAt: Number(r.updated_at) || 0,
     });
   }
-  return rows;
+
+  // The earliest write of a batch is the spelling the client played under.
+  const { dedupeByAlias } = require('./aliases');
+  const deduped: ResumeRow[] = await dedupeByAlias([...rows].sort((a, b) => (a.writtenAt ?? 0) - (b.writtenAt ?? 0)));
+  return deduped.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function resumeSnapshot(userUUID: string, config: any): Promise<ResumeRow[]> {
@@ -254,7 +261,8 @@ export async function trackerSnapshot(userUUID: string, config: any): Promise<Re
     const held = merged.get(row.videoId);
     if (!held || row.updatedAt > held.updatedAt) merged.set(row.videoId, row);
   }
-  return [...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  const { dedupeByAlias } = require('./aliases');
+  return dedupeByAlias([...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt));
 }
 
 async function serviceSnapshot(userUUID: string, config: any, service: Capable): Promise<ResumeRow[]> {

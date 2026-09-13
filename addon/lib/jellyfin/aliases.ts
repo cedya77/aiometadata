@@ -95,3 +95,16 @@ export async function getPlaystatesAcross(userUUID: string, videoIds: string[], 
   }
   return out;
 }
+
+/** One row per episode across its spellings; the first in the order given is kept. */
+export async function dedupeByAlias<T extends { videoId: string }>(rows: T[]): Promise<T[]> {
+  const taken = new Set<string>();
+  const out: T[] = [];
+  for (const row of rows) {
+    if (taken.has(row.videoId)) continue;
+    out.push(row);
+    taken.add(row.videoId);
+    for (const alias of await videoIdAliases(row.videoId)) taken.add(alias);
+  }
+  return out;
+}
