@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.18.0](https://github.com/cedya77/aiometadata/compare/v2.17.2...v2.18.0) (2026-09-14)
+
+
+### Features
+
+* **collections:** serve a layout's images through the instance's image cache ([922a9fa](https://github.com/cedya77/aiometadata/commit/922a9facaee9dffacdf66e59216a6c69b536942b))
+* **search:** tag a search catalog the way a catalog is tagged ([6e84b0d](https://github.com/cedya77/aiometadata/commit/6e84b0da03ea539401a4e28b2a89809f5775b62f))
+* **trailers:** let a user take trailers from a trailer addon ([3445161](https://github.com/cedya77/aiometadata/commit/3445161a43110ae80f2f63faef7d73dbbdff708b))
+* **watch-tracking:** declare the watch_state resource and take its push spelling ([41f92d6](https://github.com/cedya77/aiometadata/commit/41f92d6e704536bb34b32074c023adb886e3e079))
+
+
+### Bug Fixes
+
+* **dashboard:** accept a single-label hostname in the image cache policy rules ([078ee77](https://github.com/cedya77/aiometadata/commit/078ee770d468e5dbfc88a76eb93f959d1f70ce6a))
+
 ## [2.17.2](https://github.com/cedya77/aiometadata/compare/v2.17.1...v2.17.2) (2026-09-11)
 
 
