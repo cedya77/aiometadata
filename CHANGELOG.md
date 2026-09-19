@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.18.0](https://github.com/cedya77/aiometadata/compare/v2.17.2...v2.18.0) (2026-09-19)
+
+
+### Features
+
+* **collections:** serve a layout's images through the instance's image cache ([922a9fa](https://github.com/cedya77/aiometadata/commit/922a9facaee9dffacdf66e59216a6c69b536942b))
+* **search:** report a provider's refusal as a card in the row ([9ccf66f](https://github.com/cedya77/aiometadata/commit/9ccf66f1ab4ef16c40bea17b527c79790dbb8069))
+* **search:** tag a search catalog the way a catalog is tagged ([6e84b0d](https://github.com/cedya77/aiometadata/commit/6e84b0da03ea539401a4e28b2a89809f5775b62f))
+* **simkl:** follow each user's own V2 request allowance ([99260ea](https://github.com/cedya77/aiometadata/commit/99260eaeb5cf9599ba51f652e5fb5021ce590c8d))
+* **simkl:** import custom lists as catalogs ([18199c8](https://github.com/cedya77/aiometadata/commit/18199c80e671732fa5c63c0f08ad6ccf7eed2b0a))
+* **simkl:** sign in through AUTH V2 when a V2 client is set ([59eb0b0](https://github.com/cedya77/aiometadata/commit/59eb0b0ad9d1fff77e2a48afc1dff5cf4fc94367))
+* **trailers:** let a user take trailers from a trailer addon ([3445161](https://github.com/cedya77/aiometadata/commit/3445161a43110ae80f2f63faef7d73dbbdff708b))
+* **watch-tracking:** declare the watch_state resource and take its push spelling ([41f92d6](https://github.com/cedya77/aiometadata/commit/41f92d6e704536bb34b32074c023adb886e3e079))
+
+
+### Bug Fixes
+
+* **ai-search:** let the web search switch decide grounding, and fall back when it is refused ([c2ad6d2](https://github.com/cedya77/aiometadata/commit/c2ad6d2107a99749982e48dbc1a872bca69bd58f))
+* **catalogs:** end a filtered page only on an empty upstream page ([4b55224](https://github.com/cedya77/aiometadata/commit/4b55224c23b451df3b648a4390c547b0b7c5fc9e))
+* **dashboard:** accept a single-label hostname in the image cache policy rules ([078ee77](https://github.com/cedya77/aiometadata/commit/078ee770d468e5dbfc88a76eb93f959d1f70ce6a))
+* open the discover builder in a language TMDB has no genre names for ([118e50c](https://github.com/cedya77/aiometadata/commit/118e50c8cb0c8d1e85b1f35990032962f631c469))
+* **publicmetadb:** tell a watchlist from a custom list on both sides ([034e126](https://github.com/cedya77/aiometadata/commit/034e126199d14d7adecd01483ea97c64065ffb5b))
+* **simkl:** disconnecting one configuration keeps the token others share ([eb846e3](https://github.com/cedya77/aiometadata/commit/eb846e36882db53b555b7f421126318dddd8f364))
+
+
+### Performance Improvements
+
+* take request-path waste off the addon ([6fc867a](https://github.com/cedya77/aiometadata/commit/6fc867a043295bc61a419d2986c296fc8a71f754))
+
 ## [2.17.2](https://github.com/cedya77/aiometadata/compare/v2.17.1...v2.17.2) (2026-09-11)
 
 
