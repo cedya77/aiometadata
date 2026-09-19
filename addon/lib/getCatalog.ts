@@ -15,6 +15,8 @@ import * as Utils from '../utils/parseProps.js';
 import CATALOG_TYPES from "../static/catalog-types.json";
 import * as moviedb from "./getTmdb.js";
 import * as tvdb from './tvdb.js';
+import type { TvdbFilterResult } from './tvdb.js';
+import { fetchTvdbDiscoverResults } from './tvdbDiscover.js';
 import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
 import { cacheWrapTvdbApi, cacheWrap, cacheWrapCatalog, cacheWrapAniListCatalog, cacheWrapJikanApi, cacheWrapGlobal, classifyResultAllowEmpty, stableStringify } from './getCache.js';
@@ -539,33 +541,10 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   
   logger.debug(`TVDB filter params:`, JSON.stringify(params));
   
-  // Use cacheWrapTvdbApi to cache the raw API response
-  const results = await cacheWrapTvdbApi(cacheKey, async () => {
-    if (isTrending) {
-      const currentYear = new Date().getFullYear();
-      const lastYear = currentYear - 1;
-      
-      // Fetch both years in parallel
-      const [currentYearResults, lastYearResults] = await Promise.all([
-        tvdb.filter(tvdbType, { ...params, year: currentYear }, config),
-        tvdb.filter(tvdbType, { ...params, year: lastYear }, config)
-      ]);
-
-      // Combine results
-      const combined = [...(currentYearResults || []), ...(lastYearResults || [])];
-      
-      // Simple deduplication just in case
-      const seen = new Set();
-      return combined.filter(item => {
-        if (seen.has(item.id)) return false;
-        seen.add(item.id);
-        return true;
-      });
-    } else {
-      // Standard behavior for genres/search
-      return await tvdb.filter(tvdbType, params, config);
-    }
-  });
+  // Cache the upstream requests, not Trending's moving year/premiere window.
+  const results: TvdbFilterResult[] = isTrending
+    ? await fetchTvdbDiscoverResults(tvdbType, { ...params, sort: 'trending' }, config)
+    : await cacheWrapTvdbApi(cacheKey, () => tvdb.filter(tvdbType, params, config));
   
   logger.debug(`TVDB filter results: ${results ? results.length : 0} items returned`);
   
@@ -574,25 +553,9 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     return [];
   }
 
-  let filteredResults = results;
-
-  if (isTrending && type === 'series') {
-    const now = new Date();
-    const nextWeek = new Date();
-    nextWeek.setDate(now.getDate() + 7);
-
-    filteredResults = results.filter((item: any) => {
-      if (!item.firstAired) return false;
-      
-      const firstAired = new Date(item.firstAired);
-      return firstAired <= nextWeek;
-    });
-    
-    logger.debug(`[TVDB Trending] Filtered ${results.length} -> ${filteredResults.length} series based on air date`);
-  }
 
   // Sort results by score (highest first)
-  const sortedResults = filteredResults.sort((a: any, b: any) => b.score - a.score);
+  const sortedResults = isTrending ? results : results.sort((a, b) => b.score - a.score);
   
   // Apply client-side pagination
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
@@ -768,7 +731,7 @@ async function getTvdbDiscoverCatalog(
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
 
   try {
-    const response = await tvdb.filter(tvdbType, parameters, config);
+    const response = await fetchTvdbDiscoverResults(tvdbType, parameters, config);
     if (!Array.isArray(response) || response.length === 0) {
       logger.info(`[TVDB Discover] No results for ${id} at page ${discoverPage}`);
       return [];
@@ -1604,8 +1567,8 @@ async function sanitizeTvdbDiscoverParams(
   const defaultCountry = to3LetterCountryCode(countryCode2).toLowerCase();
 
   const allowedSorts = catalogType === 'movie'
-    ? new Set(['score', 'firstAired', 'name'])
-    : new Set(['score', 'firstAired', 'lastAired', 'name']);
+    ? new Set(['score', 'trending', 'firstAired', 'name'])
+    : new Set(['score', 'trending', 'firstAired', 'lastAired', 'name']);
 
   const numericFields = new Set(['company', 'contentRating', 'genre', 'status', 'year']);
   for (const field of numericFields) {

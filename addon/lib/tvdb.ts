@@ -404,7 +404,7 @@ interface TvdbStatusRecord {
   keepUpdated?: boolean;
 }
 
-interface TvdbFilterResult {
+export interface TvdbFilterResult {
   id: string;
   name: string;
   slug: string;

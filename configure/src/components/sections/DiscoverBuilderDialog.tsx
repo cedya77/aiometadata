@@ -188,12 +188,14 @@ const TMDB_MOVIE_RELEASE_TYPE_OPTIONS = [
 
 const TVDB_MOVIE_SORT_OPTIONS = [
   { value: 'score', label: 'Score' },
+  { value: 'trending', label: 'Trending' },
   { value: 'firstAired', label: 'First Aired' },
   { value: 'name', label: 'Name' },
 ] as const;
 
 const TVDB_SERIES_SORT_OPTIONS = [
   { value: 'score', label: 'Score' },
+  { value: 'trending', label: 'Trending' },
   { value: 'firstAired', label: 'First Aired' },
   { value: 'lastAired', label: 'Last Aired' },
   { value: 'name', label: 'Name' },
@@ -678,6 +680,8 @@ function buildTvdbDiscoverApiUrl(
   catalogType: CatalogMediaType,
   params: Record<string, string | number | boolean | null | undefined>
 ): string {
+  // Trending combines two filter requests, so there is no equivalent TVDB API URL.
+  if (params.sort === 'trending') return 'https://thetvdb.com/';
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') return;
@@ -2964,6 +2968,13 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                         ))}
                       </SelectContent>
                     </Select>
+                    {discoverSource === 'tvdb' && sortBy === 'trending' && (
+                      <p className="text-xs text-muted-foreground">
+                        Ranks titles from this year and last year by TVDB score, like the built-in TVDB Trending catalog.
+                        {catalogType === 'series' && ' Only series with a known premiere date no later than seven days from now are included.'}
+                        {' '}Filters still apply; Release Year narrows this two-year window.
+                      </p>
+                    )}
                   </div>
                   {discoverSource === 'tvdb' && catalogType === 'series' && (
                     <div className="space-y-2">

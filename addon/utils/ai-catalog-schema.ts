@@ -70,8 +70,8 @@ const VALID_ANILIST_SORTS = ['TRENDING_DESC', 'POPULARITY_DESC', 'POPULARITY', '
 const VALID_MAL_SORTS = ['score', 'popularity', 'rank', 'members', 'favorites', 'start_date', 'end_date', 'episodes', 'title'];
 const VALID_SIMKL_MOVIE_SORTS = ['popular-this-week', 'popular-this-month', 'rank', 'votes', 'budget', 'revenue', 'release-date', 'most-anticipated', 'a-z', 'z-a'];
 const VALID_SIMKL_TV_SORTS = ['popular-today', 'popular-this-week', 'popular-this-month', 'rank', 'votes', 'release-date', 'last-air-date', 'a-z', 'z-a'];
-const VALID_TVDB_SORTS = ['score', 'firstAired', 'name', 'lastAired'];
-const VALID_TVDB_MOVIE_SORTS = ['score', 'firstAired', 'name'];
+const VALID_TVDB_SORTS = ['score', 'trending', 'firstAired', 'name', 'lastAired'];
+const VALID_TVDB_MOVIE_SORTS = ['score', 'trending', 'firstAired', 'name'];
 
 const VALID_ANILIST_GENRES = ['Action', 'Adventure', 'Comedy', 'Drama', 'Ecchi', 'Fantasy', 'Hentai', 'Horror', 'Mahou Shoujo', 'Mecha', 'Music', 'Mystery', 'Psychological', 'Romance', 'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller'];
 const VALID_ANILIST_TAGS = ['Isekai', 'Time Travel', 'Super Power', 'School', 'Military', 'Magic', 'Demons', 'Vampire', 'Gore', 'Samurai', 'Historical', 'Space', 'Cooking', 'Reincarnation', 'Martial Arts', 'Robots', 'Kids', 'Primarily Child Cast', 'Cute Girls Doing Cute Things', 'Harem', 'Reverse Harem', 'Fanservice'];

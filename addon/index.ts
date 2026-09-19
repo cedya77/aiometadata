@@ -48,6 +48,7 @@ const { normalizeRedirectUri } = require("./utils/oauthRedirect");
 const { shuffleMetas } = require("./utils/mergedCatalog");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { resolveDynamicTmdbDiscoverParams } = require('./lib/tmdbDiscoverDateTokens');
+const { fetchTvdbDiscoverResults } = require('./lib/tvdbDiscover');
 const { isDiscoverCatalogId, applyDiscoverSignature } = require('./lib/discoverCatalogSignature');
 const { blurImage, convertBannerToBackground } = require('./utils/imageProcessor');
 const { getAiTriggerKeyword, applyAiTrigger } = require('./utils/aiSearchTrigger');
@@ -2909,7 +2910,7 @@ addon.get("/api/tvdb/discover/preview", async (req, res) => {
       }
     }
 
-    const response = await tvdbApi.filter(tvdbType, params, config);
+    const response = await fetchTvdbDiscoverResults(tvdbType, params, config);
     const results = (response || []).slice(0, 20).map(item => ({
       id: item.id,
       title: item.name,
