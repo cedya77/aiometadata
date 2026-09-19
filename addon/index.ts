@@ -48,6 +48,7 @@ const { normalizeRedirectUri } = require("./utils/oauthRedirect");
 const { shuffleMetas } = require("./utils/mergedCatalog");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { resolveDynamicTmdbDiscoverParams } = require('./lib/tmdbDiscoverDateTokens');
+const { getTmdbTrendingWindow } = require('./lib/tmdbTrending');
 const { isDiscoverCatalogId, applyDiscoverSignature } = require('./lib/discoverCatalogSignature');
 const { blurImage, convertBannerToBackground } = require('./utils/imageProcessor');
 const { getAiTriggerKeyword, applyAiTrigger } = require('./utils/aiSearchTrigger');
@@ -2871,9 +2872,17 @@ addon.get("/api/tmdb/discover/preview", async (req, res) => {
     });
     resolvedParams.page = 1;
 
-    const response = mediaType === 'movie'
-      ? await moviedb.discoverMovie(resolvedParams, config)
-      : await moviedb.discoverTv(resolvedParams, config);
+    const trendingWindow = getTmdbTrendingWindow(resolvedParams.sort_by);
+    const response = trendingWindow
+      ? await moviedb.trending({
+          media_type: mediaType,
+          time_window: trendingWindow,
+          language: resolvedParams.language,
+          page: 1,
+        }, config)
+      : mediaType === 'movie'
+        ? await moviedb.discoverMovie(resolvedParams, config)
+        : await moviedb.discoverTv(resolvedParams, config);
 
     const results = (response?.results || []).map(item => ({
       id: item.id,
@@ -2883,7 +2892,7 @@ addon.get("/api/tmdb/discover/preview", async (req, res) => {
       release_date: item.release_date || item.first_air_date,
     }));
 
-    return res.json({ results, total_results: response?.total_results || 0 });
+    return res.json({ results, total_results: response?.total_results || response?.results?.length || 0 });
   } catch (error) {
     consola.error("[TMDB Discover Preview] Error:", error.message);
     return res.status(error.response?.status || 500).json({ error: error.message });
