@@ -237,6 +237,22 @@ export async function resolveTmdbNetworkByName(name: string): Promise<ResolvedTm
   return null;
 }
 
+export async function getTmdbNetworkById(id: number): Promise<ResolvedTmdbNetwork | null> {
+  if (!Number.isInteger(id) || id <= 0) return null;
+  if (!initialized) await initializeTmdbNetworkIndex();
+
+  for (const entries of entriesByName.values()) {
+    const match = entries.find(entry => entry.id === id);
+    if (match) return match;
+  }
+
+  for (const alias of Object.values(NETWORK_ALIASES)) {
+    if (alias.id === id) return alias;
+  }
+
+  return null;
+}
+
 export async function searchTmdbNetworks(query: string, limit: number = 25): Promise<ResolvedTmdbNetwork[]> {
   const normalized = normalizeNetworkName(query);
   if (!normalized) return [];

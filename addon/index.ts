@@ -2011,15 +2011,26 @@ addon.get("/api/tmdb/discover/search/:entity", async (req, res) => {
       });
     }
 
-    if (!query || !String(query).trim()) {
-      return res.status(400).json({ error: "query is required" });
-    }
+    const trimmedQuery = String(query || '').trim();
+    if (!trimmedQuery) return res.status(400).json({ error: "query is required" });
 
-    // TMDB has no /search/network endpoint; resolve from the daily export index instead
+    const numericId = /^\d+$/.test(trimmedQuery) ? Number(trimmedQuery) : null;
+    const config = { apiKeys: { tmdb: tmdbApiKey } };
+    const addUnique = (results, result) => {
+      if (!result?.id || results.some(item => Number(item.id) === Number(result.id))) return;
+      results.push(result);
+    };
+
     if (entity === 'network') {
-      const { searchTmdbNetworks } = require('./lib/tmdb-network-index');
-      const networks = await searchTmdbNetworks(String(query).trim(), 25);
-      return res.json({ entity, results: networks.map(n => ({ id: n.id, name: n.label })) });
+      const { getTmdbNetworkById, searchTmdbNetworks } = require('./lib/tmdb-network-index');
+      const results = [];
+      if (numericId !== null) {
+        const network = await getTmdbNetworkById(numericId);
+        if (network) addUnique(results, { id: network.id, name: network.label });
+      }
+      const matches = await searchTmdbNetworks(trimmedQuery, 25);
+      matches.forEach(network => addUnique(results, { id: network.id, name: network.label }));
+      return res.json({ entity, results: results.slice(0, 25) });
     }
 
     const endpointMap = {
@@ -2027,34 +2038,48 @@ addon.get("/api/tmdb/discover/search/:entity", async (req, res) => {
       company: '/search/company',
       keyword: '/search/keyword'
     };
-
+    const detailsEndpointMap = {
+      person: '/person',
+      company: '/company',
+    };
     const endpoint = endpointMap[entity];
     if (!endpoint) {
       return res.status(400).json({ error: "entity must be one of: person, company, keyword, network" });
     }
 
-    const config = { apiKeys: { tmdb: tmdbApiKey } };
+    const results = [];
+    if (numericId !== null && detailsEndpointMap[entity]) {
+      const detail = await moviedb.makeTmdbRequest(
+        `${detailsEndpointMap[entity]}/${numericId}`,
+        tmdbApiKey,
+        { language: 'en-US' },
+        'GET',
+        null,
+        config
+      );
+      addUnique(results, detail);
+    }
+
     const searchData = await moviedb.makeTmdbRequest(
       endpoint,
       tmdbApiKey,
-      {
-        query: String(query).trim(),
-        page: 1,
-        include_adult: false
-      },
+      { query: trimmedQuery, page: 1, include_adult: false },
       'GET',
       null,
       config
     );
+    for (const result of Array.isArray(searchData?.results) ? searchData.results.slice(0, 25) : []) {
+      addUnique(results, result);
+    }
 
-    const results = Array.isArray(searchData?.results) ? searchData.results.slice(0, 25) : [];
-    return res.json({ entity, results });
+    return res.json({ entity, results: results.slice(0, 25) });
   } catch (error) {
     consola.error("[TMDB Discover] Error searching entity:", error.message);
     const status = error.response?.status || 500;
     return res.status(status).json({ error: error.message || "Failed to search TMDB discover entity" });
   }
 });
+
 
 // Proxy: TVDB discover reference data (genres, languages, countries, content ratings, statuses, company types)
 addon.get("/api/tvdb/discover/reference", async (req, res) => {
@@ -2317,9 +2342,14 @@ addon.get("/api/tvdb/discover/search/:entity", async (req, res) => {
       ...(userUUID ? { userUUID } : {})
     };
 
-    const searchData = await tvdbApi.searchCompanies(String(query).trim(), tvdbConfig);
+    const trimmedQuery = String(query).trim();
+    const numericId = /^\d+$/.test(trimmedQuery) ? Number(trimmedQuery) : null;
+    const searchData = numericId !== null
+      ? await tvdbApi.getCompany(String(numericId), tvdbConfig)
+      : await tvdbApi.searchCompanies(trimmedQuery, tvdbConfig);
+    const rawResults = numericId !== null ? (searchData ? [searchData] : []) : searchData;
     const seen = new Set();
-    const normalizedResults = (Array.isArray(searchData) ? searchData : [])
+    const normalizedResults = (Array.isArray(rawResults) ? rawResults : [])
       .map(item => {
         const idCandidate = item?.id ?? item?.tvdb_id ?? item?.companyId ?? item?.objectID;
         const numericId = Number(String(idCandidate || '').replace(/[^0-9]/g, ''));
@@ -2331,6 +2361,7 @@ addon.get("/api/tvdb/discover/search/:entity", async (req, res) => {
           id: numericId,
           name: item?.name || item?.company || `ID ${numericId}`,
           country: item?.country || '',
+          slug: item?.slug || '',
           companyType: item?.companyType || item?.primaryType || ''
         };
       })
