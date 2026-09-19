@@ -66,7 +66,7 @@ mediaType: "movie" for movies, "tv" for series.
 Static params:
 - sort_by movies: ${listValues(SCHEMA.tmdb.movie.sorts)}
 - sort_by series: ${listValues(SCHEMA.tmdb.series.sorts)}
-- For TMDB movie collections, use the static collection_ids parameter with numeric TMDB collection IDs. The application resolves collection membership; do not send collection_ids to TMDB Discover.
+- For TMDB movie collections, collection_ids is an application-side catalog filter and must contain numeric TMDB collection IDs. Do not send it to TMDB Discover.
 - Use resolve.genres / resolve.excludeGenres for genres. Use genre names only.
 - vote_average.gte / vote_average.lte: 0-10
 - vote_count.gte: positive integer
