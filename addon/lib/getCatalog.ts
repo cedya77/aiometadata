@@ -19,6 +19,7 @@ import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
 import { cacheWrapTvdbApi, cacheWrap, cacheWrapCatalog, cacheWrapAniListCatalog, cacheWrapJikanApi, cacheWrapGlobal, classifyResultAllowEmpty, stableStringify } from './getCache.js';
 import { isDiscoverCatalogId, applyDiscoverSignature } from './discoverCatalogSignature.js';
+import { fetchTmdbDiscoverWithCollections } from './tmdbCollectionFilter.js';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 import { resolveDynamicTmdbDiscoverParams } from './tmdbDiscoverDateTokens.js';
@@ -1094,9 +1095,16 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     }
 
     try {
-      const response = mediaType === 'movie'
-        ? await moviedb.discoverMovie(parameters, config)
-        : await moviedb.discoverTv(parameters, config);
+      const response = await fetchTmdbDiscoverWithCollections(
+        mediaType,
+        parameters,
+        discoverPage,
+        language,
+        config,
+        requestParams => mediaType === 'movie'
+          ? moviedb.discoverMovie(requestParams, config)
+          : moviedb.discoverTv(requestParams, config)
+      );
 
       if (!response?.results || !Array.isArray(response.results) || response.results.length === 0) {
         logger.info(`[TMDB Discover] No results for ${id} at page ${discoverPage}`);
@@ -1750,7 +1758,8 @@ function sanitizeTmdbDiscoverParams(
     'with_crew',
     'with_people',
     'with_release_type',
-    'year'
+    'year',
+    'collection_ids',
   ]);
 
   const tvOnlyAllowedParams = new Set([

@@ -49,6 +49,7 @@ const { shuffleMetas } = require("./utils/mergedCatalog");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { resolveDynamicTmdbDiscoverParams } = require('./lib/tmdbDiscoverDateTokens');
 const { isDiscoverCatalogId, applyDiscoverSignature } = require('./lib/discoverCatalogSignature');
+const { fetchTmdbDiscoverWithCollections } = require('./lib/tmdbCollectionFilter');
 const { blurImage, convertBannerToBackground } = require('./utils/imageProcessor');
 const { getAiTriggerKeyword, applyAiTrigger } = require('./utils/aiSearchTrigger');
 const { TraktClient } = require('./lib/trakt');
@@ -2344,10 +2345,14 @@ addon.get("/api/tvdb/discover/search/:entity", async (req, res) => {
 
     const trimmedQuery = String(query).trim();
     const numericId = /^\d+$/.test(trimmedQuery) ? Number(trimmedQuery) : null;
-    const searchData = numericId !== null
-      ? await tvdbApi.getCompany(String(numericId), tvdbConfig)
-      : await tvdbApi.searchCompanies(trimmedQuery, tvdbConfig);
-    const rawResults = numericId !== null ? (searchData ? [searchData] : []) : searchData;
+    const [directCompany, searchedCompanies] = await Promise.all([
+      numericId !== null ? tvdbApi.getCompany(String(numericId), tvdbConfig) : Promise.resolve(null),
+      tvdbApi.searchCompanies(trimmedQuery, tvdbConfig),
+    ]);
+    const rawResults = [
+      ...(directCompany ? [directCompany] : []),
+      ...(Array.isArray(searchedCompanies) ? searchedCompanies : []),
+    ];
     const seen = new Set();
     const normalizedResults = (Array.isArray(rawResults) ? rawResults : [])
       .map(item => {
@@ -2902,9 +2907,16 @@ addon.get("/api/tmdb/discover/preview", async (req, res) => {
     });
     resolvedParams.page = 1;
 
-    const response = mediaType === 'movie'
-      ? await moviedb.discoverMovie(resolvedParams, config)
-      : await moviedb.discoverTv(resolvedParams, config);
+    const response = await fetchTmdbDiscoverWithCollections(
+      mediaType,
+      resolvedParams,
+      1,
+      resolvedParams.language,
+      config,
+      requestParams => mediaType === 'movie'
+        ? moviedb.discoverMovie(requestParams, config)
+        : moviedb.discoverTv(requestParams, config)
+    );
 
     const results = (response?.results || []).map(item => ({
       id: item.id,

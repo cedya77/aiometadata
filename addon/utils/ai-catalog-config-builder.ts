@@ -26,6 +26,9 @@ function deriveFormState(source: string, catalogType: string, params: Record<str
     if (params.with_status && params.with_status !== '0|3|4|5') {
       fs.tmdbTvStatuses = String(params.with_status).split('|');
     }
+    if (params.collection_ids) {
+      fs.withCollections = String(params.collection_ids).split(/[|,]/).map((id: string) => ({ id: Number(id), label: `Collection ${id}` }));
+    }
     if (params.with_networks) {
       fs.withNetworks = String(params.with_networks).split(/[|,]/).map((id: string) => ({ id: Number(id), label: `Network ${id}` }));
     }

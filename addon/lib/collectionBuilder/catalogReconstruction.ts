@@ -107,6 +107,7 @@ const FILTER_PARAMS: Record<string, string> = {
   voteAverageGte: 'vote_average.gte',
   voteAverageLte: 'vote_average.lte',
   withRuntimeGte: 'with_runtime.gte',
+  collectionIds: 'collection_ids',
   withRuntimeLte: 'with_runtime.lte',
   includeAdult: 'include_adult',
 };
