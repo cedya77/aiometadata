@@ -1391,7 +1391,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         // ids, so identity alone cannot spot the repeat. Only the leading year
         // is compared: one catalog says '2023-' where another says '2023-2024'.
         const year = String(meta.year ?? meta.releaseInfo ?? '').slice(0, 4);
-        const title = `${String(meta.name || '').toLowerCase()}|${year}`;
+        const title = `${String(meta.name || '').toLowerCase()}|${year}|${meta.type}`;
         if (seen.has(String(meta.id)) || (meta.name && seen.has(title))) continue;
         seen.add(String(meta.id));
         if (meta.name) seen.add(title);
