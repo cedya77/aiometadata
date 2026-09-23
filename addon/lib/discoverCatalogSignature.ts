@@ -41,6 +41,14 @@ function computeDiscoverSignature(catalogConfig: any): string | null {
 }
 
 function applyDiscoverSignature(extraArgs: any, catalogConfig: any): void {
+  // Discover providers treat "None" (case-insensitively) as no genre filter.
+  // Normalize here so the route, comprehensive warmer and merged sources share
+  // the same cache entry when a client omits the manifest's "None" option.
+  if (extraArgs.genre == null || extraArgs.genre === '' ||
+      (typeof extraArgs.genre === 'string' && extraArgs.genre.toLowerCase() === 'none')) {
+    delete extraArgs.genre;
+  }
+
   const signature = computeDiscoverSignature(catalogConfig);
   if (signature) extraArgs.discoverSig = signature;
 }
