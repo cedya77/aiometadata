@@ -1322,6 +1322,70 @@ class AniListAPI {
       throw error;
     }
   }
+
+  /**
+   * Fetch airing schedule for an anime by AniList ID.
+   * Returns a map of episode number -> airingAt unix timestamp in seconds.
+   */
+  async getAiringSchedule(anilistId: number | string, accessToken?: string): Promise<Record<number, number>> {
+    if (!anilistId) return {};
+    const id = Number(anilistId);
+    if (!Number.isFinite(id) || id <= 0) return {};
+
+    return cacheWrapGlobal(`anilist-airing-schedule:${id}`, async () => {
+      const query = `
+        query ($id: Int) {
+          Media(id: $id, type: ANIME) {
+            airingSchedule(perPage: 50) {
+              nodes {
+                episode
+                airingAt
+              }
+            }
+            nextAiringEpisode {
+              episode
+              airingAt
+            }
+          }
+        }
+      `;
+
+      try {
+        const response = await this.makeRateLimitedRequest(() =>
+          httpPost(this.baseURL, {
+            query,
+            variables: { id }
+          }, {
+            headers: anilistHeaders(accessToken),
+            timeout: 15000
+          })
+        );
+
+        const schedule: Record<number, number> = {};
+        const media = response.data?.data?.Media;
+        const nodes = media?.airingSchedule?.nodes;
+        if (Array.isArray(nodes)) {
+          for (const node of nodes) {
+            if (node && typeof node.episode === 'number' && typeof node.airingAt === 'number') {
+              schedule[node.episode] = node.airingAt;
+            }
+          }
+        }
+
+        const next = media?.nextAiringEpisode;
+        if (next && typeof next.episode === 'number' && typeof next.airingAt === 'number') {
+          if (!schedule[next.episode]) {
+            schedule[next.episode] = next.airingAt;
+          }
+        }
+
+        return schedule;
+      } catch (error: any) {
+        console.error(`[AniList] Error fetching airing schedule for ID ${id}:`, error.message);
+        return {};
+      }
+    }, 4 * 3600);
+  }
 }
 
 const anilist = new AniListAPI();
