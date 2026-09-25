@@ -181,6 +181,7 @@ Static params:
 - sort (movies): ${listValues(SCHEMA.tvdb.movie.sorts)}
 - sort (series): ${listValues(SCHEMA.tvdb.series.sorts)}
 - sortType: ${listValues(SCHEMA.tvdb.series.sortDirections)} (series only)
+- trending is the app's TVDB Trending mode, not a native TVDB sort or a day/week chart: it ranks this year and last year's titles by score. Other filters still apply; an explicit year narrows this window. Series require a known premiere date no later than seven days from now.
 - country: lowercase country code. Only set if user specifies a country. Omit for global/unfiltered results.
 - lang: 3-letter language code. Only set if user specifies a language. Omit to use default.
 - year: integer
