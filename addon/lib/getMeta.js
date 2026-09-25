@@ -20,6 +20,7 @@ const { cacheWrapMeta, cacheWrapJikanApi, cacheWrapGlobal } = require('./getCach
 const { deriveStabilityStamp } = require('./metaColdStore');
 function CATALOG_TTL() { return parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10); }
 const kitsu = require('./kitsu');
+const anilist = require('./anilist');
 var nameToImdb = require("name-to-imdb");
 const consola = require('consola');
 const { cp } = require("fs");
@@ -2937,6 +2938,20 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       let tmdbEpisodeOverviewMap = new Map(); // Map of "season:episode" -> episode overview
       const mapping = idMapper.getMappingByKitsuId(kitsuId);
       
+      // Enrich air dates with AniList airing schedule if available
+      const anilistId = mapping?.anilist_id || enrichmentData?.mapping?.anilistId;
+      let anilistSchedule = {};
+      if (anilistId) {
+        try {
+          anilistSchedule = await anilist.getAiringSchedule(anilistId);
+          if (anilistSchedule && Object.keys(anilistSchedule).length > 0) {
+            logger.debug(`[buildAnimeResponse] Loaded AniList airing schedule for ID ${anilistId}: ${Object.keys(anilistSchedule).length} episodes`);
+          }
+        } catch (scheduleErr) {
+          logger.warn(`[buildAnimeResponse] Failed to fetch AniList airing schedule: ${scheduleErr.message}`);
+        }
+      }
+      
       if (mapping?.themoviedb_id && kitsuId) {
         try {
           // Resolve all TMDB episodes and group by season for bulk fetching
@@ -3028,9 +3043,10 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
         else if (!airDate && tmdbEpisode && key && tmdbEpisode.isFranchiseFallback) {
           logger.debug(`[buildKitsuAnimeResponse] Skipping TMDB air date for Kitsu ${kitsuId} Ep ${ep.mal_id} because mapping is franchise fallback`);
         }
-        const releasedAt = airDate
-          ? resolveReleaseTimestamp(airDate, { originCountry: 'jp' })
-          : null;
+        const anilistAirTime = anilistSchedule ? anilistSchedule[ep.mal_id] : null;
+        const releasedAt = anilistAirTime
+          ? new Date(anilistAirTime * 1000)
+          : (airDate ? resolveReleaseTimestamp(airDate, { originCountry: 'jp' }) : null);
 
         if (!thumbnailUrl && tmdbEpisode) {
           const tmdbThumbnail = tmdbThumbnailMap.get(key);
@@ -3392,6 +3408,20 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
       let tmdbEpisodeOverviewMap = new Map(); // Map of "season:episode" -> episode overview
       const mapping = idMapper.getMappingByKitsuId(kitsuData.id);
       
+      // Enrich air dates with AniList airing schedule if available
+      const anilistId = mapping?.anilist_id || enrichmentData?.mapping?.anilistId;
+      let anilistSchedule = {};
+      if (anilistId) {
+        try {
+          anilistSchedule = await anilist.getAiringSchedule(anilistId);
+          if (anilistSchedule && Object.keys(anilistSchedule).length > 0) {
+            logger.debug(`[buildKitsuAnimeResponse] Loaded AniList airing schedule for ID ${anilistId}: ${Object.keys(anilistSchedule).length} episodes`);
+          }
+        } catch (scheduleErr) {
+          logger.warn(`[buildKitsuAnimeResponse] Failed to fetch AniList airing schedule: ${scheduleErr.message}`);
+        }
+      }
+      
       if (mapping?.themoviedb_id) {
         try {
           // Resolve all TMDB episodes and group by season for bulk fetching
@@ -3479,9 +3509,10 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
         else if (!airDate && tmdbEpisode && key && tmdbEpisode.isFranchiseFallback) {
           logger.debug(`[buildKitsuAnimeResponse] Skipping TMDB air date for Kitsu ${kitsuData.id} Ep ${ep.number} because mapping is franchise fallback`);
         }
-        const releasedAt = airDate
-          ? resolveReleaseTimestamp(airDate, { originCountry: 'jp' })
-          : null;
+        const anilistAirTime = anilistSchedule ? anilistSchedule[ep.number] : null;
+        const releasedAt = anilistAirTime
+          ? new Date(anilistAirTime * 1000)
+          : (airDate ? resolveReleaseTimestamp(airDate, { originCountry: 'jp' }) : null);
 
         if (!thumbnailUrl && tmdbEpisode) {
           const tmdbThumbnail = tmdbThumbnailMap.get(key);
