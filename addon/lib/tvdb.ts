@@ -676,6 +676,31 @@ async function searchCompanies(query: string, config: UserConfig): Promise<any[]
   }
 }
 
+interface TvdbCompanyRecord {
+  id: string | number;
+  name?: string;
+  country?: string;
+  primaryCompanyType?: number;
+  slug?: string;
+}
+
+async function getCompany(companyId: string, config: UserConfig): Promise<TvdbCompanyRecord | null> {
+  return cacheWrapTvdbApi(`tvdb-company:${companyId}`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return null;
+
+    try {
+      const response = await tvdbHttpRequest(`${TVDB_API_URL}/companies/${encodeURIComponent(companyId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return (response.data as { data?: TvdbCompanyRecord })?.data || null;
+    } catch (error) {
+      logger.error(`[getCompany] Error getting TVDB company ${companyId}:`, (error as Error).message);
+      return null;
+    }
+  });
+}
+
 async function searchCollections(query: string, config: UserConfig): Promise<TvdbSearchResult[]> {
   const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
@@ -1363,6 +1388,7 @@ async function getCollectionTranslations(collectionId: string, language: string,
     try {
       const url = `${TVDB_API_URL}/lists/${collectionId}/translations/${language}`;
       const response = await tvdbHttpRequest(url, { headers: { 'Authorization': `Bearer ${token}` } });
+
       const data = (response.data as any)?.data;
       
       // If no data found and language is not English, fallback to English
@@ -1387,6 +1413,7 @@ export {
   searchMovies,
   searchPeople,
   searchCompanies,
+  getCompany,
   searchCollections,
   getSeriesExtended,
   getMovieExtended,
@@ -1433,6 +1460,7 @@ module.exports = {
   searchMovies,
   searchPeople,
   searchCompanies,
+  getCompany,
   searchCollections,
   getSeriesExtended,
   getMovieExtended,

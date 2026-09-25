@@ -181,7 +181,7 @@ const TMDB_MOVIE_PARAMS = new Set([
   'primary_release_date.gte',
   'primary_release_date.lte',
   'release_date.gte',
-  'release_date.lte',
+  'collection_ids',
   'region',
   'with_cast',
   'with_crew',

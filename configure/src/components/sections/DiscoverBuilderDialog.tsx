@@ -33,7 +33,7 @@ type CatalogMediaType = 'movie' | 'series';
 type TmdbMediaType = 'movie' | 'tv';
 type DiscoverSource = 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal' | 'mdblist';
 type SimklDiscoverMediaType = 'movies' | 'shows' | 'anime';
-type SearchEntity = 'person' | 'company' | 'keyword' | 'network';
+type SearchEntity = 'person' | 'company' | 'keyword' | 'network' | 'collection';
 type JoinMode = 'or' | 'and';
 type DatePresetKey =
   | 'today'
@@ -114,6 +114,12 @@ interface TmdbEntityResult {
   id: number;
   name?: string;
   title?: string;
+  overview?: string;
+  poster_path?: string;
+  backdrop_path?: string;
+  origin_country?: string;
+  country?: string;
+  slug?: string;
 }
 
 interface TmdbEntitySearchResponse {
@@ -125,6 +131,36 @@ interface SelectionItem {
   id: number;
   label: string;
 }
+function entityResultLabel(item: TmdbEntityResult, entity: 'person' | 'company' | 'network' | 'collection'): string {
+  const name = item.name || item.title;
+  const country = entity === 'company'
+    ? [item.origin_country, item.country].map(value => value?.trim()).find(Boolean) || ''
+    : '';
+  return `${name ? `${name} (ID ${item.id})` : `ID ${item.id}`}${country ? ` (${country})` : ''}`;
+}
+
+function entityResultUrl(
+  item: TmdbEntityResult,
+  entity: 'person' | 'company' | 'network' | 'collection',
+  mediaType: TmdbMediaType,
+  source: DiscoverSource = 'tmdb'
+): string {
+  if (entity === 'person') return `https://www.themoviedb.org/person/${item.id}`;
+  if (entity === 'network') return `https://www.themoviedb.org/network/${item.id}`;
+  if (entity === 'collection') return `https://www.themoviedb.org/collection/${item.id}`;
+  if (source === 'tvdb' && item.slug) return `https://thetvdb.com/companies/${encodeURIComponent(item.slug)}`;
+  if (source === 'tvdb') return `https://thetvdb.com/search?query=${encodeURIComponent(item.name || item.title || String(item.id))}`;
+  return `https://www.themoviedb.org/company/${item.id}/${mediaType}`;
+}
+
+function EntityResultLabel({ item, entity }: { item: TmdbEntityResult; entity: 'person' | 'company' | 'network' | 'collection' }) {
+  return (
+    <div className="min-w-0 flex-1 break-words">
+      <p>{entityResultLabel(item, entity)}</p>
+    </div>
+  );
+}
+
 
 const MOVIE_SORT_OPTIONS = [
   { value: 'popularity.desc', label: 'Popularity (High to Low)' },
@@ -851,6 +887,10 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
   const [companyQuery, setCompanyQuery] = useState('');
   const [companyResults, setCompanyResults] = useState<TmdbEntityResult[]>([]);
   const [withCompanies, setWithCompanies] = useState<SelectionItem[]>([]);
+  const [collectionQuery, setCollectionQuery] = useState('');
+  const [collectionResults, setCollectionResults] = useState<TmdbEntityResult[]>([]);
+  const [withCollections, setWithCollections] = useState<SelectionItem[]>([]);
+  const [isSearchingCollections, setIsSearchingCollections] = useState(false);
   const [withoutCompanies, setWithoutCompanies] = useState<SelectionItem[]>([]);
   const [companyJoinMode, setCompanyJoinMode] = useState<JoinMode>('or');
   const [isSearchingCompanies, setIsSearchingCompanies] = useState(false);
@@ -872,6 +912,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
   const peopleSearchRef = useRef<HTMLDivElement | null>(null);
   const companySearchRef = useRef<HTMLDivElement | null>(null);
   const networkSearchRef = useRef<HTMLDivElement | null>(null);
+  const collectionSearchRef = useRef<HTMLDivElement | null>(null);
   const keywordSearchRef = useRef<HTMLDivElement | null>(null);
 
   const [voteAverageRange, setVoteAverageRange] = useState<[number, number]>([0, 10]);
@@ -1123,6 +1164,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     withCompanies,
     withoutCompanies,
     companyJoinMode,
+    withCollections,
     withNetworks,
     withKeywords,
     withoutKeywords,
@@ -1258,6 +1300,10 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
 
     setNetworkQuery('');
     setNetworkResults([]);
+    setCollectionQuery('');
+    setCollectionResults([]);
+    setWithCollections([]);
+    setIsSearchingCollections(false);
     setWithNetworks([]);
 
     setKeywordQuery('');
@@ -1383,6 +1429,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     if (fs.withoutCompanies) setWithoutCompanies(fs.withoutCompanies);
     if (fs.companyJoinMode) setCompanyJoinMode(fs.companyJoinMode);
     if (fs.withNetworks) setWithNetworks(fs.withNetworks);
+    if (fs.withCollections) setWithCollections(fs.withCollections);
     if (fs.withKeywords) setWithKeywords(fs.withKeywords);
     if (fs.withoutKeywords) setWithoutKeywords(fs.withoutKeywords);
     if (fs.keywordJoinMode) setKeywordJoinMode(fs.keywordJoinMode);
@@ -1630,6 +1677,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
         peopleSearchRef.current?.contains(target) ||
         companySearchRef.current?.contains(target) ||
         networkSearchRef.current?.contains(target) ||
+        collectionSearchRef.current?.contains(target) ||
         keywordSearchRef.current?.contains(target);
 
       if (!clickedInsideSearch) {
@@ -1980,6 +2028,27 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     }
   };
 
+  const searchCollections = async () => {
+    const query = collectionQuery.trim();
+    if (!query || catalogType !== 'movie' || discoverSource !== 'tmdb') return;
+    setIsSearchingCollections(true);
+    try {
+      const numericId = /^\d+$/.test(query) ? query : null;
+      const endpoint = numericId
+        ? `/api/tmdb/collections/resolve?${buildDiscoverRequestQuery('tmdb', { input: numericId })}`
+        : `/api/tmdb/collections/search?${buildDiscoverRequestQuery('tmdb', { query })}`;
+      const response = await fetch(endpoint);
+      if (!response.ok) throw new Error('Failed to search collections');
+      const data = await response.json();
+      const results = numericId ? (data?.id ? [data] : []) : (Array.isArray(data.results) ? data.results : []);
+      setCollectionResults(results);
+      setActiveSearchDropdown(results.length > 0 ? 'collection' : null);
+    } catch (error) {
+      toast.error('Failed to search collections', { description: error instanceof Error ? error.message : 'Unknown error' });
+    } finally {
+      setIsSearchingCollections(false);
+    }
+  };
   const searchMalStudios = async (query: string) => {
     if (!query.trim()) {
       setMalStudioResults([]);
@@ -2002,9 +2071,9 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     }
   };
 
-  const toSelectionItem = (item: TmdbEntityResult): SelectionItem => ({
+  const toSelectionItem = (item: TmdbEntityResult, entity?: 'person' | 'company' | 'network'): SelectionItem => ({
     id: item.id,
-    label: item.name || item.title || `ID ${item.id}`
+    label: entity ? entityResultLabel(item, entity) : item.name || item.title || `ID ${item.id}`
   });
 
   const handlePreview = async () => {
@@ -2327,8 +2396,9 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     if (withCompanies.length > 0) {
       params.with_companies = joinSelectionValues(withCompanies, companyJoinMode);
     }
-    if (withoutCompanies.length > 0) {
-      params.without_companies = joinSelectionValues(withoutCompanies, companyJoinMode);
+
+    if (catalogType === 'movie' && withCollections.length > 0) {
+      params.collection_ids = joinSelectionValues(withCollections, 'or');
     }
 
     if (catalogType === 'series' && withNetworks.length > 0) {
@@ -2461,6 +2531,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
         withoutCompanies,
         companyJoinMode,
         withNetworks,
+        withCollections,
         withKeywords,
         withoutKeywords,
         keywordJoinMode,
@@ -2803,7 +2874,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
       <div className="flex flex-wrap gap-2">
         {items.map(item => (
           <Badge key={item.id} variant="secondary" className="gap-1 pl-2 pr-1 py-1">
-            <span className="max-w-[180px] truncate">{item.label}</span>
+            <span className="max-w-[180px] truncate" title={item.label}>{item.label}</span>
             <button
               type="button"
               onClick={() => onRemove(item.id)}
@@ -4226,7 +4297,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                       </Button>
                     </div>
                     {activeSearchDropdown === 'person' && peopleResults.length > 0 && (
-                      <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1">
+                      <div className="max-h-60 overflow-y-auto border rounded-md p-2 space-y-2">
                         <div className="flex items-center justify-between pb-1 border-b">
                           <p className="text-xs text-muted-foreground">{peopleResults.length} results</p>
                           <Button
@@ -4240,19 +4311,31 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                           </Button>
                         </div>
                         {peopleResults.map(person => (
-                          <div key={person.id} className="flex items-center justify-between gap-2 text-sm">
-                            <span className="truncate">{person.name || person.title || `ID ${person.id}`}</span>
+                          <div key={person.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm">
+                            <EntityResultLabel item={person} entity="person" />
+                            <div className="flex shrink-0 self-end items-center gap-1 sm:self-auto">
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
                               onClick={() => {
-                                setSelectedPeople(prev => addUniqueItem(prev, toSelectionItem(person)));
+                                setSelectedPeople(prev => addUniqueItem(prev, toSelectionItem(person, 'person')));
                                 setActiveSearchDropdown(null);
                               }}
                             >
                               Add
                             </Button>
+                              <Button asChild variant="ghost" size="sm">
+                                <a
+                                  href={`https://www.themoviedb.org/person/${person.id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  aria-label={`Link to ${entityResultLabel(person, 'person')} on TMDB (opens in a new tab)`}
+                                >
+                                  Link
+                                </a>
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -4324,7 +4407,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                     </Button>
                   </div>
                   {activeSearchDropdown === 'company' && companyResults.length > 0 && (
-                    <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1">
+                    <div className="max-h-60 overflow-y-auto border rounded-md p-2 space-y-2">
                       <div className="flex items-center justify-between pb-1 border-b">
                         <p className="text-xs text-muted-foreground">{companyResults.length} results</p>
                         <Button
@@ -4338,8 +4421,9 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                         </Button>
                       </div>
                       {companyResults.map(company => (
-                        <div key={company.id} className="flex items-center justify-between gap-2 text-sm">
-                          <span className="truncate">{company.name || company.title || `ID ${company.id}`}</span>
+                        <div key={company.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm">
+                          <EntityResultLabel item={company} entity="company" />
+                          <div className="flex shrink-0 self-end items-center gap-1 sm:self-auto">
                           {discoverSource === 'tmdb' ? (
                             <div className="flex gap-1">
                               <Button
@@ -4347,7 +4431,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  setWithCompanies(prev => addUniqueItem(prev, toSelectionItem(company)));
+                                  setWithCompanies(prev => addUniqueItem(prev, toSelectionItem(company, 'company')));
                                   setWithoutCompanies(prev => removeItemById(prev, company.id));
                                   setActiveSearchDropdown(null);
                                 }}
@@ -4359,7 +4443,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  setWithoutCompanies(prev => addUniqueItem(prev, toSelectionItem(company)));
+                                  setWithoutCompanies(prev => addUniqueItem(prev, toSelectionItem(company, 'company')));
                                   setWithCompanies(prev => removeItemById(prev, company.id));
                                   setActiveSearchDropdown(null);
                                 }}
@@ -4373,7 +4457,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                               variant="ghost"
                               size="sm"
                               onClick={() => {
-                                setWithCompanies([toSelectionItem(company)]);
+                                setWithCompanies([toSelectionItem(company, 'company')]);
                                 setWithoutCompanies([]);
                                 setActiveSearchDropdown(null);
                               }}
@@ -4381,6 +4465,17 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                               Select
                             </Button>
                           )}
+                            <Button asChild variant="ghost" size="sm">
+                              <a
+                                href={entityResultUrl(company, 'company', tmdbMediaType, discoverSource)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label={`Link to ${entityResultLabel(company, 'company')} on ${sourceLabel} (opens in a new tab)`}
+                              >
+                                Link
+                              </a>
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -4406,6 +4501,59 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                     )}
                   </div>
                 </div>
+                {discoverSource === 'tmdb' && catalogType === 'movie' && (
+                  <div className="space-y-2" ref={collectionSearchRef}>
+                    <Label>Collections ({withCollections.length} selected)</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Search collection or ID (e.g. Star Wars or 10)"
+                        value={collectionQuery}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setCollectionQuery(value);
+                          setActiveSearchDropdown(prev => (prev === 'collection' ? null : prev));
+                          if (!value.trim()) setCollectionResults([]);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            searchCollections();
+                          } else if (event.key === 'Escape') {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setActiveSearchDropdown(null);
+                          }
+                        }}
+                      />
+                      <Button type="button" variant="outline" onClick={searchCollections} disabled={isSearchingCollections || !collectionQuery.trim()}>
+                        {isSearchingCollections ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    {activeSearchDropdown === 'collection' && collectionResults.length > 0 && (
+                      <div className="max-h-60 overflow-y-auto border rounded-md p-2 space-y-2">
+                        <div className="flex items-center justify-between pb-1 border-b">
+                          <p className="text-xs text-muted-foreground">{collectionResults.length} results</p>
+                          <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setActiveSearchDropdown(null)}>Close</Button>
+                        </div>
+                        {collectionResults.map(collection => (
+                          <div key={collection.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm">
+                            <EntityResultLabel item={collection} entity="collection" />
+                            <div className="flex shrink-0 self-end items-center gap-1 sm:self-auto">
+                              <Button type="button" variant="ghost" size="sm" onClick={() => {
+                                setWithCollections(prev => addUniqueItem(prev, toSelectionItem(collection, 'collection')));
+                                setActiveSearchDropdown(null);
+                              }}>Add</Button>
+                              <Button asChild variant="ghost" size="sm">
+                                <a href={entityResultUrl(collection, 'collection', tmdbMediaType)} target="_blank" rel="noopener noreferrer" aria-label={`Link to ${entityResultLabel(collection, 'collection')} on TMDB (opens in a new tab)`}>Link</a>
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {renderSelectedItems(withCollections, (id) => setWithCollections(prev => removeItemById(prev, id)), 'No collections selected')}
+                  </div>
+                )}
 
                 {discoverSource === 'tmdb' && catalogType === 'series' && (
                   <div className="space-y-2" ref={networkSearchRef}>
@@ -4462,19 +4610,31 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                           </Button>
                         </div>
                         {networkResults.map(network => (
-                          <div key={network.id} className="flex items-center justify-between gap-2 text-sm">
-                            <span className="truncate">{network.name || `ID ${network.id}`}</span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setWithNetworks(prev => addUniqueItem(prev, toSelectionItem(network)));
-                                setActiveSearchDropdown(null);
-                              }}
-                            >
-                              Add
-                            </Button>
+                          <div key={network.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm">
+                            <EntityResultLabel item={network} entity="network" />
+                            <div className="flex shrink-0 self-end items-center gap-1 sm:self-auto">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setWithNetworks(prev => addUniqueItem(prev, toSelectionItem(network, 'network')));
+                                  setActiveSearchDropdown(null);
+                                }}
+                              >
+                                Add
+                              </Button>
+                              <Button asChild variant="ghost" size="sm">
+                                <a
+                                  href={entityResultUrl(network, 'network', tmdbMediaType)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  aria-label={`Link to ${entityResultLabel(network, 'network')} on TMDB (opens in a new tab)`}
+                                >
+                                  Link
+                                </a>
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
