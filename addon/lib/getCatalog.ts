@@ -23,6 +23,7 @@ import { isDiscoverCatalogId, applyDiscoverSignature } from './discoverCatalogSi
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 import { resolveDynamicTmdbDiscoverParams } from './tmdbDiscoverDateTokens.js';
+import { getTmdbTrendingWindow } from './tmdbTrending.js';
 import { roundRobinInterleaveTagged, mergedDedupKey, filterMetasByGenre, normalizeGenreKey } from '../utils/mergedCatalog.js';
 const { getTvmazeScheduleCatalog } = require('./tvmazeScheduleCatalog');
 const movielens = require('./movielens');
@@ -1104,9 +1105,17 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     }
 
     try {
-      const response = mediaType === 'movie'
-        ? await moviedb.discoverMovie(parameters, config)
-        : await moviedb.discoverTv(parameters, config);
+      const trendingWindow = getTmdbTrendingWindow(parameters.sort_by);
+      const response = trendingWindow
+        ? await moviedb.trending({
+            media_type: mediaType,
+            time_window: trendingWindow,
+            language: parameters.language,
+            page: discoverPage,
+          }, config)
+        : mediaType === 'movie'
+          ? await moviedb.discoverMovie(parameters, config)
+          : await moviedb.discoverTv(parameters, config);
 
       if (!response?.results || !Array.isArray(response.results) || response.results.length === 0) {
         logger.info(`[TMDB Discover] No results for ${id} at page ${discoverPage}`);

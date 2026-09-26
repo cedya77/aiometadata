@@ -129,6 +129,8 @@ interface SelectionItem {
 const MOVIE_SORT_OPTIONS = [
   { value: 'popularity.desc', label: 'Popularity (High to Low)' },
   { value: 'popularity.asc', label: 'Popularity (Low to High)' },
+  { value: 'trending.day', label: 'Trending (Day)' },
+  { value: 'trending.week', label: 'Trending (Week)' },
   { value: 'primary_release_date.desc', label: 'Release Date (Newest)' },
   { value: 'primary_release_date.asc', label: 'Release Date (Oldest)' },
   { value: 'title.asc', label: 'Title (A-Z)' },
@@ -146,6 +148,8 @@ const MOVIE_SORT_OPTIONS = [
 const TV_SORT_OPTIONS = [
   { value: 'popularity.desc', label: 'Popularity (High to Low)' },
   { value: 'popularity.asc', label: 'Popularity (Low to High)' },
+  { value: 'trending.day', label: 'Trending (Day)' },
+  { value: 'trending.week', label: 'Trending (Week)' },
   { value: 'first_air_date.desc', label: 'First Air Date (Newest)' },
   { value: 'first_air_date.asc', label: 'First Air Date (Oldest)' },
   { value: 'name.asc', label: 'Name (A-Z)' },
@@ -675,6 +679,12 @@ function buildTmdbDiscoverWebUrl(
   mediaType: TmdbMediaType,
   params: Record<string, string | number | boolean | null | undefined>
 ): string {
+  const trendingWindow = typeof params.sort_by === 'string'
+    ? params.sort_by.match(/^trending\.(day|week)$/)?.[1]
+    : null;
+  if (trendingWindow) {
+    return `https://www.themoviedb.org/trending/${mediaType === 'movie' ? 'movie' : 'tv'}/${trendingWindow}`;
+  }
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') return;

@@ -64,8 +64,8 @@ interface CatalogConfig {
   };
 }
 
-const VALID_TMDB_MOVIE_SORTS = ['popularity.desc', 'popularity.asc', 'primary_release_date.desc', 'primary_release_date.asc', 'vote_average.desc', 'vote_average.asc', 'vote_count.desc', 'revenue.desc'];
-const VALID_TMDB_TV_SORTS = ['popularity.desc', 'popularity.asc', 'first_air_date.desc', 'first_air_date.asc', 'vote_average.desc', 'vote_average.asc', 'vote_count.desc'];
+const VALID_TMDB_MOVIE_SORTS = ['popularity.desc', 'popularity.asc', 'trending.day', 'trending.week', 'primary_release_date.desc', 'primary_release_date.asc', 'vote_average.desc', 'vote_average.asc', 'vote_count.desc', 'vote_count.asc', 'revenue.desc'];
+const VALID_TMDB_TV_SORTS = ['popularity.desc', 'popularity.asc', 'trending.day', 'trending.week', 'first_air_date.desc', 'first_air_date.asc', 'vote_average.desc', 'vote_average.asc', 'vote_count.desc', 'vote_count.asc'];
 const VALID_ANILIST_SORTS = ['TRENDING_DESC', 'POPULARITY_DESC', 'POPULARITY', 'SCORE_DESC', 'SCORE', 'FAVOURITES_DESC', 'START_DATE_DESC', 'START_DATE', 'UPDATED_AT_DESC', 'TITLE_ROMAJI', 'TITLE_ENGLISH', 'EPISODES_DESC'];
 const VALID_MAL_SORTS = ['score', 'popularity', 'rank', 'members', 'favorites', 'start_date', 'end_date', 'episodes', 'title'];
 const VALID_SIMKL_MOVIE_SORTS = ['popular-this-week', 'popular-this-month', 'rank', 'votes', 'budget', 'revenue', 'release-date', 'most-anticipated', 'a-z', 'z-a'];
