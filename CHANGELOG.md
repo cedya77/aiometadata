@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.3.0](https://github.com/cedya77/aiometadata/compare/v3.2.3...v3.3.0) (2026-09-28)
+
+
+### Features
+
+* **catalogs:** choose a poster or landscape shape for any catalog ([7066c3d](https://github.com/cedya77/aiometadata/commit/7066c3da773659f8f985296540cb49ab7655e14f))
+* **collections:** let collections be left out of the manifest ([c5318c6](https://github.com/cedya77/aiometadata/commit/c5318c639eab39e744ab5deccf8ac3a5af7d85a6))
+* **dashboard:** keep profiling after a long event loop stall ([cb60710](https://github.com/cedya77/aiometadata/commit/cb607108ff87d73deb86cee4dbd79f9f379fe84c))
+* **dashboard:** log slow requests to other services ([f3a8497](https://github.com/cedya77/aiometadata/commit/f3a84976088583de9bb2c463543248f78ec5449c))
+* **dashboard:** name the functions behind event loop stalls ([46bd8c7](https://github.com/cedya77/aiometadata/commit/46bd8c74773ce1d633aea3a1a1ea3efc9c4e7b04))
+* **jellyfin:** answer episode queries with a premiere date range ([149e652](https://github.com/cedya77/aiometadata/commit/149e6525ef167a232f615792552faa25c9e35e11))
+* **jellyfin:** give each Jellyfin user their own tracker accounts ([#759](https://github.com/cedya77/aiometadata/issues/759)) ([cb60710](https://github.com/cedya77/aiometadata/commit/cb607108ff87d73deb86cee4dbd79f9f379fe84c))
+* **jellyfin:** offer the Jellyfin extensions AIOStreams' web app reads ([cce417c](https://github.com/cedya77/aiometadata/commit/cce417cbb72d37a4aca2cfea444d263e342db6db))
+* **jellyfin:** read AniList and MyAnimeList as the tracker ([4928ee1](https://github.com/cedya77/aiometadata/commit/4928ee15c11790d2405cc276378b93aa8f8ac39c))
+* **playback:** match AIOStreams household users by their persona id ([f5846af](https://github.com/cedya77/aiometadata/commit/f5846af709c853abe2c77e09c1b8fa757c70006d))
+
+
+### Bug Fixes
+
+* **cache:** keep anime metas read by IMDb id apart from their Kitsu entries ([da754ba](https://github.com/cedya77/aiometadata/commit/da754ba8c6921ec21dc9d801a0cd27ee19210f94)), closes [#758](https://github.com/cedya77/aiometadata/issues/758)
+* **catalogs:** cache a custom catalog's addon pages by the addon's address ([7d290b7](https://github.com/cedya77/aiometadata/commit/7d290b7c333cb2823ea92904ed694353b07ce270))
+* **catalogs:** follow each catalog's cache lifetime at every layer ([7d290b7](https://github.com/cedya77/aiometadata/commit/7d290b7c333cb2823ea92904ed694353b07ce270))
+* **catalogs:** stop a slow trailer addon holding catalog pages ([cb60710](https://github.com/cedya77/aiometadata/commit/cb607108ff87d73deb86cee4dbd79f9f379fe84c))
+* **collections:** keep builder collection catalogs off home screens that ignore required extras ([3eb0bd8](https://github.com/cedya77/aiometadata/commit/3eb0bd81d807550ec3c27f611fbb74c1aaf0d59f)), closes [#757](https://github.com/cedya77/aiometadata/issues/757)
+* **configure:** ask for a reinstall when a collection changes the manifest ([c5318c6](https://github.com/cedya77/aiometadata/commit/c5318c639eab39e744ab5deccf8ac3a5af7d85a6))
+* **jellyfin:** answer shelves while a tracker library is first read ([cb60710](https://github.com/cedya77/aiometadata/commit/cb607108ff87d73deb86cee4dbd79f9f379fe84c))
+* **jellyfin:** clear a rewatch point finished on another device ([cb60710](https://github.com/cedya77/aiometadata/commit/cb607108ff87d73deb86cee4dbd79f9f379fe84c))
+* **jellyfin:** keep each tracker's Next Up and positions apart on a shared profile ([c767a0c](https://github.com/cedya77/aiometadata/commit/c767a0cb45bbbdeb84924dc108bc8779361c7f36))
+* **jellyfin:** keep one episode index per meta configuration and cap its memory ([865e52a](https://github.com/cedya77/aiometadata/commit/865e52a58c464f444ebe1ae919fff5282c922f56))
+* **jellyfin:** page through filtered, merged and addon catalogs to their end ([cb60710](https://github.com/cedya77/aiometadata/commit/cb607108ff87d73deb86cee4dbd79f9f379fe84c))
+* **jellyfin:** resume from a tracker's newer position ([3392dbd](https://github.com/cedya77/aiometadata/commit/3392dbd052ad27a8689857634a9d5bbdc83fc3b3))
+* **jellyfin:** stop a show in progress repeating in Next Up ([bc6d277](https://github.com/cedya77/aiometadata/commit/bc6d27782b9c9816f35e3ed3f350adb2ea665e11))
+* **jellyfin:** stop favourites repeating titles across pages ([2483f05](https://github.com/cedya77/aiometadata/commit/2483f05b58ebdc9bdeb96eb48d048a98098ae45b))
+* **jellyfin:** take a tracker's air time in Next Up for the episode it names ([9820d06](https://github.com/cedya77/aiometadata/commit/9820d064a95bac3cdbe6598feaf7fffc978fa29e))
+* **tvdb:** pick season posters in the user's language ([1b33d21](https://github.com/cedya77/aiometadata/commit/1b33d214131206ca2d2682aab84337ca1b5f5c64))
+
 ## [3.2.3](https://github.com/cedya77/aiometadata/compare/v3.2.2...v3.2.3) (2026-09-27)
 
 
