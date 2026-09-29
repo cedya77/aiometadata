@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.3.2](https://github.com/cedya77/aiometadata/compare/v3.3.1...v3.3.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* **jellyfin:** name each image with a short hash instead of encrypting its address ([b664d21](https://github.com/cedya77/aiometadata/commit/b664d21f4d70f430ff3e7de3a935535ba8117837))
+
 ## [3.3.1](https://github.com/cedya77/aiometadata/compare/v3.3.0...v3.3.1) (2026-09-29)
 
 
