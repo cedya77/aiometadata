@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.3.1](https://github.com/cedya77/aiometadata/compare/v3.3.0...v3.3.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **cache:** keep Up Next shapes apart for show posters and episode stills ([ca47c0b](https://github.com/cedya77/aiometadata/commit/ca47c0bb4ac7cd23b2b07a5f04596d21bd3988e8))
+* **dashboard:** profile a stall without stalling the server ([8a5c0b4](https://github.com/cedya77/aiometadata/commit/8a5c0b481cf40d88797ba3a341ae660723f58e30))
+* **jellyfin:** answer a search inside a library from the search providers ([0f878d0](https://github.com/cedya77/aiometadata/commit/0f878d0609cd4c7b36a989061e76b8a115de2b21))
+* **jellyfin:** give each image a tag that changes with it ([135d6a0](https://github.com/cedya77/aiometadata/commit/135d6a01111941cd00e2e456d999ccc642362a4b))
+* **jellyfin:** read Next Up history by an index instead of the whole table ([1e7f829](https://github.com/cedya77/aiometadata/commit/1e7f8298f0c03088617daeaa1613d80dd25bfe29))
+* **jellyfin:** show catalogs set to landscape with landscape art ([b333e2e](https://github.com/cedya77/aiometadata/commit/b333e2edd2b91bcdaab55df698da8c14cdd5d3f1))
+* **poster-cache:** hand a connection back once its image is answered ([a901752](https://github.com/cedya77/aiometadata/commit/a901752ae82432c20fcebef39796c5cb9eb46c53))
+
 ## [3.3.0](https://github.com/cedya77/aiometadata/compare/v3.2.3...v3.3.0) (2026-09-28)
 
 
