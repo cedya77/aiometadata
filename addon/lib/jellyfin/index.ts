@@ -24,7 +24,7 @@ import {
   userDto,
   SERVER_NAME,
 } from './dto';
-import { buildViews, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBrowsable, requiresGenre } from './views';
+import { buildViews, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBoxSetCatalog, isBrowsable, requiresGenre, viewTypeFor } from './views';
 import { decodeJellyfinId } from './ids';
 import { imageTag, isWideTag } from './imageTags';
 import { buildEpisodes, buildSeasons, fetchCatalogPage, fetchMeta, fetchWindow, filterByIncludeTypes, includeTypesFilter, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallImages, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
@@ -1034,12 +1034,27 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return;
       }
 
-      if (!descriptor || descriptor.k !== 'view' || String(includeItemTypes ?? '') === 'BoxSet') {
+      if (descriptor?.k === 'movie' && String(descriptor.i).startsWith('tvdbc:')) {
+        const set = await fetchMeta(userUUID, 'movie', descriptor.i);
+        const memberIds = [...new Set<string>((Array.isArray(set?.videos) ? set.videos : []).map((v: any) => String(v?.id || '')).filter(Boolean))];
+        const members: any[] = [];
+        await mapWithConcurrency(memberIds, shelfConcurrency(), async (memberId, index) => {
+          const meta = await fetchMeta(userUUID, 'movie', memberId);
+          if (meta) members[index] = metaToBaseItem(meta, 'movie', serverId, String(parentId));
+        });
+        const listed = filterByIncludeTypes(members.filter(Boolean), includeItemTypes ? String(includeItemTypes) : undefined);
+        const page = listed.slice(startIndex, startIndex + limit);
+        await applyWatchedState(page, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
+        res.json(itemList(page, listed.length, startIndex));
+        return;
+      }
+
+      if (!descriptor || descriptor.k !== 'view') {
         res.json(itemList([], 0, startIndex));
         return;
       }
       const found = await findCatalogByViewId(userUUID, config, descriptor.t, descriptor.c);
-      if (!found) {
+      if (!found || (String(includeItemTypes ?? '') === 'BoxSet' && !isBoxSetCatalog(found))) {
         res.json(itemList([], 0, startIndex));
         return;
       }
@@ -2860,7 +2875,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         item.UserData = { ...item.UserData, Key: requestedId, ItemId: requestedId };
       }
 
-      if (descriptor.k === 'movie') {
+      if (descriptor.k === 'movie' && item.Type === 'Movie') {
         await attachSourcesInTime(req, item, descriptor, String(req.params.itemId));
       }
 
@@ -2908,7 +2923,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           req.params.itemId,
           serverIdFor(userUUID),
           catalog.name,
-          collectionTypeFor(catalog.type),
+          viewTypeFor(catalog),
           null
         )
       );

@@ -45,6 +45,16 @@ export function collectionTypeFor(type: string): string | null {
   }
 }
 
+const BOXSET_CATALOGS = new Set(['tvdb.collections']);
+
+export function isBoxSetCatalog(catalog: { id: string }): boolean {
+  return BOXSET_CATALOGS.has(catalog.id);
+}
+
+export function viewTypeFor(catalog: { id: string; type: string }): string | null {
+  return isBoxSetCatalog(catalog) ? 'boxsets' : collectionTypeFor(catalog.type);
+}
+
 export async function getCatalogs(userUUID: string, config: any): Promise<CatalogRef[]> {
   const tags = profileTags(config);
   const shape = createHash('md5').update(JSON.stringify(config?.catalogs ?? null)).digest('hex').slice(0, 12);
@@ -110,7 +120,7 @@ export async function buildViews(
   const { boxSetsFor, collectionView, entryVisible } = require('./collections');
   const catalogs = (await getCatalogs(userUUID, config)).filter(isBrowsable);
   const catalogView = (catalog: CatalogRef) => ({
-    ...collectionFolder(viewIdFor(catalog), serverId, catalog.name, collectionTypeFor(catalog.type), null),
+    ...collectionFolder(viewIdFor(catalog), serverId, catalog.name, viewTypeFor(catalog), null),
     ...(requiresGenre(catalog) ? { aiostreams: { genreRequired: true } } : {}),
   });
 

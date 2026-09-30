@@ -492,6 +492,38 @@ function providerIds(meta: any): Record<string, string> {
   return ids;
 }
 
+const LINKS: Array<[string, string, (id: string, show: boolean) => string]> = [
+  ['Imdb', 'IMDb', (id) => `https://www.imdb.com/title/${id}`],
+  ['Tmdb', 'TMDB', (id, show) => `https://www.themoviedb.org/${show ? 'tv' : 'movie'}/${id}`],
+  ['Tvdb', 'TheTVDB', (id, show) => `https://thetvdb.com/dereferrer/${show ? 'series' : 'movie'}/${id}`],
+  ['MyAnimeList', 'MyAnimeList', (id) => `https://myanimelist.net/anime/${id}`],
+  ['AniList', 'AniList', (id) => `https://anilist.co/anime/${id}`],
+  ['Kitsu', 'Kitsu', (id) => `https://kitsu.app/anime/${id}`],
+  ['AniDB', 'AniDB', (id) => `https://anidb.net/anime/${id}`],
+];
+
+function externalUrls(ids: Record<string, string>, show: boolean): Array<{ Name: string; Url: string }> {
+  return LINKS.filter(([key]) => ids[key]).map(([key, name, url]) => ({ Name: name, Url: url(ids[key], show) }));
+}
+
+const CONTINUING = new Set(['continuing', 'returning series', 'running', 'ongoing', 'currently_airing', 'current']);
+const ENDED = new Set(['ended', 'canceled', 'cancelled', 'finished_airing', 'finished']);
+
+function seriesStatus(meta: any): 'Continuing' | 'Ended' | undefined {
+  const status = String(meta.status ?? '').trim().toLowerCase();
+  if (CONTINUING.has(status)) return 'Continuing';
+  if (ENDED.has(status)) return 'Ended';
+  const info = String(meta.releaseInfo ?? '');
+  if (/\d{4}\s*[-\u2013]\s*$/.test(info)) return 'Continuing';
+  if (/\d{4}\s*[-\u2013]\s*\d{4}/.test(info)) return 'Ended';
+  return undefined;
+}
+
+function endDate(meta: any): string | null {
+  const end = /\d{4}\s*[-\u2013]\s*(\d{4})/.exec(String(meta.releaseInfo ?? ''))?.[1];
+  return end ? new Date(Date.UTC(Number(end), 11, 31)).toISOString() : null;
+}
+
 function peopleFrom(meta: any, serverId: string): any[] {
   const extras = meta.app_extras || {};
   const person = (member: any, type: string, role: string) => {
@@ -556,11 +588,21 @@ export function jellyfinTypeFor(metaType: string): 'Movie' | 'Series' {
 function ratingFields(meta: any): any {
   const extras = meta.app_extras || {};
   const display = Object.prototype.hasOwnProperty.call(extras, 'contentRating')
-    ? formatContentRating(extras.contentRating) : extras.certificationLocal || extras.certification;
+    ? formatContentRating(extras.contentRating)
+    : extras.certificationLocal || extras.certification;
+
   return {
     OfficialRating: isUnratedCertification(display) ? null : display,
     [FILTER_CERTIFICATION]: extras.certification || null,
   };
+}
+
+export function isBoxSetMeta(meta: any): boolean {
+  return String(meta?.id ?? '').startsWith('tvdbc:');
+}
+
+function itemTypeOf(meta: any, mediaType: string): 'Movie' | 'Series' | 'BoxSet' {
+  return isBoxSetMeta(meta) ? 'BoxSet' : jellyfinTypeFor(meta?.type || mediaType);
 }
 
 export function metaToBaseItem(
@@ -569,8 +611,8 @@ export function metaToBaseItem(
   serverId: string,
   parentId: string | null
 ): any {
-  const itemType = jellyfinTypeFor(meta.type || mediaType);
-  const kind = itemType === 'Movie' ? 'movie' : 'series';
+  const itemType = itemTypeOf(meta, mediaType);
+  const kind = itemType === 'Series' ? 'series' : 'movie';
   const id = encodeJellyfinId({ k: kind, t: mediaType, i: String(meta.id) });
 
   const images: ItemImages = {
@@ -585,6 +627,7 @@ export function metaToBaseItem(
   if (images.primary) imageTags.Primary = imageTag(images.primary);
   if (images.logo) imageTags.Logo = imageTag(images.logo);
   if (images.thumb) imageTags.Thumb = imageTag(images.thumb);
+  const ids = providerIds(meta);
 
   return {
     Name: meta.name,
@@ -594,7 +637,7 @@ export function metaToBaseItem(
     Etag: id,
     Type: itemType,
     MediaType: itemType === 'Movie' ? 'Video' : 'Unknown',
-    IsFolder: itemType === 'Series',
+    IsFolder: itemType !== 'Movie',
     ParentId: parentId,
     Overview: meta.description || null,
     ProductionYear: productionYear(meta),
@@ -607,8 +650,9 @@ export function metaToBaseItem(
     })),
     CommunityRating: parseRating(meta.imdbRating),
     ...ratingFields(meta),
-    RunTimeTicks: parseRuntimeTicks(meta.runtime),
-    ProviderIds: providerIds(meta),
+    RunTimeTicks: itemType === 'BoxSet' ? null : parseRuntimeTicks(meta.runtime),
+    ProviderIds: ids,
+    ExternalUrls: externalUrls(ids, itemType === 'Series'),
     People: peopleFrom(meta, serverId),
     Studios: [],
     Tags: Array.isArray(meta.keywords) ? meta.keywords : [],
@@ -625,10 +669,9 @@ export function metaToBaseItem(
     PlayAccess: 'Full',
     LockedFields: [],
     LockData: false,
-    ChildCount: null,
-    ...(itemType === 'Movie'
-      ? { EnableMediaSourceDisplay: true, MediaSources: placeholderSources(id) }
-      : {}),
+    ChildCount: itemType === 'BoxSet' && Array.isArray(meta.videos) ? meta.videos.length : null,
+    ...(itemType === 'Movie' ? { EnableMediaSourceDisplay: true, MediaSources: placeholderSources(id) } : {}),
+    ...(itemType === 'Series' ? { Status: seriesStatus(meta), EndDate: endDate(meta) } : {}),
   };
 }
 
@@ -705,9 +748,9 @@ export function includeTypesFilter(
   if (!includeItemTypes) return undefined;
 
   const wanted = new Set(includeItemTypes.split(',').map((t) => t.trim()).filter(Boolean));
-  if (!wanted.size || (!wanted.has('Movie') && !wanted.has('Series'))) return undefined;
+  if (!wanted.size || (!wanted.has('Movie') && !wanted.has('Series') && !wanted.has('BoxSet'))) return undefined;
 
-  return (meta: any) => wanted.has(jellyfinTypeFor(meta?.type || mediaType));
+  return (meta: any) => wanted.has(itemTypeOf(meta, mediaType));
 }
 
 export function filterByIncludeTypes(items: any[], includeItemTypes: string | undefined): any[] {
