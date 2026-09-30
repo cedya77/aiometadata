@@ -1,10 +1,11 @@
 require("dotenv").config();
 import * as moviedb from "./getTmdb.js";
-import * as Utils from '../utils/parseProps.js';
 import { getMeta } from './getMeta.js';
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
-import { allowsUnrated, hasAgeRatingCap, passesAgeRating } from '../utils/ageRating.js';
+import { allowsUnrated, hasAgeRatingCap, isUnratedCertification, passesAgeRating } from '../utils/ageRating.js';
+import { applyContentRatingDisplay, getContentRatingCountry, resolveContentRating } from '../utils/contentRating.js';
+import * as Utils from '../utils/parseProps.js';
 const consola = require('consola');
 
 const logger = consola.withTag('GetTrending'); 
@@ -24,13 +25,6 @@ async function getTrending(type: string, language: string, page: number, genre: 
     logger.debug(`[getTrending] TMDB trending fetch took ${tmdbTime.toFixed(2)}ms`);
     
     const metasStartTime = performance.now();
-    let preferredProvider;
-    if (type === 'movie') {
-      preferredProvider = config.providers?.movie || 'tmdb';
-    } else {
-      preferredProvider = config.providers?.series || 'tvdb';
-    }
-
     const metas = await Promise.all((res?.results || []).map(async (item: any) => {
       let stremioId = `tmdb:${item.id}`;
       const result =  await cacheWrapMetaSmart(userUUID, stremioId, async () => {
@@ -39,20 +33,33 @@ async function getTrending(type: string, language: string, page: number, genre: 
       
       if (result && result.meta) {
         
-        const certifications: any = type === 'movie'
-            ? await moviedb.getMovieCertifications({ id: item.id }, config)
-            : await moviedb.getTvCertifications({ id: item.id }, config);
-        result.meta.app_extras = result.meta.app_extras || {};
-        const cert = type === 'movie'
-            ? Utils.getTmdbMovieCertificationForCountry(certifications)
-            : Utils.getTmdbTvCertificationForCountry(certifications);
-        result.meta.app_extras.certification = cert;
-        const trendCountry = language?.split('-')[1];
-        result.meta.app_extras.certificationLocal = trendCountry && trendCountry !== 'US'
-            ? (type === 'movie' ? Utils.getTmdbMovieCertificationForCountry(certifications, trendCountry) : Utils.getTmdbTvCertificationForCountry(certifications, trendCountry)) || cert
-            : cert;
-            
-        return result.meta;
+        const meta = result.meta;
+        const extras = meta.app_extras || {};
+        const rating = extras.contentRating;
+        const nativeAnimeRating = rating?.source === 'mal' || rating?.source === 'kitsu';
+        const missingUS = isUnratedCertification(extras.certification);
+        const missingLocal = getContentRatingCountry(config) !== 'US'
+          && (!rating || rating.isFallback) && rating?.source !== 'tmdb';
+        // The trending item supplies a TMDB id even when the metadata provider's
+        // cross-provider mapping does not. Fill gaps without replacing native ratings.
+        if (!nativeAnimeRating && (missingUS || missingLocal)) {
+          try {
+            const certifications = type === 'movie'
+              ? await moviedb.getMovieCertifications({ id: item.id }, config)
+              : await moviedb.getTvCertifications({ id: item.id }, config);
+            const country = getContentRatingCountry(config);
+            const read = type === 'movie' ? Utils.getTmdbMovieCertificationForCountry : Utils.getTmdbTvCertificationForCountry;
+            const enriched = resolveContentRating(config, type, { tmdb: { us: read(certifications), local: read(certifications, country) } });
+            if (missingUS && enriched.certification) extras.certification = enriched.certification;
+            if (enriched.contentRating && (!rating || (rating.isFallback && !enriched.contentRating.isFallback))) {
+              extras.contentRating = enriched.contentRating;
+            }
+            meta.app_extras = extras;
+          } catch (error: any) {
+            logger.debug(`[getTrending] Rating enrichment failed for TMDB ${item.id}: ${error.message}`);
+          }
+        }
+        return applyContentRatingDisplay(meta, config);
       }
       return null;
     }));

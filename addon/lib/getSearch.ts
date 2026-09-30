@@ -1,3 +1,4 @@
+import { getContentRatingCountry, resolveContentRating, nativeContentRating } from '../utils/contentRating';
 const { tvdbLanguageChain, pickTranslation, pickArtwork }: any = require('../utils/tvdbLanguage');
 require("dotenv").config();
 const { getGenreList }: any = require("./getGenreList");
@@ -118,17 +119,18 @@ async function parseTvdbSearchResult(type: string, extendedRecord: any, language
 
   let certification: string | null = null;
   let certificationLocal: string | null = null;
+  let contentRating = null;
   let movieReleaseDates: any = null;
-  if (config.displayAgeRating || hasAgeRatingCap(config)) {
+  // Native client rating badges are independent of the optional genre link.
+  try {
+    const userCountry = getContentRatingCountry(config);
+    const contentType = type === 'movie' ? 'movie' : '';
+    const wantsLocal = !!userCountry && userCountry.toUpperCase() !== 'US';
+
+    let tmdbBase: string | null = null;
+    let tmdbLocal: string | null = null;
+
     try {
-      const langParts = language.split('-');
-      const userCountry = langParts[1] || langParts[0];
-      const contentType = type === 'movie' ? 'movie' : '';
-      const wantsLocal = !!userCountry && userCountry.toUpperCase() !== 'US';
-
-      let tmdbBase: string | null = null;
-      let tmdbLocal: string | null = null;
-
       if (tmdbId) {
         if (type === 'movie') {
           const releaseDatesData = await moviedb.movieReleaseDates(String(tmdbId), config);
@@ -145,21 +147,22 @@ async function parseTvdbSearchResult(type: string, extendedRecord: any, language
           }
         }
       }
-
-      // A provider holding the US rating does not mean it holds the viewer's, so
-      // the other one is still asked for the country before falling back.
-      let tvdbBase: string | null = null;
-      let tvdbLocal: string | null = null;
-      if (extendedRecord.contentRatings && (!tmdbBase || (wantsLocal && !tmdbLocal))) {
-        if (!tmdbBase) tvdbBase = Utils.getTvdbCertification(extendedRecord.contentRatings, 'usa', contentType);
-        if (wantsLocal) tvdbLocal = Utils.getTvdbCertification(extendedRecord.contentRatings, userCountry, contentType, false);
-      }
-
-      certification = tmdbBase || tvdbBase;
-      certificationLocal = wantsLocal ? (tmdbLocal || tvdbLocal || certification) : certification;
     } catch (error: any) {
-      logger.warn(`Failed to get TVDB certification for ${type} ${tvdbId}:`, error.message);
+      logger.debug(`TMDB rating enrichment failed for TVDB ${tvdbId}: ${error.message}`);
     }
+
+    // A provider holding the US rating does not mean it holds the viewer's, so
+    // the other one is still asked for the country before falling back.
+    let tvdbBase: string | null = null;
+    let tvdbLocal: string | null = null;
+    if (extendedRecord.contentRatings) {
+      if (!tmdbBase) tvdbBase = Utils.getTvdbCertification(extendedRecord.contentRatings, 'usa', contentType);
+      if (wantsLocal) tvdbLocal = Utils.getTvdbCertification(extendedRecord.contentRatings, userCountry, contentType, false);
+    }
+
+    ({ certification, certificationLocal, contentRating } = resolveContentRating(config, type, { tmdb: { us: tmdbBase, local: tmdbLocal }, tvdb: { us: tvdbBase, local: tvdbLocal } }));
+  } catch (error: any) {
+    logger.warn(`Failed to get TVDB certification for ${type} ${tvdbId}:`, error.message);
   }
 
   const firstReleaseDate = extendedRecord.first_release?.Date || extendedRecord.first_release?.date;
@@ -203,8 +206,8 @@ async function parseTvdbSearchResult(type: string, extendedRecord: any, language
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
     certification: certification,
     app_extras: movieReleaseDates
-      ? { certification, certificationLocal, releaseDates: movieReleaseDates }
-      : { certification, certificationLocal },
+      ? { certification, certificationLocal, contentRating, releaseDates: movieReleaseDates }
+      : { certification, certificationLocal, contentRating },
     logo: validLogoUrl,
     runtime: type === 'movie' ? Utils.parseRunTime(extendedRecord.runtime) : Utils.parseRunTime(extendedRecord.averageRuntime),
     genres: extendedRecord.genres?.map((g: any) => g.name) || [],
@@ -369,6 +372,7 @@ async function performKitsuSearch(type: string, query: string, language: string,
             episodeCount: item.episodeCount || null,
             runtime: Utils.parseRunTime(item.episodeLength),
             certification: item.ageRating,
+            app_extras: { certification: item.ageRating, contentRating: nativeContentRating(config, item.ageRating, 'kitsu') },
           };
         } catch (error: any) {
           logger.error(`Error parsing Kitsu result for ${item.id}:`, error.message);
@@ -657,10 +661,8 @@ async function performTmdbSearch(type: string, query: string, language: string, 
             ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
             : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
         parsed.certification = certification;
-        const searchCountry = language?.split('-')[1];
-        const certLocal = searchCountry && searchCountry !== 'US'
-            ? (mediaType === 'movie' ? Utils.getTmdbMovieCertificationForCountry(details.release_dates, searchCountry) : Utils.getTmdbTvCertificationForCountry(details.content_ratings, searchCountry)) || certification
-            : certification;
+        const searchCountry = getContentRatingCountry(config);
+        const { certificationLocal: certLocal, contentRating } = resolveContentRating(config, mediaType, { tmdb: { us: certification, local: mediaType === 'movie' ? Utils.getTmdbMovieCertificationForCountry(details.release_dates, searchCountry) : Utils.getTmdbTvCertificationForCountry(details.content_ratings, searchCountry) } });
         parsed.popularity = media.popularity;
         parsed.score = media.score;
         if(allIds.imdbId) parsed.imdb_id = allIds.imdbId;
@@ -668,7 +670,7 @@ async function performTmdbSearch(type: string, query: string, language: string, 
         if(allIds.tvdbId) parsed._tvdbId = String(allIds.tvdbId);
         parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
         if(type === 'series') parsed.runtime  = Utils.parseRunTime(details.episode_run_time?.[0] ?? details.last_episode_to_air?.runtime ?? details.next_episode_to_air?.runtime ?? null);
-        parsed.app_extras = { releaseDates: details.release_dates, certification, certificationLocal: certLocal };
+        parsed.app_extras = { releaseDates: details.release_dates, certification, certificationLocal: certLocal, contentRating };
         return { parsed, details };
     } catch (error: any) {
         logger.error(`Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);
@@ -1427,10 +1429,8 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
       ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
       : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
     parsed.certification = certification;
-    const matchCountry = language?.split('-')[1];
-    const certLocal = matchCountry && matchCountry !== 'US'
-      ? (type === 'movie' ? Utils.getTmdbMovieCertificationForCountry(details.release_dates, matchCountry) : Utils.getTmdbTvCertificationForCountry(details.content_ratings, matchCountry)) || certification
-      : certification;
+    const matchCountry = getContentRatingCountry(config);
+    const { certificationLocal: certLocal, contentRating } = resolveContentRating(config, type, { tmdb: { us: certification, local: type === 'movie' ? Utils.getTmdbMovieCertificationForCountry(details.release_dates, matchCountry) : Utils.getTmdbTvCertificationForCountry(details.content_ratings, matchCountry) } });
     if (allIds.imdbId) parsed.imdb_id = allIds.imdbId;
     if (allIds.tmdbId) parsed._tmdbId = String(allIds.tmdbId);
     if (allIds.tvdbId) parsed._tvdbId = String(allIds.tvdbId);
@@ -1444,7 +1444,7 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
       );
     }
 
-    parsed.app_extras = { releaseDates: details.release_dates, certification, certificationLocal: certLocal };
+    parsed.app_extras = { releaseDates: details.release_dates, certification, certificationLocal: certLocal, contentRating };
 
     return parsed;
 

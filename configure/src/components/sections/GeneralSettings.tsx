@@ -28,6 +28,11 @@ import {
 
 import { languageOptions } from '@/data/languages';
 
+const countryNames = new Intl.DisplayNames(['en'], { type: 'region' });
+const ratingCountryOptions = 'AR AT AU BE BR CA CH CL CO CZ DE DK ES FI FR GB GR HK HU ID IE IL IN IS IT JP KR LT LU LV MX MY NL NO NZ PH PL PT RO RS RU SE SG SK TH TR TW UA US ZA'.split(' ')
+  .map(value => ({ value, label: countryNames.of(value) || value }))
+  .sort((a, b) => a.label.localeCompare(b.label));
+
 const castCountOptions = [
     { value: 0, label: '0 Members' },
     { value: 5, label: '5 Members' },
@@ -241,6 +246,22 @@ export function GeneralSettings() {
 
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
               <div className="min-w-[12rem] flex-1">
+                <Label htmlFor="content-rating-country" className="font-medium">Content Rating Country</Label>
+                <p className="text-sm text-muted-foreground">Country for displayed age ratings</p>
+              </div>
+              <Select value={config.contentRatingCountry || 'auto'} onValueChange={value => setConfig(prev => ({ ...prev, contentRatingCountry: value }))}>
+                <SelectTrigger id="content-rating-country" className="w-full sm:w-[240px] shrink-0">
+                  <SelectValue placeholder="Follow display language" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Automatic (follow language)</SelectItem>
+                  {ratingCountryOptions.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="min-w-[12rem] flex-1">
                 <Label htmlFor="timezone" className="font-medium">Timezone</Label>
                 <p className="text-sm text-muted-foreground">For calendar-based features (e.g., Trakt Calendar).</p>
               </div>
@@ -325,7 +346,7 @@ export function GeneralSettings() {
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
               <div className="min-w-[12rem] flex-1">
                 <Label htmlFor="display-age-rating" className="font-medium">Display Age Rating</Label>
-                <p className="text-sm text-muted-foreground">Show rating/certification in genres.</p>
+                <p className="text-sm text-muted-foreground">Show the age rating in genres.</p>
               </div>
               <Switch id="display-age-rating" checked={config.displayAgeRating} onCheckedChange={handleDisplayAgeRatingChange} />
             </div>

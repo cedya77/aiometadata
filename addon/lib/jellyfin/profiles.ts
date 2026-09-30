@@ -199,6 +199,9 @@ export function readsTrackers(config: any): boolean {
   return (config?.jellyfinResumeSource ?? 'auto') !== 'off';
 }
 
+/** Internal filter value: object spreads retain it, JSON responses omit it. */
+export const FILTER_CERTIFICATION = Symbol('filterCertification');
+
 /** Items built from tracker rows never went through the catalog route's cap. */
 export function keepsUnderProfileCap(config: any): (item: any) => boolean {
   if (!hasAgeRatingCap(config)) return () => true;
@@ -207,7 +210,9 @@ export function keepsUnderProfileCap(config: any): (item: any) => boolean {
   const unrated = allowsUnrated(config);
   return (item: any) => {
     const type = item?.Type === 'Movie' ? 'movie' : 'series';
-    return passesAgeRating(item?.OfficialRating, type, cap, unrated);
+    const certification = item && Object.prototype.hasOwnProperty.call(item, FILTER_CERTIFICATION)
+      ? item[FILTER_CERTIFICATION] : item?.OfficialRating;
+    return passesAgeRating(certification, type, cap, unrated);
   };
 }
 

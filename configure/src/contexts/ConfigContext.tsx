@@ -126,6 +126,7 @@ const initialConfig: AppConfig = {
   showMetaProviderAttribution: false,
   castCount: 10,
   displayAgeRating: false,
+  contentRatingCountry: 'auto',
   showDisabledCatalogs: false,
   sfw: false,
   hideUnreleasedDigital: false,
