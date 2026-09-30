@@ -64,6 +64,8 @@ export interface NextUpRow {
   lastWatchedAt: number;
   /** When the tracker says the episode airs, where it says. */
   airsAt?: number | null;
+  /** The tracker says the episode is out: its next airing is a later one, or the show has finished. */
+  aired?: boolean;
 }
 
 export interface HistoryEntry {
@@ -311,6 +313,7 @@ export interface AnimeListEntry {
   movie: boolean;
   updatedAt: number;
   nextAiring?: { episode: number; at: number };
+  finished?: boolean;
 }
 
 export async function assembleAnimeList(entries: AnimeListEntry[]): Promise<RawSnapshot> {
@@ -364,7 +367,9 @@ export async function assembleAnimeList(entries: AnimeListEntry[]): Promise<RawS
       recordWatch(history, { kind: 'episode', id: last, metaId, mediaType: 'anime', at: entry.updatedAt });
     }
 
-    const aired = entry.nextAiring ? entry.nextAiring.episode - 1 : entry.episodes ?? watchedCount;
+    const aired = entry.nextAiring
+      ? entry.nextAiring.episode - (entry.nextAiring.at > Date.now() ? 1 : 0)
+      : entry.episodes ?? watchedCount;
     const counts = { watched: watchedCount, total: Math.max(0, aired), at: entry.updatedAt || undefined };
     for (const key of seriesKeys(ids)) snapshot.series.set(key, counts);
 
@@ -380,6 +385,7 @@ export async function assembleAnimeList(entries: AnimeListEntry[]): Promise<RawS
       mediaType: 'anime',
       lastWatchedAt: entry.updatedAt,
       airsAt: entry.nextAiring?.episode === next ? entry.nextAiring.at : null,
+      ...((entry.nextAiring && entry.nextAiring.episode > next) || entry.finished ? { aired: true } : {}),
     });
   }
 

@@ -1,5 +1,6 @@
 import { applyContentRatingDisplay, contentRatingCacheKey } from '../utils/contentRating';
 import { LRUCache } from 'lru-cache';
+import { withEpisodeOrder } from '../utils/episodeOrder';
 import type { MetaHashEntry } from './metaHashStore';
 const redis: any = require('./redisClient');
 const { loadConfigFromDatabase }: any = require('./configApi');
@@ -935,6 +936,7 @@ function getMetaCacheContext(config: any, metaId: string, type: string | null, u
         allowEpisodeMarking: config.mal?.allowEpisodeMarking || false,
         useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false,
       },
+      ...(context.metaProvider === 'tvdb' ? { tvdbSeasonType: config.tvdbSeasonType || 'default' } : {}),
     };
   } else if (type === 'movie') {
     context.metaProvider = config.providers?.movie || 'tmdb';
@@ -1251,6 +1253,7 @@ const CATALOG_META_FIELDS = [
   RELEASE_AVAILABILITY_FIELD,
   'runtime',
   'genres',
+  'keywords',
   'cast',
   'director',
   'writer',
@@ -1839,14 +1842,14 @@ async function cacheWrapMetaComponents(userUUID: string, metaId: string, method:
 }
 
 async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = META_TTL(), type = null, useShowPoster = false, authoritative = true }: { config: any; metaId: string; result: any; ttl?: number; type?: string | null; useShowPoster?: boolean; authoritative?: boolean }): Promise<any> {
-  const layout = buildMetaHashLayout({ config, metaId, type, useShowPoster });
-
   const meta = result?.meta || result;
 
   if (!meta || !meta.id || !meta.name || !meta.type) {
     cacheLogger.warn(`No valid meta object returned for ${metaId}`);
     return { meta: null };
   }
+
+  const layout = buildMetaHashLayout({ config: withEpisodeOrder(config, meta._tvdbId), metaId, type, useShowPoster });
 
   normalizeMetaReleaseAvailability(meta);
 
@@ -1895,6 +1898,7 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
     _anidbId: meta._anidbId,
     slug: meta.slug,
     genres: meta.genres,
+    keywords: meta.keywords,
     director: meta.director,
     writer: meta.writer,
     year: meta.year,
@@ -2006,6 +2010,23 @@ async function reconstructMetaFromComponents(userUUID: string, metaId: string, t
   });
 }
 
+async function readVideosComponent({ config, metaId, type, useShowPoster, hashKey, basicTtl }: { config: any; metaId: string; type: string | null; useShowPoster: boolean; hashKey: string; basicTtl: number }): Promise<any> {
+  const { field, legacyKey } = buildMetaHashLayout({ config, metaId, type, useShowPoster }).fields.videos;
+  try {
+    const read = await readMetaHash(hashKey, [field]);
+    if (read.values[0]) return await decodeCachePayload(read.values[0]);
+    const coldStore = require('./metaColdStore');
+    if (!coldStore.isEnabled()) return null;
+    const hit = (await coldStore.readThrough([legacyKey])).get(legacyKey);
+    if (!hit) return null;
+    writeMetaHashFill({ key: hashKey, entries: [{ name: 'videos', field, legacyKey, encoded: hit.buffer }], ttl: META_TTL(), basicTtl }).catch(() => {});
+    return hit.data;
+  } catch (error: any) {
+    cacheLogger.warn(`[Reconstruct] Videos read failed for ${metaId}: ${error?.message}`);
+    return null;
+  }
+}
+
 // Components a basic lists must be present. Art is refilled per profile and
 // videos follow includeVideos, so both keep their own rules below.
 const MANIFEST_COMPONENTS = ['cast', 'director', 'writer', 'links', 'trailers', 'extras'];
@@ -2096,6 +2117,14 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
 
   const reconstructedMeta: any = {};
   const bd = basicComponent.data;
+
+  const ordered = includeVideos ? withEpisodeOrder(config, bd._tvdbId) : config;
+  if (ordered !== config) {
+    const videos = await readVideosComponent({ config: ordered, metaId, type, useShowPoster, hashKey, basicTtl });
+    const index = availableComponents.findIndex((c: any) => c.componentName === 'videos');
+    if (index >= 0) availableComponents.splice(index, 1);
+    if (videos) availableComponents.push({ componentName: 'videos', data: videos });
+  }
   Object.assign(reconstructedMeta, bd);
   delete reconstructedMeta._components;
   reconstructedMeta.posterShape = bd.posterShape;

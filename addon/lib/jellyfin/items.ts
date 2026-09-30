@@ -1,5 +1,5 @@
 import consola from 'consola';
-import { imageTag, readImageTag } from './imageTags';
+import { imageTag, wideTag } from './imageTags';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId, parseStremioId } from './ids';
@@ -249,7 +249,7 @@ export function knownCatalogLength(userUUID: string, catalog: CatalogRef, extras
 
 const walkConcurrency = (): number => envInt('JELLYFIN_CATALOG_WALK_CONCURRENCY', 4, 1);
 const lengthTtl = (): number => envInt('JELLYFIN_CATALOG_LENGTH_TTL', 3600, 60);
-const catalogLengthRedisKey = (key: string): string => `jf:len:v2:catalog:${key}`;
+const catalogLengthRedisKey = (key: string): string => `jf:len:v3:catalog:${key}`;
 const pageLengthRedisKey = (key: string): string => `jf:len:v2:page:${key}`;
 
 function rememberLength(kind: 'catalog' | 'page', key: string, value: number): void {
@@ -422,7 +422,8 @@ export async function fetchWindow(
       }
 
       const size = pageLength || minPage;
-      staleRun = fresh > 0 ? 0 : staleRun + 1;
+      const filteredOut = page.length === 0 && advance > 0;
+      staleRun = fresh > 0 || filteredOut ? 0 : staleRun + 1;
       const dropped = !sequential && advance < size && advance * 2 >= size && staleRun < 2;
       skip = skips[i] + (dropped ? size : advance);
       if ((advance < size && !dropped) || staleRun >= 2) {
@@ -610,6 +611,7 @@ export function metaToBaseItem(
     ProviderIds: providerIds(meta),
     People: peopleFrom(meta, serverId),
     Studios: [],
+    Tags: Array.isArray(meta.keywords) ? meta.keywords : [],
     Taglines: [],
     RemoteTrailers: remoteTrailers(meta),
     ImageTags: imageTags,
@@ -647,10 +649,9 @@ export function isLandscapeCatalog(config: any, catalog: { id: string; type: str
 
 export function showLandscape(items: any[]): void {
   for (const item of items) {
-    const thumb = readImageTag(item?.ImageTags?.Thumb);
-    const art = thumb ?? readImageTag(item?.BackdropImageTags?.[0]);
+    const art = item?.ImageTags?.Thumb ?? item?.BackdropImageTags?.[0];
     if (!art) continue;
-    item.ImageTags = { ...item.ImageTags, Primary: imageTag(art.url, { wide: true, backdrop: !thumb }) };
+    item.ImageTags = { ...item.ImageTags, Primary: wideTag(art) };
     item.PrimaryImageAspectRatio = 16 / 9;
   }
 }

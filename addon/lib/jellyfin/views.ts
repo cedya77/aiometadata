@@ -68,7 +68,15 @@ export async function getCatalogs(userUUID: string, config: any): Promise<Catalo
 // A catalog with a required extra cannot be listed, only queried, so it would
 // make an empty library.
 export function isBrowsable(catalog: CatalogRef): boolean {
-  return !(catalog.extra ?? []).some((e: any) => e?.isRequired);
+  return !(catalog.extra ?? []).some((e: any) => e?.isRequired && !(e.name === 'genre' && hasGenreOption(e)));
+}
+
+function hasGenreOption(extra: any): boolean {
+  return Array.isArray(extra?.options) && extra.options.some((o: any) => typeof o === 'string' && o.length > 0);
+}
+
+export function requiresGenre(catalog: CatalogRef): boolean {
+  return (catalog.extra ?? []).some((e: any) => e?.name === 'genre' && e?.isRequired);
 }
 
 export function requiredExtras(catalog: CatalogRef): string[] {
@@ -101,8 +109,10 @@ export async function buildViews(
 ): Promise<any[]> {
   const { boxSetsFor, collectionView, entryVisible } = require('./collections');
   const catalogs = (await getCatalogs(userUUID, config)).filter(isBrowsable);
-  const catalogView = (catalog: CatalogRef) =>
-    collectionFolder(viewIdFor(catalog), serverId, catalog.name, collectionTypeFor(catalog.type), null);
+  const catalogView = (catalog: CatalogRef) => ({
+    ...collectionFolder(viewIdFor(catalog), serverId, catalog.name, collectionTypeFor(catalog.type), null),
+    ...(requiresGenre(catalog) ? { aiostreams: { genreRequired: true } } : {}),
+  });
 
   const views: any[] = [];
   const placed = new Set<CatalogRef>();

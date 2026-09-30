@@ -524,7 +524,7 @@ async function fetchAnimeList(accessToken) {
   const data = await anilistRequest(
     `query ($userId: Int) {
       MediaListCollection(userId: $userId, type: ANIME) {
-        lists { entries { mediaId status progress updatedAt media { idMal format episodes nextAiringEpisode { episode airingAt } } } }
+        lists { entries { mediaId status progress updatedAt media { idMal format episodes status nextAiringEpisode { episode airingAt } } } }
       }
     }`,
     { userId },
@@ -543,6 +543,7 @@ async function fetchAnimeList(accessToken) {
         episodes: Number(media.episodes) || null,
         movie: media.format === 'MOVIE',
         updatedAt: (Number(entry.updatedAt) || 0) * 1000,
+        ...(media.status === 'FINISHED' ? { finished: true } : {}),
         ...(media.nextAiringEpisode?.episode
           ? { nextAiring: { episode: Number(media.nextAiringEpisode.episode), at: Number(media.nextAiringEpisode.airingAt) * 1000 } }
           : {}),

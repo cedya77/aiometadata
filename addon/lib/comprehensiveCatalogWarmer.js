@@ -207,6 +207,12 @@ class ComprehensiveCatalogWarmer {
 
   async shouldWarmup() {
     try {
+      const interrupted = await redis.get('catalog-warmup:in-progress');
+      if (interrupted && this.config.resumeOnRestart) {
+        const startedAt = new Date(parseInt(interrupted, 10)).toISOString();
+        this.log('info', `A warmup started at ${startedAt} was cut short - running it again; what it reached is read back from cache`);
+        return true;
+      }
       await redis.del('catalog-warmup:in-progress');
 
       for (const uuid of this.config.uuids) {
@@ -977,7 +983,7 @@ class ComprehensiveCatalogWarmer {
     this.stats.totalUUIDs = this.config.uuids.length;
     const startTime = Date.now();
 
-    await redis.set('catalog-warmup:in-progress', Date.now().toString());
+    if (!imagesOnly) await redis.set('catalog-warmup:in-progress', Date.now().toString());
 
     try {
       this.log('success', `Starting comprehensive catalog warmup for ${this.config.uuids.length} UUID(s)...`);

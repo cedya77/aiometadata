@@ -80,7 +80,12 @@ function catalogFiltersActive({ config, catalogConfig, cleanId }: Omit<CatalogFi
     }
   }
 
-  return Boolean(config.exclusionKeywords || config.regexExclusionFilter || config.exclusionGenres);
+  return Boolean(config.exclusionKeywords || config.regexExclusionFilter || config.exclusionGenres || excludedTmdbKeywords(config).size);
+}
+
+function excludedTmdbKeywords(config: any): Set<string> {
+  const list = Array.isArray(config?.exclusionTmdbKeywords) ? config.exclusionTmdbKeywords : [];
+  return new Set(list.map((keyword: unknown) => String(keyword).trim().toLowerCase()).filter(Boolean));
 }
 
 async function applyCatalogFilters(metas: any[], { type, config, catalogConfig, cleanId }: CatalogFilterOptions): Promise<any[]> {
@@ -279,6 +284,17 @@ async function applyCatalogFilters(metas: any[], { type, config, catalogConfig, 
       } catch (err: any) {
         logger.warn(`Hide Simkl watched filter error: ${err.message}`);
       }
+    }
+  }
+
+  const blockedKeywords = excludedTmdbKeywords(config);
+  if (blockedKeywords.size) {
+    const before = metas.length;
+    metas = metas.filter((meta: any) =>
+      !(Array.isArray(meta?.keywords) && meta.keywords.some((keyword: unknown) => blockedKeywords.has(String(keyword).toLowerCase())))
+    );
+    if (before !== metas.length) {
+      logger.debug(`TMDB keyword filter: removed ${before - metas.length} items`);
     }
   }
 

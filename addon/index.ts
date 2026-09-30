@@ -664,6 +664,7 @@ const respond = function (req, res, data, opts?) {
       catalogTTL: parseInt(getSetting('CATALOG_TTL') || String(24 * 60 * 60), 10),
       maxCatalogs: parseInt(getSetting('MAX_CATALOGS') || '', 10) || null,
       collectionImportCatalogCap: parseInt(getSetting('COLLECTION_IMPORT_CATALOG_CAP') || '', 10) || 400,
+      maxEpisodeOrders: Math.max(1, parseInt(getSetting('TVDB_EPISODE_ORDER_MAX') || '', 10) || 100),
       aiCatalogMaxPerRequest: Math.max(1, parseInt(getSetting('AI_CATALOG_MAX_PER_REQUEST') || '', 10) || 20),
       simklTrendingPageSizeOptions: resolvedOptions,
       anilistRequiresAuth: require('./utils/anilistAccess').anilistRequiresAuth(),
@@ -2359,6 +2360,31 @@ addon.get("/api/tvdb/discover/search/:entity", async (req, res) => {
   }
 });
 
+
+addon.get("/api/tvdb/episode-orders/:tvdbId", async (req, res) => {
+  try {
+    const tvdbConfig = await buildTvdbListConfig(req, res);
+    if (!tvdbConfig) return;
+    const tvdbId = String(req.params.tvdbId || '').replace(/[^0-9]/g, '');
+    if (!tvdbId) return res.status(400).json({ error: "a TVDB series id is required" });
+    const series = await tvdbApi.getSeriesExtended(tvdbId, tvdbConfig);
+    if (!series) return res.status(404).json({ error: "Series not found on TVDB" });
+    const orders = new Map();
+    for (const season of Array.isArray(series.seasons) ? series.seasons : []) {
+      const type = season?.type?.type;
+      if (type && !orders.has(type)) orders.set(type, season.type.name || type);
+    }
+    return res.json({
+      tvdbId: String(series.id ?? tvdbId),
+      name: series.name || `TVDB ${tvdbId}`,
+      year: series.year || '',
+      orders: [...orders.entries()].map(([type, name]) => ({ type, name })),
+    });
+  } catch (error) {
+    consola.error("[TVDB Episode Orders] Lookup failed:", error.message);
+    return res.status(error.response?.status || 500).json({ error: error.message || "Failed to read the series from TVDB" });
+  }
+});
 
 async function buildTvdbListConfig(req, res) {
   const tvdbApiKey = await resolveTvdbDiscoverApiKey(req);

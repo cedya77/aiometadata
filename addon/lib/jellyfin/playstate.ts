@@ -176,9 +176,11 @@ export interface ResolvedSession {
   descriptor: any;
   runtimeMs: number | null;
   runtimeFrom?: 'client' | 'file';
-  /** The same film under the ids the meta carries, written alongside so any spelling reads back. */
+  /** The same film or episode under the ids the meta carries, written alongside so any spelling reads back. */
   aliases: string[];
 }
+
+const ANIME_VIDEO = /^(kitsu|mal|anilist|anidb):/;
 
 const resolvedSessions = new LRUCache<string, ResolvedSession>({
   max: envInt('JELLYFIN_SESSION_CACHE_MAX', 5000, 1),
@@ -213,6 +215,12 @@ async function resolveSession(userUUID: string, itemId: string, known?: any): Pr
       const imdb = meta._imdbId || meta.imdb_id;
       if (imdb) aliases.push(String(imdb));
       if (meta._tmdbId) aliases.push(`tmdb:${meta._tmdbId}`);
+    } else if (descriptor.k === 'episode' && !ANIME_VIDEO.test(videoId)) {
+      const at = `:${descriptor.s}:${descriptor.e}`;
+      const imdb = meta._imdbId || meta.imdb_id;
+      if (imdb) aliases.push(`${imdb}${at}`);
+      if (meta._tmdbId) aliases.push(`tmdb:${meta._tmdbId}${at}`);
+      if (meta._tvdbId) aliases.push(`tvdb:${meta._tvdbId}${at}`);
     }
   }
 

@@ -520,6 +520,37 @@ export async function tvContentRatings(id: string, config: UserConfig) {
   );
 }
 
+export async function movieKeywords(id: string, config: UserConfig) {
+  return cacheWrapGlobal(`tmdb:movie:keywords:${id}`, () =>
+    makeTmdbRequest(`/movie/${id}/keywords`, getApiKey(config), {}, 'GET', null, config),
+    7 * 24 * 60 * 60
+  );
+}
+
+export async function tvKeywords(id: string, config: UserConfig) {
+  return cacheWrapGlobal(`tmdb:tv:keywords:${id}`, () =>
+    makeTmdbRequest(`/tv/${id}/keywords`, getApiKey(config), {}, 'GET', null, config),
+    7 * 24 * 60 * 60
+  );
+}
+
+export function keywordNamesOf(reply: any): string[] | undefined {
+  const block = reply?.keywords;
+  const list = Array.isArray(block) ? block : block?.keywords ?? block?.results ?? reply?.results;
+  if (!Array.isArray(list)) return undefined;
+  const names = list.map((keyword: any) => keyword?.name).filter((name: unknown): name is string => typeof name === 'string' && name.length > 0);
+  return names.length ? names : undefined;
+}
+
+export async function titleKeywordNames(id: string | number | null | undefined, type: string, config: UserConfig): Promise<string[] | undefined> {
+  if (!id) return undefined;
+  try {
+    return keywordNamesOf(type === 'movie' ? await movieKeywords(String(id), config) : await tvKeywords(String(id), config));
+  } catch {
+    return undefined;
+  }
+}
+
 const EXTERNAL_IDS_NOT_FOUND = { status: 'not_found' };
 
 export async function movieExternalIds(id: string, config: UserConfig) {
@@ -1149,6 +1180,10 @@ module.exports = {
   getTranslations,
   movieReleaseDates,
   tvContentRatings,
+  movieKeywords,
+  tvKeywords,
+  keywordNamesOf,
+  titleKeywordNames,
   movieExternalIds,
   tvExternalIds,
   movieCredits,

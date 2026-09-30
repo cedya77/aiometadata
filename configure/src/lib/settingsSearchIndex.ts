@@ -230,10 +230,16 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['genre', 'exclude', 'block', 'hide'],
   },
   {
+    id: 'filters.exclusionTmdbKeywords', section: 'filters', anchor: 'exclusion-tmdb-keywords',
+    label: 'Exclude TMDB Keywords',
+    description: 'Hides any title TMDB tags with one of these keywords.',
+    keywords: ['exclude', 'block', 'hide', 'keyword', 'tmdb', 'tag', 'topic'],
+  },
+  {
     id: 'filters.exclusionKeywords', section: 'filters', anchor: 'exclusion-keywords',
-    label: 'Exclude Keywords',
-    description: 'Comma-separated words matched against the title and description of each item.',
-    keywords: ['exclude', 'block', 'hide', 'word'],
+    label: 'Exclude Words',
+    description: "Comma-separated words matched against each item's title and description.",
+    keywords: ['exclude', 'block', 'hide', 'word', 'keyword'],
   },
   {
     id: 'filters.regexExclusion', section: 'filters', anchor: 'regex-exclusion-filter',

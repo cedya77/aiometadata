@@ -1958,6 +1958,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     default: '',
   },
   {
+    key: 'TVDB_EPISODE_ORDER_MAX',
+    envVar: 'TVDB_EPISODE_ORDER_MAX',
+    label: 'Max Per-show Episode Orders',
+    description: 'Most shows a configuration may give their own TVDB episode order.',
+    category: 'Catalogs & Search',
+    type: 'number',
+    default: 100,
+    min: 1,
+  },
+  {
     key: 'MAX_CATALOGS',
     envVar: 'MAX_CATALOGS',
     label: 'Max Catalogs',

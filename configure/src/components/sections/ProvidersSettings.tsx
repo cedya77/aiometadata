@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { EpisodeOrderOverrides } from '@/components/settings/EpisodeOrderOverrides';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { useConfig } from '@/contexts/ConfigContext';
@@ -242,6 +243,13 @@ export function ProvidersSettings() {
             />
           }
         />
+        <div className="space-y-2 pt-2">
+          <p className="text-sm font-medium">Per-show Episode Order</p>
+          <p className="text-sm text-muted-foreground">
+            Enter a show's TVDB id to give it its own episode order instead of the Season Order above.
+          </p>
+          <EpisodeOrderOverrides disabled={!hasTvdbKey} />
+        </div>
       </CollapsibleSettingCard>
 
       {/* TMDB Specific Settings */}

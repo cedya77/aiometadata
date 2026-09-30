@@ -192,6 +192,37 @@ const memberCursors = new LRUCache<string, MemberCursor>({
 });
 const MEMBER_CURSOR_MAX_IDS = 25000;
 
+function catalogGenres(catalog: CatalogRef): string[] {
+  const extra = (catalog.extra ?? []).find((e: any) => e?.name === 'genre');
+  const options = Array.isArray(extra?.options) ? extra.options : [];
+  return options.filter((g: any) => typeof g === 'string' && g && g !== 'None');
+}
+
+const pinnedGenre = (source: SourceDraft): string | null =>
+  typeof source.genre === 'string' && source.genre && source.genre !== 'None' ? source.genre : null;
+
+function genreFor(source: SourceDraft, catalog: CatalogRef, wanted: string): string | null {
+  const pinned = pinnedGenre(source);
+  if (pinned) return pinned.toLowerCase() === wanted.toLowerCase() ? pinned : null;
+  return catalogGenres(catalog).find((g) => g.toLowerCase() === wanted.toLowerCase()) ?? null;
+}
+
+export async function boxSetGenres(
+  userUUID: string,
+  config: any,
+  folder: FolderDraft
+): Promise<{ catalog: CatalogRef | null; genres: string[] }> {
+  const sources = visibleSources(await getCatalogs(userUUID, config), folder);
+  const seen = new Map<string, string>();
+  for (const { source, catalog } of sources) {
+    const pinned = pinnedGenre(source);
+    for (const genre of pinned ? [pinned] : catalogGenres(catalog)) {
+      if (!seen.has(genre.toLowerCase())) seen.set(genre.toLowerCase(), genre);
+    }
+  }
+  return { catalog: sources[0]?.catalog ?? null, genres: [...seen.values()] };
+}
+
 export async function boxSetMembers(
   userUUID: string,
   config: any,
@@ -200,17 +231,19 @@ export async function boxSetMembers(
   folder: FolderDraft,
   startIndex: number,
   limit: number,
-  includeItemTypes?: string
+  includeItemTypes?: string,
+  genre?: string
 ): Promise<MembersPage> {
-  const sources = visibleSources(await getCatalogs(userUUID, config), folder);
+  const sources = visibleSources(await getCatalogs(userUUID, config), folder)
+    .map((entry) => ({ ...entry, genre: genre ? genreFor(entry.source, entry.catalog, genre) : pinnedGenre(entry.source) }))
+    .filter((entry) => !genre || entry.genre);
   const parentId = boxSetId(collection, folder);
   const tags = profileTags(config);
-  const extrasOf = (source: SourceDraft): Record<string, string> =>
-    typeof source.genre === 'string' && source.genre && source.genre !== 'None' ? { genre: source.genre } : {};
+  const extrasOf = (entry: { genre: string | null }): Record<string, string> => (entry.genre ? { genre: entry.genre } : {});
 
   const cursorKey = JSON.stringify([
-    userUUID, collection.id, folder.id, includeItemTypes ?? '', tags, viewerAccountOwner(),
-    sources.map(({ source, catalog }) => [catalog.type, catalog.id, String(source.genre ?? '')]),
+    userUUID, collection.id, folder.id, includeItemTypes ?? '', genre ?? '', tags, viewerAccountOwner(),
+    sources.map(({ catalog, genre: served }) => [catalog.type, catalog.id, served ?? '']),
   ]);
   const held = memberCursors.get(cursorKey);
 
@@ -229,8 +262,8 @@ export async function boxSetMembers(
     seen = new Set<string>();
     let passed = 0;
     while (sourceIndex < sources.length) {
-      const { source, catalog } = sources[sourceIndex];
-      const known = knownCatalogLength(userUUID, catalog, extrasOf(source), tags, includeItemTypes ?? '');
+      const { catalog } = sources[sourceIndex];
+      const known = knownCatalogLength(userUUID, catalog, extrasOf(sources[sourceIndex]), tags, includeItemTypes ?? '');
       if (known === undefined || passed + known > startIndex) break;
       passed += known;
       sourceIndex += 1;
@@ -242,8 +275,8 @@ export async function boxSetMembers(
   let nextIndex = startIndex;
 
   while (sourceIndex < sources.length && collected.length < limit) {
-    const { source, catalog } = sources[sourceIndex];
-    const extras = extrasOf(source);
+    const { catalog } = sources[sourceIndex];
+    const extras = extrasOf(sources[sourceIndex]);
     const keep = includeTypesFilter(catalog.type, includeItemTypes);
     const page = await fetchWindow(userUUID, catalog, from, toSkip + limit - collected.length, extras, keep, tags, includeItemTypes ?? '')
       .catch(() => ({ items: [] as any[], hasMore: false }));

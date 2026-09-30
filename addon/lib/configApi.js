@@ -185,6 +185,19 @@ class ConfigApi {
     return { valid: true };
   }
 
+  validateEpisodeOrders(config) {
+    const { countEpisodeOrders } = require('../utils/episodeOrder');
+    const max = Math.max(1, parseInt(require('./settingsService').getSetting('TVDB_EPISODE_ORDER_MAX') || '', 10) || 100);
+    const count = countEpisodeOrders(config);
+    if (count <= max) return { valid: true };
+    return {
+      valid: false,
+      count,
+      max,
+      message: `Too many shows with their own episode order (${count}); the maximum on this instance is ${max}. Remove some and try again.`,
+    };
+  }
+
   validateCatalogCount(config) {
     const maxCatalogs = getMaxCatalogs();
     if (!maxCatalogs) return { valid: true };
@@ -267,6 +280,21 @@ class ConfigApi {
     return { valid: true };
   }
 
+  newerThanBase(req, stored) {
+    const base = Number(req.body?.baseVersion);
+    if (!Number.isFinite(base) || req.body?.force === true) return null;
+    const current = Number(stored?.configVersion) || 0;
+    return current > base ? current : null;
+  }
+
+  rejectStaleSave(res, newer) {
+    return res.status(409).json({
+      error: 'This configuration was changed in another tab or device after this page loaded.',
+      code: 'CONFIG_CHANGED',
+      configVersion: newer,
+    });
+  }
+
   // Save configuration with password
   async saveConfig(req, res) {
     logger.debug('saveConfig called - starting function');
@@ -324,6 +352,15 @@ class ConfigApi {
         });
       }
 
+      const episodeOrderCheck = this.validateEpisodeOrders(config);
+      if (!episodeOrderCheck.valid) {
+        return res.status(400).json({
+          error: episodeOrderCheck.message,
+          episodeOrderCount: episodeOrderCheck.count,
+          maxEpisodeOrders: episodeOrderCheck.max,
+        });
+      }
+
       const tagCheck = this.validateTagNames(config);
       if (!tagCheck.valid) {
         return res.status(400).json({
@@ -366,6 +403,9 @@ class ConfigApi {
         // User might not exist yet, that's fine
         logger.debug(`No existing config found for user ${userUUID}, treating as new config`);
       }
+
+      const newerInSave = this.newerThanBase(req, oldConfig);
+      if (newerInSave) return this.rejectStaleSave(res, newerInSave);
       
       // Add a config version that changes when config is updated
       // This helps with cache invalidation
@@ -590,6 +630,7 @@ class ConfigApi {
         success: true,
         userUUID,
         installUrl,
+        configVersion: persistedConfig?.configVersion ?? configWithTimestamp.configVersion,
         message: existingUUID ? 'Configuration updated successfully' : 'Configuration saved successfully'
       });
     } catch (error) {
@@ -730,6 +771,15 @@ class ConfigApi {
         });
       }
 
+      const episodeOrderCheck = this.validateEpisodeOrders(config);
+      if (!episodeOrderCheck.valid) {
+        return res.status(400).json({
+          error: episodeOrderCheck.message,
+          episodeOrderCount: episodeOrderCheck.count,
+          maxEpisodeOrders: episodeOrderCheck.max,
+        });
+      }
+
       const tagCheck = this.validateTagNames(config);
       if (!tagCheck.valid) {
         return res.status(400).json({
@@ -776,6 +826,9 @@ class ConfigApi {
       } catch (error) {
         logger.debug(`Could not retrieve old config for user ${userUUID}:`, error.message);
       }
+
+      const newerInUpdate = this.newerThanBase(req, oldConfig);
+      if (newerInUpdate) return this.rejectStaleSave(res, newerInUpdate);
 
       // Add timestamp to track config changes
       // Use a slightly higher timestamp to ensure it's always different
@@ -996,6 +1049,7 @@ class ConfigApi {
         success: true,
         userUUID,
         installUrl: buildInstallUrl(process.env.HOST_NAME, req.get('host'), manifestIdentifier(userUUID)),
+        configVersion: persistedConfig?.configVersion ?? configWithTimestamp.configVersion,
         message: 'Configuration updated successfully'
       });
     } catch (error) {

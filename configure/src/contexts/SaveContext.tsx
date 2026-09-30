@@ -131,17 +131,46 @@ export function SaveProvider({ children }: { children: ReactNode }) {
   // Whatever the server just handed back is by definition saved, so it becomes the
   // baseline. Keyed on the uuid so logging in re-baselines, and signing out clears it.
   const baselineUuid = useRef<string | null>(null);
+  const baseVersion = useRef<number | null>(null);
+  const [conflict, setConflict] = useState(false);
   useEffect(() => {
     if (contextLoading) return;
     if (!auth.authenticated || !auth.userUUID) {
       baselineUuid.current = null;
+      baseVersion.current = null;
       setSavedFingerprint(null);
       return;
     }
     if (baselineUuid.current === auth.userUUID) return;
     baselineUuid.current = auth.userUUID;
+    baseVersion.current = Number((config as { configVersion?: number }).configVersion) || null;
     setSavedFingerprint(fingerprintConfig(config));
   }, [contextLoading, auth.authenticated, auth.userUUID, config]);
+
+  const saves = useMemo(() => {
+    try {
+      return typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('aiom-config-saves');
+    } catch {
+      return null;
+    }
+  }, []);
+  useEffect(() => () => saves?.close(), [saves]);
+  useEffect(() => {
+    if (!saves) return;
+    const onSave = (event: MessageEvent) => {
+      const { uuid, version } = event.data || {};
+      if (!uuid || uuid !== auth.userUUID || baseVersion.current === null) return;
+      if (!(Number(version) > baseVersion.current)) return;
+      toast.warning('This configuration was saved in another tab', {
+        id: 'config-saved-elsewhere',
+        description: 'Reload before saving here, or those changes are undone.',
+        duration: Infinity,
+        action: { label: 'Reload', onClick: () => window.location.reload() },
+      });
+    };
+    saves.addEventListener('message', onSave);
+    return () => saves.removeEventListener('message', onSave);
+  }, [saves, auth.userUUID]);
 
   // handleSave is declared before openInstall, so the toast action reaches it by ref.
   const openInstallRef = useRef<(manifestUrl?: string) => void>(() => {});
@@ -155,7 +184,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
   const currentFingerprint = useMemo(() => fingerprintConfig(config), [config]);
   const isDirty = savedFingerprint === null ? null : currentFingerprint !== savedFingerprint;
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (force = false) => {
     setIsSaving(true);
     setError("");
     const missing = missingRequiredKeys(config, caps);
@@ -181,13 +210,26 @@ export function SaveProvider({ children }: { children: ReactNode }) {
         ? await fetch(`/api/config/update/${encodeURIComponent(auth.userUUID!)}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config: configToSave, password: auth.password, addonPassword })
+            body: JSON.stringify({
+              config: configToSave,
+              password: auth.password,
+              addonPassword,
+              baseVersion: baseVersion.current ?? undefined,
+              force,
+            })
           })
         : await fetch('/api/config/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ config: configToSave, password, addonPassword })
           });
+      if (response.status === 409) {
+        const data = await response.clone().json().catch(() => null);
+        if (data?.code === 'CONFIG_CHANGED') {
+          setConflict(true);
+          return;
+        }
+      }
       if (!response.ok) {
         let message = 'Failed to save configuration';
         try {
@@ -208,6 +250,11 @@ export function SaveProvider({ children }: { children: ReactNode }) {
       }
       setSavedConfig(result);
       setSavedFingerprint(fingerprintConfig(config));
+      const savedVersion = Number(result?.configVersion);
+      if (Number.isFinite(savedVersion) && savedVersion > 0) {
+        baseVersion.current = savedVersion;
+        saves?.postMessage({ uuid: auth.userUUID ?? result?.userUUID, version: savedVersion });
+      }
       if (!isAuthenticated && result?.userUUID) {
         setAuth({ authenticated: true, userUUID: result.userUUID, password, installUrl: result.installUrl ?? null });
         try { sessionStorage.removeItem('fromStremioSettings'); } catch {}
@@ -230,7 +277,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsSaving(false);
     }
-  }, [config, auth, setAuth, password, addonPassword, hasBuiltInTmdb, hasBuiltInTvdb, manifestChangedSinceInstall]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, auth, setAuth, password, addonPassword, hasBuiltInTmdb, hasBuiltInTvdb, manifestChangedSinceInstall, saves]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const defaultInstallUrl = savedConfig?.installUrl ?? auth.installUrl ?? "";
 
@@ -301,6 +348,31 @@ export function SaveProvider({ children }: { children: ReactNode }) {
   return (
     <SaveContext.Provider value={value}>
       {children}
+      <Dialog open={conflict} onOpenChange={setConflict}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Configuration changed elsewhere</DialogTitle>
+            <DialogDescription>
+              This configuration was saved from another tab or device after this page loaded. Saving here would undo
+              those changes. Reloading brings in the latest, but loses what you changed on this page since.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Reload latest
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConflict(false);
+                void handleSave(true);
+              }}
+            >
+              Save anyway
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={reinstallModalOpen} onOpenChange={(next) => { if (!next) closeReinstallModal(false); }}>
         <DialogContent>
           <DialogHeader>

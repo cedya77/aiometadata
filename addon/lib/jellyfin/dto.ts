@@ -23,6 +23,7 @@ const EXTENSIONS = {
   dropped: 1,
   refreshVersions: 1,
   versions: 1,
+  genreRequired: 1,
 } as const;
 
 export function extensionInfo(origin: string): any {

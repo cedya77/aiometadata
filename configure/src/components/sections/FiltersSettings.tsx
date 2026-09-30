@@ -1,4 +1,5 @@
 import { Label } from '@/components/ui/label';
+import { TmdbKeywordPicker } from '@/components/settings/TmdbKeywordPicker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -251,7 +252,7 @@ export function FiltersSettings() {
         <CardHeader>
           <CardTitle>Content Exclusion Filter</CardTitle>
           <CardDescription>
-            Hide content from catalogs and search results based on genres, title keywords, or description text.
+            Hide content from catalogs and search results by genre, TMDB keyword, or words in the title and description.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -269,9 +270,21 @@ export function FiltersSettings() {
             </p>
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="exclusion-tmdb-keywords">Exclude TMDB Keywords</Label>
+            <TmdbKeywordPicker
+              id="exclusion-tmdb-keywords"
+              value={config.exclusionTmdbKeywords ?? []}
+              onChange={(next) => setConfig(prev => ({ ...prev, exclusionTmdbKeywords: next }))}
+            />
+            <p className="text-sm text-muted-foreground">
+              Hides any title TMDB tags with one of these keywords.
+            </p>
+          </div>
+
           {/* Simple Keywords */}
           <div className="space-y-2">
-            <Label htmlFor="exclusion-keywords">Exclude Keywords</Label>
+            <Label htmlFor="exclusion-keywords">Exclude Words</Label>
             <Input
               id="exclusion-keywords"
               placeholder="naked, sex, porn, adult, horror, scary, violence"
@@ -279,7 +292,7 @@ export function FiltersSettings() {
               onChange={(e) => handleExclusionKeywordsChange(e.target.value)}
             />
             <p className="text-sm text-muted-foreground">
-              Comma-separated words matched against the title and description of each item.
+              Comma-separated words matched against each item's title and description.
             </p>
           </div>
 

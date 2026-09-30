@@ -92,7 +92,9 @@ export interface UserConfig {
   exclusionKeywords?: string;
   regexExclusionFilter?: string;
   exclusionGenres?: string;
+  exclusionTmdbKeywords?: string[];
   tvdbSeasonType?: string;
+  tvdbEpisodeOrders?: Record<string, string>;
   castCount?: number;
   blurThumbs?: boolean;
   displayAgeRating?: boolean;

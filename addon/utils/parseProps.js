@@ -2180,6 +2180,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
     description: descriptionFallback || addMetaProviderAttribution(anime.synopsis, 'MAL', config),
     year: anime.year,
     imdb_id: mapping?.imdb_id,
+    keywords: await tmdb.titleKeywordNames(tmdbId, stremioType, config),
     ...(tmdbId ? { _tmdbId: String(tmdbId) } : {}),
     ...(mapping?.tvdb_id ? { _tvdbId: String(mapping.tvdb_id) } : {}),
     ...(imdbId ? { _imdbId: imdbId } : {}),
@@ -2381,6 +2382,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
           ...(mapping?.kitsu_id ? { _kitsuId: String(mapping.kitsu_id) } : {}),
           ...(id ? { _malId: String(id) } : {}),
           genres: genres,
+          keywords: await tmdb.titleKeywordNames(tmdbId, stremioType, config),
           releaseInfo: kitsuReleaseInfo,
           runtime: parseRunTime(item.attributes.episodeLength),
           certification: item.attributes.ageRating,
@@ -2546,12 +2548,13 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
       let releaseDates = null;
       const shouldFetchReleaseDates = stremioType === 'movie' && tmdbId;
       
-      const [logo, background, releaseDatesResult] = await Promise.all([
+      const [logo, background, releaseDatesResult, keywords] = await Promise.all([
         getAnimeLogo({malId, imdbId, tvdbId, tmdbId, mediaType: stremioType}, config),
         getAnimeBg({malId, imdbId, tvdbId, tmdbId, mediaType: stremioType, malPosterUrl}, config),
         shouldFetchReleaseDates 
           ? tmdb.getMovieCertifications({ id: tmdbId }, config).then(data => data || null).catch(() => null)
-          : Promise.resolve(null)
+          : Promise.resolve(null),
+        tmdb.titleKeywordNames(tmdbId, stremioType, config)
       ]);
       
       if (releaseDatesResult) {
@@ -2565,6 +2568,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
         background: background,
         name: anime.title_english || anime.title,
         genres: anime.genres?.map(g => g.name) || [],
+        keywords,
         poster: finalPosterUrl,
         description: addMetaProviderAttribution(anime.synopsis, 'MAL', config),
         year: anime.year,

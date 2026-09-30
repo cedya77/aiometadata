@@ -247,6 +247,7 @@ export interface AppConfig {
     originalLangFallback: boolean;
   };
   tvdbSeasonType: string;
+  tvdbEpisodeOrders?: Record<string, string>;
   mal: {
     skipFiller: boolean;
     skipRecap: boolean;
@@ -318,6 +319,7 @@ export interface AppConfig {
   exclusionKeywords?: string;
   regexExclusionFilter?: string;
   exclusionGenres?: string;
+  exclusionTmdbKeywords?: string[];
   catalogSetupComplete?: boolean;
   // AI Catalog Builder model, per provider. Unset falls back to the AI search
   // model when its provider matches, then to the provider default.
