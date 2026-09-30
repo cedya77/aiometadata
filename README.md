@@ -126,6 +126,14 @@ Present a configuration as a Jellyfin server, so Jellyfin clients browse your ca
 
 All configuration is managed via the `/configure` UI and saved per-user (UUID) in the database.
 
+### Displayed age ratings
+
+In **General**, **Content Rating Country** selects the country for displayed age ratings independently of **Display Language**. **Automatic (follow language)** uses the language's country, or the US when no country is specified. For example, English (US) titles can use Netherlands ratings such as `Kijkwijzer · 16+`.
+
+Ratings use the provider's original classification. TMDB supplies the selected country's rating when available; TVDB metadata can also use TVDB's local rating. If neither supplies a local rating, an available US rating is shown with `(US)`, such as `MPA · R (US)` or `TV-MA (US)`. US ratings selected directly do not carry that fallback suffix. MAL and Kitsu metadata keep their native classifications; ratings are not converted between countries.
+
+**Show Age Rating in Genres** adds the rating to genre links for clients that display it there. The separate metadata rating fields and AIOMetadata's Jellyfin `OfficialRating` remain available when this switch is off. Seasons and episodes inherit their series' classification. Catalog and Jellyfin profile limits continue using the existing filter classifications and unrated-content rules; changing the display country does not change those limits.
+
 ---
 
 ## 🔌 API & Endpoints

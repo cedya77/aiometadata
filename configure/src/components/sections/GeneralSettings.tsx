@@ -345,7 +345,7 @@ export function GeneralSettings() {
 
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
               <div className="min-w-[12rem] flex-1">
-                <Label htmlFor="display-age-rating" className="font-medium">Display Age Rating</Label>
+                <Label htmlFor="display-age-rating" className="font-medium">Show Age Rating in Genres</Label>
                 <p className="text-sm text-muted-foreground">Show the age rating in genres.</p>
               </div>
               <Switch id="display-age-rating" checked={config.displayAgeRating} onCheckedChange={handleDisplayAgeRatingChange} />

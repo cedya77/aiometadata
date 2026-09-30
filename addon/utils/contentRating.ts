@@ -220,4 +220,3 @@ export function applyContentRatingDisplay(meta: any, config: RatingConfig): any 
   meta.links = links;
   return meta;
 }
-

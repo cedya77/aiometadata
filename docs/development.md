@@ -4,7 +4,7 @@ This guide will help you set up your development environment and understand the 
 
 ## Prerequisites
 
-- Node.js 22.x
+- Node.js 24.x
 - npm 9.x or higher
 - Git
 - MongoDB (local or Atlas)
@@ -82,6 +82,8 @@ npm run lint:backend
 npm run lint:frontend
 npm run lint:repo
 ```
+
+`npm test` runs the age-rating regression tests using Node's built-in test runner and the existing TypeScript tooling. They cover local and fallback classifications, cached display values, genre links, unchanged filter limits, trending enrichment and Jellyfin items. Provider and storage dependencies are stubbed; no API keys, database or Redis server are required. These checks do not replace testing in a connected client.
 
 4. **Building**:
 ```bash
