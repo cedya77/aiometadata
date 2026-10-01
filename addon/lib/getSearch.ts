@@ -1,3 +1,4 @@
+import { getContentRatingCountry } from '../utils/contentRating';
 const { tvdbLanguageChain, pickTranslation, pickArtwork }: any = require('../utils/tvdbLanguage');
 require("dotenv").config();
 const { getGenreList }: any = require("./getGenreList");
@@ -122,7 +123,7 @@ async function parseTvdbSearchResult(type: string, extendedRecord: any, language
   if (config.displayAgeRating || hasAgeRatingCap(config)) {
     try {
       const langParts = language.split('-');
-      const userCountry = langParts[1] || langParts[0];
+      const userCountry = getContentRatingCountry(config, langParts[1] || langParts[0]);
       const contentType = type === 'movie' ? 'movie' : '';
       const wantsLocal = !!userCountry && userCountry.toUpperCase() !== 'US';
 
@@ -657,7 +658,7 @@ async function performTmdbSearch(type: string, query: string, language: string, 
             ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
             : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
         parsed.certification = certification;
-        const searchCountry = language?.split('-')[1];
+        const searchCountry = getContentRatingCountry(config, language?.split('-')[1]);
         const certLocal = searchCountry && searchCountry !== 'US'
             ? (mediaType === 'movie' ? Utils.getTmdbMovieCertificationForCountry(details.release_dates, searchCountry) : Utils.getTmdbTvCertificationForCountry(details.content_ratings, searchCountry)) || certification
             : certification;
@@ -1427,7 +1428,7 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
       ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
       : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
     parsed.certification = certification;
-    const matchCountry = language?.split('-')[1];
+    const matchCountry = getContentRatingCountry(config, language?.split('-')[1]);
     const certLocal = matchCountry && matchCountry !== 'US'
       ? (type === 'movie' ? Utils.getTmdbMovieCertificationForCountry(details.release_dates, matchCountry) : Utils.getTmdbTvCertificationForCountry(details.content_ratings, matchCountry)) || certification
       : certification;

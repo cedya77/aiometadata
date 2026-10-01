@@ -218,6 +218,7 @@ export interface AppConfig {
   hideErrors?: boolean;
   castCount: number;
   displayAgeRating: boolean;
+  contentRatingCountry?: string;
   providers: {
     movie: string;
     series: string;

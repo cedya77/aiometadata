@@ -1,3 +1,4 @@
+import { getContentRatingCountry } from '../utils/contentRating';
 require("dotenv").config();
 import * as moviedb from "./getTmdb.js";
 import * as Utils from '../utils/parseProps.js';
@@ -47,7 +48,7 @@ async function getTrending(type: string, language: string, page: number, genre: 
             ? Utils.getTmdbMovieCertificationForCountry(certifications)
             : Utils.getTmdbTvCertificationForCountry(certifications);
         result.meta.app_extras.certification = cert;
-        const trendCountry = language?.split('-')[1];
+        const trendCountry = getContentRatingCountry(config, language?.split('-')[1]);
         result.meta.app_extras.certificationLocal = trendCountry && trendCountry !== 'US'
             ? (type === 'movie' ? Utils.getTmdbMovieCertificationForCountry(certifications, trendCountry) : Utils.getTmdbTvCertificationForCountry(certifications, trendCountry)) || cert
             : cert;

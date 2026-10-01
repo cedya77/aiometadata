@@ -1,3 +1,4 @@
+const { getContentRatingCountry } = require('../utils/contentRating');
 require("dotenv").config();
 const Utils = require("../utils/parseProps");
 const moviedb = require("./getTmdb");
@@ -1263,7 +1264,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
     if(seriesData){
       imdbData.keywords = moviedb.keywordNamesOf(seriesData);
       const certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
-      const userCountry = config.language?.split('-')[1];
+      const userCountry = getContentRatingCountry(config, config.language?.split('-')[1]);
       const certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings, userCountry) || certification) : certification;
       imdbData.app_extras.certification = certification;
       imdbData.app_extras.certificationLocal = certificationLocal;
@@ -1356,7 +1357,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     imdbData.released = movieData.release_date ? resolveReleaseTimestamp(movieData.release_date, { originCountry: movieData.production_countries?.[0]?.iso_3166_1 }) : null;
     imdbData.app_extras.releaseDates = movieData.release_dates;
     const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
-    const userCountry = config.language?.split('-')[1];
+    const userCountry = getContentRatingCountry(config, config.language?.split('-')[1]);
     const certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbMovieCertificationForCountry(movieData.release_dates, userCountry) || certification) : certification;
     imdbData.app_extras.certification = certification;
     imdbData.app_extras.certificationLocal = certificationLocal;
@@ -1498,7 +1499,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     movieData.original_title
   );
   const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
-  const userCountry = language?.split('-')[1];
+  const userCountry = getContentRatingCountry(config, language?.split('-')[1]);
   const certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbMovieCertificationForCountry(movieData.release_dates, userCountry) || certification) : certification;
   let links = Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, userUUID);
   if (certification && config.displayAgeRating) {
@@ -1937,7 +1938,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   );
 
   const certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
-  const userCountry = language?.split('-')[1];
+  const userCountry = getContentRatingCountry(config, language?.split('-')[1]);
   const certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings, userCountry) || certification) : certification;
   let links = [ ...Utils.buildLinks(imdbRating, imdbId, name, 'series', seriesData.genres, credits, language, castCount, userUUID)];
   if (certification && config.displayAgeRating) {
@@ -2106,7 +2107,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   let release_dates = null;
   let certification;
   let certificationLocal;
-  const userCountry = language?.split('-')[1];
+  const userCountry = getContentRatingCountry(config, language?.split('-')[1]);
   const wantsLocal = !!userCountry && userCountry !== 'US';
   let tmdbBase = null;
   let tmdbLocal = null;
@@ -2563,7 +2564,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
 
   let certification;
   let certificationLocal;
-  const userCountry = language?.split('-')[1];
+  const userCountry = getContentRatingCountry(config, language?.split('-')[1]);
   const wantsLocal = !!userCountry && userCountry !== 'US';
   let tmdbBase = null;
   let tmdbLocal = null;
@@ -2851,7 +2852,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     tmdbKeywords = moviedb.keywordNamesOf(seriesData);
     if (seriesData) {
     certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
-    const userCountry = language?.split('-')[1];
+    const userCountry = getContentRatingCountry(config, language?.split('-')[1]);
     certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings, userCountry) || certification) : certification;
     }
   }

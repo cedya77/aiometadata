@@ -2,6 +2,7 @@
 
 export interface UserConfig {
   language?: string;
+  contentRatingCountry?: string;
   /** Install URL of a stream addon the Jellyfin server delegates playback to. */
   jellyfinStreamUrl?: string;
   jellyfinLatestRows?: boolean;
