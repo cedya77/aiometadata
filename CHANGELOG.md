@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.4.0](https://github.com/cedya77/aiometadata/compare/v3.3.2...v3.4.0) (2026-10-02)
+
+
+### Features
+
+* **collection-builder:** add the Anime Essentials featured collection ([6b27a7a](https://github.com/cedya77/aiometadata/commit/6b27a7a726a61e459f15a1c5df837a6870f95972))
+* **collections:** feature artwork sites beside the featured collections ([08a7260](https://github.com/cedya77/aiometadata/commit/08a726042b7efbd0a36bfdb055842a0474fb3b91))
+* **collections:** fill out the Anime Essentials featured collection ([56a3e5c](https://github.com/cedya77/aiometadata/commit/56a3e5ccc8873c542217ce48834df703e8aa3c71))
+* **collections:** mark TVDB collections so AIOStreams reads them as collections ([c1020db](https://github.com/cedya77/aiometadata/commit/c1020db94bd929e393bbfc3d5c553ef05fd5377e))
+* **filters:** hide titles by TMDB keyword ([8709787](https://github.com/cedya77/aiometadata/commit/8709787aba93575ebd9a3012709722563db88a93))
+* **jellyfin:** filter a collection folder by genre ([1b37dc1](https://github.com/cedya77/aiometadata/commit/1b37dc1bef3c96ddce8317201d643f110f04b802))
+* **jellyfin:** forget a user's imported history ([07dd35f](https://github.com/cedya77/aiometadata/commit/07dd35f81d52f372947ad3e034b6a26d7c9bf0d1))
+* **jellyfin:** give anime seasons their own ids and links ([4b32ed5](https://github.com/cedya77/aiometadata/commit/4b32ed58488bf7934f17aaccace3c9557651abdb))
+* **jellyfin:** mark numbered classic rows as ranked ([ccf2b79](https://github.com/cedya77/aiometadata/commit/ccf2b79496d3e3c2848bc3bae65603097222dc32))
+* **jellyfin:** save ratings and send them to the trackers ([88e8846](https://github.com/cedya77/aiometadata/commit/88e88461ab7c0b45e94fd4b110930df8a0d79e6c))
+* **jellyfin:** send a show's status and its external links ([6e95bd0](https://github.com/cedya77/aiometadata/commit/6e95bd0aa9da0ae83ff1abee419e1acb0a968d8f))
+* **jellyfin:** send a title's keywords as its tags ([d35a646](https://github.com/cedya77/aiometadata/commit/d35a646d3dcc849cccc1fdcfb7dee3ee66e592fd))
+* **meta:** carry each title's TMDB keywords ([d39e855](https://github.com/cedya77/aiometadata/commit/d39e855d75711bc82ef52a8ad52048dcd484d52a))
+* **tvdb:** give a show its own episode order ([73e2ecb](https://github.com/cedya77/aiometadata/commit/73e2ecbecbcbccbdd30f4b3d698da27d5c973803))
+
+
+### Bug Fixes
+
+* **collection-builder:** stop blocking classic rows Fusion cannot import ([7ecff67](https://github.com/cedya77/aiometadata/commit/7ecff67251df39bd21c529793e20000fbab9d2a5))
+* **configure:** don't let an older page overwrite a newer save ([600fcf9](https://github.com/cedya77/aiometadata/commit/600fcf97797f48b0c7deceba96b7af7833e4a57e))
+* **jellyfin:** build an empty calendar range again after a short wait ([bd822f7](https://github.com/cedya77/aiometadata/commit/bd822f7c7bf9fbaadbbdabd2f264a58efca6f31b))
+* **jellyfin:** import tracker history for every user with its own history ([7877ad1](https://github.com/cedya77/aiometadata/commit/7877ad10cfcdc78b02e8c329122008b506bad67a))
+* **jellyfin:** keep a movie and a series with the same title in search ([c42b562](https://github.com/cedya77/aiometadata/commit/c42b5625c1bc7844db8f8ffb1782ae998767abb9))
+* **jellyfin:** keep display preferences per user ([66f3fad](https://github.com/cedya77/aiometadata/commit/66f3fad415f50ec12893cf97595ed4e7103244a7))
+* **jellyfin:** keep episode stills in their own shape ([34d25e2](https://github.com/cedya77/aiometadata/commit/34d25e27feb4fb5808e96a3e99e88423e00228bc))
+* **jellyfin:** keep landscape catalogs landscape inside collection folders ([c434e14](https://github.com/cedya77/aiometadata/commit/c434e1453fe492a54249bc931f474eff7a9c2f74))
+* **jellyfin:** keep Next Up and Upcoming on one air time ([e4f5536](https://github.com/cedya77/aiometadata/commit/e4f553606f105cc657dd3f100768425dfbaace86))
+* **jellyfin:** keep reading a catalog past pages its filters empty ([a76d4f0](https://github.com/cedya77/aiometadata/commit/a76d4f0c5962233aab042b69b599c03b8fb7ab7e))
+* **jellyfin:** keep TVDB Collections a box set library after an edit ([b169b1e](https://github.com/cedya77/aiometadata/commit/b169b1e1a74163842da3665723e25993e23f07de))
+* **jellyfin:** list catalogs hidden from home ([44fba89](https://github.com/cedya77/aiometadata/commit/44fba89e88b810c7c606de77f37dedac7c401cc5))
+* **jellyfin:** show TVDB collections as collections ([a9b42a7](https://github.com/cedya77/aiometadata/commit/a9b42a7fb5d57c56c8d22ee7c7d3f853ee8ca93a))
+* **jellyfin:** tell trackers about a new play session on the same device ([f38d8a2](https://github.com/cedya77/aiometadata/commit/f38d8a26cdf6196dd89a86755e8959e5f8d5895a))
+* **jellyfin:** write an episode's state under each of its ids ([02a592e](https://github.com/cedya77/aiometadata/commit/02a592ee653121182f67d2beb1aeb1b16d8077e0))
+* **mal:** answer a Jikan 304 from the cached response ([9aef21d](https://github.com/cedya77/aiometadata/commit/9aef21d57e7088467395ed5d7efc57c949a639e9))
+* **meta:** build anime with no MAL type as a series ([20e1ec1](https://github.com/cedya77/aiometadata/commit/20e1ec1d47e746d2cf493258f2cbbf6726d4cf1e))
+* **meta:** keep anime episode lists apart by TVDB season order ([bfdf255](https://github.com/cedya77/aiometadata/commit/bfdf255ab6c613c8a26c6eccf99ce4cce3dd1d07))
+* **poster-cache:** keep serving an image after a client drops mid-download ([4a6d46f](https://github.com/cedya77/aiometadata/commit/4a6d46f5c94be4bdaf7bf7ea0e1df15b337830f2))
+* **search:** hide search results by TMDB keyword ([f8177cf](https://github.com/cedya77/aiometadata/commit/f8177cf22a09f072a7320bf433bb3e10a943850d))
+* **simkl:** clear the paused session when a title is marked unwatched ([73b0ec8](https://github.com/cedya77/aiometadata/commit/73b0ec8953a9e477065a5c66617839125517f686))
+* **tvdb:** page TVDB Collections by position ([db95fa8](https://github.com/cedya77/aiometadata/commit/db95fa877a453bc16507f5867fcfea2822ac2933))
+* **warmer:** resume a warmup cut short by a restart ([6e15a74](https://github.com/cedya77/aiometadata/commit/6e15a741fc678828d83a3507d8c5f02fe54dbdec))
+
 ## [3.3.2](https://github.com/cedya77/aiometadata/compare/v3.3.1...v3.3.2) (2026-09-29)
 
 
