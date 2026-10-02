@@ -25,6 +25,7 @@ const consola = require('consola');
 const { cp } = require("fs");
 const wikiMappings = require('./wiki-mapper.js');
 const { withEpisodeOrder } = require('../utils/episodeOrder');
+const { hasTmdbWatchProviders } = require('../utils/releaseAvailability');
 
 
 const logger = consola.withTag('Meta');
@@ -1309,7 +1310,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
   const langCode = config.language.split('-')[0];
   const videoLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
   const movieInfoPromise = tmdbId
-    ? moviedb.movieInfo({ id: tmdbId, language: config.language, append_to_response: "release_dates,videos,keywords", include_video_language: videoLanguages }, config)
+    ? moviedb.movieInfo({ id: tmdbId, language: config.language, append_to_response: "release_dates,videos,keywords,watch/providers", include_video_language: videoLanguages }, config)
     : Promise.resolve(null);
 
   let movieData;
@@ -1355,6 +1356,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     imdbData.app_extras = imdbData.app_extras || {};
     imdbData.released = movieData.release_date ? resolveReleaseTimestamp(movieData.release_date, { originCountry: movieData.production_countries?.[0]?.iso_3166_1 }) : null;
     imdbData.app_extras.releaseDates = movieData.release_dates;
+    imdbData.app_extras.hasWatchProviders = hasTmdbWatchProviders(movieData['watch/providers']);
     const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
     const userCountry = config.language?.split('-')[1];
     const certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbMovieCertificationForCountry(movieData.release_dates, userCountry) || certification) : certification;
@@ -1546,7 +1548,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     trailers: finalTrailers,
     links: links,
     behaviorHints: { defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId || stremioId, hasScheduledVideos: false },
-    app_extras: { cast: Utils.parseCast(credits), directors: directorDetails, writers: writerDetails, releaseDates: movieData.release_dates, certification: certification, certificationLocal: certificationLocal },
+    app_extras: { cast: Utils.parseCast(credits), directors: directorDetails, writers: writerDetails, releaseDates: movieData.release_dates, hasWatchProviders: hasTmdbWatchProviders(movieData['watch/providers']), certification: certification, certificationLocal: certificationLocal },
     ...stampIds(allIds),
   };
 }

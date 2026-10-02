@@ -20,6 +20,7 @@ import { tmdbImageUrl, tmdbLogoSize, tmdbBackdropSize, tmdbPosterSize } from '..
 import { hasAgeRatingCap } from '../utils/ageRating';
 const { cacheWrapMetaSmart, cacheWrapGlobal }: any = require('./getCache');
 const { getSetting }: any = require('./settingsService');
+const { hasTmdbWatchProviders }: any = require('../utils/releaseAvailability');
 import { fetchImdbSuggestions, type ImdbSuggestion } from '../utils/imdbSuggestions.js';
 import { fetchLumiereSearch, fetchLumierePeopleSearch, type LumiereResult } from '../utils/lumiereSearch.js';
 import { lumiereApiBase } from '../utils/lumiereLists.js';
@@ -612,7 +613,7 @@ async function performTmdbSearch(type: string, query: string, language: string, 
         if (originalLanguage) langSet.add(originalLanguage);
         const imageLanguages = Array.from(langSet).join(',');
         const details = mediaType === 'movie'
-            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations,keywords", include_image_language: imageLanguages }, config)
+            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations,keywords,watch/providers", include_image_language: imageLanguages }, config)
             : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,translations,keywords", include_image_language: imageLanguages }, config);
 
         let allIds: any = {
@@ -670,7 +671,7 @@ async function performTmdbSearch(type: string, query: string, language: string, 
         parsed.keywords = moviedb.keywordNamesOf(details) ?? [];
         parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
         if(type === 'series') parsed.runtime  = Utils.parseRunTime(details.episode_run_time?.[0] ?? details.last_episode_to_air?.runtime ?? details.next_episode_to_air?.runtime ?? null);
-        parsed.app_extras = { releaseDates: details.release_dates, certification, certificationLocal: certLocal };
+        parsed.app_extras = { releaseDates: details.release_dates, hasWatchProviders: hasTmdbWatchProviders(details['watch/providers']), certification, certificationLocal: certLocal };
         return { parsed, details };
     } catch (error: any) {
         logger.error(`Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);
@@ -1371,7 +1372,7 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
       ? await moviedb.movieInfo({
           id: tmdbId,
           language,
-          append_to_response: "external_ids,release_dates,images,keywords",
+          append_to_response: "external_ids,release_dates,images,keywords,watch/providers",
           include_image_language: imageLanguages
         }, config)
       : await moviedb.tvInfo({
@@ -1447,7 +1448,7 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
       );
     }
 
-    parsed.app_extras = { releaseDates: details.release_dates, certification, certificationLocal: certLocal };
+    parsed.app_extras = { releaseDates: details.release_dates, hasWatchProviders: hasTmdbWatchProviders(details['watch/providers']), certification, certificationLocal: certLocal };
 
     return parsed;
 

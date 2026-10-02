@@ -22,11 +22,19 @@ interface ReleaseAvailability {
   hasReleaseDateData: true;
   earliestAnyReleaseDate: string | null;
   earliestHomeReleaseDate: string | null;
+  // Only present when the item was built from a TMDB response that carried watch/providers.
+  hasWatchProviders?: boolean;
+}
+
+interface TmdbWatchProviders {
+  results?: Record<string, Record<string, any> | null> | null;
+  [key: string]: any;
 }
 
 interface MetaWithReleaseAvailability {
   app_extras?: {
     releaseDates?: TmdbReleaseDates;
+    hasWatchProviders?: boolean;
     [key: string]: any;
   };
   [RELEASE_AVAILABILITY_FIELD]?: ReleaseAvailability;
@@ -88,6 +96,16 @@ function summarizeTmdbReleaseDates(releaseDates: TmdbReleaseDates | null | undef
   };
 }
 
+// TMDB keys each region by monetization type (flatrate, rent, buy, ads, free) next to a `link`.
+function hasTmdbWatchProviders(watchProviders: TmdbWatchProviders | null | undefined): boolean | undefined {
+  const results = watchProviders?.results;
+  if (!results || typeof results !== 'object') return undefined;
+
+  return Object.values(results).some(region =>
+    !!region && Object.values(region).some(offers => Array.isArray(offers) && offers.length > 0)
+  );
+}
+
 function isEmptyPlainObject(value: unknown): boolean {
   return !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0;
 }
@@ -103,8 +121,15 @@ function normalizeMetaReleaseAvailability<T extends MetaWithReleaseAvailability 
     }
   }
 
-  if (meta.app_extras && Object.prototype.hasOwnProperty.call(meta.app_extras, 'releaseDates')) {
+  const hasWatchProviders = meta.app_extras?.hasWatchProviders;
+  const summary = meta[RELEASE_AVAILABILITY_FIELD];
+  if (summary && typeof hasWatchProviders === 'boolean') {
+    summary.hasWatchProviders = hasWatchProviders;
+  }
+
+  if (meta.app_extras) {
     delete meta.app_extras.releaseDates;
+    delete meta.app_extras.hasWatchProviders;
     if (isEmptyPlainObject(meta.app_extras)) {
       delete meta.app_extras;
     }
@@ -129,39 +154,6 @@ function normalizeReleaseAvailabilityInPayload<T extends PayloadWithMetas | null
   return payload;
 }
 
-function stripMetaReleaseAvailabilityForResponse<T extends MetaWithReleaseAvailability | null | undefined>(meta: T): T {
-  if (!meta || typeof meta !== 'object') return meta;
-
-  if (Object.prototype.hasOwnProperty.call(meta, RELEASE_AVAILABILITY_FIELD)) {
-    delete meta[RELEASE_AVAILABILITY_FIELD];
-  }
-
-  if (meta.app_extras && Object.prototype.hasOwnProperty.call(meta.app_extras, 'releaseDates')) {
-    delete meta.app_extras.releaseDates;
-    if (isEmptyPlainObject(meta.app_extras)) {
-      delete meta.app_extras;
-    }
-  }
-
-  return meta;
-}
-
-function stripReleaseAvailabilityForResponse<T extends PayloadWithMetas | null | undefined>(payload: T): T {
-  if (!payload || typeof payload !== 'object') return payload;
-
-  if (payload.meta) {
-    stripMetaReleaseAvailabilityForResponse(payload.meta);
-  }
-
-  if (Array.isArray(payload.metas)) {
-    for (const meta of payload.metas) {
-      stripMetaReleaseAvailabilityForResponse(meta);
-    }
-  }
-
-  return payload;
-}
-
 function getReleaseAvailability(meta: MetaWithReleaseAvailability | null | undefined): ReleaseAvailability | null {
   if (!meta || typeof meta !== 'object') return null;
 
@@ -176,8 +168,8 @@ function getReleaseAvailability(meta: MetaWithReleaseAvailability | null | undef
 module.exports = {
   RELEASE_AVAILABILITY_FIELD,
   getReleaseAvailability,
+  hasTmdbWatchProviders,
   normalizeMetaReleaseAvailability,
   normalizeReleaseAvailabilityInPayload,
-  stripReleaseAvailabilityForResponse,
   summarizeTmdbReleaseDates,
 };

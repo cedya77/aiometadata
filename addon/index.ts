@@ -31,7 +31,7 @@ const { runWithRequestContext } = require('./lib/logBuffer.js');
 const { getSetting } = require('./lib/settingsService');
 const consola = require('consola');
 const aiCatalogLogger = consola.withTag('AICatalog');
-const { stripReleaseAvailabilityForResponse } = require('./utils/releaseAvailability');
+const { normalizeReleaseAvailabilityInPayload } = require('./utils/releaseAvailability');
 
 const { supportsMdblistScoreFilters } = require("./utils/mdbList");
 
@@ -627,7 +627,8 @@ const respond = function (req, res, data, opts?) {
 
   applyImageCachePrefix(data);
 
-  stripReleaseAvailabilityForResponse(data);
+  // Clients get the two-date summary; the raw per-country TMDB list stays internal.
+  normalizeReleaseAvailabilityInPayload(data);
   res.send(data);
 };
 
