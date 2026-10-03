@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.4.1](https://github.com/cedya77/aiometadata/compare/v3.4.0...v3.4.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* **jellyfin:** keep libraries hidden from home off clients without a genre picker ([29381ba](https://github.com/cedya77/aiometadata/commit/29381bab4e9ac4e5c12cd553d6338f4c2c1b92f8))
+* **meta:** give episodes without art the missing thumbnail ([3e570a2](https://github.com/cedya77/aiometadata/commit/3e570a2ebfcac34817f2d40441da941c7814ffe1))
+
 ## [3.4.0](https://github.com/cedya77/aiometadata/compare/v3.3.2...v3.4.0) (2026-10-02)
 
 
