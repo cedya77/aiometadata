@@ -923,6 +923,65 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
     }
   }
 
+  // If TVDB cannot resolve the series, try TMDB before IMDb.
+  if (preferredProvider === 'tvdb') {
+    let tmdbId = allIds?.tmdbId;
+
+    // Resolve TMDB lazily so successful TVDB requests do not incur extra work.
+    if (!tmdbId && allIds?.imdbId) {
+      try {
+        const resolved = await resolveAllIds(
+          allIds.imdbId,
+          'series',
+          config,
+          {},
+          ['tmdb']
+        );
+        tmdbId = resolved?.tmdbId || null;
+        if (tmdbId) allIds.tmdbId = tmdbId;
+      } catch (e) {
+        logger.warn(`[SeriesMeta] TMDB ID fallback resolution failed for ${stremioId}: ${e.message}`);
+        degraded = true;
+      }
+    }
+
+    if (tmdbId) {
+      try {
+        const langCode = language.split('-')[0];
+        const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+        const videoLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+
+        const seriesData = await moviedb.tvInfo({
+          id: tmdbId,
+          language,
+          append_to_response: "videos,credits,external_ids,images,translations,watch/providers,content_ratings,keywords",
+          include_image_language: imageLanguages,
+          include_video_language: videoLanguages
+        }, config);
+
+        if (seriesData) {
+          logger.info(`[SeriesMeta] TVDB unavailable for ${stremioId}; using TMDB ${tmdbId} before IMDb fallback.`);
+          return _markDegraded(
+            await buildTmdbSeriesResponse(
+              stremioId,
+              seriesData,
+              language,
+              config,
+              userUUID,
+              { allIds },
+              false,
+              includeVideos
+            ),
+            degraded
+          );
+        }
+      } catch (e) {
+        logger.warn(`[SeriesMeta] TMDB fallback failed for ${stremioId}: ${e.message}`);
+        degraded = true;
+      }
+    }
+  }
+
   // Try provider from stremioId
   const [provider, id] = stremioId.startsWith('tt') ? ['imdb', stremioId] : stremioId.split(':');
   
