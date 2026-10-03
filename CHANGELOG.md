@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.4.2](https://github.com/cedya77/aiometadata/compare/v3.4.1...v3.4.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* **dashboard:** count each title once in a configuration's played and in-progress figures ([e1c9cc6](https://github.com/cedya77/aiometadata/commit/e1c9cc6a0934e3cef5221d0cbfe1ad75af200332))
+* **jellyfin:** list each watch once in the activity history ([e1c9cc6](https://github.com/cedya77/aiometadata/commit/e1c9cc6a0934e3cef5221d0cbfe1ad75af200332))
+
 ## [3.4.1](https://github.com/cedya77/aiometadata/compare/v3.4.0...v3.4.1) (2026-10-03)
 
 
