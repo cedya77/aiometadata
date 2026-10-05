@@ -253,6 +253,7 @@ export interface AppConfig {
   };
   tvdbSeasonType: string;
   tvdbEpisodeOrders?: Record<string, string>;
+  tvdbNormalizeYearSeasons?: boolean;
   mal: {
     skipFiller: boolean;
     skipRecap: boolean;

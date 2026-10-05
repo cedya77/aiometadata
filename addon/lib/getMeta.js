@@ -2389,9 +2389,11 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     
   let episodeList = tvdbEpisodes?.episodes || [];
 
-  const normalizedData = normalizeTvdbSeasons(officialSeasons, episodeList);
-  officialSeasons = normalizedData.seasons;
-  episodeList = normalizedData.episodes;
+  if (config.tvdbNormalizeYearSeasons !== false) {
+    const normalizedData = normalizeTvdbSeasons(officialSeasons, episodeList);
+    officialSeasons = normalizedData.seasons;
+    episodeList = normalizedData.episodes;
+  }
 
   const seasonPosters = {};
   officialSeasons.forEach(season => {

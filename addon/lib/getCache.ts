@@ -871,6 +871,10 @@ function buildScopedProviderConfig(config: any, contentScope: string): any {
   return { providers, artProviders };
 }
 
+function tvdbYearSeasonsKeyPart(config: any): any {
+  return config.tvdbNormalizeYearSeasons === false ? { tvdbNormalizeYearSeasons: false } : {};
+}
+
 /**
  * With the detection override on, a tmdb or imdb id can still be built by the anime
  * provider, so the anime half of the config decides the result and has to reach the
@@ -936,6 +940,7 @@ function getMetaCacheContext(config: any, metaId: string, type: string | null, u
       },
       ...(context.metaProvider === 'tvdb' ? { tvdbSeasonType: config.tvdbSeasonType || 'default' } : {}),
       ...(context.metaProvider === 'tvdb' && readsBySeason(config.tvdbSeasonType) ? { episodeSource: 'seasons' } : {}),
+      ...(context.metaProvider === 'tvdb' ? tvdbYearSeasonsKeyPart(config) : {}),
     };
   } else if (type === 'movie') {
     context.metaProvider = config.providers?.movie || 'tmdb';
@@ -969,6 +974,7 @@ function getMetaCacheContext(config: any, metaId: string, type: string | null, u
     context.videoOptions = {
       tvdbSeasonType: config.tvdbSeasonType || 'default',
       ...(readsBySeason(config.tvdbSeasonType) ? { episodeSource: 'seasons' } : {}),
+      ...tvdbYearSeasonsKeyPart(config),
       forceAnimeForDetectedImdb: config.providers?.forceAnimeForDetectedImdb || false,
       ...(config.providers?.forceAnimeForDetectedImdb
         ? {
@@ -1810,6 +1816,7 @@ async function cacheWrapMeta(userUUID: string, metaId: string, method: () => Pro
        logo: resolveArtProvider('series', 'logo', config)
      };
      metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
+     if (config.tvdbNormalizeYearSeasons === false) metaConfig.tvdbNormalizeYearSeasons = false;
      if (config.providers?.forceAnimeForDetectedImdb) {
        metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
      }

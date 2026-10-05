@@ -245,6 +245,19 @@ export function ProvidersSettings() {
             />
           }
         />
+        <SettingRow
+          htmlFor="tvdb-normalize-year-seasons"
+          label="Normalize Year Seasons"
+          description="Turn year seasons (e.g. Season 2024) into 1, 2, 3..."
+          control={
+            <Switch
+              id="tvdb-normalize-year-seasons"
+              checked={config.tvdbNormalizeYearSeasons !== false}
+              onCheckedChange={(val) => setConfig(prev => ({ ...prev, tvdbNormalizeYearSeasons: val }))}
+              disabled={!hasTvdbKey}
+            />
+          }
+        />
         <div className="space-y-2 pt-2">
           <p className="text-sm font-medium">Per-show Episode Order</p>
           <p className="text-sm text-muted-foreground">
