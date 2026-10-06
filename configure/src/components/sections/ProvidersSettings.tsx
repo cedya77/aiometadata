@@ -222,7 +222,7 @@ export function ProvidersSettings() {
       {/* TVDB Specific Settings */}
       <CollapsibleSettingCard
         title="TheTVDB Settings"
-        anchorIds={['tvdb-season-order']}
+        anchorIds={['tvdb-season-order', 'tvdb-normalize-year-seasons']}
         inUse={isInUse(config, 'tvdb')}
         description={hasTvdbKey
           ? 'Customize how episode data is fetched from TheTVDB.'
@@ -245,6 +245,13 @@ export function ProvidersSettings() {
             />
           }
         />
+        <div className="space-y-2 pt-2">
+          <p className="text-sm font-medium">Per-show Episode Order</p>
+          <p className="text-sm text-muted-foreground">
+            Enter a show's TVDB id to give it its own episode order instead of the Season Order above.
+          </p>
+          <EpisodeOrderOverrides disabled={!hasTvdbKey} />
+        </div>
         <SettingRow
           htmlFor="tvdb-normalize-year-seasons"
           label="Normalize Year Seasons"
@@ -258,13 +265,6 @@ export function ProvidersSettings() {
             />
           }
         />
-        <div className="space-y-2 pt-2">
-          <p className="text-sm font-medium">Per-show Episode Order</p>
-          <p className="text-sm text-muted-foreground">
-            Enter a show's TVDB id to give it its own episode order instead of the Season Order above.
-          </p>
-          <EpisodeOrderOverrides disabled={!hasTvdbKey} />
-        </div>
       </CollapsibleSettingCard>
 
       {/* TMDB Specific Settings */}

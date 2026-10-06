@@ -274,6 +274,12 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['tvdb', 'season', 'episode order'],
   },
   {
+    id: 'providers.tvdbNormalizeYearSeasons', section: 'providers', anchor: 'tvdb-normalize-year-seasons',
+    label: 'Normalize Year Seasons',
+    description: 'Turn year seasons (e.g. Season 2024) into 1, 2, 3...',
+    keywords: ['tvdb', 'season', 'year', 'normalize'],
+  },
+  {
     id: 'providers.scrapeImdb', section: 'providers', anchor: 'scrape-imdb',
     label: 'Scrape IMDb Data',
     description: "Automatically scrape additional data from IMDb to obtain IMDb ID when missing from TMDB. This is useful for sports events and other content that doesn't have an IMDb ID in TMDB.",
