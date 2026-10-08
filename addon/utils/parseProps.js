@@ -921,12 +921,13 @@ function getTvdbCertification(contentRatings, countryCode, contentType, fallback
 }
 
 function processOverviewTranslations(translations, language, overview) {
-  if(language === 'pt-PT'){
-    let translation = tmdb.getTranslations(translations, 'pt-PT');
+  // Try the other Portuguese variant before falling back to English.
+  if(language === 'pt-PT' || language === 'pt-BR'){
+    let translation = tmdb.getTranslations(translations, language);
       if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
         overview = translation.data.overview;
       } else {
-        translation = tmdb.getTranslations(translations, 'pt-BR');
+        translation = tmdb.getTranslations(translations, language === 'pt-BR' ? 'pt-PT' : 'pt-BR');
         if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
           overview = translation.data.overview;
         } else{
@@ -956,13 +957,13 @@ function processTitleTranslations(translations, language, title, type, originalL
   // Check if user's language matches the original language
   const languagesMatch = originalLanguage && baseLanguage && originalLanguage.toLowerCase() === baseLanguage;
   
-  // Handle title fallback for pt-PT language
-  if(language === 'pt-PT'){
-    let translation = tmdb.getTranslations(translations, 'pt-PT');
+  // Try the other Portuguese variant before the original-title/English fallback.
+  if(language === 'pt-PT' || language === 'pt-BR'){
+    let translation = tmdb.getTranslations(translations, language);
     if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
       title = type === 'movie' ? translation.data.title : translation.data.name;
     } else {
-      translation = tmdb.getTranslations(translations, 'pt-BR');
+      translation = tmdb.getTranslations(translations, language === 'pt-BR' ? 'pt-PT' : 'pt-BR');
       if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
         title = type === 'movie' ? translation.data.title : translation.data.name;
       } else {

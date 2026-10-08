@@ -194,6 +194,7 @@ To add the addon to Stremio, use the URL:
 
 ### UI Tips
 
+- **Portuguese TMDB Metadata** – With `pt-BR` or `pt-PT` selected, missing or blank movie and series titles and overviews use the other Portuguese variant before English. Each field keeps the selected variant when available. Titles also retain the existing original-title fallback when the original language matches Portuguese and neither variant has a translated title.
 - **Force Latin TMDB Cast Names** – Located under *Configure → Providers → The Movie Database (TMDB) Settings*. When enabled, the addon fetches TMDB credits in English even if your display language is another locale. Use this if Asian productions show cast names in non-Latin scripts and you prefer Latin characters in Stremio.
 
 For additional help, please open an issue on GitHub.
