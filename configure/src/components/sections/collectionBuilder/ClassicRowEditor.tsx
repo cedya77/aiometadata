@@ -56,7 +56,7 @@ export function ClassicRowEditor({
     <div className="space-y-4">
       <div className="flex items-center gap-2 rounded-lg border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs text-violet-300">
         <Rows3 className="h-4 w-4 shrink-0" />
-        Classic rows are Fusion only. Nuvio has no equivalent, so this row is left out of the Nuvio export.
+        Classic rows are Fusion and Jellyfin Clients only. Nuvio has no equivalent, so this row is left out of the Nuvio export.
       </div>
 
       <div className="grid gap-4 @2xl:grid-cols-2">

@@ -466,7 +466,7 @@ function ClassicRowStage({ entry, target, pendingCatalogs }: {
     <div className={target === 'nuvio' ? 'space-y-2' : ''}>
       {target === 'nuvio' && (
         <p className="text-xs text-violet-300">
-          Classic rows are Fusion only. Nuvio has no equivalent, so this row is left out of the Nuvio
+          Classic rows are Fusion and Jellyfin Clients only. Nuvio has no equivalent, so this row is left out of the Nuvio
           export.
         </p>
       )}
