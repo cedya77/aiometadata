@@ -240,9 +240,10 @@ class MALCatalogWarmer {
       if (WARMUP_CONFIG.warmPriority && this.shouldContinueWarming()) {
         this.warmupStats.phase = 'priority';
         this.log('info', '⭐ Phase 2: Warming high-priority catalogs...');
-        const count = await this.warmPriorityCatalogs();
+        const { count, errors: phaseErrors } = await this.warmPriorityCatalogs();
         itemsWarmed += count;
-        this.log('debug', `Priority phase complete: ${count} items warmed`);
+        errors += phaseErrors;
+        this.log('debug', `Priority phase complete: ${count} items warmed, ${phaseErrors} errors`);
         
         await this.delay(1000);
       }
@@ -251,9 +252,10 @@ class MALCatalogWarmer {
       if (WARMUP_CONFIG.warmSchedule && this.shouldContinueWarming()) {
         this.warmupStats.phase = 'schedule';
         this.log('info', '📅 Phase 3: Warming schedule catalogs...');
-        const count = await this.warmScheduleCatalogs();
+        const { count, errors: phaseErrors } = await this.warmScheduleCatalogs();
         itemsWarmed += count;
-        this.log('debug', `Schedule phase complete: ${count} items warmed`);
+        errors += phaseErrors;
+        this.log('debug', `Schedule phase complete: ${count} items warmed, ${phaseErrors} errors`);
         
         await this.delay(1000);
       }
@@ -262,9 +264,10 @@ class MALCatalogWarmer {
       if (WARMUP_CONFIG.warmDecades && this.shouldContinueWarming()) {
         this.warmupStats.phase = 'decades';
         this.log('info', '📆 Phase 4: Warming decade catalogs...');
-        const count = await this.warmDecadeCatalogs();
+        const { count, errors: phaseErrors } = await this.warmDecadeCatalogs();
         itemsWarmed += count;
-        this.log('debug', `Decade phase complete: ${count} items warmed`);
+        errors += phaseErrors;
+        this.log('debug', `Decade phase complete: ${count} items warmed, ${phaseErrors} errors`);
       }
 
     } catch (error) {
@@ -317,6 +320,7 @@ class MALCatalogWarmer {
 
   async warmPriorityCatalogs() {
     let count = 0;
+    let errors = 0;
     const config = { sfw: WARMUP_CONFIG.sfw };
     const pages = WARMUP_CONFIG.priorityPages;
     const language = 'en-US';
@@ -425,16 +429,18 @@ class MALCatalogWarmer {
           
           await this.delay(WARMUP_CONFIG.taskDelayMs);
         } catch (error) {
-          this.log('debug', `Error warming ${catalog.name} page ${page}: ${error.message}`);
+          errors++;
+          this.log('warn', `Error warming ${catalog.name} page ${page}: ${error.message}`);
         }
       }
     }
     
-    return count;
+    return { count, errors };
   }
 
   async warmScheduleCatalogs() {
     let count = 0;
+    let errors = 0;
     const config = { sfw: WARMUP_CONFIG.sfw };
     const language = 'en-US';
     
@@ -499,15 +505,17 @@ class MALCatalogWarmer {
         
         await this.delay(WARMUP_CONFIG.taskDelayMs);
       } catch (error) {
-        this.log('debug', `Error warming schedule ${day}: ${error.message}`);
+        errors++;
+        this.log('warn', `Error warming schedule ${day}: ${error.message}`);
       }
     }
     
-    return count;
+    return { count, errors };
   }
 
   async warmDecadeCatalogs() {
     let count = 0;
+    let errors = 0;
     const config = { sfw: WARMUP_CONFIG.sfw };
     const language = 'en-US';
     
@@ -572,14 +580,16 @@ class MALCatalogWarmer {
           
           await this.delay(WARMUP_CONFIG.taskDelayMs);
         } catch (error) {
-          this.log('debug', `Error warming decade ${decade.id}: ${error.message}`);
+          errors++;
+          this.log('warn', `Error warming decade ${decade.id}: ${error.message}`);
         }
       }
     } catch (error) {
+      errors++;
       this.log('info', `Error warming decade catalogs: ${error.message}`);
     }
     
-    return count;
+    return { count, errors };
   }
 
   delay(ms) {

@@ -101,6 +101,10 @@ MAL_WARMUP_DECADES=false
 MAL_WARMUP_LOG_LEVEL=normal
 ```
 
+Per-source failures (a catalog, schedule day or decade that could not be warmed) are logged at
+warn level unless `MAL_WARMUP_LOG_LEVEL=silent`, and are counted in the run's `errors` field, so
+the `✅ Warmup complete: N items, E errors` summary cannot report `0 errors` while sources fail.
+
 ### Using Your Own UUID for Warming
 
 By default, the warmer uses a system configuration (`system-cache-warmer`) with predefined settings. However, you can specify your own user UUID to warm caches with your preferred providers and language settings:
