@@ -127,6 +127,12 @@ Present a configuration as a Jellyfin server, so Jellyfin clients browse your ca
 
 All configuration is managed via the `/configure` UI and saved per-user (UUID) in the database.
 
+### Displayed age ratings
+
+In **General**, **Content Rating Country** selects the country for displayed age ratings independently of **Display Language**. **Automatic (follow language)** preserves the existing behavior. This lets you keep your preferred language while displaying local ratings.
+
+Ratings keep the provider's original code and the existing US fallback when a local rating is unavailable. **Display Age Rating** controls the rating link in genres. MAL and Kitsu ratings, Jellyfin's `OfficialRating`, and age-filter limits keep their existing behavior.
+
 ---
 
 ## 🔌 API & Endpoints
