@@ -957,13 +957,13 @@ function processTitleTranslations(translations, language, title, type, originalL
   // Check if user's language matches the original language
   const languagesMatch = originalLanguage && baseLanguage && originalLanguage.toLowerCase() === baseLanguage;
   
-  // Try the other Portuguese variant before the original-title/English fallback.
-  if(language === 'pt-PT' || language === 'pt-BR'){
-    let translation = tmdb.getTranslations(translations, language);
+  // Handle title fallback for pt-PT language
+  if(language === 'pt-PT'){
+    let translation = tmdb.getTranslations(translations, 'pt-PT');
     if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
       title = type === 'movie' ? translation.data.title : translation.data.name;
     } else {
-      translation = tmdb.getTranslations(translations, language === 'pt-BR' ? 'pt-PT' : 'pt-BR');
+      translation = tmdb.getTranslations(translations, 'pt-BR');
       if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
         title = type === 'movie' ? translation.data.title : translation.data.name;
       } else {
