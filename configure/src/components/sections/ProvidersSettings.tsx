@@ -222,7 +222,7 @@ export function ProvidersSettings() {
       {/* TVDB Specific Settings */}
       <CollapsibleSettingCard
         title="TheTVDB Settings"
-        anchorIds={['tvdb-season-order']}
+        anchorIds={['tvdb-season-order', 'tvdb-normalize-year-seasons']}
         inUse={isInUse(config, 'tvdb')}
         description={hasTvdbKey
           ? 'Customize how episode data is fetched from TheTVDB.'
@@ -252,6 +252,19 @@ export function ProvidersSettings() {
           </p>
           <EpisodeOrderOverrides disabled={!hasTvdbKey} />
         </div>
+        <SettingRow
+          htmlFor="tvdb-normalize-year-seasons"
+          label="Normalize Year Seasons"
+          description="Turn year seasons (e.g. Season 2024) into 1, 2, 3..."
+          control={
+            <Switch
+              id="tvdb-normalize-year-seasons"
+              checked={config.tvdbNormalizeYearSeasons !== false}
+              onCheckedChange={(val) => setConfig(prev => ({ ...prev, tvdbNormalizeYearSeasons: val }))}
+              disabled={!hasTvdbKey}
+            />
+          }
+        />
       </CollapsibleSettingCard>
 
       {/* TMDB Specific Settings */}

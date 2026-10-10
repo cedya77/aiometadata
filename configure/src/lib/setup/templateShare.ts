@@ -19,6 +19,7 @@ const SHARED_SETTING_KEYS = [
   'mal',
   'tmdb',
   'tvdbSeasonType',
+  'tvdbNormalizeYearSeasons',
   'language',
   'ageRating',
   'sfw',

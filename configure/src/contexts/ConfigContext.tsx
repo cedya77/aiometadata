@@ -147,6 +147,7 @@ const initialConfig: AppConfig = {
     originalLangFallback: false
   },
   tvdbSeasonType: 'default',
+  tvdbNormalizeYearSeasons: true,
   mal: {
     skipFiller: false, 
     skipRecap: false,
