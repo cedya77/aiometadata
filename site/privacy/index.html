@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Privacy policy for AIOMetadata and its optional Google Drive backup feature.">
+    <title>Privacy Policy — AIOMetadata</title>
+    <style>
+      :root { color-scheme: light dark; font: 16px/1.65 system-ui, sans-serif; }
+      body { max-width: 52rem; margin: 0 auto; padding: 3rem 1.25rem; }
+      h1, h2 { line-height: 1.25; }
+      a { color: #4d8df7; }
+      li { margin-block: .45rem; }
+      .updated { color: GrayText; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p><a href="../">AIOMetadata</a></p>
+      <h1>Privacy Policy</h1>
+      <p class="updated">Last updated: October 11, 2026</p>
+      <p>This policy describes data handled by AIOMetadata, including its optional Google Drive backup integration. AIOMetadata is self-hostable: the operator of the particular server you use controls that server and may have additional policies. This project website is informational and does not collect account data.</p>
+
+      <h2>Information handled by an AIOMetadata server</h2>
+      <p>Depending on how you use an installation, its operator may process:</p>
+      <ul>
+        <li>Configuration data you save, such as provider selections, preferences, and API keys you enter.</li>
+        <li>Account identifiers and authentication data used to protect and load your configuration. Configuration passwords are stored as password hashes, not as the original password.</li>
+        <li>Optional integration credentials and tokens for services you connect. These are stored by the server to operate those integrations.</li>
+        <li>When you use the Jellyfin API integration, locally stored per-profile playback progress, watched/scrobble state, favorites, watchlists, dropped titles, ratings, and Jellyfin preferences.</li>
+        <li>Technical request, error, and diagnostic information needed to operate and troubleshoot the server.</li>
+      </ul>
+
+      <h2>How information is used</h2>
+      <p>The server uses configuration and integration data to provide metadata, catalogs, search, artwork, playback-state, and other features you enable. When you configure an external provider or connect a service, the server may send the relevant requests and information to that provider under its own terms and privacy policy. The server operator chooses the providers, deployment, logs, storage, and retention practices.</p>
+
+      <h2>Optional Google Drive backups</h2>
+      <p>If the server operator has configured Google OAuth and you connect Google Drive, AIOMetadata requests the <code>https://www.googleapis.com/auth/drive.file</code> permission. This scope allows the app to work with files it creates, rather than granting access to the user's entire Drive.</p>
+      <p>Each backup is associated with the saved configuration UUID and stored in the Google account you connected. A backup contains the saved configuration, including API keys and settings, as well as locally stored Jellyfin per-profile playback and watch state, favorites, watchlists, dropped titles, ratings, and preferences. Treat these files as sensitive.</p>
+      <p>Linked-service OAuth tokens, Jellyfin/API authorization tokens, and pending tracker writes are not included in Drive backups. History held only by an external tracker remains with that service and is not copied into this backup. The server separately stores the Google refresh token needed to schedule backups. Google processes Drive data under <a href="https://policies.google.com/privacy">Google's Privacy Policy</a> and <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>.</p>
+      <p>Daily backups are enabled after connecting. The default retention is 10 snapshots; the configuration owner can change the limit. When the limit is exceeded, older snapshots are deleted from Drive. Disconnecting removes the server's local Google authorization and stops future backups, but intentionally leaves existing backup files in Drive. You can remove those files from Drive yourself.</p>
+
+      <h2>Storage, sharing, and retention</h2>
+      <p>Configuration and integration data are stored by the operator of the AIOMetadata server you use. The project does not operate or control every self-hosted installation and cannot specify that installation's retention period, security measures, or access practices. Contact that server's operator for details about its data handling or to request access or deletion. Data sent to an external provider is also subject to that provider's terms.</p>
+      <p>Google Drive snapshots remain in the connected Google account until deleted by the retention process or by the account holder. Deleting an AIOMetadata configuration removes its local backup settings and Google token; it does not delete snapshots already in Drive.</p>
+
+      <h2>Security</h2>
+      <p>Use a trusted server operator, protect your account and Google account, and do not share backup files. Self-hosting operators are responsible for securing their database, server environment, backups, and any OAuth credentials they configure. No method of storage or transmission is completely secure.</p>
+
+      <h2>Children</h2>
+      <p>AIOMetadata is a metadata and media-catalog tool, not a service directed to children. The server operator determines who may use a particular installation.</p>
+
+      <h2>Changes and contact</h2>
+      <p>This policy may be updated as the project changes. For questions about a hosted installation's data, contact its operator. For questions about this project policy, use the <a href="https://github.com/wizaarddlabs/aiometadata/issues">project issue tracker</a>.</p>
+      <p><a href="../">Back to AIOMetadata</a></p>
+    </main>
+  </body>
+</html>
