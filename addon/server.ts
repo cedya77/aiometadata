@@ -208,6 +208,7 @@ async function startServer(): Promise<void> {
   await initializeSettings();
   readiness.markReady('settings');
   ok('settings');
+  require('./lib/googleDriveBackup').startGoogleDriveBackupScheduler();
 
   await require('./lib/aliasResolver').initializeUserAliases();
   ok('userAliases');

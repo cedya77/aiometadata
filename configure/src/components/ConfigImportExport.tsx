@@ -14,6 +14,7 @@ import { exportConfigFile } from "@/lib/exportConfigFile";
 import { mergeImportedAccounts } from "@/lib/managerAccounts";
 import { CollapsibleSettingCard } from "@/components/settings/CollapsibleSettingCard";
 import { SettingRow } from "@/components/settings/SettingRow";
+import { GoogleDriveBackupSettings } from "@/components/GoogleDriveBackupSettings";
 
 export function ConfigImportExport() {
   const { config, setConfig, resetConfig: resetConfigFromContext, auth, setAuth } = useConfig();
@@ -445,6 +446,8 @@ export function ConfigImportExport() {
           </CardContent>
         </Card>
       </div>
+
+      <GoogleDriveBackupSettings />
 
       <CollapsibleSettingCard
         title="Danger Zone"

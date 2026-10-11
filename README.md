@@ -2,6 +2,8 @@
 
 **AIOMetadata** is a next-generation, power-user-focused metadata addon for [Stremio](https://www.stremio.com/). It aggregates and enriches movie, series, and anime metadata from multiple sources (TMDB, TVDB, MyAnimeList, AniList, IMDb, TVmaze, Fanart.tv, MDBList, and more), giving you full control over catalog sources, artwork, and search.
 
+See the [public project information site](site/index.html) and [privacy policy](site/privacy/index.html).
+
 ---
 
 ## 🚀 Features
@@ -14,6 +16,7 @@
 - **Dynamic Search**: Enable/disable search engines per type (movie, series, anime) and use AI-powered search (Gemini) if desired.
 - **User Config & Passwords**: Secure, per-user configuration with password and optional addon password protection. Trusted UUIDs for seamless re-login.
 - **Global & Self-Healing Caching**: Redis-backed, ETag-aware, and self-healing cache for fast, reliable metadata and catalog responses.
+- **Per-UUID Google Drive Backups**: Connect a Google account for scheduled daily backups, configurable retention, and restore.
 - **Advanced ID Mapping**: Robust mapping between all major ID systems (MAL, TMDB, TVDB, IMDb, AniList, AniDB, Kitsu, TVmaze).
 - **Modern UI**: Intuitive React/Next.js configuration interface with drag-and-drop, tooltips, and instant feedback.
 
@@ -165,6 +168,7 @@ npm run dev
 
 - Edit `/addon` for backend, `/configure` for frontend.
 - Uses Redis for caching, SQLite/PostgreSQL for config storage.
+- See [Google Drive backups](docs/google-drive-backups.md) to configure per-UUID cloud backups.
 
 ---
 

@@ -217,6 +217,22 @@ to every visitor, so which one you reach for depends on who uses the instance.
 - **Description**: Lifetime in milliseconds of the HMAC-signed Trakt OAuth state. The state is verified with `TRAKT_CLIENT_SECRET`, so authorize and callback requests can be handled by different replicas without shared state storage.
 - **Security note**: The stateless state provides integrity and expiration but is replayable until it expires. Trakt authorization codes remain one-time at the provider; strict one-time state consumption requires shared storage or browser-session binding.
 
+#### `GOOGLE_DRIVE_CLIENT_ID`
+- **Required**: Only to offer Google Drive backups
+- **Description**: OAuth web application client ID for Google Drive backups
+- **Get it**: Create an OAuth client in Google Cloud Console and enable the Google Drive API
+
+#### `GOOGLE_DRIVE_CLIENT_SECRET`
+- **Required**: Only to offer Google Drive backups
+- **Description**: OAuth web application client secret. Keep it server-side; it is never sent to the browser.
+
+#### `GOOGLE_DRIVE_REDIRECT_URI`
+- **Required**: No
+- **Default**: `${HOST_NAME}/api/auth/google-drive/callback`
+- **Description**: Optional redirect URI override. Register the effective URI in the Google OAuth client settings.
+
+Google Drive backups use the `drive.file` scope, so the app can access files it creates rather than the user's entire Drive. Each UUID's backup contains the saved configuration, including API keys, and locally stored Jellyfin playback, watchlist, favorites, ratings, and preference state. It does not include linked service OAuth tokens or Jellyfin/API authorization tokens. Files remain in the user's Drive after disconnecting. See [Google Drive backups](./google-drive-backups.md) for setup and behavior.
+
 #### `SIMKL_CLIENT_ID`
 - **Required for SimKL integration**: Yes
 - **Description**: SimKL API client ID for enabling SimKL account integration (watchlists, trending catalogs, etc.)

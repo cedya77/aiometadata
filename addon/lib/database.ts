@@ -454,6 +454,20 @@ class Database {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_provider ON oauth_tokens(provider)`,
       `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_id ON oauth_tokens(user_id)`,
+      `CREATE TABLE IF NOT EXISTS google_drive_backup_settings (
+        user_uuid TEXT PRIMARY KEY,
+        token_id TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        retention_limit INTEGER NOT NULL DEFAULT 10,
+        next_backup_at BIGINT NOT NULL DEFAULT 0,
+        last_backup_at BIGINT,
+        last_error TEXT,
+        lock_until BIGINT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_google_drive_backup_due
+       ON google_drive_backup_settings(enabled, next_backup_at)`,
       `CREATE TABLE IF NOT EXISTS addon_settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
@@ -679,6 +693,20 @@ class Database {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_provider ON oauth_tokens(provider)`,
       `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_id ON oauth_tokens(user_id)`,
+      `CREATE TABLE IF NOT EXISTS google_drive_backup_settings (
+        user_uuid VARCHAR(255) PRIMARY KEY,
+        token_id VARCHAR(255) NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        retention_limit INTEGER NOT NULL DEFAULT 10,
+        next_backup_at BIGINT NOT NULL DEFAULT 0,
+        last_backup_at BIGINT,
+        last_error TEXT,
+        lock_until BIGINT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_google_drive_backup_due
+       ON google_drive_backup_settings(enabled, next_backup_at)`,
       `CREATE TABLE IF NOT EXISTS addon_settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
@@ -1008,18 +1036,24 @@ class Database {
     const query = this.type === 'sqlite'
       ? 'DELETE FROM user_configs WHERE user_uuid = ?'
       : 'DELETE FROM user_configs WHERE user_uuid = $1';
+    const backupSettings = await this.getGoogleDriveBackupSettings(userUUID);
     await this.runQuery(query, [userUUID]);
+    await this.deleteGoogleDriveBackupSettings(userUUID);
+    if (backupSettings?.token_id) await this.deleteOAuthToken(backupSettings.token_id);
     await this.unlinkConfigFromAllAccounts(userUUID);
     await require('./configCache').del(userUUID).catch(() => undefined);
   }
 
   async deleteUser(userUUID: string): Promise<boolean> {
     try {
+      const backupSettings = await this.getGoogleDriveBackupSettings(userUUID);
       const query = this.type === 'sqlite'
         ? 'DELETE FROM user_configs WHERE user_uuid = ?'
         : 'DELETE FROM user_configs WHERE user_uuid = $1';
       const result = await this.runQuery(query, [userUUID]);
       const userDeleted = this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0;
+      await this.deleteGoogleDriveBackupSettings(userUUID);
+      if (backupSettings?.token_id) await this.deleteOAuthToken(backupSettings.token_id);
 
       const deleteTrustedQuery = this.type === 'sqlite'
         ? 'DELETE FROM trusted_uuids WHERE user_uuid = ?'
@@ -2307,6 +2341,262 @@ class Database {
     }
   }
 
+  async getGoogleDriveJellyfinBackupState(userUUID: string): Promise<any> {
+    const scopedRows = async (table: string, columns: string[]) => {
+      const query = `SELECT ${columns.join(', ')} FROM ${table} WHERE user_uuid = ${this.type === 'sqlite' ? '?' : '$1'}`;
+      return (await this.allQuery(query, [userUUID])) || [];
+    };
+    return {
+      formatVersion: 1,
+      playstate: await scopedRows('jellyfin_playstate', [
+        'profile', 'video_id', 'position_ms', 'runtime_ms', 'played', 'play_count', 'last_played_at', 'updated_at', 'origin',
+      ]),
+      preferences: await scopedRows('jellyfin_preferences', ['profile', 'pref_id', 'client', 'data', 'updated_at']),
+      watchlist: await scopedRows('jellyfin_watchlist', ['profile', 'meta_id', 'media_type', 'listed', 'updated_at']),
+      favourites: await scopedRows('jellyfin_favourites', ['profile', 'meta_id', 'media_type', 'updated_at']),
+      dropped: await scopedRows('jellyfin_dropped', ['profile', 'meta_id', 'updated_at']),
+      ratings: await scopedRows('jellyfin_ratings', ['profile', 'meta_id', 'rating', 'pmdb_id', 'updated_at']),
+    };
+  }
+
+  async restoreGoogleDriveJellyfinBackupState(userUUID: string, state: any): Promise<void> {
+    if (!state || typeof state !== 'object' || Array.isArray(state) || state.formatVersion !== 1) {
+      throw new Error('The backup does not contain valid Jellyfin state');
+    }
+
+    const rows = (name: string, validate: (row: any) => any[]) => {
+      const value = state[name];
+      if (!Array.isArray(value)) throw new Error(`The backup has invalid Jellyfin ${name}`);
+      return value.map((row, index) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) {
+          throw new Error(`The backup has an invalid Jellyfin ${name} row at index ${index}`);
+        }
+        return validate(row);
+      });
+    };
+    const text = (value: unknown): string => {
+      if (typeof value !== 'string') throw new Error('The backup contains invalid Jellyfin state');
+      return value;
+    };
+    const nullableText = (value: unknown): string | null => value === null ? null : text(value);
+    const integer = (value: unknown): number => {
+      const parsed = typeof value === 'number' ? value : Number(value);
+      if (!Number.isSafeInteger(parsed)) throw new Error('The backup contains invalid Jellyfin state');
+      return parsed;
+    };
+    const nullableInteger = (value: unknown): number | null => value === null ? null : integer(value);
+    const boolInteger = (value: unknown): number => {
+      const parsed = integer(value);
+      if (parsed !== 0 && parsed !== 1) throw new Error('The backup contains invalid Jellyfin state');
+      return parsed;
+    };
+    const datasets = [
+      {
+        table: 'jellyfin_playstate',
+        columns: ['profile', 'video_id', 'position_ms', 'runtime_ms', 'played', 'play_count', 'last_played_at', 'updated_at', 'origin'],
+        rows: rows('playstate', (row) => [
+          text(row.profile), text(row.video_id), integer(row.position_ms), integer(row.runtime_ms),
+          boolInteger(row.played), integer(row.play_count), nullableInteger(row.last_played_at),
+          integer(row.updated_at), nullableText(row.origin),
+        ]),
+      },
+      {
+        table: 'jellyfin_preferences',
+        columns: ['profile', 'pref_id', 'client', 'data', 'updated_at'],
+        rows: rows('preferences', (row) => [
+          text(row.profile), text(row.pref_id), text(row.client), text(row.data), integer(row.updated_at),
+        ]),
+      },
+      {
+        table: 'jellyfin_watchlist',
+        columns: ['profile', 'meta_id', 'media_type', 'listed', 'updated_at'],
+        rows: rows('watchlist', (row) => [
+          text(row.profile), text(row.meta_id), text(row.media_type), boolInteger(row.listed), integer(row.updated_at),
+        ]),
+      },
+      {
+        table: 'jellyfin_favourites',
+        columns: ['profile', 'meta_id', 'media_type', 'updated_at'],
+        rows: rows('favourites', (row) => [
+          text(row.profile), text(row.meta_id), text(row.media_type), integer(row.updated_at),
+        ]),
+      },
+      {
+        table: 'jellyfin_dropped',
+        columns: ['profile', 'meta_id', 'updated_at'],
+        rows: rows('dropped', (row) => [
+          text(row.profile), text(row.meta_id), integer(row.updated_at),
+        ]),
+      },
+      {
+        table: 'jellyfin_ratings',
+        columns: ['profile', 'meta_id', 'rating', 'pmdb_id', 'updated_at'],
+        rows: rows('ratings', (row) => [
+          text(row.profile), text(row.meta_id), integer(row.rating), nullableText(row.pmdb_id), integer(row.updated_at),
+        ]),
+      },
+    ];
+    const chunkSize = this.type === 'sqlite' ? 80 : 500;
+
+    if (this.type === 'sqlite') {
+      this.db.transaction(() => {
+        for (const dataset of datasets) {
+          this.db.prepare(`DELETE FROM ${dataset.table} WHERE user_uuid = ?`).run(userUUID);
+          for (let offset = 0; offset < dataset.rows.length; offset += chunkSize) {
+            const chunk = dataset.rows.slice(offset, offset + chunkSize);
+            const rowPlaceholders = `(${Array(dataset.columns.length + 1).fill('?').join(', ')})`;
+            const placeholders = Array(chunk.length).fill(rowPlaceholders).join(', ');
+            const query = `INSERT INTO ${dataset.table} (user_uuid, ${dataset.columns.join(', ')}) VALUES ${placeholders}`;
+            this.db.prepare(query).run(chunk.flatMap((row: any[]) => [userUUID, ...row]));
+          }
+        }
+      })();
+      return;
+    }
+
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      for (const dataset of datasets) {
+        await client.query(`DELETE FROM ${dataset.table} WHERE user_uuid = $1`, [userUUID]);
+        for (let offset = 0; offset < dataset.rows.length; offset += chunkSize) {
+          const chunk = dataset.rows.slice(offset, offset + chunkSize);
+          const values: unknown[] = [];
+          const placeholders = chunk.map((row: any[], rowIndex: number) => {
+            const first = rowIndex * (dataset.columns.length + 1) + 1;
+            values.push(userUUID, ...row);
+            return `(${Array.from({ length: dataset.columns.length + 1 }, (_, index) => `$${first + index}`).join(', ')})`;
+          }).join(', ');
+          await client.query(
+            `INSERT INTO ${dataset.table} (user_uuid, ${dataset.columns.join(', ')}) VALUES ${placeholders}`,
+            values
+          );
+        }
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+    async getGoogleDriveBackupSettings(userUUID: string): Promise<any | null> {
+      const query = this.type === 'sqlite'
+        ? 'SELECT * FROM google_drive_backup_settings WHERE user_uuid = ?'
+        : 'SELECT * FROM google_drive_backup_settings WHERE user_uuid = $1';
+      return (await this.getQuery(query, [userUUID])) || null;
+    }
+
+    async saveGoogleDriveBackupSettings(
+      userUUID: string,
+      tokenId: string,
+      retentionLimit = 10,
+      enabled = true,
+      nextBackupAt = Date.now()
+    ): Promise<void> {
+      const query = this.type === 'sqlite'
+        ? `INSERT INTO google_drive_backup_settings
+             (user_uuid, token_id, enabled, retention_limit, next_backup_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(user_uuid) DO UPDATE SET
+             token_id = excluded.token_id,
+             enabled = excluded.enabled,
+             retention_limit = excluded.retention_limit,
+             next_backup_at = excluded.next_backup_at,
+             last_error = NULL,
+             lock_until = NULL`
+        : `INSERT INTO google_drive_backup_settings
+             (user_uuid, token_id, enabled, retention_limit, next_backup_at)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT(user_uuid) DO UPDATE SET
+             token_id = EXCLUDED.token_id,
+             enabled = EXCLUDED.enabled,
+             retention_limit = EXCLUDED.retention_limit,
+             next_backup_at = EXCLUDED.next_backup_at,
+             last_error = NULL,
+             lock_until = NULL`;
+      await this.runQuery(query, [userUUID, tokenId, enabled ? 1 : 0, retentionLimit, nextBackupAt]);
+    }
+
+    async updateGoogleDriveBackupSettings(
+      userUUID: string,
+      enabled: boolean,
+      retentionLimit: number,
+      nextBackupAt: number
+    ): Promise<boolean> {
+      const query = this.type === 'sqlite'
+        ? `UPDATE google_drive_backup_settings
+           SET enabled = ?, retention_limit = ?, next_backup_at = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE user_uuid = ?`
+        : `UPDATE google_drive_backup_settings
+           SET enabled = $1, retention_limit = $2, next_backup_at = $3, updated_at = CURRENT_TIMESTAMP
+           WHERE user_uuid = $4`;
+      const result = await this.runQuery(query, [enabled ? 1 : 0, retentionLimit, nextBackupAt, userUUID]);
+      return this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0;
+    }
+
+    async getDueGoogleDriveBackups(now: number): Promise<any[]> {
+      const query = this.type === 'sqlite'
+        ? `SELECT user_uuid FROM google_drive_backup_settings
+           WHERE enabled = 1 AND next_backup_at <= ?
+             AND (lock_until IS NULL OR lock_until <= ?)`
+        : `SELECT user_uuid FROM google_drive_backup_settings
+           WHERE enabled = 1 AND next_backup_at <= $1
+             AND (lock_until IS NULL OR lock_until <= $2)`;
+      return this.allQuery(
+        query,
+        [now, now]
+      );
+    }
+
+    async claimGoogleDriveBackup(userUUID: string, now: number, lockUntil: number, allowDisabled = false): Promise<boolean> {
+      const enabledClause = allowDisabled ? '' : 'AND enabled = 1';
+      const query = this.type === 'sqlite'
+        ? `UPDATE google_drive_backup_settings
+           SET lock_until = ?
+           WHERE user_uuid = ? ${enabledClause}
+             AND (lock_until IS NULL OR lock_until <= ?)`
+        : `UPDATE google_drive_backup_settings
+           SET lock_until = $1
+           WHERE user_uuid = $2 ${enabledClause}
+             AND (lock_until IS NULL OR lock_until <= $3)`;
+      const result = await this.runQuery(query, [lockUntil, userUUID, now]);
+      return this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0;
+    }
+
+    async recordGoogleDriveBackupSuccess(userUUID: string, now: number): Promise<void> {
+      const query = this.type === 'sqlite'
+        ? `UPDATE google_drive_backup_settings
+           SET last_backup_at = ?, next_backup_at = ?, last_error = NULL, lock_until = NULL,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE user_uuid = ?`
+        : `UPDATE google_drive_backup_settings
+           SET last_backup_at = $1, next_backup_at = $2, last_error = NULL, lock_until = NULL,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE user_uuid = $3`;
+      await this.runQuery(query, [now, now + 24 * 60 * 60 * 1000, userUUID]);
+    }
+
+    async recordGoogleDriveBackupFailure(userUUID: string, message: string, retryAt: number): Promise<void> {
+      const query = this.type === 'sqlite'
+        ? `UPDATE google_drive_backup_settings
+           SET next_backup_at = ?, last_error = ?, lock_until = NULL, updated_at = CURRENT_TIMESTAMP
+           WHERE user_uuid = ?`
+        : `UPDATE google_drive_backup_settings
+           SET next_backup_at = $1, last_error = $2, lock_until = NULL, updated_at = CURRENT_TIMESTAMP
+           WHERE user_uuid = $3`;
+      await this.runQuery(query, [retryAt, message, userUUID]);
+    }
+
+    async deleteGoogleDriveBackupSettings(userUUID: string): Promise<boolean> {
+      const query = this.type === 'sqlite'
+        ? 'DELETE FROM google_drive_backup_settings WHERE user_uuid = ?'
+        : 'DELETE FROM google_drive_backup_settings WHERE user_uuid = $1';
+      const result = await this.runQuery(query, [userUUID]);
+      return this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0;
+    }
   // --- Accounts and config profiles ---
 
   /**

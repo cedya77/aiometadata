@@ -27,7 +27,7 @@ interface SaveContextType {
   isSaving: boolean;
   error: string;
   savedConfig: SavedConfig | null;
-  markConfigPersisted: (persisted: AppConfig) => void;
+  markConfigPersisted: (persisted: AppConfig, saved?: SavedConfig) => void;
   /** Null until a save target exists, so callers can tell "unknown" from "no changes". */
   isDirty: boolean | null;
   canSave: boolean;
@@ -177,8 +177,9 @@ export function SaveProvider({ children }: { children: ReactNode }) {
 
   // A route that saves the configuration itself leaves the page holding exactly what
   // is on disk, so the baseline moves with it instead of reporting unsaved work.
-  const markConfigPersisted = useCallback((persisted: AppConfig) => {
+  const markConfigPersisted = useCallback((persisted: AppConfig, saved?: SavedConfig) => {
     setSavedFingerprint(fingerprintConfig(persisted));
+    if (saved) setSavedConfig(saved);
   }, []);
 
   const currentFingerprint = useMemo(() => fingerprintConfig(config), [config]);

@@ -4,10 +4,10 @@ This guide will help you set up your development environment and understand the 
 
 ## Prerequisites
 
-- Node.js 22.x
+- Node.js 24.x (the version in `.nvmrc`)
 - npm 9.x or higher
 - Git
-- MongoDB (local or Atlas)
+- SQLite (default), or PostgreSQL when configured
 - Basic knowledge of TypeScript and React
 
 ## Project Structure
@@ -39,15 +39,7 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env` with your development credentials:
-```env
-MONGODB_URI=your_mongodb_uri
-FANART_API=your_fanart_key
-TMDB_API_KEY=your_tmdb_key
-RPDB_API_KEY=your_rpdb_key
-HOST_NAME=http://localhost:3232
-PORT=3232
-```
+Edit `.env` with the API keys needed for the feature you are developing. Do not commit `.env`.
 
 4. Start development server:
 ```bash
@@ -71,9 +63,6 @@ git checkout -b feature/your-feature-name
 
 3. **Testing**:
 ```bash
-# Run tests
-npm test
-
 # Run all lint scopes
 npm run lint
 

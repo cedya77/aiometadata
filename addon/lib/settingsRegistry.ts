@@ -344,6 +344,38 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     default: '',
     envOnly: true,
   },
+  {
+    key: 'GOOGLE_DRIVE_CLIENT_ID',
+    envVar: 'GOOGLE_DRIVE_CLIENT_ID',
+    label: 'Google Drive Client ID',
+    description: 'Google OAuth web application client ID used for per-UUID Drive backups',
+    category: 'OAuth',
+    type: 'string',
+    default: '',
+    sensitive: true,
+    envOnly: true,
+  },
+  {
+    key: 'GOOGLE_DRIVE_CLIENT_SECRET',
+    envVar: 'GOOGLE_DRIVE_CLIENT_SECRET',
+    label: 'Google Drive Client Secret',
+    description: 'Google OAuth web application client secret used for per-UUID Drive backups',
+    category: 'OAuth',
+    type: 'string',
+    default: '',
+    sensitive: true,
+    envOnly: true,
+  },
+  {
+    key: 'GOOGLE_DRIVE_REDIRECT_URI',
+    envVar: 'GOOGLE_DRIVE_REDIRECT_URI',
+    label: 'Google Drive Redirect URI',
+    description: 'Optional Google Drive OAuth callback override',
+    category: 'OAuth',
+    type: 'string',
+    default: '',
+    envOnly: true,
+  },
 
   // --- Cache ---
   {

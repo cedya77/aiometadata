@@ -710,6 +710,7 @@ addon.use(requireSigninForAppPages);
 addon.use(requireSigninForApi);
 
 // --- Configuration Database API Routes ---
+require('./lib/googleDriveBackup').registerGoogleDriveBackupRoutes(addon);
 addon.post("/api/config/save", configApi.saveConfig.bind(configApi));
 addon.post("/api/config/load/:userUUID", configLoadRateLimitMiddleware, configApi.loadConfig.bind(configApi));
 addon.put("/api/config/update/:userUUID", configApi.updateConfig.bind(configApi));
