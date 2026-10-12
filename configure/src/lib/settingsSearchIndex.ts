@@ -3,12 +3,6 @@ import type { SettingsSearchEntry } from './settingsSearch';
 export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   // ── General — configure/src/components/sections/GeneralSettings.tsx ──
   {
-    id: 'general.contentRatingCountry', section: 'general', anchor: 'content-rating-country',
-    label: 'Content Rating Country',
-    description: 'Country for displayed age ratings.',
-    keywords: ['certification', 'classification', 'age', 'country', 'region'],
-  },
-  {
     id: 'general.language', section: 'general', anchor: 'language',
     label: 'Display Language',
     description: 'Language for titles and descriptions.',
@@ -43,6 +37,12 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     label: 'Display Age Rating',
     description: 'Show rating/certification in genres.',
     keywords: ['18+', 'certification', 'pg', 'mature'],
+  },
+  {
+    id: 'general.contentRatingCountry', section: 'general', anchor: 'content-rating-country',
+    label: 'Rating Country',
+    description: "Which country's rating the age rating shows, under Display Age Rating.",
+    keywords: ['certification', 'classification', 'age', 'country', 'region'],
   },
   {
     id: 'general.includeAdult', section: 'general', anchor: 'adult-content',

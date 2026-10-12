@@ -246,22 +246,6 @@ export function GeneralSettings() {
 
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
               <div className="min-w-[12rem] flex-1">
-                <Label htmlFor="content-rating-country" className="font-medium">Content Rating Country</Label>
-                <p className="text-sm text-muted-foreground">Country for displayed age ratings</p>
-              </div>
-              <Select value={config.contentRatingCountry || 'auto'} onValueChange={value => setConfig(prev => ({ ...prev, contentRatingCountry: value }))}>
-                <SelectTrigger id="content-rating-country" className="w-full sm:w-[240px] shrink-0">
-                  <SelectValue placeholder="Follow display language" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">Automatic (follow language)</SelectItem>
-                  {ratingCountryOptions.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
-              <div className="min-w-[12rem] flex-1">
                 <Label htmlFor="timezone" className="font-medium">Timezone</Label>
                 <p className="text-sm text-muted-foreground">For calendar-based features (e.g., Trakt Calendar).</p>
               </div>
@@ -350,6 +334,23 @@ export function GeneralSettings() {
               </div>
               <Switch id="display-age-rating" checked={config.displayAgeRating} onCheckedChange={handleDisplayAgeRatingChange} />
             </div>
+            {config.displayAgeRating && (
+              <div className="ml-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-r-lg border-l border-border p-3 pl-4 hover:bg-accent/50 transition-colors">
+                <div className="min-w-[12rem] flex-1">
+                  <Label htmlFor="content-rating-country" className="font-medium">Rating Country</Label>
+                  <p className="text-sm text-muted-foreground">Which country's rating the age rating shows.</p>
+                </div>
+                <Select value={config.contentRatingCountry || 'auto'} onValueChange={value => setConfig(prev => ({ ...prev, contentRatingCountry: value }))}>
+                  <SelectTrigger id="content-rating-country" className="w-full sm:w-[240px] shrink-0">
+                    <SelectValue placeholder="Same as display language" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Same as display language</SelectItem>
+                    {ratingCountryOptions.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </CardContent>
         </Card>
 
