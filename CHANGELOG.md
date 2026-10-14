@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.5.1](https://github.com/cedya77/aiometadata/compare/v3.5.0...v3.5.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **catalogs:** give merged catalogs a poster shape that matches their sources by default ([a46b4b1](https://github.com/cedya77/aiometadata/commit/a46b4b11f8dac827533dae605892390737d4a2c9))
+* **jellyfin:** follow Simkl anime into their next season ([5101be6](https://github.com/cedya77/aiometadata/commit/5101be6d339b7cc6a41f9e3a817412752b5cd642))
+* **jellyfin:** list watchlisted shows in Upcoming ([73fb676](https://github.com/cedya77/aiometadata/commit/73fb6767186585bcddb53173b2bdabd2e5cd9e5c))
+* **jellyfin:** reach the stream addon from apps whose device name is not plain ASCII ([d6f4ea0](https://github.com/cedya77/aiometadata/commit/d6f4ea0e97ff3ad9cf284c93db1d03d4a249d09a))
+* **jellyfin:** send anime films in the watchlist and favourites as movies ([600cae1](https://github.com/cedya77/aiometadata/commit/600cae196bb72178323dd3455e9c0b4127dd8c75))
+* **jellyfin:** show a watchlist change in Upcoming straight away ([2225074](https://github.com/cedya77/aiometadata/commit/222507491418d160deadf47a1f9f0d4e63869420))
+
 ## [3.5.0](https://github.com/cedya77/aiometadata/compare/v3.4.1...v3.5.0) (2026-10-13)
 
 
