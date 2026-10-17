@@ -1,9 +1,10 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Bookmark, ChevronDown, Film, LayoutGrid, Layers, Loader2, Star, ThumbsDown, Tv, Undo2 } from "lucide-react";
+import { ArrowRight, Bookmark, ChevronDown, Film, LayoutGrid, Layers, Loader2, Star, ThumbsDown, Tv, Undo2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { sizedArt } from "./art";
+import { useOpenTitle } from "./jellyfinUtils";
 import { JELLYFIN_LIBRARY_PAGE, useJellyfinLibrary, useJellyfinUndrop, type DashboardTab, type JellyfinLibraryKind, type JellyfinLibraryRow, type JellyfinLibraryTab } from "@/hooks/useDashboardQueries";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
@@ -103,7 +104,7 @@ function Stars({ value }: { value: number }) {
 
 const metaLine = (row: JellyfinLibraryRow) => [row.type === "movie" ? "Movie" : "Show", row.year, row.score ? `★ ${row.score}` : null].filter(Boolean).join(" · ");
 
-function ListRow({ row, number, active, onPick }: { row: JellyfinLibraryRow; number: number; active: boolean; onPick: () => void }) {
+function ListRow({ row, number, active, onPick, onOpen }: { row: JellyfinLibraryRow; number: number; active: boolean; onPick: () => void; onOpen: () => void }) {
   const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -118,8 +119,9 @@ function ListRow({ row, number, active, onPick }: { row: JellyfinLibraryRow; num
     <button
       ref={ref}
       type="button"
-      onClick={onPick}
+      onClick={onOpen}
       onMouseEnter={onPick}
+      onFocus={onPick}
       className={cx(
         "group relative isolate flex w-full shrink-0 items-center gap-3 overflow-hidden rounded-xl py-2 pl-2 pr-3 text-left transition-all duration-300",
         active ? "ring-1 ring-blue-400/50 shadow-[0_10px_40px_-12px_rgba(59,130,246,0.55)]" : "hover:bg-white/[0.05]"
@@ -183,7 +185,7 @@ function useSwipe(index: number, count: number, onPick: (i: number) => void) {
   };
 }
 
-function Deck({ rows, index, onPick }: { rows: JellyfinLibraryRow[]; index: number; onPick: (i: number) => void }) {
+function Deck({ rows, index, onPick, onOpen }: { rows: JellyfinLibraryRow[]; index: number; onPick: (i: number) => void; onOpen: (row: JellyfinLibraryRow) => void }) {
   const stage = useRef<HTMLDivElement>(null);
   const wheel = useRef(0);
   const [width, setWidth] = useState(800);
@@ -227,7 +229,8 @@ function Deck({ rows, index, onPick }: { rows: JellyfinLibraryRow[]; index: numb
           <button
             key={row.metaId}
             type="button"
-            onClick={() => onPick(i)}
+            onClick={() => (d === 0 ? onOpen(row) : onPick(i))}
+            title={d === 0 ? `Open ${row.title}` : row.title}
             aria-label={row.title}
             className="absolute left-1/2 top-1/2 transition-[transform,opacity,filter] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
             style={{ width: card, transform, zIndex: 20 - depth, opacity: depth === reach ? 0 : 1 - depth * 0.12, filter: d === 0 ? "none" : `brightness(${1 - depth * 0.16})`, transformStyle: "preserve-3d" }}
@@ -286,6 +289,7 @@ function TiltCard({ row, onPick, active, action }: { row: JellyfinLibraryRow; on
 
 function Detail({ row, tab, action }: { row: JellyfinLibraryRow; tab: JellyfinLibraryTab; action?: React.ReactNode }) {
   const [logoFailed, setLogoFailed] = useState(false);
+  const open = useOpenTitle();
   useEffect(() => setLogoFailed(false), [row.metaId]);
   return (
     <div key={row.metaId} className="glass animate-fade-in rounded-2xl p-4 sm:p-5">
@@ -302,7 +306,10 @@ function Detail({ row, tab, action }: { row: JellyfinLibraryRow; tab: JellyfinLi
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         {row.rating !== null && <span className="inline-flex items-center gap-2"><Stars value={row.rating} /><span className="tabular-nums text-foreground">{row.rating}/10</span></span>}
         {row.at && <span>{tab === "watchlist" ? "Added" : tab === "ratings" ? "Rated" : "Dropped"} {ago(row.at)}</span>}
-        {action && <span className="ml-auto">{action}</span>}
+        <span className="ml-auto flex items-center gap-2">
+          {open && <button type="button" onClick={() => open({ id: row.metaId, type: row.type })} className="glass inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium hover:bg-white/15">Open <ArrowRight className="size-3.5" /></button>}
+          {action}
+        </span>
       </div>
     </div>
   );
@@ -396,6 +403,8 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
     if (i >= rows.length - 6) loadMore();
   };
   const swipe = useSwipe(at, rows.length, pick);
+  const openTitle = useOpenTitle();
+  const openRow = (row: JellyfinLibraryRow) => openTitle?.({ id: row.metaId, type: row.type });
   const pickTab = (next: JellyfinLibraryTab) => {
     setTab(next);
     remember("jellyfin.library.tab", next);
@@ -489,7 +498,7 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
                 ? Array.from({ length: 7 }, (_, i) => <Skeleton key={i} className="h-[60px] shrink-0 rounded-xl" />)
                 : rows.length === 0
                   ? <p className="py-10 text-center text-sm text-muted-foreground">{firstFailed ? "" : "Nothing here yet."}</p>
-                  : rows.map((row, i) => <ListRow key={row.metaId} row={row} number={i + 1} active={i === at} onPick={() => pick(i)} />)}
+                  : rows.map((row, i) => <ListRow key={row.metaId} row={row} number={i + 1} active={i === at} onPick={() => pick(i)} onOpen={() => { pick(i); openRow(row); }} />)}
               <div ref={listSentinel} />
               {rows.length > 0 && more_}
             </div>
@@ -501,7 +510,7 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
                 <div className="flex h-[330px] items-center justify-center sm:h-[470px]"><Skeleton className="aspect-[2/3] w-40 rounded-xl sm:w-56" /></div>
               ) : focus ? (
                 <>
-                  <Deck rows={rows} index={at} onPick={pick} />
+                  <Deck rows={rows} index={at} onPick={pick} onOpen={openRow} />
                   <Detail row={focus} tab={tab} action={tab === "dropped" ? pickUpButton(focus) : undefined} />
                 </>
               ) : firstFailed ? (
@@ -518,7 +527,7 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
               <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8">
                 {firstPage
                   ? Array.from({ length: 16 }, (_, i) => <Skeleton key={i} className="aspect-[2/3] rounded-xl" />)
-                  : rows.map((row, i) => <TiltCard key={row.metaId} row={row} active={false} action={tab === "dropped" ? pickUpButton(row, true) : undefined} onPick={() => { setIndex(i); pickView("deck"); }} />)}
+                  : rows.map((row, i) => <TiltCard key={row.metaId} row={row} active={false} action={tab === "dropped" ? pickUpButton(row, true) : undefined} onPick={() => { setIndex(i); openRow(row); }} />)}
               </div>
               {firstFailed && failedPanel}
               <div ref={wallSentinel} />

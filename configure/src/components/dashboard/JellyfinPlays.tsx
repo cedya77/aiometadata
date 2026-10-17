@@ -3,15 +3,16 @@ import { Button } from "@/components/ui/button";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2 } from "lucide-react";
 import { type JellyfinPlayRow } from "@/hooks/useDashboardQueries";
 import { Art, Sentinel } from "./JellyfinShared";
-import { when, clock, percentOf, duration } from "./jellyfinUtils";
+import { when, clock, percentOf, duration, useOpenTitle, titleRefOf } from "./jellyfinUtils";
 
 export function ProgressCard({ row }: { row: JellyfinPlayRow }) {
   const pct = percentOf(row);
   const left = row.runtimeMs > row.positionMs ? duration(row.runtimeMs - row.positionMs) : "";
   const code = episodeCode(row, true);
   const subtitle = code ? `${code}${row.episodeTitle ? ` · ${row.episodeTitle}` : ""}` : row.episode;
+  const open = useOpenTitle();
   return (
-    <div className="group relative overflow-hidden rounded-lg bg-muted/40 ring-1 ring-white/[0.06] transition hover:ring-white/20" title={`${row.title}${row.episode ? ` · ${row.episode}` : ""}`}>
+    <div role={open ? "button" : undefined} tabIndex={open ? 0 : undefined} onClick={open ? () => open(titleRefOf(row)) : undefined} onKeyDown={open ? (event) => { if (event.key === "Enter") open(titleRefOf(row)); } : undefined} className={`group relative overflow-hidden rounded-lg bg-muted/40 ring-1 ring-white/[0.06] transition hover:ring-white/20 ${open ? "cursor-pointer" : ""}`} title={`${row.title}${row.episode ? ` · ${row.episode}` : ""}`}>
       <div className="transition-transform duration-500 group-hover:scale-[1.03]"><Art src={row.backdropUrl && !row.seriesId ? row.backdropUrl : row.imageUrl ?? row.backdropUrl} title="" wide /></div>
       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/45 to-black/0" />
       <span className="glass absolute top-2 left-2 rounded-full px-2 py-0.5 text-[10px] text-white/85">{row.profile} · {when(row.lastPlayedAt ?? row.updatedAt)}</span>
@@ -145,13 +146,14 @@ function EpisodeLine({ row }: { row: JellyfinPlayRow }) {
 }
 function DayTileCard({ tile }: { tile: DayTile }) {
   const [open, setOpen] = useState(false);
+  const openTitle = useOpenTitle();
   const many = tile.rows.length > 1;
   const first = tile.rows[0];
   const last = tile.rows[tile.rows.length - 1];
   return (
     <div className={`rounded-lg border border-white/[0.06] bg-muted/30 ${open ? "sm:col-span-2 lg:col-span-3" : ""}`}>
       <div className="flex gap-3 p-3">
-        <div className="w-16 shrink-0"><Art src={tile.posterUrl} title={tile.title} wide={false} /></div>
+        <button type="button" disabled={!openTitle} onClick={() => openTitle?.(titleRefOf(tile.rows[0]))} className="w-16 shrink-0 transition hover:opacity-80" aria-label={`Open ${tile.title}`}><Art src={tile.posterUrl} title={tile.title} wide={false} /></button>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold leading-tight truncate" title={tile.title}>{tile.title}</p>
           <p className="text-[11px] text-muted-foreground">{tile.profile}</p>

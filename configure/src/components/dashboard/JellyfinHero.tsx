@@ -54,14 +54,18 @@ export function Hero({ data, profile, onProfile, activity, controls, switching }
   controls: React.ReactNode;
   switching: boolean;
 }) {
-  const shown = profile === null ? data.profiles : data.profiles.filter((p) => p.key === profile);
+  const history = data.history === undefined ? data.profile : data.history;
+  const shown = history === null ? data.profiles : data.profiles.filter((p) => p.key === history);
+  const viewers = data.viewers ?? data.profiles;
+  const viewer = profile === null ? null : viewers.find((p) => p.key === profile) ?? null;
+  const borrowed = viewer !== null && history !== null && viewer.key !== history ? shown[0]?.name ?? null : null;
   const sum = (pick: (p: JellyfinProfileSummary) => number) => shown.reduce((n, p) => n + pick(p), 0);
   const lastActivity = shown.reduce<number | null>((at, p) => Math.max(at ?? 0, p.lastActivity ?? 0) || null, null);
-  const lead = profile === null ? data.profiles[0] : shown[0];
+  const lead = profile === null ? data.profiles[0] : viewer ?? shown[0];
   const backdrop = sizedArt(data.sessions[0]?.backdropUrl ?? data.inProgress[0]?.backdropUrl ?? data.recentlyPlayed[0]?.backdropUrl
     ?? data.sessions[0]?.imageUrl ?? data.inProgress[0]?.imageUrl ?? data.recentlyPlayed[0]?.imageUrl, 1280);
   const [loaded, setLoaded] = useState<string | null>(null);
-  const chips = data.profiles.length > 1;
+  const chips = viewers.length > 1;
   return (
     <div className="relative overflow-hidden">
       {backdrop && (
@@ -87,7 +91,7 @@ export function Hero({ data, profile, onProfile, activity, controls, switching }
               <p className="text-xs text-muted-foreground truncate">
                 <span className="font-mono">{data.userUUID.slice(0, 8)}</span>
                 {lastActivity ? ` · active ${when(lastActivity)}` : ""}
-                {lead?.sharedWith.length ? ` · shared with ${lead.sharedWith.join(", ")}` : ""}
+                {borrowed ? ` · shares ${borrowed}'s history` : shown[0]?.sharedWith.length ? ` · shared with ${shown[0].sharedWith.join(", ")}` : ""}
               </p>
             )}
           </div>
@@ -95,7 +99,7 @@ export function Hero({ data, profile, onProfile, activity, controls, switching }
         {chips && (
           <div className="flex flex-wrap gap-1.5">
             <button type="button" onClick={() => onProfile(null)} className={`h-7 rounded-full px-3 text-xs ring-1 transition-colors ${profile === null ? "bg-foreground text-background ring-transparent" : "glass ring-transparent hover:bg-black/50"}`}>All</button>
-            {data.profiles.map((p) => (
+            {viewers.map((p) => (
               <button key={p.key} type="button" onClick={() => onProfile(p.key)} className={`h-7 inline-flex items-center gap-1.5 rounded-full pl-1 pr-3 text-xs ring-1 transition-colors ${profile === p.key ? "bg-foreground text-background ring-transparent" : "glass ring-transparent hover:bg-black/50"}`}>
                 {switching && profile === p.key ? <Loader2 className="h-5 w-5 animate-spin p-0.5" /> : <Avatar src={p.avatar} name={p.name} size="sm" />}
                 {p.name}

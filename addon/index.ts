@@ -8352,6 +8352,86 @@ addon.post("/api/dashboard/jellyfin/:userUUID/library/undrop", requireDashboardA
   }
 });
 
+addon.get("/api/dashboard/jellyfin/:userUUID/searches", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const payload = await require('./lib/jellyfin/dashboard').dashboardSearches(String(req.params.userUUID), profile);
+    if (!payload) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to list searches' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/find", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const query = String(req.query.q ?? '').trim().slice(0, 100);
+    if (!query) {
+      res.json({ query, available: true, results: [] });
+      return;
+    }
+    const catalog = typeof req.query.catalog === 'string' && req.query.catalog ? req.query.catalog : null;
+    const payload = await require('./lib/jellyfin/dashboard').dashboardFindTitles(String(req.params.userUUID), profile, query, catalog);
+    if (!payload) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to search titles' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/title", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const ref = {
+      item: typeof req.query.item === 'string' ? req.query.item : undefined,
+      id: typeof req.query.id === 'string' ? req.query.id : undefined,
+      type: req.query.type === 'movie' ? 'movie' : 'series',
+    };
+    const payload = await require('./lib/jellyfin/dashboard').dashboardTitle(String(req.params.userUUID), profile, ref);
+    if (!payload) {
+      res.status(404).json({ error: 'No such title' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the title' });
+  }
+});
+
+const TITLE_ACTIONS = new Set(['played', 'unplayed', 'playedUpTo', 'watchlist', 'unwatchlist', 'drop', 'undrop', 'rate']);
+
+addon.post("/api/dashboard/jellyfin/:userUUID/title/action", requireDashboardAdmin, async (req, res) => {
+  try {
+    const action = String(req.body?.action ?? '');
+    const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds.filter((id) => typeof id === 'string' && id).slice(0, 500) : [];
+    if (!TITLE_ACTIONS.has(action) || !itemIds.length) {
+      res.status(400).json({ error: 'Name an action and the items it applies to' });
+      return;
+    }
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    const rating = req.body?.rating === null || req.body?.rating === undefined ? null : Number(req.body.rating);
+    const done = await require('./lib/jellyfin/dashboard').dashboardTitleAction(String(req.params.userUUID), profile, action, itemIds, rating);
+    if (done === null) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json({ done });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to change the title' });
+  }
+});
+
 addon.post("/api/dashboard/jellyfin/:userUUID/shows/refresh", requireDashboardAdmin, async (req, res) => {
   try {
     const metaId = typeof req.body?.metaId === 'string' ? req.body.metaId.trim() : '';

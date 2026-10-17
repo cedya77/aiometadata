@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import JellyfinCalendar from "./JellyfinCalendar";
 import JellyfinLibrary from "./JellyfinLibrary";
+import JellyfinTitlePage from "./JellyfinTitle";
+import JellyfinSearch, { type LocalTitle } from "./JellyfinSearch";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,12 +16,15 @@ import {
   useJellyfinSearch,
   type DashboardTab,
   type JellyfinPlayRow,
+  type JellyfinTitleRef,
 } from "@/hooks/useDashboardQueries";
 import { ActivityMap, Hero, SyncStrip } from "./JellyfinHero";
 import { MoreFooter, PlayTable, PlayedByDay, ProgressCard, Row } from "./JellyfinPlays";
 import { Sentinel, Shelf, Stat } from "./JellyfinShared";
 import { Shows } from "./JellyfinShows";
-import { when, useFolded, useRemembered, activityOf, usePagedPlays } from "./jellyfinUtils";
+import { when, useFolded, useRemembered, activityOf, usePagedPlays, OpenTitleContext, titleRefOf } from "./jellyfinUtils";
+
+const TRACKER_LABELS: Record<string, string> = { mdblist: "MDBList", simkl: "Simkl", anilist: "AniList", mal: "MyAnimeList", publicmetadb: "PublicMetaDB" };
 
 type View = "cards" | "table";
 function ShelfSkeleton() {
@@ -64,6 +69,17 @@ function Configuration({ userUUID, activeTab, onClose }: { userUUID: string; act
   const { data, isLoading, isError, isFetching, isPlaceholderData } = useJellyfinConfiguration(userUUID, profile, null, { activeTab });
   const progress = usePagedPlays(userUUID, profile, "progress", data?.inProgress ?? EMPTY_PLAYS, data?.totals?.progress ?? 0, activeTab);
   const played = usePagedPlays(userUUID, profile, "played", data?.recentlyPlayed ?? EMPTY_PLAYS, data?.totals?.played ?? 0, activeTab);
+  const [openTitle, setOpenTitle] = useState<JellyfinTitleRef | null>(null);
+  const localTitles = useMemo<LocalTitle[]>(() => {
+    const out = new Map<string, LocalTitle>();
+    for (const row of [...progress.rows, ...played.rows]) {
+      const ref = titleRefOf(row);
+      if (!("id" in ref) || out.has(ref.id)) continue;
+      out.set(ref.id, { id: ref.id, type: ref.type, title: row.title, posterUrl: row.posterUrl, state: row.positionMs > 0 && !row.played ? "In progress" : row.played ? "Watched" : null });
+    }
+    return [...out.values()];
+  }, [progress.rows, played.rows]);
+  const closeTitle = useCallback(() => setOpenTitle(null), []);
 
   const runExport = async () => {
     setExporting(true);
@@ -81,11 +97,14 @@ function Configuration({ userUUID, activeTab, onClose }: { userUUID: string; act
   if (isError || !data) return <p className="text-xs text-red-500 px-4 py-3">Could not load this configuration's playback.</p>;
 
   const switching = isPlaceholderData && (data.userUUID !== userUUID || data.profile !== profile);
-  const shown = profile === null ? data.profiles : data.profiles.filter((p) => p.key === profile);
+  const history = data.history === undefined ? data.profile : data.history;
+  const shown = history === null ? data.profiles : data.profiles.filter((p) => p.key === history);
   const activity = activityOf(shown);
-  const profileName = (profile === null ? data.profiles[0]?.name : data.profiles.find((p) => p.key === profile)?.name) ?? data.label;
+  const profileName = (profile === null ? data.profiles[0]?.name : (data.viewers ?? data.profiles).find((p) => p.key === profile)?.name) ?? data.label;
+  const historyName = (history === null ? data.profiles[0]?.name : data.profiles.find((p) => p.key === history)?.name) ?? profileName;
   const controls = (
     <>
+      <JellyfinSearch userUUID={userUUID} profile={profile} profileName={profileName} local={localTitles} activeTab={activeTab} />
       <div className="glass inline-flex rounded-full p-0.5">
         <Button size="sm" variant={view === "cards" ? "secondary" : "ghost"} className="h-7 rounded-full px-2.5" onClick={() => setView("cards")} aria-label="Cards"><LayoutGrid className="h-3.5 w-3.5" /></Button>
         <Button size="sm" variant={view === "table" ? "secondary" : "ghost"} className="h-7 rounded-full px-2.5" onClick={() => setView("table")} aria-label="Table"><TableProperties className="h-3.5 w-3.5" /></Button>
@@ -98,8 +117,11 @@ function Configuration({ userUUID, activeTab, onClose }: { userUUID: string; act
     </>
   );
 
+  const trackers = data.sync.filter((row) => row.profiles.includes(historyName)).map((row) => TRACKER_LABELS[row.service] ?? row.service);
   return (
+    <OpenTitleContext.Provider value={setOpenTitle}>
     <div className="border-t border-white/[0.06]">
+      {openTitle && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} trackers={trackers} titleRef={openTitle} activeTab={activeTab} onClose={closeTitle} />}
       <Hero data={data} profile={profile} onProfile={setProfile} activity={activity} controls={controls} switching={switching} />
       {switching ? (
         <div className="divide-y divide-white/[0.06] border-t border-white/[0.06]">
@@ -151,6 +173,7 @@ function Configuration({ userUUID, activeTab, onClose }: { userUUID: string; act
       </div>
       )}
     </div>
+    </OpenTitleContext.Provider>
   );
 }
 export default function DashboardJellyfin({ activeTab }: { activeTab: DashboardTab }) {

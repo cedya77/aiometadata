@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useOpenTitle } from "./jellyfinUtils";
 import { useJellyfinCalendar, type DashboardTab, type JellyfinCalendarRow } from "@/hooks/useDashboardQueries";
 
 const WEEK = 7;
@@ -97,6 +98,7 @@ function FadeImage({ src, className, onError }: { src: string; className: string
 }
 
 const EpisodeCard = ({ airing: { row, at, aired }, large = false, onFocus }: { airing: Airing; large?: boolean; onFocus: (src: string | undefined) => void }) => {
+  const open = useOpenTitle();
   const sources = artFor(row, aired, large ? 720 : 480);
   const [sourceIndex, setSourceIndex] = useState(0);
   const [logoFailed, setLogoFailed] = useState(false);
@@ -107,7 +109,14 @@ const EpisodeCard = ({ airing: { row, at, aired }, large = false, onFocus }: { a
   const ambient = sized(row.backdrop, 720) ?? sources[sources.length - 1];
 
   return (
-    <div onMouseEnter={() => onFocus(ambient)} className="group block" title={`${row.seriesName}${row.name ? ` · ${row.name}` : ""}`}>
+    <div
+      onMouseEnter={() => onFocus(ambient)}
+      role={open && row.seriesId ? "button" : undefined}
+      tabIndex={open && row.seriesId ? 0 : undefined}
+      onClick={open && row.seriesId ? () => open({ item: row.seriesId! }) : undefined}
+      className={cx("group block", open && row.seriesId && "cursor-pointer")}
+      title={`${row.seriesName}${row.name ? ` · ${row.name}` : ""}`}
+    >
       <div
         className={cx(
           "relative aspect-video w-full overflow-hidden rounded-lg bg-foreground/5 shadow-md transition duration-300",

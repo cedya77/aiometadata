@@ -1582,7 +1582,9 @@ export interface JellyfinConfiguration {
   userUUID: string;
   label: string;
   profile: string | null;
+  history: string | null;
   profiles: JellyfinProfileSummary[];
+  viewers: Array<{ key: string; name: string; avatar: string | null; historyKey: string }>;
   sync: JellyfinSyncRow[];
   sessions: JellyfinSessionRow[];
   rows: number;
@@ -1757,6 +1759,112 @@ export function useJellyfinUndrop() {
     });
     if (!response.ok) throw new Error(`Could not pick it back up (${response.status})`);
     return Boolean((await response.json())?.undropped);
+  };
+}
+
+export interface JellyfinTitleEpisode {
+  id: string;
+  season: number | null;
+  number: number | null;
+  name: string | null;
+  overview: string | null;
+  airsAt: number | null;
+  runtimeMs: number;
+  still: string | null;
+  played: boolean;
+  playCount: number;
+  lastPlayedAt: number | null;
+  positionMs: number;
+}
+
+export interface JellyfinTitle {
+  id: string;
+  metaId: string;
+  type: 'movie' | 'series';
+  title: string;
+  year: string | null;
+  overview: string | null;
+  genres: string[];
+  score: string | null;
+  runtime: string | null;
+  status: 'Continuing' | 'Ended' | null;
+  posterUrl: string | null;
+  backdropUrl: string | null;
+  logoUrl: string | null;
+  ids: { imdb: string | null; tmdb: string | number | null; tvdb: string | number | null };
+  onWatchlist: boolean;
+  dropped: boolean;
+  rating: number | null;
+  played: boolean;
+  playCount: number;
+  lastPlayedAt: number | null;
+  positionMs: number;
+  episodes: JellyfinTitleEpisode[];
+  seasons: Array<{ season: number; id: string; name: string | null; tag: string | null; poster: string | null; count: number }>;
+  watched: number;
+  aired: number;
+}
+
+export type JellyfinTitleRef = { item: string } | { id: string; type: 'movie' | 'series' };
+
+export function useJellyfinTitle(userUUID: string | null, profile: string | null, ref: JellyfinTitleRef | null, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  if (ref && 'item' in ref) params.set('item', ref.item);
+  if (ref && 'id' in ref) { params.set('id', ref.id); params.set('type', ref.type); }
+  return useJellyfinQuery<JellyfinTitle>(
+    ['dashboard', 'jellyfin', 'title', userUUID, profile, params.toString()] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/title?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID && ref), poll: false }
+  );
+}
+
+export type JellyfinTitleAction = 'played' | 'unplayed' | 'playedUpTo' | 'watchlist' | 'unwatchlist' | 'drop' | 'undrop' | 'rate';
+
+export interface JellyfinFoundTitle {
+  id: string;
+  type: 'movie' | 'series';
+  title: string;
+  year: string | null;
+  posterUrl: string | null;
+}
+
+export interface JellyfinSearchCatalog {
+  id: string;
+  type: string;
+  name: string;
+}
+
+export function useJellyfinSearches(userUUID: string | null, profile: string | null, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<{ quick: boolean; catalogs: JellyfinSearchCatalog[] }>(
+    ['dashboard', 'jellyfin', 'searches', userUUID, profile] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/searches?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID), poll: false }
+  );
+}
+
+export function useJellyfinFind(userUUID: string | null, profile: string | null, query: string, catalog: string | null, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams({ q: query });
+  if (profile !== null) params.set('profile', profile);
+  if (catalog) params.set('catalog', catalog);
+  return useJellyfinQuery<{ query: string; available: boolean; results: JellyfinFoundTitle[] }>(
+    ['dashboard', 'jellyfin', 'find', userUUID, profile, catalog, query] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/find?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID) && query.length >= 2, poll: false }
+  );
+}
+
+export function useJellyfinTitleAction() {
+  const getHeaders = useApiHeaders();
+  return async (userUUID: string, profile: string | null, action: JellyfinTitleAction, itemIds: string[], rating: number | null = null): Promise<void> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/title/action`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, itemIds, profile: profile ?? undefined, rating }),
+    });
+    if (!response.ok) throw new Error(`Could not save the change (${response.status})`);
   };
 }
 

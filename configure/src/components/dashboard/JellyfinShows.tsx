@@ -10,7 +10,7 @@ import {
   type JellyfinShowRow,
 } from "@/hooks/useDashboardQueries";
 import { Art, Shelf } from "./JellyfinShared";
-import { when, useFolded } from "./jellyfinUtils";
+import { when, useFolded, useOpenTitle } from "./jellyfinUtils";
 
 const episodeRef = (ref: JellyfinEpisodeRef | null): string => {
   if (!ref || ref.number === null) return "";
@@ -45,14 +45,15 @@ const SOURCE_LABELS: Record<string, string> = { server: "played here", tracker: 
 function ShowCard({ row, onRefresh, refreshing }: { row: JellyfinShowRow; onRefresh: () => void; refreshing: boolean }) {
   const status = showStatus(row);
   const pct = row.total ? Math.min(100, Math.round(((row.watched ?? 0) / row.total) * 100)) : null;
+  const open = useOpenTitle();
   return (
-    <div className="flex gap-3 rounded-lg bg-muted/30 p-2.5 ring-1 ring-white/[0.06]">
+    <div role={open ? "button" : undefined} tabIndex={open ? 0 : undefined} onClick={open ? () => open({ id: row.metaId, type: "series" }) : undefined} onKeyDown={open ? (event) => { if (event.key === "Enter") open({ id: row.metaId, type: "series" }); } : undefined} className={`flex gap-3 rounded-lg bg-muted/30 p-2.5 ring-1 ring-white/[0.06] transition hover:bg-muted/50 ${open ? "cursor-pointer" : ""}`}>
       <div className="w-12 shrink-0"><Art src={row.posterUrl} title={row.title} wide={false} /></div>
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-start justify-between gap-2">
           <p className="truncate text-sm font-semibold leading-tight" title={row.title}>{row.title}</p>
           {status.fixable && (
-            <Button size="sm" variant="ghost" className="-mr-1 -mt-1 h-6 gap-1 px-1.5 text-[11px]" onClick={onRefresh} disabled={refreshing} title="Read this show's episodes again and rebuild its shelves">
+            <Button size="sm" variant="ghost" className="-mr-1 -mt-1 h-6 gap-1 px-1.5 text-[11px]" onClick={(event) => { event.stopPropagation(); onRefresh(); }} disabled={refreshing} title="Read this show's episodes again and rebuild its shelves">
               <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} /> Refresh
             </Button>
           )}

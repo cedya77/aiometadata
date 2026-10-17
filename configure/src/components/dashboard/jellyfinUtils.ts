@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useJellyfinPlays, type DashboardTab, type JellyfinPlayKind, type JellyfinPlayRow, type JellyfinProfileSummary } from "@/hooks/useDashboardQueries";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { useJellyfinPlays, type JellyfinTitleRef, type DashboardTab, type JellyfinPlayKind, type JellyfinPlayRow, type JellyfinProfileSummary } from "@/hooks/useDashboardQueries";
 
 export function when(value: number | null | undefined): string {
   if (!value) return "—";
@@ -126,4 +126,14 @@ export function usePagedPlays(userUUID: string, profile: string | null, kind: Je
   };
   const failed = isError && !isFetching && offset > 0;
   return { rows, more, loading, loadMore, failed, retry: () => void refetch() };
+}
+
+export const OpenTitleContext = createContext<((ref: JellyfinTitleRef) => void) | null>(null);
+
+export function useOpenTitle(): ((ref: JellyfinTitleRef) => void) | null {
+  return useContext(OpenTitleContext);
+}
+
+export function titleRefOf(row: { seriesId: string | null; videoId: string }): JellyfinTitleRef {
+  return row.seriesId ? { id: row.seriesId, type: "series" } : { id: row.videoId.split(":").slice(0, row.videoId.startsWith("tt") ? 1 : 2).join(":"), type: "movie" };
 }

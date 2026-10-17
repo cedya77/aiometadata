@@ -151,6 +151,12 @@ function historyProfiles(config: any, userUUID: string): Array<{ key: string; na
   return out;
 }
 
+function historyKeyOf(config: any, userUUID: string, profile: string | null): string | null {
+  if (profile === null) return null;
+  const found = listProfiles(config, userUUID).find((p) => (p.id ?? '') === profile);
+  return found?.id && found.sharesHistory ? '' : profile;
+}
+
 const profileLabel = (names: Map<string, string>, key: string): string =>
   names.get(key) ?? (key ? key.slice(0, 8) : 'Main');
 
@@ -429,7 +435,9 @@ export async function dashboardConfiguration(userUUID: string, profile: string |
     profileStats(userUUID, offsetMinutes, byProfile),
     trackerSync(config, userUUID),
   ]);
-  const avatars = new Map(listProfiles(config, userUUID).map((p) => [p.id ?? '', p.avatar]));
+  const everyProfile = listProfiles(config, userUUID);
+  const history = historyKeyOf(config, userUUID, profile);
+  const avatars = new Map(everyProfile.map((p) => [p.id ?? '', p.avatar]));
   const profiles = historyProfiles(config, userUUID).map(({ key, name, sharedWith }) => {
     const p = byProfile.find((row: any) => String(row.profile ?? '') === key);
     const titles = counts.get(key);
@@ -447,17 +455,19 @@ export async function dashboardConfiguration(userUUID: string, profile: string |
     };
   });
   const [inProgress, recentlyPlayed] = await Promise.all([
-    foldedPlays(userUUID, names, 'progress', profile, envInt('JELLYFIN_DASHBOARD_PROGRESS_MAX', 1000, 1)),
-    foldedPlays(userUUID, names, 'played', profile, limit),
+    foldedPlays(userUUID, names, 'progress', history, envInt('JELLYFIN_DASHBOARD_PROGRESS_MAX', 1000, 1)),
+    foldedPlays(userUUID, names, 'played', history, limit),
   ]);
-  const shown = profiles.filter((p) => profile === null || p.key === profile);
-  const sessions = (await sessionRows(userUUID, names)).filter((s) => profile === null || s.profileKey === profile);
+  const shown = profiles.filter((p) => history === null || p.key === history);
+  const sessions = (await sessionRows(userUUID, names)).filter((s) => history === null || s.profileKey === history);
   return {
     userUUID,
     label: defaultUserName(config, userUUID),
     profile,
+    history,
     rows: limit,
     profiles,
+    viewers: everyProfile.map((p) => ({ key: p.id ?? '', name: p.name, avatar: p.avatar, historyKey: p.id && !p.sharesHistory ? p.id : '' })),
     sync,
     sessions,
     inProgress: inProgress.rows.slice(0, limit),
@@ -490,7 +500,7 @@ export async function dashboardPlays(userUUID: string, profile: string | null, k
   if (!config) return null;
   const from = Math.max(0, offset);
   const size = Math.min(100, Math.max(1, limit));
-  const { rows, exhausted } = await foldedPlays(userUUID, profileNames(config, userUUID), kind, profile, from + size);
+  const { rows, exhausted } = await foldedPlays(userUUID, profileNames(config, userUUID), kind, historyKeyOf(config, userUUID, profile), from + size);
   const page = rows.slice(from);
   return { kind, profile, offset: from, rows: page, done: exhausted || page.length < size };
 }
@@ -827,5 +837,170 @@ export async function undropShow(userUUID: string, profile: string | null, metaI
     const cleared = await clearLocalDrop(userUUID, config, metaId).catch(() => false);
     for (const key of [...showsMemo.keys()]) if (key.startsWith(`${userUUID}:`)) showsMemo.delete(key);
     return Boolean(undropped || cleared);
+  });
+}
+
+const ANIME_IDS = /^(kitsu|mal|anilist|anidb):/;
+const TICKS_PER_MS = 10_000;
+
+function titleItemId(ref: { item?: string; id?: string; type?: string }): string | null {
+  if (ref.item) return ref.item;
+  if (!ref.id) return null;
+  const { encodeJellyfinId } = require('./ids');
+  const movie = ref.type === 'movie';
+  return encodeJellyfinId({ k: movie ? 'movie' : 'series', t: movie ? 'movie' : ANIME_IDS.test(ref.id) ? 'anime' : 'series', i: ref.id });
+}
+
+function playOf(data: any) {
+  return {
+    played: data?.Played === true,
+    playCount: Number(data?.PlayCount) || 0,
+    lastPlayedAt: data?.LastPlayedDate ? Date.parse(data.LastPlayedDate) || null : null,
+    positionMs: Math.round((Number(data?.PlaybackPositionTicks) || 0) / TICKS_PER_MS),
+  };
+}
+
+export async function dashboardTitle(userUUID: string, profile: string | null, ref: { item?: string; id?: string; type?: string }): Promise<any | null> {
+  return asProfile(userUUID, profile, async (config) => {
+    const itemId = titleItemId(ref);
+    if (!itemId) return null;
+    const { readTitle } = require('./index');
+    const read = await readTitle(userUUID, config, itemId);
+    if (!read) return null;
+    const { meta, item, episodes, seasons: builtSeasons } = read;
+    const image = (id: unknown, type: string, tag: unknown): string | null =>
+      id && tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(id))}/Images/${type}?tag=${encodeURIComponent(String(tag))}` : null;
+    const now = Date.now();
+    const list = episodes.map((ep: any) => ({
+      id: String(ep.Id),
+      season: Number.isFinite(ep.ParentIndexNumber) ? ep.ParentIndexNumber : null,
+      number: Number.isFinite(ep.IndexNumber) ? ep.IndexNumber : null,
+      name: ep.Name ?? null,
+      overview: ep.Overview ?? null,
+      airsAt: ep.PremiereDate ? Date.parse(ep.PremiereDate) || null : null,
+      runtimeMs: Math.round((Number(ep.RunTimeTicks) || 0) / TICKS_PER_MS),
+      still: image(ep.Id, 'Primary', ep.ImageTags?.Primary),
+      ...playOf(ep.UserData),
+    }));
+    const aired = list.filter((ep: any) => ep.season !== 0 && !(ep.airsAt && ep.airsAt > now));
+    const seasons = (builtSeasons ?? []).map((season: any) => ({
+      season: Number(season.IndexNumber),
+      id: String(season.Id),
+      name: season.Name ?? null,
+      tag: season.ImageTags?.Primary ?? null,
+      poster: image(season.Id, 'Primary', season.ImageTags?.Primary),
+      count: Number(season.ChildCount) || 0,
+    }));
+    return {
+      id: String(item.Id),
+      metaId: String(meta.id),
+      type: item.Type === 'Movie' ? 'movie' : 'series',
+      title: meta.name ?? item.Name,
+      year: meta.releaseInfo ? String(meta.releaseInfo) : meta.year ? String(meta.year) : null,
+      overview: meta.description ?? null,
+      genres: Array.isArray(meta.genres) ? meta.genres.map(String) : [],
+      score: Number.isFinite(Number.parseFloat(meta.imdbRating)) ? String(meta.imdbRating) : null,
+      runtime: meta.runtime ? String(meta.runtime) : null,
+      status: item.Type === 'Movie' ? null : seriesStatus(meta) ?? null,
+      posterUrl: meta.poster ?? null,
+      backdropUrl: meta.background ?? null,
+      logoUrl: meta.logo ?? null,
+      ids: { imdb: meta.imdb_id ?? meta._imdbId ?? null, tmdb: meta._tmdbId ?? null, tvdb: meta._tvdbId ?? null },
+      onWatchlist: item.UserData?.IsFavorite === true,
+      dropped: item.UserData?.Likes === false,
+      rating: Number.isFinite(Number(item.UserData?.Rating)) && item.UserData?.Rating !== null ? Number(item.UserData.Rating) : null,
+      ...playOf(item.UserData),
+      episodes: list,
+      seasons,
+      watched: aired.filter((ep: any) => ep.played).length,
+      aired: aired.length,
+    };
+  });
+}
+
+export type TitleAction = 'played' | 'unplayed' | 'playedUpTo' | 'watchlist' | 'unwatchlist' | 'drop' | 'undrop' | 'rate';
+
+export async function dashboardTitleAction(userUUID: string, profile: string | null, action: TitleAction, itemIds: string[], rating: number | null = null): Promise<boolean | null> {
+  const { runInViewerScope } = require('./viewer');
+  return runInViewerScope(false, async () => {
+    const req = { params: { userUUID }, jellyfin: { userUUID, profileId: profile || null }, query: {}, headers: {} };
+    const { loadConfig } = require('./context');
+    const config = await loadConfig(req).catch(() => null);
+    if (!config) return null;
+    const { decodeJellyfinId } = require('./ids');
+    const playstate = require('./playstate');
+    for (const itemId of itemIds) {
+      if (action === 'played') await playstate.recordPlayed(req, { ItemId: itemId });
+      else if (action === 'unplayed') await playstate.recordUnplayed(req, { ItemId: itemId });
+      else if (action === 'playedUpTo') await playstate.recordPlayedUpTo(req, itemId);
+      else {
+        const descriptor = await decodeJellyfinId(itemId);
+        if (!descriptor) continue;
+        if (action === 'watchlist' || action === 'unwatchlist') {
+          const { setWatchlisted } = require('./watchlist');
+          await setWatchlisted(userUUID, config, descriptor, action === 'watchlist');
+        } else if (action === 'drop' || action === 'undrop') {
+          const { rateSeries, clearLocalDrop } = require('./dropped');
+          await rateSeries(userUUID, config, descriptor, action === 'drop' ? false : null);
+          if (action === 'undrop') await clearLocalDrop(userUUID, config, descriptor.i).catch(() => false);
+        } else if (action === 'rate') {
+          const { rateItem, ratingFrom } = require('./ratings');
+          await rateItem(userUUID, config, descriptor, ratingFrom(rating));
+        }
+      }
+    }
+    for (const key of [...showsMemo.keys()]) if (key.startsWith(`${userUUID}:`)) showsMemo.delete(key);
+    for (const key of [...droppedMemo.keys()]) if (key.startsWith(`${userUUID}:`)) droppedMemo.delete(key);
+    return true;
+  });
+}
+
+export async function dashboardSearches(userUUID: string, profile: string | null): Promise<any | null> {
+  return asProfile(userUUID, profile, async (config) => {
+    const { lumiereApiBase } = require('../../utils/lumiereLists');
+    const { searchCatalogs } = require('./index');
+    return { quick: Boolean(lumiereApiBase()), catalogs: await searchCatalogs(userUUID, config) };
+  });
+}
+
+export async function dashboardFindTitles(userUUID: string, profile: string | null, query: string, catalogId: string | null = null): Promise<any | null> {
+  return asProfile(userUUID, profile, async (config) => {
+    if (catalogId) {
+      const { searchCatalogs, runSearchCatalog } = require('./index');
+      const catalog = (await searchCatalogs(userUUID, config)).find((c: any) => c.id === catalogId);
+      if (!catalog) return { query, available: false, results: [] };
+      const metas: any[] = await runSearchCatalog(userUUID, config, catalog, query).catch(() => []);
+      const seen = new Set<string>();
+      return {
+        query,
+        available: true,
+        results: metas.filter((meta) => meta?.id && !seen.has(String(meta.id)) && seen.add(String(meta.id))).slice(0, envInt('JELLYFIN_DASHBOARD_SEARCH_RESULTS', 12, 1) * 2).map((meta) => ({
+          id: String(meta.id),
+          type: meta.type === 'movie' || catalog.type === 'movie' || catalog.type === 'anime.movie' ? 'movie' : 'series',
+          title: String(meta.name ?? meta.id),
+          year: meta.releaseInfo ? String(meta.releaseInfo) : meta.year ? String(meta.year) : null,
+          posterUrl: meta.poster ?? null,
+        })),
+      };
+    }
+    const { lumiereApiBase } = require('../../utils/lumiereLists');
+    const { fetchLumiereSuggest } = require('../../utils/lumiereSearch');
+    const { hasAgeRatingCap } = require('../../utils/ageRating');
+    const { getSetting } = require('../settingsService');
+    const base = lumiereApiBase();
+    if (!base || hasAgeRatingCap(config)) return { query, available: Boolean(base), results: [] };
+    const timeoutMs = parseInt(getSetting('LUMIERE_SUGGEST_TIMEOUT_MS'), 10) || 1500;
+    const found = await fetchLumiereSuggest(base, null, query, envInt('JELLYFIN_DASHBOARD_SEARCH_RESULTS', 12, 1), !!config.includeAdult, timeoutMs).catch(() => null);
+    return {
+      query,
+      available: true,
+      results: (found ?? []).map((title: any) => ({
+        id: String(title.imdbId),
+        type: title.kind === 'movie' ? 'movie' : 'series',
+        title: String(title.title ?? title.imdbId),
+        year: title.year ? String(title.year) : null,
+        posterUrl: `https://images.metahub.space/poster/medium/${title.imdbId}/img`,
+      })),
+    };
   });
 }

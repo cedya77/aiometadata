@@ -235,6 +235,24 @@ type NextUpTrace = (row: any, source: NextUpSource, step: NextUpStep) => void;
 
 let nextUpTracer: ((userUUID: string, config: any, trace: NextUpTrace) => Promise<any[]>) | null = null;
 let calendarReader: ((userUUID: string, config: any, from: number, to: number) => Promise<any[]>) | null = null;
+let titleReader: ((userUUID: string, config: any, itemId: string) => Promise<{ meta: any; item: any; episodes: any[]; seasons: any[] } | null>) | null = null;
+let searchReader: {
+  catalogs: (userUUID: string, config: any) => Promise<Array<{ id: string; type: string; name: string }>>;
+  run: (userUUID: string, config: any, catalog: { id: string; type: string }, term: string) => Promise<any[]>;
+} | null = null;
+
+/** The searches a profile's config offers, as its clients see them, and one of them run. */
+export async function searchCatalogs(userUUID: string, config: any): Promise<Array<{ id: string; type: string; name: string }>> {
+  return searchReader ? searchReader.catalogs(userUUID, config) : [];
+}
+
+export async function runSearchCatalog(userUUID: string, config: any, catalog: { id: string; type: string }, term: string): Promise<any[]> {
+  return searchReader ? searchReader.run(userUUID, config, catalog, term) : [];
+}
+
+export async function readTitle(userUUID: string, config: any, itemId: string): Promise<{ meta: any; item: any; episodes: any[]; seasons: any[] } | null> {
+  return titleReader ? titleReader(userUUID, config, itemId) : null;
+}
 
 export async function readCalendar(userUUID: string, config: any, from: number, to: number): Promise<any[] | null> {
   return calendarReader ? calendarReader(userUUID, config, from, to) : null;
@@ -2838,6 +2856,31 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       built.length === 0 ? Date.now() + envInt('JELLYFIN_CALENDAR_EMPTY_TTL', 30, 1) * 1000 : null);
   };
   calendarReader = heldCalendar;
+
+  searchReader = {
+    catalogs: async (userUUID: string, config: any) =>
+      getSearchableCatalogs(await getCatalogs(userUUID, config)).map((catalog: any) => ({ id: String(catalog.id), type: String(catalog.type), name: String(catalog.name ?? catalog.id) })),
+    run: async (userUUID: string, config: any, catalog: { id: string; type: string }, term: string) =>
+      (await fetchCatalogPage(userUUID, catalog.type, catalog.id, { search: term, light: '1' }, profileTags(config))) ?? [],
+  };
+
+  titleReader = async (userUUID: string, config: any, itemId: string) => {
+    const descriptor = await decodeJellyfinId(itemId);
+    if (!descriptor || (descriptor.k !== 'movie' && descriptor.k !== 'series')) return null;
+    const meta = await fetchMeta(userUUID, descriptor.k, descriptor.i);
+    if (!meta) return null;
+    const serverId = serverIdFor(userUUID);
+    const item = metaToBaseItem(meta, descriptor.t, serverId, null);
+    item.Id = normaliseJellyfinId(itemId);
+    const episodes = descriptor.k === 'series' ? buildEpisodes(meta, descriptor.t, item.Id, serverId, null) : [];
+    const seasons = descriptor.k === 'series' ? buildSeasons(meta, descriptor.t, item.Id, serverId) : [];
+    const profile = profileKey(config);
+    await applyWatchedState([item, ...episodes], await watchedSnapshot(userUUID, config), userUUID, profile, config);
+    await applyRatings([item, ...episodes], userUUID, profile);
+    const { applyWatchlistState } = require('./watchlist');
+    await applyWatchlistState([item], userUUID, config, new Map([[item.Id, descriptor]]));
+    return { meta, item, episodes, seasons };
+  };
 
   const buildCalendar = async (userUUID: string, config: any, from: number, to: number, withFilms = false): Promise<any[]> => {
     const serverId = serverIdFor(userUUID);

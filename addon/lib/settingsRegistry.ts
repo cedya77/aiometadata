@@ -1202,6 +1202,17 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_DASHBOARD_SEARCH_RESULTS',
+    envVar: 'JELLYFIN_DASHBOARD_SEARCH_RESULTS',
+    label: 'Jellyfin Dashboard Title Search Results',
+    description: 'How many titles the Jellyfin tab\'s title search suggests from everywhere as you type.',
+    category: 'Features',
+    type: 'number',
+    default: 12,
+    min: 1,
+    max: 20,
+  },
+  {
     key: 'JELLYFIN_DASHBOARD_STATS_KEEP_DAYS',
     envVar: 'JELLYFIN_DASHBOARD_STATS_KEEP_DAYS',
     label: 'Jellyfin Dashboard Stored Stats (days)',
