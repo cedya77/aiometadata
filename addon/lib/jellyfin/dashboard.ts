@@ -766,13 +766,47 @@ async function describeTitle(userUUID: string, metaId: string, types: Array<'mov
 
 export type LibraryKind = 'all' | 'movie' | 'series';
 
+export interface LibraryPick {
+  metaId: string;
+  types: Array<'movie' | 'series'>;
+  at: number | null;
+  rating: number | null;
+}
+
+/** A profile's rated titles or dropped shows, newest first. */
+export async function libraryPicks(userUUID: string, config: any, tab: 'ratings' | 'dropped'): Promise<LibraryPick[]> {
+  const key = profileKey(config);
+  if (tab === 'ratings') {
+    const ratings = await database.listProfileRatings(userUUID, key, 5000).catch(() => [] as any[]);
+    return ratingTitles(ratings)
+      .slice(0, envInt('JELLYFIN_DASHBOARD_RATINGS_MAX', 500, 1))
+      .map((r) => ({ metaId: r.key, types: r.type ? [r.type] : r.key.startsWith('tt') ? ['movie', 'series'] : ['series', 'movie'], at: r.at, rating: r.rating }));
+  }
+  const { watchedSnapshot } = require('./watched');
+  const snapshot = await watchedSnapshot(userUUID, config).catch(() => null);
+  const [dropped, local] = await Promise.all([
+    droppedShows(userUUID, key, [...(snapshot?.dropped ?? [])].map(String), config),
+    database.listDropped(userUUID, key).catch(() => [] as any[]),
+  ]);
+  // Only a drop made here has a time; a tracker reports the show and not when.
+  const droppedAt = new Map<string, number>(local.map((row: any) => [String(row.meta_id), Number(row.updated_at) || 0]));
+  return dropped
+    .map((metaId): LibraryPick => ({ metaId, types: ['series'], at: droppedAt.get(metaId) || null, rating: null }))
+    .sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+}
+
+/** Where the profile's watchlist is read from. */
+export function watchlistOrigins(config: any): string[] {
+  const { watchlistPicks, keepsServerWatchlist } = require('./watchlistSources');
+  return [...watchlistPicks(config).keys()].map(String).concat(keepsServerWatchlist(config) ? ['server'] : []);
+}
+
 export async function dashboardLibrary(userUUID: string, profile: string | null, tab: LibraryTab, kind: LibraryKind, offset: number, limit: number): Promise<any | null> {
   return asProfile(userUUID, profile, async (config) => {
     const key = profileKey(config);
     const cap = Math.min(200, Math.max(1, limit));
     const from = Math.max(0, offset);
     const { watchlistEntries } = require('./watchlist');
-    const { watchlistPicks, keepsServerWatchlist } = require('./watchlistSources');
     const { watchedSnapshot } = require('./watched');
     const [watchlist, ratings, snapshot] = await Promise.all([
       watchlistEntries(userUUID, config).catch(() => ({ entries: [] as any[], complete: false })),
@@ -823,7 +857,7 @@ export async function dashboardLibrary(userUUID: string, profile: string | null,
       total,
       kinds,
       counts: { watchlist: watchlist.entries.length, ratings: rated.length, dropped: dropped.length },
-      sources: [...watchlistPicks(config).keys()].map(String).concat(keepsServerWatchlist(config) ? ['server'] : []),
+      sources: watchlistOrigins(config),
       complete: watchlist.complete !== false,
       rows,
     };

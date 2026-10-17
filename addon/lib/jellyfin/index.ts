@@ -717,10 +717,12 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         res.json(itemList([], 0, startIndex));
         return;
       }
+      const { watchlistOrigins } = require('./dashboard');
+      const origins = { WatchlistSources: watchlistOrigins(config) };
       const shelved = await serverWatchlistItems(userUUID, config, serverId, wanted);
       if (shelved) {
         await applyWatchedState(shelved, await watchedSnapshot(userUUID, config), userUUID, profileKey(config));
-        res.json(itemList(shelved.slice(startIndex, startIndex + limit), shelved.length, startIndex));
+        res.json({ ...itemList(shelved.slice(startIndex, startIndex + limit), shelved.length, startIndex), ...origins, WatchlistComplete: true });
         return;
       }
       const read = await watchlistEntries(userUUID, config);
@@ -733,7 +735,35 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       await applyWatchedState(items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config));
       const count = read.exhausted ? entries.length : Math.max(entries.length, startIndex + items.length + limit);
       logger.debug(`Favourites for ${userUUID} from ${clientInfo(req).client}/${clientInfo(req).version}: ${items.length} of ${count}, types ${includeItemTypes ?? 'any'}, from ${startIndex}, in ${Date.now() - started}ms (entries ${listed}ms)`);
-      res.json(itemList(items, count, startIndex));
+      res.json({ ...itemList(items, count, startIndex), ...origins, WatchlistComplete: read.complete !== false });
+      return;
+    }
+
+    // Dropped shows are the disliked ones, as a dislike drops a show. Rated is not a
+    // Jellyfin filter: it lists the titles this profile rated, newest first.
+    const filterList = filters.split(',').map((f) => f.trim());
+    const library = filterList.includes('Dislikes') ? 'dropped' : filterList.includes('Rated') ? 'ratings' : null;
+    if (library) {
+      const wanted = includeItemTypes ? String(includeItemTypes).split(',').map((t) => t.trim()) : null;
+      const fits = (type: 'movie' | 'series') => !wanted || wanted.includes(type === 'movie' ? 'Movie' : 'Series');
+      const { libraryPicks } = require('./dashboard');
+      const picks = (await libraryPicks(userUUID, config, library)).filter((pick: any) => pick.types.some(fits));
+      const page = picks.slice(startIndex, startIndex + limit);
+      const built = await mapWithConcurrency(page, shelfConcurrency(), async (pick: any) => {
+        for (const type of pick.types.filter(fits)) {
+          const meta = await fetchMeta(userUUID, type, pick.metaId).catch(() => null);
+          if (!meta) continue;
+          const item = metaToBaseItem(meta, type, serverId, null);
+          if (pick.at) item.DateCreated = new Date(pick.at).toISOString();
+          else delete item.DateCreated;
+          if (library === 'dropped') item.UserData = { ...item.UserData, Likes: false };
+          return item;
+        }
+        return null;
+      });
+      const items = built.filter(Boolean).filter(keepsUnderProfileCap(config));
+      await applyWatchedState(items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config));
+      res.json(itemList(items, picks.length, startIndex));
       return;
     }
     const minPremiere = Date.parse(String(req.query.MinPremiereDate ?? req.query.minPremiereDate ?? ''));
@@ -921,7 +951,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       const asked = req.query.Limit ?? req.query.limit;
       const take = asked === undefined ? envInt('JELLYFIN_FILMOGRAPHY_PAGE', 100, 1) : limit;
       const ascending = String(req.query.SortOrder ?? req.query.sortOrder ?? '').toLowerCase().startsWith('asc');
-      const { items, total } = await personItems(userUUID, config, serverId, personIds[0], includeItemTypes, startIndex, take, ascending);
+      const personTypes = String(req.query.PersonTypes ?? req.query.personTypes ?? '').split(',').map((v) => v.trim()).filter(Boolean);
+      const { items, total } = await personItems(userUUID, config, serverId, personIds[0], includeItemTypes, personTypes, startIndex, take, ascending);
       res.json(itemList(items, total, startIndex));
       return;
     }
@@ -1676,6 +1707,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       PremiereDate: isoDate(person?.birthday),
       EndDate: isoDate(person?.deathday),
       ProductionLocations: person?.birthplace ? [person.birthplace] : [],
+      // Not a Jellyfin field: the PersonTypes value a filmography opens on.
+      KnownForType: person?.knownFor ?? undefined,
       ImageTags: person?.photo ? { Primary: imageTag(person.photo) } : {},
       BackdropImageTags: [],
       UserData: { ...EMPTY_USER_DATA, Key: bare, ItemId: bare },
@@ -1688,6 +1721,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     serverId: string,
     personId: string,
     includeItemTypes: any,
+    personTypes: string[],
     startIndex: number,
     take: number,
     ascending = false
@@ -1698,7 +1732,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     if (!person) return { items: [], total: 0 };
     const wanted = includeItemTypes ? String(includeItemTypes) : undefined;
     const newest = (await personCredits(config, person.id)).filter(
-      (meta: any) => !wanted || wanted.split(',').map((t) => t.trim()).includes(meta.type === 'movie' ? 'Movie' : 'Series')
+      (meta: any) =>
+        (!wanted || wanted.split(',').map((t) => t.trim()).includes(meta.type === 'movie' ? 'Movie' : 'Series')) &&
+        (!personTypes.length || personTypes.some((kind) => meta._personTypes.includes(kind)))
     );
     const listed = ascending
       ? [...newest.filter((meta: any) => meta.released).reverse(), ...newest.filter((meta: any) => !meta.released)]
@@ -2801,6 +2837,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     });
     if (!shelves.length) return null;
     const cap = envInt('SERVER_WATCHLIST_MAX_ITEMS', 500, 1);
+    const { viewerProfile } = require('./viewer');
+    const listed: any[] = await database.listWatchlist(userUUID, viewerProfile()).catch(() => []);
+    const addedAt = new Map(listed.filter((row) => Number(row.listed)).map((row) => [String(row.meta_id), Number(row.updated_at) || 0]));
     const items: any[] = [];
     const seen = new Set<string>();
     for (const catalog of shelves) {
@@ -2810,6 +2849,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         if (seen.has(String(meta.id)) || (wanted && !wanted.has(item.Type))) continue;
         seen.add(String(meta.id));
         item.UserData = { ...item.UserData, IsFavorite: true, ...(clientHasOwnWatchlist() ? { Likes: true } : {}) };
+        const at = addedAt.get(String(meta.id));
+        if (at) item.DateCreated = new Date(at).toISOString();
         items.push(item);
       }
     }

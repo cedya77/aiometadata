@@ -267,7 +267,7 @@ export function normalizeTmdbRecommendationsForCache(page: any) {
 
 const PERSON_RESULT_KEYS = ['id', 'name', 'profile_path', 'popularity', 'known_for_department'];
 const PERSON_KEYS = ['id', 'name', 'profile_path', 'biography', 'birthday', 'deathday', 'place_of_birth', 'popularity', 'known_for_department'];
-const CREDIT_KEYS = [...RECOMMENDATION_KEYS, 'character', 'job', 'vote_count', 'popularity'];
+const CREDIT_KEYS = [...RECOMMENDATION_KEYS, 'character', 'job', 'department', 'vote_count', 'popularity'];
 
 export function normalizeTmdbPersonSearchForCache(page: any) {
   if (!page || typeof page !== 'object') return page;

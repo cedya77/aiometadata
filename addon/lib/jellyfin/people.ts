@@ -13,7 +13,19 @@ export interface Person {
   birthday: string | null;
   deathday: string | null;
   birthplace: string | null;
+  /** The Jellyfin person type of what TMDB says they are known for. */
+  knownFor: string | null;
 }
+
+const KNOWN_FOR: Record<string, string> = {
+  Acting: 'Actor',
+  Directing: 'Director',
+  Writing: 'Writer',
+  Production: 'Producer',
+  Sound: 'Composer',
+  Editing: 'Editor',
+  Creator: 'Creator',
+};
 
 const image = (path: string | null | undefined, size: string): string | null =>
   path ? tmdbImageUrl(size, path) : null;
@@ -41,6 +53,7 @@ export async function personByName(config: any, name: string): Promise<Person | 
     birthday: details?.birthday || null,
     deathday: details?.deathday || null,
     birthplace: details?.place_of_birth || null,
+    knownFor: KNOWN_FOR[details?.known_for_department || pick.known_for_department] ?? null,
   };
 }
 
@@ -95,25 +108,65 @@ export async function similarTitles(config: any, tmdbId: string, type: 'movie' |
   return (page?.results || []).map((row: any) => metaFromTmdbRow(row, type)).filter(Boolean);
 }
 
-/** Every title the person is credited on, as the metas the catalogs hand out. */
+// Talk, news and reality shows, where an actor appears as themselves.
+const UNSCRIPTED_TV = new Set([10763, 10764, 10767]);
+const DOCUMENTARY = 99;
+const AS_THEMSELVES = /^(self|himself|herself|themselves|themself)\b/i;
+
+function playsThemselves(row: any, type: 'movie' | 'series'): boolean {
+  const genres: number[] = row.genre_ids || [];
+  const character = String(row.character || '').trim();
+  if (type === 'series' && genres.some((g) => UNSCRIPTED_TV.has(g))) return true;
+  if (genres.includes(DOCUMENTARY) && (!character || /^(self|him|her|them)/i.test(character))) return true;
+  return AS_THEMSELVES.test(character);
+}
+
+/** The Jellyfin person types a TMDB credit counts as. */
+function creditTypes(row: any, credit: 'cast' | 'crew', type: 'movie' | 'series'): string[] {
+  if (credit === 'cast') return playsThemselves(row, type) ? [] : ['Actor', 'GuestStar'];
+  const job = String(row.job || '');
+  const types: string[] = [];
+  if (job === 'Director') types.push('Director');
+  if (row.department === 'Writing') types.push('Writer');
+  if (row.department === 'Creator') types.push('Creator');
+  if (/producer/i.test(job)) types.push('Producer');
+  if (/composer/i.test(job) || job === 'Music') types.push('Composer');
+  if (job === 'Editor') types.push('Editor');
+  return types;
+}
+
+/**
+ * Every title the person is credited on, as the metas the catalogs hand out,
+ * each with the Jellyfin person types it was credited as in `_personTypes`.
+ */
 export async function personCredits(config: any, personId: number): Promise<any[]> {
   const language = config?.language || 'en-US';
   const [movies, shows] = await Promise.all([
     moviedb.personMovieCredits({ id: personId, language }, config).catch(() => null),
     moviedb.personTvCredits({ id: personId, language }, config).catch(() => null),
   ]);
-  const seen = new Set<string>();
+  const seen = new Map<string, any>();
   const metas: any[] = [];
-  const add = (rows: any[], type: 'movie' | 'series') => {
+  const add = (rows: any[], credit: 'cast' | 'crew', type: 'movie' | 'series') => {
     for (const row of rows) {
-      const meta = metaFromTmdbRow(row, type);
-      if (!meta || seen.has(`${type}:${meta.id}`)) continue;
-      seen.add(`${type}:${meta.id}`);
-      metas.push(meta);
+      const key = `${type}:${row?.id}`;
+      let meta = seen.get(key);
+      if (!meta) {
+        meta = metaFromTmdbRow(row, type);
+        if (!meta) continue;
+        meta._personTypes = [];
+        seen.set(key, meta);
+        metas.push(meta);
+      }
+      for (const kind of creditTypes(row, credit, type)) {
+        if (!meta._personTypes.includes(kind)) meta._personTypes.push(kind);
+      }
     }
   };
-  add([...(movies?.cast || []), ...(movies?.crew || [])], 'movie');
-  add([...(shows?.cast || []), ...(shows?.crew || [])], 'series');
+  add(movies?.cast || [], 'cast', 'movie');
+  add(movies?.crew || [], 'crew', 'movie');
+  add(shows?.cast || [], 'cast', 'series');
+  add(shows?.crew || [], 'crew', 'series');
   metas.sort((a, b) => String(b.released || '').localeCompare(String(a.released || '')));
   return metas;
 }
