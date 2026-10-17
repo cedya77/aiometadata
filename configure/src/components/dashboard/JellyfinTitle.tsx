@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Bookmark, BookmarkCheck, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useJellyfinTitle, useJellyfinTitleAction, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
+import { useJellyfinTitle, useJellyfinTitleAction, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitlePerson, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
+import JellyfinPersonView, { CastRow } from "./JellyfinPerson";
 import { duration, useRemembered, when } from "./jellyfinUtils";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
@@ -82,20 +83,38 @@ function RatePicker({ value, onPick, onClose }: { value: number | null; onPick: 
   );
 }
 
-function EpisodeMenu({ onAction, onClose }: { onAction: (action: JellyfinTitleAction) => void; onClose: () => void }) {
+type MenuItem = { icon: React.ReactNode; label: string; onSelect: () => void };
+
+function ActionMenu({ at, items, onClose }: { at: { x: number; y: number }; items: MenuItem[]; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState(at);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    setPlace({ x: Math.max(8, Math.min(at.x, window.innerWidth - width - 8)), y: at.y + height + 8 > window.innerHeight ? Math.max(8, at.y - height) : at.y });
+  }, [at]);
   useEffect(() => {
     const away = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } };
+    const moved = (event: Event) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
     document.addEventListener("mousedown", away);
-    return () => document.removeEventListener("mousedown", away);
+    document.addEventListener("keydown", key, true);
+    window.addEventListener("scroll", moved, true);
+    window.addEventListener("resize", onClose);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", key, true);
+      window.removeEventListener("scroll", moved, true);
+      window.removeEventListener("resize", onClose);
+    };
   }, [onClose]);
-  const item = "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-white/10";
-  return (
-    <div ref={ref} onClick={(event) => event.stopPropagation()} className="glass absolute right-0 top-8 z-30 w-56 rounded-xl p-1 animate-fade-in">
-      <button type="button" className={item} onClick={() => onAction("played")}><Check className="size-4" /> Mark watched</button>
-      <button type="button" className={item} onClick={() => onAction("unplayed")}><Undo2 className="size-4" /> Mark unwatched</button>
-      <button type="button" className={item} onClick={() => onAction("playedUpTo")}><CheckCheck className="size-4" /> Watched up to here</button>
-    </div>
+  const item = "flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm hover:bg-white/10 [&>svg]:shrink-0";
+  return createPortal(
+    <div ref={ref} onClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()} style={{ left: place.x, top: place.y }} className="fixed z-[120] min-w-56 max-w-[calc(100vw-1rem)] rounded-xl bg-popover/95 p-1 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl animate-fade-in">
+      {items.map((entry) => <button key={entry.label} type="button" className={item} onClick={() => { onClose(); entry.onSelect(); }}>{entry.icon} {entry.label}</button>)}
+    </div>,
+    document.body,
   );
 }
 
@@ -110,7 +129,8 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
   onToggleSelect: () => void;
   onAction: (action: JellyfinTitleAction) => void;
 }) {
-  const [menu, setMenu] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
   const [failed, setFailed] = useState(false);
   const unaired = Boolean(ep.airsAt && ep.airsAt > now);
   const progress = ep.played ? 100 : ep.runtimeMs > 0 && ep.positionMs > 0 ? Math.min(100, (ep.positionMs / ep.runtimeMs) * 100) : 0;
@@ -118,7 +138,7 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
   return (
     <div
       onClick={selecting ? onToggleSelect : undefined}
-      onContextMenu={(event) => { if (!selecting) { event.preventDefault(); setMenu(true); } }}
+      onContextMenu={(event) => { if (!selecting) { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); } }}
       className={cx("group relative", selecting && "cursor-pointer", unaired && "opacity-60", className)}
     >
       <div className="relative aspect-video w-full overflow-hidden rounded-md bg-white/5">
@@ -152,11 +172,17 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
       <div className="relative mt-2 flex items-start gap-1">
         <p className="min-w-0 flex-1 truncate text-base">{ep.name || "No title"}</p>
         {!selecting && (
-          <button type="button" onClick={(event) => { event.stopPropagation(); setMenu((v) => !v); }} aria-label="More" className="-mr-1.5 -mt-1 flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-white/10 hover:text-foreground">
+          <button type="button" onMouseDown={(event) => { if (menu) event.stopPropagation(); }} onClick={(event) => { event.stopPropagation(); const box = event.currentTarget.getBoundingClientRect(); setMenu((v) => (v ? null : { x: box.right - 224, y: box.bottom + 4 })); }} aria-label="More" className="-mr-1.5 -mt-1 flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-white/10 hover:text-foreground">
             <MoreHorizontal className="size-4" />
           </button>
         )}
-        {menu && <EpisodeMenu onClose={() => setMenu(false)} onAction={(action) => { setMenu(false); onAction(action); }} />}
+        {menu && (
+          <ActionMenu at={menu} onClose={closeMenu} items={[
+            { icon: <Check className="size-4" />, label: "Mark watched", onSelect: () => onAction("played") },
+            { icon: <Undo2 className="size-4" />, label: "Mark unwatched", onSelect: () => onAction("unplayed") },
+            { icon: <CheckCheck className="size-4" />, label: "Watched up to here", onSelect: () => onAction("playedUpTo") },
+          ]} />
+        )}
       </div>
       {ep.overview && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{ep.overview}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -182,7 +208,7 @@ function SeasonPoster({ season, shared, number }: { season: SeasonItem; shared: 
   );
 }
 
-function SeasonRail({ seasons, watched, selected, onSelect }: { seasons: SeasonItem[]; watched: Set<number>; selected: number | null; onSelect: (season: number) => void }) {
+function SeasonRail({ seasons, watched, selected, onSelect, onMenu }: { seasons: SeasonItem[]; watched: Set<number>; selected: number | null; onSelect: (season: number) => void; onMenu: (season: SeasonItem, at: { x: number; y: number }) => void }) {
   const track = useRef<HTMLDivElement>(null);
   const ordered = useMemo(() => [...seasons.filter((s) => s.season !== 0), ...seasons.filter((s) => s.season === 0)], [seasons]);
   const sharedTags = useMemo(() => {
@@ -223,6 +249,7 @@ function SeasonRail({ seasons, watched, selected, onSelect }: { seasons: SeasonI
             aria-selected={active}
             title={season.name ?? undefined}
             onClick={() => onSelect(season.season)}
+            onContextMenu={(event) => { event.preventDefault(); onMenu(season, { x: event.clientX, y: event.clientY }); }}
             className={cx("group flex w-24 shrink-0 flex-col items-stretch gap-2 text-left outline-none transition-[opacity,transform] duration-200 sm:w-28 md:w-32", active ? "opacity-100" : "opacity-55 hover:opacity-85 active:scale-[0.97]")}
           >
             <div className={cx("relative w-full rounded-xl transition-shadow duration-200", active ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-background" : "group-focus-visible:ring-2 group-focus-visible:ring-ring")}>
@@ -321,14 +348,17 @@ function Details({ title }: { title: JellyfinTitle }) {
   );
 }
 
-export default function JellyfinTitlePage({ userUUID, profile, profileName, trackers, titleRef, activeTab, onClose }: {
+function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeTab, shown, onBack, onCloseAll, onPerson }: {
   userUUID: string;
   profile: string | null;
   profileName: string;
   trackers: string[];
   titleRef: JellyfinTitleRef;
   activeTab: DashboardTab;
-  onClose: () => void;
+  shown: boolean;
+  onBack: () => void;
+  onCloseAll: () => void;
+  onPerson: (person: JellyfinTitlePerson) => void;
 }) {
   const queryClient = useQueryClient();
   const act = useJellyfinTitleAction();
@@ -336,6 +366,8 @@ export default function JellyfinTitlePage({ userUUID, profile, profileName, trac
   const [season, setSeason] = useState<number | null | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
   const [pending, setPending] = useState<Record<string, boolean>>({});
+  const [seasonMenu, setSeasonMenu] = useState<{ season: SeasonItem; at: { x: number; y: number } } | null>(null);
+  const closeSeasonMenu = useCallback(() => setSeasonMenu(null), []);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rating, setRating] = useState(false);
@@ -346,24 +378,6 @@ export default function JellyfinTitlePage({ userUUID, profile, profileName, trac
   const [posterLoaded, setPosterLoaded] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
-
-  useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.history.pushState({ jellyfinTitle: true }, "");
-    const onPop = () => closeRef.current();
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") window.history.back(); };
-    window.addEventListener("popstate", onPop);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = previous;
-      window.removeEventListener("popstate", onPop);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, []);
-  const close = () => window.history.back();
 
   const title = useMemo(() => {
     if (!data) return null;
@@ -443,7 +457,7 @@ export default function JellyfinTitlePage({ userUUID, profile, profileName, trac
   );
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] overflow-y-auto overflow-x-hidden overscroll-contain bg-background animate-fade-in" role="dialog" aria-modal="true" aria-label={title?.title ?? "Title"}>
+    <div className={cx("fixed inset-0 z-[100] overflow-y-auto overflow-x-hidden overscroll-contain bg-background animate-fade-in", !shown && "invisible")} aria-hidden={!shown} role="dialog" aria-modal="true" aria-label={title?.title ?? "Title"}>
       <div className="relative isolate min-h-full">
         {wash && (
           <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 -z-20 h-[220vh] max-h-full select-none overflow-hidden [mask-image:linear-gradient(to_bottom,black_25%,transparent)] max-sm:hidden">
@@ -462,10 +476,10 @@ export default function JellyfinTitlePage({ userUUID, profile, profileName, trac
         </div>
 
         <div className="sticky top-0 z-40 flex items-center justify-between gap-3 px-4 pt-4 sm:px-12 sm:pt-6">
-          <button type="button" onClick={close} aria-label="Back" className="glass flex size-11 items-center justify-center rounded-full hover:bg-black/50"><ArrowLeft className="size-5" /></button>
+          <button type="button" onClick={onBack} aria-label="Back" className="glass flex size-11 items-center justify-center rounded-full hover:bg-black/50"><ArrowLeft className="size-5" /></button>
           <div className="flex items-center gap-2">
             <span className="glass rounded-full px-3.5 py-2 text-xs text-muted-foreground">Viewing as <span className="font-semibold text-foreground">{profileName}</span></span>
-            <button type="button" onClick={close} aria-label="Close" className="glass flex size-11 items-center justify-center rounded-full hover:bg-black/50"><X className="size-5" /></button>
+            <button type="button" onClick={onCloseAll} aria-label="Close" className="glass flex size-11 items-center justify-center rounded-full hover:bg-black/50"><X className="size-5" /></button>
           </div>
         </div>
 
@@ -587,13 +601,30 @@ export default function JellyfinTitlePage({ userUUID, profile, profileName, trac
                       </div>
                     </div>
                   </div>
-                  {title.seasons.length > 1 && <SeasonRail seasons={title.seasons} watched={watchedSeasons} selected={shownSeason} onSelect={setSeason} />}
+                  {title.seasons.length > 1 && <SeasonRail seasons={title.seasons} watched={watchedSeasons} selected={shownSeason} onSelect={setSeason} onMenu={(item, at) => setSeasonMenu({ season: item, at })} />}
+                  {seasonMenu && (() => {
+                    const target = seasonMenu.season;
+                    const aired = (seasons.find(([s]) => s === target.season)?.[1] ?? []).filter((ep) => !(ep.airsAt && ep.airsAt > now));
+                    const ids = aired.map((ep) => ep.id);
+                    const last = aired[aired.length - 1];
+                    const label = seasonLabel(target.season);
+                    if (aired.length === 0) return null;
+                    return (
+                      <ActionMenu at={seasonMenu.at} onClose={closeSeasonMenu} items={[
+                        { icon: <Check className="size-4" />, label: `Mark ${label} watched`, onSelect: () => void run("played", [target.id], `${label} marked watched`, true, null, ids) },
+                        { icon: <Undo2 className="size-4" />, label: `Mark ${label} unwatched`, onSelect: () => void run("unplayed", [target.id], `${label} marked unwatched`, false, null, ids) },
+                        ...(target.season !== 0 && last ? [{ icon: <CheckCheck className="size-4" />, label: `Watched up to the end of ${label}`, onSelect: () => void run("playedUpTo", [last.id], `Watched up to the end of ${label}`) }] : []),
+                      ]} />
+                    );
+                  })()}
                 </div>
                 {layout === "row" || isPhone
                   ? <EpisodeRow>{episodes.map((ep) => card(ep, "w-64 shrink-0 snap-start lg:w-72 2xl:w-80"))}</EpisodeRow>
                   : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">{episodes.map((ep) => card(ep))}</div>}
               </section>
             )}
+
+            {title && title.people.length > 0 && <CastRow people={title.people} onPerson={onPerson} />}
 
             {title && (
               <section className="flex flex-col gap-4">
@@ -617,5 +648,69 @@ export default function JellyfinTitlePage({ userUUID, profile, profileName, trac
       )}
     </div>,
     document.body
+  );
+}
+
+type StackEntry = { kind: "title"; ref: JellyfinTitleRef } | { kind: "person"; person: JellyfinTitlePerson };
+
+export default function JellyfinTitlePage({ userUUID, profile, profileName, trackers, titleRef, activeTab, onClose }: {
+  userUUID: string;
+  profile: string | null;
+  profileName: string;
+  trackers: string[];
+  titleRef: JellyfinTitleRef;
+  activeTab: DashboardTab;
+  onClose: () => void;
+}) {
+  const [stack, setStack] = useState<StackEntry[]>(() => [{ kind: "title", ref: titleRef }]);
+  const depth = useRef(1);
+  const closing = useRef(false);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.history.pushState({ jellyfinTitle: true }, "");
+    const onPop = () => {
+      if (closing.current) {
+        closeRef.current();
+        return;
+      }
+      depth.current -= 1;
+      if (depth.current <= 0) closeRef.current();
+      else setStack((held) => held.slice(0, depth.current));
+    };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") window.history.back(); };
+    window.addEventListener("popstate", onPop);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("popstate", onPop);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  const push = useCallback((entry: StackEntry) => {
+    window.history.pushState({ jellyfinTitle: true }, "");
+    depth.current += 1;
+    setStack((held) => [...held.slice(0, depth.current - 1), entry]);
+  }, []);
+  const back = useCallback(() => window.history.back(), []);
+  const closeAll = useCallback(() => {
+    closing.current = true;
+    window.history.go(-depth.current);
+  }, []);
+  const openPerson = useCallback((person: JellyfinTitlePerson) => push({ kind: "person", person }), [push]);
+  const openTitle = useCallback((ref: JellyfinTitleRef) => push({ kind: "title", ref }), [push]);
+
+  return (
+    <>
+      {stack.map((entry, index) => entry.kind === "title" ? (
+        <TitleView key={index} userUUID={userUUID} profile={profile} profileName={profileName} trackers={trackers} titleRef={entry.ref} activeTab={activeTab} shown={index === stack.length - 1} onBack={back} onCloseAll={closeAll} onPerson={openPerson} />
+      ) : (
+        <JellyfinPersonView key={index} userUUID={userUUID} profile={profile} profileName={profileName} person={entry.person} activeTab={activeTab} shown={index === stack.length - 1} onBack={back} onCloseAll={closeAll} onOpenTitle={openTitle} />
+      ))}
+    </>
   );
 }

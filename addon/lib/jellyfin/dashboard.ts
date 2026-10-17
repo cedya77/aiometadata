@@ -534,7 +534,7 @@ const keyKind = (key: string) => (key.startsWith('tt') ? 'imdb' : key.split(':')
 
 const preferredKey = (keys: string[]) => keys.find((key) => key.startsWith('tt')) ?? keys[0];
 
-function ratingTitles(rows: any[]): Array<{ key: string; rating: number; at: number; type: 'movie' | 'series' | null }> {
+function ratingTitles(rows: any[]): Array<{ key: string; keys: string[]; rating: number; at: number; type: 'movie' | 'series' | null }> {
   const bursts: Array<{ keys: string[]; rating: number; at: number; type: 'movie' | 'series' | null }> = [];
   const sorted = rows.filter((row) => TITLE_KEY.test(String(row.meta_id))).sort((a, b) => Number(a.updated_at) - Number(b.updated_at));
   for (const row of sorted) {
@@ -550,7 +550,7 @@ function ratingTitles(rows: any[]): Array<{ key: string; rating: number; at: num
     }
     bursts.push({ keys: [key], rating: Number(row.rating), at, type });
   }
-  return bursts.map((b) => ({ key: preferredKey(b.keys), rating: b.rating, at: b.at, type: b.type })).sort((a, b) => b.at - a.at);
+  return bursts.map((b) => ({ key: preferredKey(b.keys), keys: b.keys, rating: b.rating, at: b.at, type: b.type })).sort((a, b) => b.at - a.at);
 }
 
 const droppedMemo = new LRUCache<string, string[]>({ max: 200, ttl: envInt('JELLYFIN_DASHBOARD_STATS_TTL', 120, 10) * 1000 });
@@ -636,7 +636,7 @@ async function readShows(userUUID: string, profile: string | null): Promise<{ ro
         backdropUrl: meta?.background ?? null,
         source,
         lastWatchedAt: Number(row.lastWatchedAt) || null,
-        outcome: ended ? 'finished' : step.outcome,
+        outcome: !ended ? step.outcome : step.total && (step.watched ?? 0) < step.total ? 'unfinished' : 'finished',
         next: step.next ?? null,
         from: step.from ?? null,
         last: row.episode !== undefined && row.episode !== null ? { season: row.season ?? null, number: row.episode } : null,
@@ -734,12 +734,29 @@ const libraryNames = new LRUCache<string, Omit<LibraryRow, 'at' | 'rating'> | nu
 
 const TIMED_OUT = Symbol('timed out');
 
-async function describeTitle(userUUID: string, metaId: string, types: Array<'movie' | 'series'>): Promise<Omit<LibraryRow, 'at' | 'rating'> | null> {
-  const key = `${userUUID}:${types.join(',')}:${metaId}`;
+const aliasMatches = (meta: any, aliases: string[]): number => aliases.filter((alias) => {
+  const [kind, value] = alias.split(':');
+  return (kind === 'tvdb' && String(meta?._tvdbId ?? '') === value) || (kind === 'tmdb' && String(meta?._tmdbId ?? '') === value);
+}).length;
+
+async function describeTitle(userUUID: string, metaId: string, types: Array<'movie' | 'series'>, aliases?: string[]): Promise<Omit<LibraryRow, 'at' | 'rating'> | null> {
+  const checked = Boolean(aliases && aliases.length > 1 && types.length > 1);
+  const key = `${userUUID}:${types.join(',')}:${metaId}${checked ? `:${aliases!.join(',')}` : ''}`;
   if (libraryNames.has(key)) return libraryNames.get(key) ?? null;
   let timedOut = false;
-  for (const type of types) {
-    const meta = await withDeadline(fetchMeta(userUUID, type, metaId).catch(() => null), TIMED_OUT);
+  const fetched = checked
+    ? await Promise.all(types.map((type) => withDeadline(fetchMeta(userUUID, type, metaId).catch(() => null), TIMED_OUT)))
+    : null;
+  if (fetched) {
+    const scores = fetched.map((meta) => (meta && meta !== TIMED_OUT ? aliasMatches(meta, aliases!) : -1));
+    const best = scores.indexOf(Math.max(...scores));
+    if (best > 0) {
+      types = [types[best], ...types.filter((_, i) => i !== best)];
+      fetched.unshift(...fetched.splice(best, 1));
+    }
+  }
+  for (const [i, type] of types.entries()) {
+    const meta = fetched ? fetched[i] : await withDeadline(fetchMeta(userUUID, type, metaId).catch(() => null), TIMED_OUT);
     if (meta === TIMED_OUT) {
       timedOut = true;
       continue;
@@ -778,9 +795,12 @@ export async function libraryPicks(userUUID: string, config: any, tab: 'ratings'
   const key = profileKey(config);
   if (tab === 'ratings') {
     const ratings = await database.listProfileRatings(userUUID, key, 5000).catch(() => [] as any[]);
-    return ratingTitles(ratings)
-      .slice(0, envInt('JELLYFIN_DASHBOARD_RATINGS_MAX', 500, 1))
-      .map((r) => ({ metaId: r.key, types: r.type ? [r.type] : r.key.startsWith('tt') ? ['movie', 'series'] : ['series', 'movie'], at: r.at, rating: r.rating }));
+    const rated = ratingTitles(ratings).slice(0, envInt('JELLYFIN_DASHBOARD_RATINGS_MAX', 500, 1));
+    return mapWithConcurrency(rated, envInt('JELLYFIN_DASHBOARD_DESCRIBE_CONCURRENCY', 8, 1), async (r): Promise<LibraryPick> => {
+      const guess: Array<'movie' | 'series'> = r.type ? [r.type] : r.key.startsWith('tt') ? ['movie', 'series'] : ['series', 'movie'];
+      const named = r.type ? null : await describeTitle(userUUID, r.key, guess, r.keys);
+      return { metaId: r.key, types: named ? [named.type] : guess, at: r.at, rating: r.rating };
+    });
   }
   const { watchedSnapshot } = require('./watched');
   const snapshot = await watchedSnapshot(userUUID, config).catch(() => null);
@@ -816,10 +836,10 @@ export async function dashboardLibrary(userUUID: string, profile: string | null,
     const rated = ratingTitles(ratings);
     const dropped = await droppedShows(userUUID, key, [...(snapshot?.dropped ?? [])].map(String), config);
 
-    type Pick = { metaId: string; types: Array<'movie' | 'series'>; at: number | null; rating: number | null };
+    type Pick = { metaId: string; types: Array<'movie' | 'series'>; at: number | null; rating: number | null; aliases?: string[] };
     const describeAll = async (picked: Pick[]): Promise<LibraryRow[]> => {
       const described = await mapWithConcurrency(picked, envInt('JELLYFIN_DASHBOARD_DESCRIBE_CONCURRENCY', 8, 1), async (entry): Promise<LibraryRow> => {
-        const named = await describeTitle(userUUID, entry.metaId, entry.types);
+        const named = await describeTitle(userUUID, entry.metaId, entry.types, entry.aliases);
         return named
           ? { ...named, at: entry.at, rating: entry.rating }
           : { metaId: entry.metaId, type: entry.types[0], title: entry.metaId, year: null, posterUrl: null, backdropUrl: null, logoUrl: null, overview: null, score: null, genres: [], at: entry.at, rating: entry.rating };
@@ -844,7 +864,7 @@ export async function dashboardLibrary(userUUID: string, profile: string | null,
       total = listed.length;
       rows = await describeAll(listed.slice(from, from + cap).map((metaId) => ({ metaId, types: ['series'], at: null, rating: null })));
     } else {
-      const all = await describeAll(rated.slice(0, envInt('JELLYFIN_DASHBOARD_RATINGS_MAX', 500, 1)).map((r) => ({ metaId: r.key, types: r.type ? [r.type] : r.key.startsWith('tt') ? ['movie', 'series'] : ['series', 'movie'], at: r.at, rating: r.rating })));
+      const all = await describeAll(rated.slice(0, envInt('JELLYFIN_DASHBOARD_RATINGS_MAX', 500, 1)).map((r) => ({ metaId: r.key, types: r.type ? [r.type] : r.key.startsWith('tt') ? ['movie', 'series'] : ['series', 'movie'], at: r.at, rating: r.rating, aliases: r.type ? undefined : r.keys })));
       kinds = { movie: all.filter((r) => r.type === 'movie').length, series: all.filter((r) => r.type === 'series').length };
       const listed = all.filter((r) => fits(r.type));
       total = listed.length;
@@ -946,8 +966,68 @@ export async function dashboardTitle(userUUID: string, profile: string | null, r
       ...playOf(item.UserData),
       episodes: list,
       seasons,
+      people: (Array.isArray(item.People) ? item.People : []).map((person: any) => ({
+        id: String(person.Id),
+        name: String(person.Name ?? ''),
+        role: person.Role ? String(person.Role) : null,
+        type: String(person.Type ?? ''),
+        photo: image(person.Id, 'Primary', person.PrimaryImageTag),
+      })),
       watched: aired.filter((ep: any) => ep.played).length,
       aired: aired.length,
+    };
+  });
+}
+
+const yearFrom = (value: unknown): number | null => {
+  const year = Number.parseInt(String(value ?? '').slice(0, 4), 10);
+  return Number.isFinite(year) && year > 1800 ? year : null;
+};
+
+export async function dashboardPerson(userUUID: string, profile: string | null, personId: string): Promise<any | null> {
+  return asProfile(userUUID, profile, async (config) => {
+    const { readPerson } = require('./index');
+    const read = await readPerson(userUUID, config, personId);
+    if (!read) return null;
+    const { item, credits } = read;
+    const tag = item.ImageTags?.Primary;
+    return {
+      id: String(item.Id),
+      name: String(item.Name ?? ''),
+      overview: item.Overview || null,
+      born: item.PremiereDate ?? null,
+      died: item.EndDate ?? null,
+      birthplace: Array.isArray(item.ProductionLocations) && item.ProductionLocations.length ? item.ProductionLocations.join(', ') : null,
+      knownFor: item.KnownForType ?? null,
+      photo: tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(item.Id))}/Images/Primary?tag=${encodeURIComponent(String(tag))}` : null,
+      credits: credits.map((meta: any) => ({ type: meta.type === 'movie' ? 'movie' : 'series', year: yearFrom(meta.released ?? meta.releaseInfo), roles: Array.isArray(meta._personTypes) ? meta._personTypes : [] })),
+    };
+  });
+}
+
+export type PersonRole = 'all' | 'Actor' | 'Director' | 'Writer' | 'Producer' | 'Composer';
+
+export async function dashboardPersonTitles(userUUID: string, profile: string | null, personId: string, kind: LibraryKind, role: PersonRole, ascending: boolean, offset: number, limit: number): Promise<any | null> {
+  return asProfile(userUUID, profile, async (config) => {
+    const { readPersonTitles } = require('./index');
+    const roles = role === 'all' ? [] : role === 'Actor' ? ['Actor', 'GuestStar'] : [role];
+    const types = kind === 'all' ? 'Movie,Series' : kind === 'movie' ? 'Movie' : 'Series';
+    const from = Math.max(0, offset);
+    const { items, total } = await readPersonTitles(userUUID, config, personId, types, roles, from, Math.min(100, Math.max(1, limit)), ascending);
+    const image = (id: unknown, tag: unknown): string | null =>
+      id && tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(id))}/Images/Primary?tag=${encodeURIComponent(String(tag))}` : null;
+    return {
+      offset: from,
+      total,
+      rows: items.map((item: any) => ({
+        id: String(item.Id),
+        type: item.Type === 'Movie' ? 'movie' : 'series',
+        title: String(item.Name ?? ''),
+        year: Number(item.ProductionYear) || yearFrom(item.PremiereDate),
+        posterUrl: image(item.Id, item.ImageTags?.Primary),
+        played: item.UserData?.Played === true,
+        progress: Number(item.UserData?.PlayedPercentage) || 0,
+      })),
     };
   });
 }

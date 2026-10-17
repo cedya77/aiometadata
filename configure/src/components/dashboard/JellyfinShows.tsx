@@ -22,7 +22,7 @@ const SHOW_FILTERS: Array<{ key: ShowFilter; label: string; outcomes: string[] }
   { key: "all", label: "All", outcomes: [] },
   { key: "next", label: "Up next", outcomes: ["shown"] },
   { key: "waiting", label: "Waiting", outcomes: ["caught-up", "airs-later"] },
-  { key: "done", label: "Finished", outcomes: ["finished", "dropped"] },
+  { key: "done", label: "Finished", outcomes: ["finished", "unfinished", "dropped"] },
   { key: "problems", label: "Not shown", outcomes: ["missing-episode", "no-meta", "no-air-date", "not-anime", "rating-cap"] },
 ];
 function showStatus(row: JellyfinShowRow): { text: string; tone: string; fixable: boolean } {
@@ -32,6 +32,10 @@ function showStatus(row: JellyfinShowRow): { text: string; tone: string; fixable
     case "caught-up": return { text: "Caught up, waiting for new episodes", tone: "text-sky-300", fixable: false };
     case "airs-later": return { text: `${next} airs ${row.airsAt ? new Date(row.airsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "later"}`, tone: "text-sky-300", fixable: false };
     case "finished": return { text: "Finished", tone: "text-emerald-400", fixable: false };
+    case "unfinished": {
+      const left = Math.max(0, (row.total ?? 0) - (row.watched ?? 0));
+      return { text: `Reached the end, ${left} episode${left === 1 ? "" : "s"} unwatched`, tone: "text-amber-300", fixable: false };
+    }
     case "dropped": return { text: "Dropped", tone: "text-muted-foreground", fixable: false };
     case "missing-episode": return { text: `Last watched ${episodeRef(row.last) || "episode"} is not among its ${row.episodes ?? 0} episodes`, tone: "text-red-400", fixable: true };
     case "no-meta": return { text: "No metadata for this show", tone: "text-red-400", fixable: true };

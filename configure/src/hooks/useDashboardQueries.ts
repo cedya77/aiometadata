@@ -1801,8 +1801,63 @@ export interface JellyfinTitle {
   positionMs: number;
   episodes: JellyfinTitleEpisode[];
   seasons: Array<{ season: number; id: string; name: string | null; tag: string | null; poster: string | null; count: number }>;
+  people: JellyfinTitlePerson[];
   watched: number;
   aired: number;
+}
+
+export interface JellyfinTitlePerson {
+  id: string;
+  name: string;
+  role: string | null;
+  type: string;
+  photo: string | null;
+}
+
+export type JellyfinPersonRole = 'all' | 'Actor' | 'Director' | 'Writer' | 'Producer' | 'Composer';
+
+export interface JellyfinPerson {
+  id: string;
+  name: string;
+  overview: string | null;
+  born: string | null;
+  died: string | null;
+  birthplace: string | null;
+  knownFor: string | null;
+  photo: string | null;
+  credits: Array<{ type: 'movie' | 'series'; year: number | null; roles: string[] }>;
+}
+
+export interface JellyfinPersonTitle {
+  id: string;
+  type: 'movie' | 'series';
+  title: string;
+  year: number | null;
+  posterUrl: string | null;
+  played: boolean;
+  progress: number;
+}
+
+export const JELLYFIN_PERSON_PAGE = 40;
+
+export function useJellyfinPerson(userUUID: string | null, profile: string | null, personId: string | null, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams({ item: personId ?? '' });
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<JellyfinPerson>(
+    ['dashboard', 'jellyfin', 'person', userUUID, profile, personId] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/person?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID && personId), poll: false }
+  );
+}
+
+export function useJellyfinPersonTitles(userUUID: string | null, profile: string | null, personId: string | null, kind: JellyfinLibraryKind, role: JellyfinPersonRole, order: 'newest' | 'oldest', offset: number, options: DashboardQueryOptions & { enabledWhen?: boolean } = {}) {
+  const params = new URLSearchParams({ item: personId ?? '', kind, role, order, offset: String(offset), limit: String(JELLYFIN_PERSON_PAGE) });
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<{ offset: number; total: number; rows: JellyfinPersonTitle[] }>(
+    ['dashboard', 'jellyfin', 'person-titles', userUUID, profile, personId, kind, role, order, offset] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/person/titles?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID && personId) && options.enabledWhen !== false, poll: false }
+  );
 }
 
 export type JellyfinTitleRef = { item: string } | { id: string; type: 'movie' | 'series' };

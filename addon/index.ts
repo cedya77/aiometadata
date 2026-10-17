@@ -8408,6 +8408,46 @@ addon.get("/api/dashboard/jellyfin/:userUUID/title", requireDashboardAdmin, asyn
   }
 });
 
+addon.get("/api/dashboard/jellyfin/:userUUID/person", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const item = typeof req.query.item === 'string' ? req.query.item : '';
+    const payload = item ? await require('./lib/jellyfin/dashboard').dashboardPerson(String(req.params.userUUID), profile, item) : null;
+    if (!payload) {
+      res.status(404).json({ error: 'No such person' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the person' });
+  }
+});
+
+const PERSON_ROLES = new Set(['all', 'Actor', 'Director', 'Writer', 'Producer', 'Composer']);
+
+addon.get("/api/dashboard/jellyfin/:userUUID/person/titles", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const item = typeof req.query.item === 'string' ? req.query.item : '';
+    const kind = req.query.kind === 'movie' || req.query.kind === 'series' ? req.query.kind : 'all';
+    const role = typeof req.query.role === 'string' && PERSON_ROLES.has(req.query.role) ? req.query.role : 'all';
+    const offset = Number.parseInt(String(req.query.offset ?? '0'), 10);
+    const limit = Number.parseInt(String(req.query.limit ?? '40'), 10);
+    const payload = item
+      ? await require('./lib/jellyfin/dashboard').dashboardPersonTitles(String(req.params.userUUID), profile, item, kind, role, req.query.order === 'oldest', Number.isFinite(offset) ? offset : 0, Number.isFinite(limit) ? limit : 40)
+      : null;
+    if (!payload) {
+      res.status(404).json({ error: 'No such person' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the filmography' });
+  }
+});
+
 const TITLE_ACTIONS = new Set(['played', 'unplayed', 'playedUpTo', 'watchlist', 'unwatchlist', 'drop', 'undrop', 'rate']);
 
 addon.post("/api/dashboard/jellyfin/:userUUID/title/action", requireDashboardAdmin, async (req, res) => {

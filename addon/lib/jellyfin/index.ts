@@ -250,6 +250,19 @@ export async function runSearchCatalog(userUUID: string, config: any, catalog: {
   return searchReader ? searchReader.run(userUUID, config, catalog, term) : [];
 }
 
+let personReader: {
+  detail: (userUUID: string, config: any, personId: string) => Promise<{ item: any; credits: any[] } | null>;
+  titles: (userUUID: string, config: any, personId: string, types: string | undefined, roles: string[], start: number, take: number, ascending: boolean) => Promise<{ items: any[]; total: number }>;
+} | null = null;
+
+export async function readPerson(userUUID: string, config: any, personId: string): Promise<{ item: any; credits: any[] } | null> {
+  return personReader ? personReader.detail(userUUID, config, personId) : null;
+}
+
+export async function readPersonTitles(userUUID: string, config: any, personId: string, types: string | undefined, roles: string[], start: number, take: number, ascending: boolean): Promise<{ items: any[]; total: number }> {
+  return personReader ? personReader.titles(userUUID, config, personId, types, roles, start, take, ascending) : { items: [], total: 0 };
+}
+
 export async function readTitle(userUUID: string, config: any, itemId: string): Promise<{ meta: any; item: any; episodes: any[]; seasons: any[] } | null> {
   return titleReader ? titleReader(userUUID, config, itemId) : null;
 }
@@ -2921,6 +2934,19 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const { applyWatchlistState } = require('./watchlist');
     await applyWatchlistState([item], userUUID, config, new Map([[item.Id, descriptor]]));
     return { meta, item, episodes, seasons };
+  };
+
+  personReader = {
+    detail: async (userUUID: string, config: any, personId: string) => {
+      const descriptor = await decodeJellyfinId(personId);
+      if (!descriptor || descriptor.k !== 'person') return null;
+      const person = await personByName(config, descriptor.n);
+      if (!person) return null;
+      const credits = await personCredits(config, person.id);
+      return { item: personItem(personId, serverIdFor(userUUID), descriptor.n, person), credits };
+    },
+    titles: (userUUID: string, config: any, personId: string, types: string | undefined, roles: string[], start: number, take: number, ascending: boolean) =>
+      personItems(userUUID, config, serverIdFor(userUUID), personId, types, roles, start, take, ascending),
   };
 
   const buildCalendar = async (userUUID: string, config: any, from: number, to: number, withFilms = false): Promise<any[]> => {

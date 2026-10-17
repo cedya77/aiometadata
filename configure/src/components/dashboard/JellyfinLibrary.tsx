@@ -200,11 +200,12 @@ function Deck({ rows, index, onPick, onOpen }: { rows: JellyfinLibraryRow[]; ind
     const el = stage.current;
     if (!el) return;
     const onWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
       event.preventDefault();
       const now = Date.now();
       if (now - wheel.current < 140) return;
       wheel.current = now;
-      const step = Math.sign(event.deltaY || event.deltaX);
+      const step = Math.sign(event.deltaX);
       onPick(Math.max(0, Math.min(rows.length - 1, index + step)));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
