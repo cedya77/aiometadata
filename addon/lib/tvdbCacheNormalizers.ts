@@ -15,6 +15,10 @@ const SEASON_KEYS = ['id', 'name', 'slug', 'number', 'image', 'year', 'posters']
 const SEASON_TYPE_KEYS = ['id', 'name', 'type', 'alternateName'];
 const FIRST_RELEASE_KEYS = ['Date', 'date', 'country', 'releaseDate'];
 const EPISODE_RESPONSE_KEYS = ['pageInfo'];
+const PERSON_KEYS = ['id', 'name', 'image', 'birth', 'death', 'birthPlace'];
+const BIOGRAPHY_KEYS = ['language', 'biography'];
+const PERSON_CREDIT_KEYS = ['peopleType', 'type', 'seriesId', 'movieId'];
+const CREDIT_RECORD_KEYS = ['name', 'image', 'year'];
 const EPISODE_KEYS = ['id', 'name', 'number', 'seasonNumber', 'absoluteNumber', 'overview', 'image', 'aired', 'runtime'];
 const SERIES_EXTENDED_KEYS = [
   'id',
@@ -219,7 +223,27 @@ export function normalizeTvdbMovieExtendedForCache(movie: any) {
   };
 }
 
+export function normalizeTvdbPersonExtendedForCache(person: any) {
+  if (!person || typeof person !== 'object') return person;
+
+  return {
+    ...pickDefined(person, PERSON_KEYS),
+    ...(Array.isArray(person.biographies) ? { biographies: mapIfArray(person.biographies, (b: any) => pickDefined(b, BIOGRAPHY_KEYS)) } : {}),
+    ...(Array.isArray(person.remoteIds) ? { remoteIds: mapIfArray(person.remoteIds, normalizeTvdbRemoteIdForCache) } : {}),
+    ...(Array.isArray(person.characters)
+      ? {
+          characters: mapIfArray(person.characters.filter((c: any) => c?.seriesId || c?.movieId), (c: any) => ({
+            ...pickDefined(c, PERSON_CREDIT_KEYS),
+            ...(c.series ? { series: pickDefined(c.series, CREDIT_RECORD_KEYS) } : {}),
+            ...(c.movie ? { movie: pickDefined(c.movie, CREDIT_RECORD_KEYS) } : {}),
+          })),
+        }
+      : {}),
+  };
+}
+
 export const tvdbCacheNormalizers = {
+  normalizeTvdbPersonExtendedForCache,
   normalizeTvdbSeriesEpisodesForCache,
   normalizeTvdbSeriesExtendedForCache,
   normalizeTvdbMovieExtendedForCache,

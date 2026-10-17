@@ -1491,13 +1491,15 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const directorDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
     name: d.name,
     character: d.name,
-    photo: d.profile_path ? `https://image.tmdb.org/t/p/w276_and_h350_face${d.profile_path}` : null
+    photo: d.profile_path ? `https://image.tmdb.org/t/p/w276_and_h350_face${d.profile_path}` : null,
+    tmdbId: d.id
   })).filter(d => d.name);
 
   const writerDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
     name: w.name,
     character: w.name,
-    photo: w.profile_path ? `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null
+    photo: w.profile_path ? `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null,
+    tmdbId: w.id
   })).filter(w => w.name);
 
   let overview = movieData.overview;
@@ -1620,13 +1622,15 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   const directorDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
     name: d.name,
     character: d.name,
-    photo: d.profile_path ? `https://image.tmdb.org/t/p/w276_and_h350_face${d.profile_path}` : null
+    photo: d.profile_path ? `https://image.tmdb.org/t/p/w276_and_h350_face${d.profile_path}` : null,
+    tmdbId: d.id
   })).filter(d => d.name);
 
   const writerDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
     name: w.name,
     character: w.name,
-    photo: w.profile_path ? `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null
+    photo: w.profile_path ? `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null,
+    tmdbId: w.id
   })).filter(w => w.name);
   let videos = [];
   const tmdbSeasons = (seasons || []).filter(season => season.season_number != 0);
@@ -2056,7 +2060,8 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
       .map(c => ({
         name: c.personName,
         character: c.name,
-        photo: c.image || c.personImgURL 
+        photo: c.image || c.personImgURL,
+        peopleId: c.peopleId
       }))
       .filter(c => c.name),
     crew: []
@@ -2075,13 +2080,15 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const directorDetails = (characters || []).filter(c => c.peopleType === 'Director').map(d => ({
     name: d.personName,
     character: d.name,
-    photo: d.image || d.personImgURL 
+    photo: d.image || d.personImgURL,
+    tvdbId: d.peopleId
   })).filter(d => d.name);
 
   const writerDetails = (characters || []).filter(c => c.peopleType === 'Writer').map(w => ({
     name: w.personName,
     character: w.name,
-    photo: w.image || w.personImgURL 
+    photo: w.image || w.personImgURL,
+    tvdbId: w.peopleId
   })).filter(w => w.name);
 
   const writerLinks = writers.map(w => ({
@@ -2309,7 +2316,8 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
       .map(c => ({
         name: c.personName,
         character: c.name,
-        photo: c.image || c.personImgURL 
+        photo: c.image || c.personImgURL,
+        peopleId: c.peopleId
       }))
       .filter(c => c.name),
     crew: []
@@ -2322,13 +2330,15 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const directorDetails = (characters || []).filter(c => c.peopleType === 'Director').map(d => ({
     name: d.personName,
     character: d.name,
-    photo: d.image || d.personImgURL 
+    photo: d.image || d.personImgURL,
+    tvdbId: d.peopleId
   })).filter(d => d.name);
 
   const writerDetails = (characters || []).filter(c => c.peopleType === 'Writer').map(w => ({
     name: w.personName,
     character: w.name,
-    photo: w.image || w.personImgURL 
+    photo: w.image || w.personImgURL,
+    tvdbId: w.peopleId
   })).filter(w => w.name);
 
   const directorLinks = directors.map(d => ({

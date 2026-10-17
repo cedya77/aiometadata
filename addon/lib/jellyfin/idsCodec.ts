@@ -16,7 +16,8 @@ export type Descriptor =
   | { k: 'episode'; t: string; i: string; s: number | null; e: number }
   | { k: 'view'; t: string; c: string }
   | { k: 'genre'; t: string; c: string; g: string }
-  | { k: 'person' | 'studio'; n: string }
+  | { k: 'studio'; n: string }
+  | { k: 'person'; n: string; s?: 'tmdb' | 'tvdb'; x?: number }
   /** A collection built in the configuration, and one folder tile inside it. */
   | { k: 'collection'; c: string }
   | { k: 'boxset'; c: string; f: string }
@@ -250,8 +251,9 @@ export function canonicalDescriptor(d: Descriptor): string {
     case 'episode':
       return `episode|${d.t}|${d.i}|${d.s === null ? '' : d.s}|${d.e}`;
     case 'person':
+      return d.s && d.x ? `person|${d.n}|${d.s}|${d.x}` : `person|${d.n}`;
     case 'studio':
-      return `${d.k}|${d.n}`;
+      return `studio|${d.n}`;
     case 'collection':
       return `collection|${d.c}`;
     case 'boxset':

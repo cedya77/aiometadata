@@ -564,7 +564,9 @@ function endDate(meta: any): string | null {
 function peopleFrom(meta: any, serverId: string): any[] {
   const extras = meta.app_extras || {};
   const person = (member: any, type: string, role: string) => {
-    const id = encodeJellyfinId({ k: 'person', n: String(member?.name || '') });
+    const source = Number(member?.tvdbId) > 0 ? { s: 'tvdb' as const, x: Number(member.tvdbId) }
+      : Number(member?.tmdbId) > 0 ? { s: 'tmdb' as const, x: Number(member.tmdbId) } : {};
+    const id = encodeJellyfinId({ k: 'person', n: String(member?.name || ''), ...source });
     // A client only asks for a portrait when the tag is present, so registering
     // the photo and setting it have to happen together.
     if (member?.photo) rememberImages(serverId, id, { primary: member.photo });

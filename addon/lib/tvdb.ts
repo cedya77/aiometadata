@@ -10,6 +10,7 @@ import { UserConfig } from '../types/index.js';
 import consola from 'consola';
 import {
   normalizeTvdbMovieExtendedForCache,
+  normalizeTvdbPersonExtendedForCache,
   normalizeTvdbSeriesEpisodesForCache,
   normalizeTvdbSeriesExtendedForCache,
   tvdbCacheNormalizers,
@@ -338,33 +339,25 @@ interface TvdbEpisodesResponse {
   };
 }
 
+interface TvdbPersonCredit {
+  peopleType: string;
+  type: number;
+  seriesId: number | null;
+  movieId: number | null;
+  series?: { name?: string; image?: string; year?: string } | null;
+  movie?: { name?: string; image?: string; year?: string } | null;
+}
+
 interface TvdbPersonExtended {
-  id: string;
+  id: number;
   name: string;
-  slug: string;
-  image: string;
-  overview: string;
-  birthDate: string;
-  deathDate?: string;
-  birthPlace: string;
-  deathPlace?: string;
-  gender: number;
-  remoteIds: Array<{
-    id: string;
-    sourceName: string;
-    sourceId: string;
-    url?: string;
-  }>;
-  translations: {
-    nameTranslations: Array<{
-      language: string;
-      name: string;
-    }>;
-    overviewTranslations: Array<{
-      language: string;
-      overview: string;
-    }>;
-  };
+  image: string | null;
+  birth: string | null;
+  death: string | null;
+  birthPlace: string | null;
+  biographies?: Array<{ language: string; biography: string }>;
+  remoteIds?: Array<{ id: string; sourceName: string }>;
+  characters?: TvdbPersonCredit[];
 }
 
 interface TvdbGenre {
@@ -761,26 +754,28 @@ async function getMovieExtended(movieId: string, config: UserConfig): Promise<Tv
 }
 
 async function getPersonExtended(personId: string, config: UserConfig): Promise<TvdbPersonExtended | null> {
-  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
-  if (!token) return null;
-  
-  const startTime = Date.now();
-  try {
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}/people/${personId}/extended`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    
-    const responseTime = Date.now() - startTime;
-    
-    // Track successful request
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, true);
-    
-    return (response.data as any)?.data;
-  } catch (error) {
-    logger.error(`Error getting person extended for ID ${personId}:`, (error as Error).message);
-    return null;
-  }
+  return cacheWrapTvdbApi(`person-extended:${personId}`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return null;
+
+    const startTime = Date.now();
+    try {
+      const response = await tvdbHttpRequest(`${TVDB_API_URL}/people/${personId}/extended`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      const responseTime = Date.now() - startTime;
+
+      // Track successful request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
+
+      return normalizeTvdbPersonExtendedForCache((response.data as any)?.data);
+    } catch (error) {
+      logger.error(`Error getting person extended for ID ${personId}:`, (error as Error).message);
+      return null;
+    }
+  });
 }
 
 async function _fetchEpisodesBySeasonType(tvdbId: string, seasonType: string, language: string, config: UserConfig): Promise<{ episodes: TvdbEpisode[] } | null> {

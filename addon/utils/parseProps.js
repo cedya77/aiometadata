@@ -994,7 +994,9 @@ function parseCast(credits, count, metaProvider = 'tmdb') {
     return {
       name: el.name,
       character: el.character,
-      photo: photoUrl
+      photo: photoUrl,
+      ...(metaProvider === 'tmdb' && el.id ? { tmdbId: el.id } : {}),
+      ...(metaProvider === 'tvdb' && el.peopleId ? { tvdbId: el.peopleId } : {})
     };
   });
 }

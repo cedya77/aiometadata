@@ -40,7 +40,7 @@ import { refreshSeriesIndex, seriesIndex, warmSeriesIndex } from './episodeIndex
 import { authorizeQuickConnect, claimQuickConnect, initiateQuickConnect, quickConnectResult, readQuickConnect } from './quickConnect';
 import { avatarTag, keepsUnderProfileCap, listProfiles, profileById, profileByName, profileByUserId, profileKey, profileTags, scopeConfigToProfile, type Profile } from './profiles';
 import { malEpisodeFor, segmentId, segmentsFor, type SegmentType } from './segments';
-import { personByName, personCredits, previewMeta, similarTitles } from './people';
+import { hasCreditDate, personByName, personCredits, previewMeta, resolvePerson, similarTitles } from './people';
 import { allBoxSets, boxSetGenres, boxSetMembers, boxSetsDeep, boxSetsFor, boxSetsUnder, collectionById, collectionView, folderById } from './collections';
 import { entryItemType, setWatchlisted, watchlistEntries, watchlistItems } from './watchlist';
 import { applyRatings, applyWatchedState, finishedSeries, ownNextUpRows, seriesCountsAmong, upcomingFollowed, watchedAmong, watchedHistory, watchedSnapshot, type NextUpRow, type UpcomingRow } from './watched';
@@ -1741,16 +1741,16 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   ): Promise<{ items: any[]; total: number }> => {
     const descriptor = await decodeJellyfinId(personId);
     if (!descriptor || descriptor.k !== 'person') return { items: [], total: 0 };
-    const person = await personByName(config, descriptor.n);
+    const person = await resolvePerson(config, descriptor);
     if (!person) return { items: [], total: 0 };
     const wanted = includeItemTypes ? String(includeItemTypes) : undefined;
-    const newest = (await personCredits(config, person.id)).filter(
+    const newest = (await personCredits(config, person)).filter(
       (meta: any) =>
         (!wanted || wanted.split(',').map((t) => t.trim()).includes(meta.type === 'movie' ? 'Movie' : 'Series')) &&
         (!personTypes.length || personTypes.some((kind) => meta._personTypes.includes(kind)))
     );
     const listed = ascending
-      ? [...newest.filter((meta: any) => meta.released).reverse(), ...newest.filter((meta: any) => !meta.released)]
+      ? [...newest.filter(hasCreditDate).reverse(), ...newest.filter((meta: any) => !hasCreditDate(meta))]
       : newest;
     const page = await mapWithConcurrency(listed.slice(startIndex, startIndex + take), shelfConcurrency(), async (meta: any) => {
       const card = await previewMeta(config, userUUID, meta.type, meta.id).catch(() => null);
@@ -1833,7 +1833,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       res.json(itemList([], 0, 0));
       return;
     }
-    const id = encodeJellyfinId({ k: 'person', n: person.name });
+    const id = encodeJellyfinId({ k: 'person', n: person.name, s: person.source, x: person.id });
     res.json(itemList([personItem(id, serverIdFor(req.params.userUUID), person.name, person)], 1, 0));
   });
 
@@ -3287,7 +3287,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     if (descriptor.k === 'person') {
       const config = await loadConfig(req);
-      const person = config ? await personByName(config, descriptor.n) : null;
+      const person = config ? await resolvePerson(config, descriptor) : null;
       res.json(personItem(String(req.params.itemId), serverIdFor(userUUID), descriptor.n, person));
       return;
     }
