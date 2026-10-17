@@ -382,16 +382,20 @@ export async function resumeSnapshot(userUUID: string, config: any): Promise<Res
   } catch (error: any) {
     logger.debug(`Own playstate rows unavailable: ${error?.message || error}`);
   }
-  // A play is written under every id it is known by; one row per resolved title.
-  const { titleIdentity } = require('./canonicalIds');
   const overrides = tracker.filter((row) => known.has(row.videoId) && trackerPositionWins(row, known.get(row.videoId)));
-  const candidates = [...overrides, ...own, ...tracker.filter((r) => !known.has(r.videoId))];
+  return oneRowPerTitle([...overrides, ...own, ...tracker.filter((r) => !known.has(r.videoId))], config);
+}
+
+// A play is written under every id it is known by; one row per resolved title.
+export async function oneRowPerTitle(candidates: ResumeRow[], config: any): Promise<ResumeRow[]> {
+  const { titleIdentity } = require('./canonicalIds');
+  const { videoIdAliases } = require('./aliases');
   const taken = new Set<string>();
   const rows: ResumeRow[] = [];
   for (const row of candidates) {
-    const identity = await titleIdentity(row.videoId, config);
-    if (taken.has(identity)) continue;
-    taken.add(identity);
+    const spellings = [row.videoId, await titleIdentity(row.videoId, config), ...(await videoIdAliases(row.videoId))];
+    if (spellings.some((spelling) => taken.has(spelling))) continue;
+    for (const spelling of spellings) taken.add(spelling);
     rows.push(row);
   }
   return rows.sort((a, b) => b.updatedAt - a.updatedAt);
