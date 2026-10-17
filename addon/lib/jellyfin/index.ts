@@ -2940,9 +2940,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     detail: async (userUUID: string, config: any, personId: string) => {
       const descriptor = await decodeJellyfinId(personId);
       if (!descriptor || descriptor.k !== 'person') return null;
-      const person = await personByName(config, descriptor.n);
+      const person = await resolvePerson(config, descriptor);
       if (!person) return null;
-      const credits = await personCredits(config, person.id);
+      const credits = await personCredits(config, person);
       return { item: personItem(personId, serverIdFor(userUUID), descriptor.n, person), credits };
     },
     titles: (userUUID: string, config: any, personId: string, types: string | undefined, roles: string[], start: number, take: number, ascending: boolean) =>
