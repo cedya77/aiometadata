@@ -861,6 +861,24 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-0.5">
+                  <Label className="text-xs font-medium">Similar titles</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    The titles an app shows as similar on a title's page. TMDB suggests from its own recommendations. Simkl suggests what its users recommend alongside the title, or titles in the same genres when there are none, and uses TMDB for a title it does not know.
+                  </p>
+                </div>
+                <Select
+                  value={config.jellyfinSimilarSource ?? 'tmdb'}
+                  onValueChange={(v) => setConfig(prev => ({ ...prev, jellyfinSimilarSource: v === 'simkl' ? 'simkl' : undefined }))}
+                >
+                  <SelectTrigger className="h-8 w-40 shrink-0 text-xs" aria-label="Similar titles"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tmdb">TMDB</SelectItem>
+                    <SelectItem value="simkl">Simkl</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
           <div className="space-y-2 border-t pt-4">

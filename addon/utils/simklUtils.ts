@@ -556,14 +556,18 @@ async function fetchSimklSearchItems(
   }
 }
 
+function simklDetailTtl(): number {
+  return parseInt(getSetting('SIMKL_DETAIL_TTL'), 10) || 24 * 60 * 60;
+}
+
 /**
  * Search answers with an index row, so anything beyond title, year, poster and ids
  * has to come from here. This is also the only place a simkl id turns into an imdb
  * or tvdb one, which search omits.
  */
-async function fetchSimklItemDetail(type: 'movie' | 'tv', simklId: string | number, accessToken?: string | null): Promise<any> {
+async function fetchSimklItemDetail(type: 'movie' | 'tv' | 'anime', simklId: string | number, accessToken?: string | null): Promise<any> {
   if (!simklId) return null;
-  const segment = type === 'movie' ? 'movies' : 'tv';
+  const segment = type === 'movie' ? 'movies' : type;
   return cacheWrapGlobal(
     `simkl:detail:${segment}:${simklId}`,
     async () => {
@@ -576,9 +580,58 @@ async function fetchSimklItemDetail(type: 'movie' | 'tv', simklId: string | numb
         return null;
       }
     },
-    24 * 60 * 60,
+    simklDetailTtl(),
     { resultClassifier: classifyResultAllowEmpty }
   );
+}
+
+type SimklTitleRef = { segment: 'movie' | 'tv' | 'anime'; id: number } | { missing: true };
+
+// Simkl answers an external id with a redirect to the title's page, and an unknown one with its home page.
+async function resolveSimklTitle(param: 'mal' | 'imdb' | 'tmdb', value: string, kind?: 'movie' | 'show'): Promise<SimklTitleRef> {
+  const query = `${param}=${encodeURIComponent(value)}${kind ? `&type=${kind}` : ''}`;
+  return cacheWrapGlobal(
+    `simkl:redirect:${query}`,
+    async () => {
+      const url = `${SIMKL_BASE_URL}/redirect?to=simkl&${query}&${simklDataParams()}`;
+      const location: string = await makeRateLimitedRequest(async () => {
+        try {
+          await httpRequest(url, { headers: { 'simkl-api-key': simklClientIdFor() }, dispatcher: simklDispatcher });
+          return '';
+        } catch (error: any) {
+          const header = error?.response?.headers?.location;
+          if (header) return String(header);
+          throw error;
+        }
+      }, `Simkl redirect (${query})`);
+      const match = location.match(/simkl\.com\/(movies|tv|anime)\/(\d+)/);
+      return match ? { segment: match[1] === 'movies' ? 'movie' : match[1], id: Number(match[2]) } : { missing: true };
+    },
+    simklDetailTtl(),
+    { resultClassifier: classifyResultAllowEmpty }
+  );
+}
+
+/**
+ * What Simkl suggests next to a title: what its users recommend alongside it,
+ * or when there are none, the titles in the same genres its page shows.
+ */
+async function fetchSimklRecommendations(ids: { mal?: any; imdb?: any; tmdb?: any }, type: 'movie' | 'series'): Promise<any[]> {
+  const lookups: Array<[param: 'mal' | 'imdb' | 'tmdb', value: any, kind?: 'movie' | 'show']> = [
+    ['mal', ids.mal],
+    ['imdb', ids.imdb],
+    ['tmdb', ids.tmdb, type === 'movie' ? 'movie' : 'show'],
+  ];
+  for (const [param, value, kind] of lookups) {
+    if (!value) continue;
+    const title = await resolveSimklTitle(param, String(value), kind);
+    if ('missing' in title) continue;
+    const detail = await fetchSimklItemDetail(title.segment, title.id);
+    if (!detail) return [];
+    const viewers = Array.isArray(detail.users_recommendations) ? detail.users_recommendations : [];
+    return viewers.length ? viewers : Array.isArray(detail.similar) ? detail.similar : [];
+  }
+  return [];
 }
 
 /**
@@ -2083,6 +2136,7 @@ export {
   fetchSimklUserStats,
   fetchSimklSearchItems,
   fetchSimklItemDetail,
+  fetchSimklRecommendations,
   fetchSimklWatchlistItems,
   fetchSimklUpNextItems,
   parseSimklUpNextItems,

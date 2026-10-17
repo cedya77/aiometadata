@@ -3174,13 +3174,13 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
 
     const meta = await fetchMeta(userUUID, descriptor.k, descriptor.i);
-    if (!meta?._tmdbId) {
+    if (!meta) {
       res.json(itemList([], 0, 0));
       return;
     }
 
     const serverId = serverIdFor(userUUID);
-    const rows = await similarTitles(config, String(meta._tmdbId), descriptor.k);
+    const rows = await similarTitles(config, meta, descriptor.k);
     const capped = hasAgeRatingCap(config);
     const built = await mapWithConcurrency(capped ? rows : rows.slice(0, limit), shelfConcurrency(), async (row: any) => {
       const full = await previewMeta(config, userUUID, row.type, row.id).catch(() => null);

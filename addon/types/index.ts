@@ -7,6 +7,8 @@ export interface UserConfig {
   jellyfinLatestRows?: boolean;
   jellyfinMarkUnaired?: boolean;
   jellyfinUpcomingMode?: 'airing';
+  /** Where a title's similar titles come from. TMDB when unset. */
+  jellyfinSimilarSource?: 'simkl';
   /** Playback is reported by the client, so the subtitle trigger is not used. */
   playbackReporting?: boolean;
   /** Password a Jellyfin client signs in with, for accounts that have no configuration password. */

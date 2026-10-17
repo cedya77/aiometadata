@@ -99,12 +99,51 @@ export async function previewMeta(config: any, userUUID: string, type: 'movie' |
   return meta;
 }
 
-/** What TMDB recommends next to a title. */
-export async function similarTitles(config: any, tmdbId: string, type: 'movie' | 'series'): Promise<any[]> {
+const simklImage = (path: string | null | undefined, kind: 'posters' | 'fanart', size: string): string | null =>
+  path ? `https://wsrv.nl/?url=https://simkl.in/${kind}/${path}_${size}.webp` : null;
+
+/** A Simkl suggestion as the meta a catalog would hand out, opened by its MAL, TMDB or IMDb id. */
+function metaFromSimklRow(row: any): any | null {
+  const ids = row?.ids || {};
+  const type: 'movie' | 'series' = row?.type === 'movie' || row?.anime_type === 'movie' ? 'movie' : 'series';
+  const malId = row?.type === 'anime' ? Number(ids.mal) : NaN;
+  const id = malId > 0 ? `mal:${malId}` : ids.tmdb ? `tmdb:${ids.tmdb}` : /^tt\d+$/.test(String(ids.imdb || '')) ? String(ids.imdb) : null;
+  if (!id) return null;
+  const year = row.year ? String(row.year) : '';
+  return {
+    id,
+    type,
+    name: row.en_title || row.title || '',
+    poster: simklImage(row.poster, 'posters', 'm'),
+    background: simklImage(row.fanart, 'fanart', 'medium'),
+    landscapePoster: simklImage(row.fanart, 'fanart', 'mobile'),
+    description: '',
+    releaseInfo: year,
+    year,
+    genres: [],
+    ...(ids.tmdb ? { _tmdbId: String(ids.tmdb) } : {}),
+  };
+}
+
+/** What the chosen source recommends next to a title. Simkl falls back to TMDB when it has nothing for it. */
+export async function similarTitles(config: any, meta: any, type: 'movie' | 'series'): Promise<any[]> {
+  if (config?.jellyfinSimilarSource === 'simkl') {
+    const { fetchSimklRecommendations } = require('../../utils/simklUtils');
+    const rows: any[] = await fetchSimklRecommendations(
+      { mal: meta?._malId, imdb: meta?._imdbId || meta?.imdb_id, tmdb: meta?._tmdbId },
+      type
+    ).catch((error: any) => {
+      logger.debug(`Simkl similar titles unavailable for ${meta?.id}: ${error?.message || error}`);
+      return [];
+    });
+    const metas = rows.map(metaFromSimklRow).filter(Boolean);
+    if (metas.length) return metas;
+  }
+  if (!meta?._tmdbId) return [];
   const language = config?.language || 'en-US';
   const page = type === 'movie'
-    ? await moviedb.movieRecommendations({ id: tmdbId, language }, config)
-    : await moviedb.tvRecommendations({ id: tmdbId, language }, config);
+    ? await moviedb.movieRecommendations({ id: meta._tmdbId, language }, config)
+    : await moviedb.tvRecommendations({ id: meta._tmdbId, language }, config);
   return (page?.results || []).map((row: any) => metaFromTmdbRow(row, type)).filter(Boolean);
 }
 

@@ -3285,6 +3285,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     default: 1800,
   },
   {
+    key: 'SIMKL_DETAIL_TTL',
+    envVar: 'SIMKL_DETAIL_TTL',
+    label: 'Simkl Title Details TTL (sec)',
+    description: 'How long a Simkl title record, and the Simkl id an IMDb, TMDB or MAL id points to, are reused. The records feed Simkl search results and Simkl similar titles.',
+    category: 'Cache',
+    type: 'number',
+    default: 86400,
+    min: 60,
+  },
+  {
     key: 'TMDB_KEYWORD_EXPORT_TTL',
     envVar: 'TMDB_KEYWORD_EXPORT_TTL',
     label: 'TMDB Keyword Export TTL (sec)',
