@@ -736,11 +736,26 @@ async function performImdbSuggestionSearch(type: string, query: string, language
   return metas;
 }
 
-function hydrateImdbId(type: string, imdbId: string, language: string, config: any): Promise<any[]> {
-  const metaProvider = type === 'movie' ? (config.providers?.movie || 'tmdb') : (config.providers?.series || 'tvdb');
-  return metaProvider === 'tvdb'
-    ? performTvdbSearch(type, imdbId, language, config)
-    : performTmdbSearch(type, imdbId, language, config, false);
+async function hydrateImdbId(type: string, imdbId: string, language: string, config: any): Promise<any[]> {
+  const contentType = type === 'movie' ? 'movie' : 'series';
+  const metaProvider = contentType === 'movie' ? (config.providers?.movie || 'tmdb') : (config.providers?.series || 'tvdb');
+  const posterProvider = Utils.resolveArtProvider(contentType, 'poster', config);
+
+  const preferredProvider = (posterProvider === 'tmdb' || posterProvider === 'tvdb')
+    ? posterProvider
+    : metaProvider;
+
+  const fetchByProvider = (provider: string) =>
+    provider === 'tvdb'
+      ? performTvdbSearch(type, imdbId, language, config)
+      : performTmdbSearch(type, imdbId, language, config, false);
+
+  if (preferredProvider === metaProvider) {
+    return fetchByProvider(metaProvider);
+  }
+
+  const results = await fetchByProvider(preferredProvider);
+  return results?.length > 0 ? results : fetchByProvider(metaProvider);
 }
 
 // Results keep the provider's order, since its ranking is the reason to use it.
