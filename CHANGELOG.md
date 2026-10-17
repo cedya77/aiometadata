@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.6.0](https://github.com/cedya77/aiometadata/compare/v3.5.1...v3.6.0) (2026-10-17)
+
+
+### Features
+
+* **art:** serve a smaller copy of cached art when the path names a width ([88385dc](https://github.com/cedya77/aiometadata/commit/88385dc6a228b01aeceeb82ab57fd84956e7e9b1))
+* **dashboard:** export and import instance settings ([8c59f4a](https://github.com/cedya77/aiometadata/commit/8c59f4aca7a9b8e219fa483a31c122f3b8e0de3e))
+* **dashboard:** give the Jellyfin tab a profile hero, library, calendar and Next Up view ([88385dc](https://github.com/cedya77/aiometadata/commit/88385dc6a228b01aeceeb82ab57fd84956e7e9b1))
+* **jellyfin:** choose TMDB or Simkl for a title's similar titles ([0c48832](https://github.com/cedya77/aiometadata/commit/0c4883284a5efe4fb4c03d194960fba61506cb00))
+* **jellyfin:** filter a person's filmography by role ([d22ec82](https://github.com/cedya77/aiometadata/commit/d22ec82a8137389c17730096fd345e5e6e5a3d58))
+* **jellyfin:** import a tracker's watchlist into this server's own list ([7283723](https://github.com/cedya77/aiometadata/commit/7283723390a4727d9ccd8b46d2d87513eba056fc))
+* **jellyfin:** let the main user have a PIN ([1fe16dd](https://github.com/cedya77/aiometadata/commit/1fe16ddf6a165264fb4cd08fba897e8f133b2005))
+* **jellyfin:** list a profile's rated titles and dropped shows ([433c85f](https://github.com/cedya77/aiometadata/commit/433c85f01403a145769b49a55f0ec385b092da20))
+* **jellyfin:** push watch state changes to open clients over the socket ([adc6ce1](https://github.com/cedya77/aiometadata/commit/adc6ce1eb9f309aef4d9e0ba6398158a1467acd2))
+
+
+### Bug Fixes
+
+* **art:** apply the custom poster pattern to titles with no IMDb, TMDB or TVDB id when the poster proxy is on ([55e6c04](https://github.com/cedya77/aiometadata/commit/55e6c04d24e52d5ab22443d1d3b7233f64f5ed50)), closes [#825](https://github.com/cedya77/aiometadata/issues/825)
+* **jellyfin:** a profile kept apart from the account with no tracker connected reads no tracker ([88385dc](https://github.com/cedya77/aiometadata/commit/88385dc6a228b01aeceeb82ab57fd84956e7e9b1))
+* **jellyfin:** accept a socket opened through the account alias ([d4b7b31](https://github.com/cedya77/aiometadata/commit/d4b7b31883bf415a580931bba98e59f007860f89))
+* **jellyfin:** ask only for a PIN when switching users ([b09988a](https://github.com/cedya77/aiometadata/commit/b09988af208e0ff6d82de7aa05d283c1e94866ff))
+* **jellyfin:** clear a title's other watchlist spellings when it is removed, and share one identity rule ([c8c9efb](https://github.com/cedya77/aiometadata/commit/c8c9efbc50db5be9655c1a4a821546dcbd2ba601))
+* **jellyfin:** date titles on the server's own watchlist by when they were added ([ab2e690](https://github.com/cedya77/aiometadata/commit/ab2e690948143bd5ae46e807714de154fe33c964))
+* **jellyfin:** drop a show taken off an MDBList watchlist from Upcoming straight away ([bbbb3a8](https://github.com/cedya77/aiometadata/commit/bbbb3a838ae7a576a6bc5b6d0c5d6aa071d28541))
+* **jellyfin:** index started shows a tracker gives no total for after each sync ([6019bac](https://github.com/cedya77/aiometadata/commit/6019bac55e652c0b80acd5b3d84fb5cf0f68f54f))
+* **jellyfin:** keep a show's other MDBList episodes watched when one is unwatched ([701ba38](https://github.com/cedya77/aiometadata/commit/701ba383a8fb716de6be1d0159c6dc87d4983234))
+* **jellyfin:** keep a title bookmarked across its anime and show copies ([1f04c93](https://github.com/cedya77/aiometadata/commit/1f04c9381c56569d69b361cf0ca24abfcce03944))
+* **jellyfin:** list the watchlist identity cache settings in the dashboard ([895193a](https://github.com/cedya77/aiometadata/commit/895193a9d80400a028965336f43338bb2a4ce2d0))
+* **jellyfin:** mark MDBList shows watched from their aired episode total ([f8b709b](https://github.com/cedya77/aiometadata/commit/f8b709b04c15c1c6ffa1a585fd347797ab49028b))
+* **jellyfin:** mark PublicMetaDB shows watched from TMDB's aired episode total ([d264059](https://github.com/cedya77/aiometadata/commit/d264059b1575d4a07f16bc5566f3651a669a5254))
+* **jellyfin:** open a cast member's own profile and filmography instead of a namesake ([5a968ba](https://github.com/cedya77/aiometadata/commit/5a968bad68609121086be8064e397b57107946e5))
+* **jellyfin:** push a favourite or rating change to open clients ([3f9fb4b](https://github.com/cedya77/aiometadata/commit/3f9fb4b0de3bda63d00cf5064afaaf2e6ae6d880))
+* **jellyfin:** push a position moved while paused to open clients ([3892bc2](https://github.com/cedya77/aiometadata/commit/3892bc2f0c9e16723f0ae633dc1609204aac27f2))
+* **jellyfin:** show a drop or undrop on the first press ([8c098b2](https://github.com/cedya77/aiometadata/commit/8c098b27245e84ae3fc096fc691f9ae62099a1d5))
+* **jellyfin:** show a started show's watched mark on the first search ([21f7cc6](https://github.com/cedya77/aiometadata/commit/21f7cc62843ce38c0be953d2f32c5b91b442cbda))
+* **jellyfin:** show an anime episode once in Continue Watching when a tracker has a newer position ([ab0e58a](https://github.com/cedya77/aiometadata/commit/ab0e58a198b1f950a4fee53d7867eb4e23b00a5d))
+* **jellyfin:** show the watchlist as favourites on every client ([55bbfcd](https://github.com/cedya77/aiometadata/commit/55bbfcd5a3635fe2ae1c5dc2665d06a99edbe148))
+* **meta:** keep a series' TMDB and TVDB ids when IMDb or TVmaze builds it ([9b539c7](https://github.com/cedya77/aiometadata/commit/9b539c7f51bba397d2405679026d643bd2d47ad1))
+* **tvdb:** give anime the textless TVDB backdrop instead of the titled one ([ee49829](https://github.com/cedya77/aiometadata/commit/ee498297aa4ce7d323de8f2dcc53058ec9fa567f))
+* **tvdb:** keep genuine YouTube series in TVDB search results ([#827](https://github.com/cedya77/aiometadata/issues/827)) ([d5b2765](https://github.com/cedya77/aiometadata/commit/d5b27650cae3e9b198e4ca137766de4d831138a9))
+
+
+### Performance Improvements
+
+* **jellyfin:** mark a title watched once playback passes the threshold, without waiting for a stop ([63ab9b0](https://github.com/cedya77/aiometadata/commit/63ab9b0d4a73234b29e3908185046b52df6ca8eb))
+
 ## [3.5.1](https://github.com/cedya77/aiometadata/compare/v3.5.0...v3.5.1) (2026-10-14)
 
 
