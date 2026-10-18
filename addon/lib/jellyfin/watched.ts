@@ -315,7 +315,19 @@ export function assembleSimkl(data: any): RawSnapshot {
   }
 
   for (const entry of Array.isArray(data?.shows) ? data.shows : []) collectShow(entry, snapshot, false, history);
-  for (const entry of Array.isArray(data?.anime) ? data.anime : []) collectShow(entry, snapshot, true, history);
+  for (const entry of Array.isArray(data?.anime) ? data.anime : []) {
+    if (entry?.anime_type !== 'movie' || entry?.status !== 'completed') {
+      collectShow(entry, snapshot, true, history);
+      continue;
+    }
+    const keys = seriesKeys(entry?.show?.ids ?? {});
+    const at = Date.parse(entry?.last_watched_at ?? '') || 0;
+    for (const id of keys) {
+      snapshot.movies.add(id);
+      if (at) snapshot.at.set(id, at);
+    }
+    if (keys.length) recordWatch(history, { kind: 'movie', id: keys[0], mediaType: 'movie', at });
+  }
 
   return {
     episodes: [...snapshot.episodes],
