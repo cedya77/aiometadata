@@ -41,6 +41,15 @@ const snapshots = new LRUCache<string, HeldRows>({
 
 const resumeMaxAgeMs = (): number => envInt('JELLYFIN_RESUME_MAX_AGE', 15 * 60, 60) * 1000;
 
+const resumeFloorPercent = (): number => Math.min(envInt('JELLYFIN_MIN_RESUME_PERCENT', 0, 0), 49);
+
+export function belowResumeFloor(positionMs: number, runtimeMs: number): boolean {
+  const floor = resumeFloorPercent();
+  return floor > 0 && runtimeMs > 0 && positionMs > 0 && positionMs < (runtimeMs * floor) / 100;
+}
+
+const belowTrackerFloor = (progress: number): boolean => progress < Math.min(2, resumeFloorPercent());
+
 // A watch ends a paused session as surely as a pause starts one.
 const MDBLIST_PLAYBACK_FIELDS = ['paused_at', 'episode_paused_at', 'watched_at', 'episode_watched_at', 'season_watched_at'];
 
@@ -89,16 +98,19 @@ export interface ResolveTrace {
   tmdbDown?: Set<string>;
 }
 
+export type EpisodeNumbering = 'tmdb' | 'tvdb';
+
 export async function videoIdFor(
   ids: Record<string, any>,
   season: number,
   episode: number,
   config: any = {},
-  trace?: ResolveTrace
+  trace?: ResolveTrace,
+  numbering: EpisodeNumbering = 'tmdb'
 ): Promise<{ metaId: string; videoId: string; mediaType: 'anime' | 'series' } | null> {
   ids = await canonicalIds(ids, 'series', config);
-  // MDBList and PublicMetaDB number episodes the way TMDB does.
-  if (ids.tmdb) {
+  // MDBList and PublicMetaDB number episodes the way TMDB does, unless they name TVDB's.
+  if (ids.tmdb && numbering === 'tmdb') {
     const viaTmdb = await fromTmdbNumbering(ids, season, episode, config, trace);
     if (viaTmdb) return viaTmdb;
   }
@@ -138,6 +150,10 @@ export async function videoIdFor(
           mediaType: 'anime',
         };
       }
+      const listed = idMapper.resolveKitsuEpisodeFromTvdbMapping(tvdb, season, episode);
+      if (listed) {
+        return { metaId: `kitsu:${listed.kitsuId}`, videoId: `kitsu:${listed.kitsuId}:${listed.episodeNumber}`, mediaType: 'anime' };
+      }
     } catch (error: any) {
       logger.debug(`Anime resolution failed for tvdb ${tvdb} S${season}E${episode}: ${error?.message}`);
     }
@@ -170,11 +186,12 @@ async function mdblistRows(apiKey: string, config: any): Promise<ResumeRow[]> {
     }
 
     const show = entry?.show;
-    const season = Number(entry?.episode?.season);
-    const episode = Number(entry?.episode?.number);
-    if (!show || !Number.isFinite(season) || !Number.isFinite(episode)) continue;
+    const { mdblistWatchedRef } = require('../../utils/mdbList');
+    const ref = show ? await mdblistWatchedRef({ ...entry?.episode, show }, config) : null;
+    if (!ref) continue;
+    const { season, episode } = ref;
 
-    const resolved = await videoIdFor(await canonicalIds(show.ids ?? {}, 'series', config), season, episode, config);
+    const resolved = await videoIdFor(ref.tvdb ? ref.ids : await canonicalIds(ref.ids, 'series', config), season, episode, config, undefined, ref.tvdb ? 'tvdb' : 'tmdb');
     if (!resolved) {
       logger.debug(`No id for a resume row: ${show.title} S${season}E${episode}`);
       continue;
@@ -342,7 +359,7 @@ async function ownRows(userUUID: string, profile: string): Promise<ResumeRow[]> 
     const videoId = String(r.video_id);
     const runtimeMs = Number(r.runtime_ms) || 0;
     const positionMs = Number(r.position_ms) || 0;
-    if (runtimeMs <= 0 || positionMs <= 0) continue;
+    if (runtimeMs <= 0 || positionMs <= 0 || belowResumeFloor(positionMs, runtimeMs)) continue;
 
     const parsed = parseStremioId(videoId);
     const isEpisode = Boolean(parsed && parsed.episode !== null && parsed.episode !== undefined);
@@ -451,7 +468,7 @@ export async function trackerSnapshot(userUUID: string, config: any): Promise<Re
   const { dedupeByAlias } = require('./aliases');
   const rows: ResumeRow[] = await dedupeByAlias([...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt));
   if (parts.length && parts.every((part) => part.ok)) await followTrackerClears(userUUID, config, rows);
-  return rows;
+  return rows.filter((row) => !belowTrackerFloor(row.progress));
 }
 
 async function serviceSnapshot(userUUID: string, config: any, service: Capable): Promise<{ rows: ResumeRow[]; ok: boolean }> {

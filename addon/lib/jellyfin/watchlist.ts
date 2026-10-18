@@ -224,7 +224,6 @@ export async function setWatchlisted(userUUID: string, config: any, descriptor: 
   for (const entry of siblings) {
     await database.setWatchlisted(userUUID, profile, entry.metaId, entry.mediaType, false, entry.mediaType === 'movie' || entry.film ? 'movie' : 'series');
   }
-  invalidateWatchlist(userUUID);
   invalidateDatedShelves(userUUID);
   if (writesTrackers(config)) {
     const { enqueueTrackerWrites, hasCredential } = require('../trackerOutbox');

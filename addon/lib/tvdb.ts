@@ -778,6 +778,26 @@ async function getPersonExtended(personId: string, config: UserConfig): Promise<
   });
 }
 
+async function getEpisodeNumbering(episodeId: string, config: UserConfig): Promise<{ seriesId: number; season: number; episode: number } | null> {
+  return cacheWrapTvdbApi(`episode-numbering:${episodeId}`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return null;
+    try {
+      const response = await tvdbHttpRequest(`${TVDB_API_URL}/episodes/${episodeId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = (response.data as any)?.data;
+      const seriesId = Number(data?.seriesId);
+      const season = Number(data?.seasonNumber);
+      const episode = Number(data?.number);
+      return seriesId > 0 && Number.isFinite(season) && Number.isFinite(episode) ? { seriesId, season, episode } : null;
+    } catch (error) {
+      logger.debug(`TVDB episode ${episodeId} unavailable: ${(error as Error).message}`);
+      return null;
+    }
+  });
+}
+
 async function _fetchEpisodesBySeasonType(tvdbId: string, seasonType: string, language: string, config: UserConfig): Promise<{ episodes: TvdbEpisode[] } | null> {
   const token = await getAuthTokenOrThrow(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return null;
@@ -1399,6 +1419,7 @@ async function getCollectionTranslations(collectionId: string, language: string,
 }
 
 export {
+  getEpisodeNumbering,
   tvdbIdFromRemoteIdResults,
   searchSeries,
   searchMovies,
@@ -1445,6 +1466,7 @@ const __privateTvdbCacheNormalizers = tvdbCacheNormalizers;
 
 // CommonJS compatibility
 module.exports = {
+  getEpisodeNumbering,
   tvdbIdFromRemoteIdResults,
   searchSeries,
   searchMovies,

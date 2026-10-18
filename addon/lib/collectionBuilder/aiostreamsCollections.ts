@@ -1,4 +1,4 @@
-import { builderCollections, collectionById, folderById, imageOf, visibleSources } from '../jellyfin/collections';
+import { animatedPosterOf, builderCollections, collectionById, folderById, imageOf, visibleSources } from '../jellyfin/collections';
 import { getCatalogs, type CatalogRef } from '../jellyfin/views';
 import { getCollectionImagePrefix } from '../posterCache/config';
 import { proxyCollectionImages } from './imageProxy';
@@ -52,6 +52,7 @@ function namedFolders(folders: FolderDraft[]): FolderDraft[] {
 
 function folderMeta(catalogs: CatalogRef[], collection: CollectionDraft, folder: FolderDraft, full: boolean): any {
   const cover = imageOf(folder.coverImageUrl);
+  const animated = animatedPosterOf(folder);
   const shape = SHAPES[folder.shape] ?? 'poster';
   const meta: any = {
     id: `${COLLECTION_META_PREFIX}${collection.id}:${folder.id}`,
@@ -59,6 +60,7 @@ function folderMeta(catalogs: CatalogRef[], collection: CollectionDraft, folder:
     name: folder.title,
     poster: cover,
     ...(shape === 'landscape' && cover ? { landscapePoster: cover } : {}),
+    ...(animated ? { animatedPoster: animated } : {}),
     posterShape: shape,
     background: imageOf(folder.heroBackdropUrl) ?? imageOf(collection.backdropImageUrl),
     logo: imageOf(folder.titleLogoUrl),

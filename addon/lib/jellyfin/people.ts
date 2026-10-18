@@ -14,6 +14,7 @@ export interface Person {
   birthday: string | null;
   deathday: string | null;
   birthplace: string | null;
+  imdbId?: string | null;
   /** The Jellyfin person type of what TMDB says they are known for. */
   knownFor: string | null;
 }
@@ -49,6 +50,7 @@ async function tmdbPerson(config: any, id: number, fallback: any = null): Promis
     birthday: details?.birthday || null,
     deathday: details?.deathday || null,
     birthplace: details?.place_of_birth || null,
+    imdbId: details?.imdb_id || null,
     knownFor: KNOWN_FOR[details?.known_for_department || fallback?.known_for_department] ?? null,
   };
 }
@@ -124,8 +126,13 @@ async function tvdbPerson(config: any, id: number): Promise<Person | null> {
     birthday: record.birth || null,
     deathday: record.death || null,
     birthplace: record.birthPlace || null,
+    imdbId: remoteId(record, 'IMDB'),
     knownFor,
   };
+}
+
+export function personById(config: any, source: 'tmdb' | 'tvdb', id: number): Promise<Person | null> {
+  return source === 'tvdb' ? tvdbPerson(config, id) : tmdbPerson(config, id);
 }
 
 export async function resolvePerson(config: any, ref: { n: string; s?: 'tmdb' | 'tvdb'; x?: number }): Promise<Person | null> {
@@ -154,28 +161,9 @@ export function metaFromTmdbRow(row: any, type: 'movie' | 'series'): any | null 
     imdbRating: row.vote_average ? String(Math.round(row.vote_average * 10) / 10) : undefined,
     genres: [],
     _tmdbId: String(row.id),
+    _artSource: 'tmdb',
+    ...(row.original_language ? { _originalLanguage: row.original_language } : {}),
   };
-}
-
-export async function previewMeta(config: any, userUUID: string, type: 'movie' | 'series', id: string): Promise<any | null> {
-  const { cacheWrapMetaSmart } = require('../getCache');
-  const { getMeta } = require('../getMeta');
-  const { applyMetaArt } = require('../metaArt');
-  const scoped = { ...config, userUUID };
-  const language = config?.language || 'en-US';
-  const result = await cacheWrapMetaSmart(
-    userUUID,
-    id,
-    () => getMeta(type, language, id, scoped, userUUID, false),
-    undefined,
-    { enableErrorCaching: true, maxRetries: 2, config: scoped },
-    type,
-    false
-  );
-  if (!result?.meta) return null;
-  const meta = { ...result.meta };
-  applyMetaArt(meta, scoped, type, '');
-  return meta;
 }
 
 const simklImage = (path: string | null | undefined, kind: 'posters' | 'fanart', size: string): string | null =>
@@ -201,6 +189,8 @@ function metaFromSimklRow(row: any): any | null {
     year,
     genres: [],
     ...(ids.tmdb ? { _tmdbId: String(ids.tmdb) } : {}),
+    ...(/^tt\d+$/.test(String(ids.imdb || '')) ? { _imdbId: String(ids.imdb) } : {}),
+    _artSource: 'simkl',
   };
 }
 
@@ -279,6 +269,7 @@ async function tvdbCredits(config: any, personId: number): Promise<any[]> {
         year,
         genres: [],
         _tvdbId: String(titleId),
+        _artSource: 'tvdb',
         _personTypes: [],
       };
       seen.set(key, meta);
@@ -311,6 +302,7 @@ async function tmdbCredits(config: any, personId: number): Promise<any[]> {
         seen.set(key, meta);
         metas.push(meta);
       }
+      meta._votes = Math.max(meta._votes || 0, Number(row.vote_count) || 0);
       for (const kind of creditTypes(row, credit, type)) {
         if (!meta._personTypes.includes(kind)) meta._personTypes.push(kind);
       }

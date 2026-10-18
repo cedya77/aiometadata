@@ -643,11 +643,12 @@ export function metaToBaseItem(
   const kind = itemType === 'Series' ? 'series' : 'movie';
   const id = encodeJellyfinId({ k: kind, t: mediaType, i: String(meta.id) });
 
+  const wide = meta.posterShape === 'landscape' && Boolean(meta.poster);
   const images: ItemImages = {
     primary: meta.poster || undefined,
     backdrop: meta.background || undefined,
     logo: meta.logo || undefined,
-    thumb: meta.landscapePoster || undefined,
+    thumb: (wide ? meta.poster : meta.landscapePoster) || undefined,
   };
   rememberImages(serverId, id, images);
 
@@ -655,6 +656,7 @@ export function metaToBaseItem(
   if (images.primary) imageTags.Primary = imageTag(images.primary);
   if (images.logo) imageTags.Logo = imageTag(images.logo);
   if (images.thumb) imageTags.Thumb = imageTag(images.thumb);
+  if (wide) imageTags.Primary = wideTag(imageTags.Thumb);
   const ids = providerIds(meta);
 
   return {
@@ -691,7 +693,7 @@ export function metaToBaseItem(
     ImageBlurHashes: {},
     UserData: { ...EMPTY_USER_DATA, Key: id, ItemId: id },
     LocationType: 'FileSystem',
-    PrimaryImageAspectRatio: itemType === 'Movie' ? 0.6666666666666666 : 0.6666666666666666,
+    PrimaryImageAspectRatio: wide ? 16 / 9 : 0.6666666666666666,
     CanDelete: false,
     CanDownload: itemType === 'Movie',
     PlayAccess: 'Full',

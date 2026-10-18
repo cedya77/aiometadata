@@ -389,7 +389,7 @@ async function resolveSeriesIds(parsedId: ParsedMediaId, config: any = {}, isSim
       } else {
         const mappings = idMapper.getMappingByKitsuId(parseInt(parsedId.id, 10));
         const malId = mappings?.mal_id || null;
-        const anidbId = mappings.anidb_id;
+        const anidbId = mappings?.anidb_id;
         let tvdbInfo: any;
         if (anidbId) {
           tvdbInfo = resolveTvdbEpisodeFromAnidbEpisode(anidbId, 1, parseInt(String(parsedId.episode), 10));
@@ -411,6 +411,11 @@ async function resolveSeriesIds(parsedId: ParsedMediaId, config: any = {}, isSim
         }
       }
 
+      resolved = resolved ?? fallback;
+      if (!resolved) {
+        logger.debug(`[Watch Tracking] No ids for Kitsu series ${parsedId.id}`);
+        return null;
+      }
       return {
         ids: { tmdb: resolved.tmdbId, mal: resolved.malId, tvdb: resolved.tvdbId },
         fallbackData: fallback?.malId ? { ids: { mal: fallback.malId }, season: 1, episode: fallback.episodeNumber } : null,
@@ -521,7 +526,10 @@ async function eachHistoryService(
 ): Promise<void> {
   for (const service of ['simkl', 'mdblist'] as const) {
     if (only && only !== service) continue;
-    if (!shouldTrackServiceMediaType(config, service, mediaType)) continue;
+    if (!shouldTrackServiceMediaType(config, service, mediaType)) {
+      if (only) logger.debug(`[${service}] ${what} skipped: watch tracking is off for ${mediaType}`);
+      continue;
+    }
     try {
       let utils: any;
       let credential: string | undefined;
@@ -536,7 +544,10 @@ async function eachHistoryService(
         const token = await utils.getSimklToken(tokenId);
         credential = token?.access_token;
       }
-      if (!credential) continue;
+      if (!credential) {
+        logger.debug(`[${service}] ${what} skipped: no usable credential`);
+        continue;
+      }
 
       if (parsedId.type === 'movie') {
         const ids = normalizeIdsForMovie(parsedId);
@@ -546,6 +557,8 @@ async function eachHistoryService(
         if (resolution) {
           const ids = await withTmdbId(resolution.ids, 'series');
           await utils[method](ids, credential, resolution.season, resolution.episode);
+        } else {
+          logger.debug(`[${service}] ${what} skipped: no ids for ${parsedId.provider}:${parsedId.id}`);
         }
       }
     } catch (error: any) {

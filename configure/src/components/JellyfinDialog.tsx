@@ -865,7 +865,7 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
                 <div className="space-y-0.5">
                   <Label className="text-xs font-medium">Similar titles</Label>
                   <p className="text-[11px] text-muted-foreground">
-                    The titles an app shows as similar on a title's page. TMDB suggests from its own recommendations. Simkl suggests what its users recommend alongside the title, or titles in the same genres when there are none, and uses TMDB for a title it does not know.
+                    The titles an app shows as similar on a title's page. TMDB suggests from its own recommendations. Simkl suggests what its users recommend alongside the title, or titles in the same genres when there are none, and uses TMDB for a title it does not know. Also what the More Like This catalog returns to apps that ask for one.
                   </p>
                 </div>
                 <Select

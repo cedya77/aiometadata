@@ -370,7 +370,9 @@ async function writePlaystate(
       await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now(), origin: 'server' }, profile, session.aliases);
       return;
     }
-    await upsertPlaystateEverywhere(userUUID, videoId, { positionMs, runtimeMs, lastPlayedAt: Date.now(), origin: 'server' }, profile, session.aliases);
+    const { belowResumeFloor } = require('./resume');
+    const kept = belowResumeFloor(positionMs, runtimeMs) ? 0 : positionMs;
+    await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: kept, runtimeMs, lastPlayedAt: Date.now(), origin: 'server' }, profile, session.aliases);
   } catch (error: any) {
     logger.warn(`Playstate write failed for ${videoId}: ${error?.message || error}`);
   }
@@ -784,8 +786,8 @@ export async function recordUserData(req: any, body: any): Promise<{ played: boo
     return { played, positionMs: 0 };
   }
 
-  const positionMs = ticksToMs(body?.PlaybackPositionTicks ?? body?.playbackPositionTicks);
-  if (positionMs === null) {
+  const asked = ticksToMs(body?.PlaybackPositionTicks ?? body?.playbackPositionTicks);
+  if (asked === null) {
     logger.debug(`User data for ${itemId} carries neither Played nor a position: ${Object.keys(body || {}).join(',') || 'empty body'} (${req.get?.('content-type') || 'no content type'})`);
     return null;
   }
@@ -799,6 +801,7 @@ export async function recordUserData(req: any, body: any): Promise<{ played: boo
     logger.debug(`No playable session for ${itemId}`);
     return null;
   }
+  const positionMs = require('./resume').belowResumeFloor(asked, session.runtimeMs ?? 0) ? 0 : asked;
 
   const { profileKey } = require('./profiles');
   const profile = profileKey(config);

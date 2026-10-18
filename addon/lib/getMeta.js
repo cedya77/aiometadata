@@ -330,6 +330,26 @@ function providerArtFitsPolicy(metaProvider, providerArt, config) {
 
 const ALL_ART = ['poster', 'background', 'logo', 'landscapePoster'];
 
+const TMDB_DETAIL_APPENDS = {
+  movie: 'videos,credits,external_ids,images,translations,watch/providers,release_dates,keywords',
+  series: 'videos,credits,external_ids,images,translations,watch/providers,content_ratings,keywords',
+};
+
+function fetchTmdbDetails(kind, tmdbId, language, config) {
+  const langCode = language.split('-')[0];
+  const languages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+  const params = { id: tmdbId, language, append_to_response: TMDB_DETAIL_APPENDS[kind], include_image_language: languages, include_video_language: languages };
+  return kind === 'movie' ? moviedb.movieInfo(params, config) : moviedb.tvInfo(params, config);
+}
+
+function tmdbLocalizedText(data, kind, language) {
+  const movie = kind === 'movie';
+  return {
+    name: Utils.processTitleTranslations(data.translations, language, movie ? data.title : data.name, kind, data.original_language, movie ? data.original_title : data.original_name),
+    description: Utils.processOverviewTranslations(data.translations, language, data.overview),
+  };
+}
+
 // The art a builder would have chosen for this configuration. Mirrors the builders' dispatch.
 async function resolveArtworkForProfile({ type, ids, metaProvider, providerArt, wanted = ALL_ART }, config) {
   const mediaType = type === 'movie' ? 'movie' : 'series';
@@ -809,16 +829,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
   // Try TMDB as fallback
   if (allIds?.tmdbId) {
     try {
-      const langCode = language.split('-')[0];
-      const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-      const videoLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-      const movieData = await moviedb.movieInfo({ 
-        id: allIds.tmdbId, 
-        language, 
-        append_to_response: "videos,credits,external_ids,images,translations,watch/providers,release_dates,keywords", 
-        include_image_language: imageLanguages,
-        include_video_language: videoLanguages
-      }, config);
+      const movieData = await fetchTmdbDetails('movie', allIds.tmdbId, language, config);
       
       if (movieData) {
         return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds });
@@ -868,16 +879,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
   // Try preferred provider
   if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
     try {
-      const langCode = language.split('-')[0];
-      const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-      const videoLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-      const seriesData = await moviedb.tvInfo({ 
-        id: allIds.tmdbId, 
-        language, 
-        append_to_response: "videos,credits,external_ids,images,translations,watch/providers,content_ratings,keywords", 
-        include_image_language: imageLanguages,
-        include_video_language: videoLanguages
-      }, config);
+      const seriesData = await fetchTmdbDetails('series', allIds.tmdbId, language, config);
       
       if (seriesData) {
         return _markDegraded(await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, false, includeVideos), degraded);
@@ -3550,4 +3552,4 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
   }
 }
 
-module.exports = { getMeta, resolveArtworkForProfile };
+module.exports = { getMeta, resolveArtworkForProfile, fetchTmdbDetails, tmdbLocalizedText };

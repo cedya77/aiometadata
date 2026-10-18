@@ -931,7 +931,10 @@ export async function clearPlayback(
 ): Promise<boolean> {
   const sessions = await fetchPlaybackSessions(accessToken);
   const matches = sessions.filter((entry) => entry?.id && playbackEntryMatches(entry, idInput, season, episode));
-  if (!matches.length) return true;
+  if (!matches.length) {
+    logger.debug(`[Simkl] No paused session to clear for ${JSON.stringify(idInput)}${season != null ? ` S${season}E${episode}` : ''} among ${sessions.length}`);
+    return true;
+  }
 
   try {
     for (const entry of matches) {

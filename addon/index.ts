@@ -404,10 +404,16 @@ function applyImageCachePrefix(data) {
     return posterCacheConfig.buildCachedUrl(prefix, imageClass, url);
   };
 
+  const landscapeCached = posterCacheConfig.isFieldCacheable('landscapePoster');
   const applyToMeta = (meta) => {
     if (!meta) return;
     for (const field of enabledFields) {
-      if (meta[field]) meta[field] = prefixUrl(meta[field], metaFieldClasses[field]);
+      if (!meta[field]) continue;
+      if (field === 'poster' && meta.posterShape === 'landscape') {
+        if (landscapeCached) meta.poster = prefixUrl(meta.poster, 'landscape');
+        continue;
+      }
+      meta[field] = prefixUrl(meta[field], metaFieldClasses[field]);
     }
     if (cacheThumbnails && Array.isArray(meta.videos)) {
       for (const video of meta.videos) {
@@ -4927,6 +4933,16 @@ const catalogRoute = async function (req, res) {
     }
   }
 
+  {
+    const { SIMILAR_CATALOG_ID, similarCatalogMetas } = require('./lib/similarCatalog');
+    if (id === SIMILAR_CATALOG_ID) {
+      const sourceId = new URLSearchParams(extra || '').get('similar') || '';
+      const metas = sourceId ? await similarCatalogMetas(userUUID, config, type, sourceId) : [];
+      req.userConfig = config;
+      return respond(req, res, { metas });
+    }
+  }
+
   // Handle calendar-videos catalog
   if (id === 'calendar-videos' && type === 'series' && extra) {
     const logger = consola.withTag('Calendar');
@@ -5697,6 +5713,14 @@ const metaRoute = async function (req, res) {
   // Add userUUID to config for per-user token caching
   config.userUUID = userUUID;
   config.addonIdentifier = req.addonIdentifier || userUUID;
+
+  if (type === 'person') {
+    const { personMeta } = require('./lib/personMeta');
+    const meta = await personMeta(config, stremioId).catch(() => null);
+    if (!meta) return res.status(404).send({ error: "Person not found" });
+    req.userConfig = config;
+    return respond(req, res, { meta });
+  }
 
   {
     const { collectionMeta, COLLECTION_META_PREFIX } = require('./lib/collectionBuilder/aiostreamsCollections');

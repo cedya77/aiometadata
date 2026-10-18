@@ -17,6 +17,10 @@ export function imageOf(value: unknown): string | undefined {
   return typeof value === 'string' && IMAGE_URL.test(value.trim()) ? value.trim() : undefined;
 }
 
+export function animatedPosterOf(folder: FolderDraft): string | undefined {
+  return folder.focusGifEnabled !== false ? imageOf(folder.focusGifUrl) : undefined;
+}
+
 /** An entry with tags is for the users holding one of them; the unrestricted user sees every entry. */
 export function entryVisible(entry: any, config: any): boolean {
   const wanted = Array.isArray(entry?.tags) ? entry.tags.filter(Boolean) : [];
@@ -124,6 +128,7 @@ function boxSetItem(serverId: string, collection: CollectionDraft, folder: Folde
   const cover = imageOf(folder.coverImageUrl);
   const backdrop = imageOf(folder.heroBackdropUrl);
   const logo = imageOf(folder.titleLogoUrl);
+  const animated = animatedPosterOf(folder);
   if (cover || backdrop || logo) rememberImages(serverId, id, { primary: cover, backdrop, logo });
 
   return {
@@ -162,6 +167,7 @@ function boxSetItem(serverId: string, collection: CollectionDraft, folder: Folde
     MediaType: 'Unknown',
     LockedFields: [],
     LockData: false,
+    ...(animated ? { aiostreams: { animatedPoster: animated } } : {}),
   };
 }
 

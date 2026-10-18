@@ -136,7 +136,8 @@ export async function shelfCacheWindowMs(config: any): Promise<number> {
     const ttl = Number.isFinite(own) && own >= 0 ? own : fallback;
     longest = Math.max(longest, ttl);
   }
-  return longest * 1000;
+  const hold = Number(getSetting('JELLYFIN_WATCHLIST_HOLD')) || 600;
+  return Math.max(longest, hold) * 1000;
 }
 
 async function shelfEntries(userUUID: string, config: any, catalog: Shelf, need: number): Promise<{ rows: WatchlistEntry[]; ok: boolean; exhausted: boolean }> {

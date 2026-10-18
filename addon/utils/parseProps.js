@@ -2589,7 +2589,7 @@ async function getTmdbMovieArtBatch(tmdbId, config, isLandscape = false, origina
   const englishOnly = config.artProviders?.englishArtOnly ? '1' : '0';
   const origLangFb = config.artProviders?.originalLangFallback ? '1' : '0';
   const landscape = isLandscape ? '1' : '0';
-  const cacheKey = `tmdb-movie-images:${tmdbId}:${langCode}:${englishOnly}:${origLangFb}:${landscape}`;
+  const cacheKey = `tmdb-movie-images:${tmdbId}:${langCode}:${englishOnly}:${origLangFb}:${landscape}:${originalLanguage || ''}`;
 
   if (tmdbMovieImagesInflight.has(cacheKey)) {
     return tmdbMovieImagesInflight.get(cacheKey);
@@ -2649,18 +2649,14 @@ async function getTmdbMovieArtBatch(tmdbId, config, isLandscape = false, origina
 const TMDB_IMAGE_KINDS = ['posters', 'backdrops', 'logos'];
 
 /**
- * Refill image kinds the meta call came back empty on, from a second request scoped to
- * the title's original language. Meta calls can't request it up front since they learn
- * it from their own response. Skipped under englishArtOnly, which keeps falling through
- * to the next provider instead.
+ * Adds the title's original-language images to the ones a meta call returned, which
+ * a meta call can't ask for up front since it learns the language from its own
+ * response. Skipped under englishArtOnly.
  */
 async function mergeTmdbOriginalLanguageImages(mediaType, tmdbId, images, originalLanguage, langCode, config) {
   if (!tmdbId || !originalLanguage) return images;
   if (config?.artProviders?.englishArtOnly) return images;
   if (originalLanguage === 'en' || originalLanguage === langCode) return images;
-
-  const missing = TMDB_IMAGE_KINDS.filter(kind => !images?.[kind]?.length);
-  if (missing.length === 0) return images;
 
   try {
     const params = { id: tmdbId, include_image_language: originalLanguage };
@@ -2670,8 +2666,11 @@ async function mergeTmdbOriginalLanguageImages(mediaType, tmdbId, images, origin
     if (!extra) return images;
 
     const merged = { ...(images || {}) };
-    for (const kind of missing) {
-      if (extra[kind]?.length) merged[kind] = extra[kind];
+    for (const kind of TMDB_IMAGE_KINDS) {
+      const held = Array.isArray(merged[kind]) ? merged[kind] : [];
+      const seen = new Set(held.map(image => image?.file_path));
+      const added = (extra[kind] || []).filter(image => image?.file_path && !seen.has(image.file_path));
+      if (added.length) merged[kind] = [...held, ...added];
     }
     return merged;
   } catch (error) {
@@ -2969,7 +2968,7 @@ async function getTmdbSeriesArtBatch(tmdbId, config, isLandscape = false, origin
   const englishOnly = config.artProviders?.englishArtOnly ? '1' : '0';
   const origLangFb = config.artProviders?.originalLangFallback ? '1' : '0';
   const landscape = isLandscape ? '1' : '0';
-  const cacheKey = `tmdb-tv-images:${tmdbId}:${langCode}:${englishOnly}:${origLangFb}:${landscape}`;
+  const cacheKey = `tmdb-tv-images:${tmdbId}:${langCode}:${englishOnly}:${origLangFb}:${landscape}:${originalLanguage || ''}`;
 
   if (tmdbTvImagesInflight.has(cacheKey)) {
     return tmdbTvImagesInflight.get(cacheKey);

@@ -11,6 +11,7 @@ import catalogTypesJson from "../static/catalog-types.json";
 import { PLAYBACK_MANIFEST_EVENTS, WATCH_STATE_PUSH_EVENTS, WATCH_STATE_VERSION } from "./playbackHandler";
 import { watchStatePullTtl } from "./watchState";
 import { collectionCatalogs, collectionsServed, COLLECTION_META_PREFIX } from "./collectionBuilder/aiostreamsCollections";
+import { similarCatalogs } from "./similarCatalog";
 import { holderCards, servesCatalog, withAccountOwner } from "./accounts";
 import { hasNamedViewers } from "./jellyfin/profiles";
 const jikan: any = require('./mal');
@@ -1721,6 +1722,7 @@ async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise
 
   // Listed first, as on the Jellyfin server.
   catalogs.unshift(...collectionCatalogs(config, tags));
+  catalogs.push(...similarCatalogs(config));
 
   const nameSuffix = process.env.ADDON_NAME_SUFFIX || "";
   const baseName = config.addonName || (nameSuffix ? `AIOMetadata ${nameSuffix}` : "AIOMetadata");
@@ -1766,7 +1768,7 @@ async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise
           playback: { version: 1, events: PLAYBACK_MANIFEST_EVENTS },
         }
       : {}),
-    types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt", "collection"],
+    types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt", "collection", ...(config.catalogModeOnly ? [] : ["person"])],
     idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:", "upnext_", "unwatched_", "mdblist_upnext_", "pmdb_resume_", "simkl_upnext_", "aiom.error.", ...(collectionsServed(config) ? [COLLECTION_META_PREFIX] : [])],
     stremioAddonsConfig: {
       "issuer": "https://stremio-addons.net",

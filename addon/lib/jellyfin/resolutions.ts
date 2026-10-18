@@ -1,5 +1,5 @@
 import { envInt } from '../../utils/envNumber';
-import { movieBase, videoIdFor, type ResolveTrace } from './resume';
+import { movieBase, videoIdFor, type EpisodeNumbering, type ResolveTrace } from './resume';
 
 const database: any = require('../database');
 const DAY = 24 * 60 * 60 * 1000;
@@ -20,8 +20,8 @@ function mappingsLoaded(): boolean {
 
 type Resolved = { metaId: string; videoId: string; mediaType: 'anime' | 'series' } | null;
 
-function episodeKey(ids: Record<string, any>, season: number, episode: number): string {
-  return `ep2:${ids?.tmdb ?? ''}:${ids?.tvdb ?? ''}:${ids?.imdb ?? ''}:${season}:${episode}`;
+function episodeKey(ids: Record<string, any>, season: number, episode: number, numbering: EpisodeNumbering = 'tmdb'): string {
+  return `${numbering === 'tvdb' ? 'tv1' : 'ep2'}:${ids?.tmdb ?? ''}:${ids?.tvdb ?? ''}:${ids?.imdb ?? ''}:${season}:${episode}`;
 }
 
 /**
@@ -35,9 +35,9 @@ export class Resolutions {
   private unsaved = new Set<string>();
   private tmdbDown = new Set<string>();
 
-  async preload(episodes: Array<[Record<string, any>, number, number]>, movies: Array<string | number>): Promise<void> {
+  async preload(episodes: Array<[Record<string, any>, number, number, EpisodeNumbering?]>, movies: Array<string | number>): Promise<void> {
     const keys = [
-      ...episodes.map(([ids, season, episode]) => episodeKey(ids, season, episode)),
+      ...episodes.map(([ids, season, episode, numbering]) => episodeKey(ids, season, episode, numbering)),
       ...movies.map((tmdb) => `movie:${tmdb}`),
     ];
     if (!keys.length) return;
@@ -56,12 +56,12 @@ export class Resolutions {
     }
   }
 
-  async episode(ids: Record<string, any>, season: number, episode: number, config: any): Promise<Resolved> {
-    const key = episodeKey(ids, season, episode);
+  async episode(ids: Record<string, any>, season: number, episode: number, config: any, numbering: EpisodeNumbering = 'tmdb'): Promise<Resolved> {
+    const key = episodeKey(ids, season, episode, numbering);
     if (this.held.has(key)) return this.held.get(key);
     if (this.found.has(key)) return this.found.get(key);
     const trace: ResolveTrace = { tmdbDown: this.tmdbDown };
-    const resolved = await videoIdFor(ids, season, episode, config, trace);
+    const resolved = await videoIdFor(ids, season, episode, config, trace, numbering);
     this.found.set(key, resolved ?? null);
     if (trace.failed) this.unsaved.add(key);
     return resolved;
