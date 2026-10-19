@@ -1280,7 +1280,13 @@ async function projectMetaForUser(meta: any, config: any, opts: { addonTrailers?
   await applyImdbRatingProjection(meta);
   await applyAnimeEpisodeDatesProjection(meta, config);
   await applyAnimeFillerProjection(meta, config);
+  stripVideoInternals(meta);
   return meta;
+}
+
+function stripVideoInternals(meta: any): void {
+  if (!Array.isArray(meta?.videos) || !meta.videos.some((video: any) => video?._tvdbEpisodeId != null)) return;
+  meta.videos = meta.videos.map(({ _tvdbEpisodeId, ...video }: any) => video);
 }
 
 const CATALOG_META_FIELDS = [
@@ -2400,6 +2406,7 @@ async function cacheWrapMetaSmart(userUUID: string, metaId: string, method: () =
       applySeasonNumberingProjection(meta, config);
       applyContentRatingProjection(meta, config);
       applyDisplayAgeRatingProjection(meta, config);
+      stripVideoInternals(meta);
       return result;
     }
 

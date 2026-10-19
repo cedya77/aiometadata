@@ -2527,6 +2527,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               available: isReleasedBy(releasedAt, nowMs),
               runtime: Utils.parseRunTime(episode.runtime),
               ...(episode.originalSeasonNumber != null ? { _tvdbSeason: episode.originalSeasonNumber } : {}),
+              ...(isAnime && episode.id && !['default', 'official'].includes(config.tvdbSeasonType || 'default') ? { _tvdbEpisodeId: episode.id } : {}),
           };
         })
     );

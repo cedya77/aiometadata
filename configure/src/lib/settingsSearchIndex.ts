@@ -324,7 +324,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   {
     id: 'providers.skipFiller', section: 'providers', anchor: 'skip-filler',
     label: 'Skip Filler Episodes',
-    description: 'Leave out filler episodes of anime on TVDB, Kitsu and MyAnimeList metadata.',
+    description: 'Leave out filler episodes of anime.',
     keywords: ['mal', 'filler', 'anime', 'episode', 'tvdb', 'kitsu', 'animefillerlist'],
   },
   {

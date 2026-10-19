@@ -33,7 +33,7 @@ function releasedMs(video: any): number | null {
 export async function applyAnimeEpisodeDatesProjection(meta: any, config: any): Promise<void> {
   const choice: AnimeEpisodeDates = config?.animeEpisodeDates || 'provider';
   if (choice === 'provider' || !Array.isArray(meta?.videos) || !meta.videos.length) return;
-  if (!['tvdb', 'kitsu', 'mal'].includes(meta._metaProvider)) return;
+  if (!['tvdb', 'imdb', 'tmdb', 'kitsu', 'mal'].includes(meta._metaProvider)) return;
   const kind: ScheduleKind = choice === 'dub' ? 'dub' : 'earliest';
 
   try {

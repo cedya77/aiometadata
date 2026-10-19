@@ -371,7 +371,7 @@ export function ProvidersSettings() {
           <SettingRow
             htmlFor="anime-episode-dates"
             label="Anime Episode Dates"
-            description="When an anime episode counts as out. Earliest release uses the first release anywhere, which is often a streaming premiere days before the TV broadcast; English dub uses the dub's release. Applies to TVDB (Aired or Official order), Kitsu and MyAnimeList metadata; episodes without a schedule keep the provider's date."
+            description="When an anime episode counts as out. Earliest release uses the first release anywhere, which is often a streaming premiere days before the TV broadcast; English dub uses the dub's release. Episodes without a schedule keep the provider's date."
             control={
               <ProviderSelect
                 id="anime-episode-dates"
@@ -392,7 +392,7 @@ export function ProvidersSettings() {
           <SettingRow
             htmlFor="skip-filler"
             label="Skip Filler Episodes"
-            description="Leave out filler episodes. Applies to TVDB (Aired or Official order), Kitsu and MyAnimeList metadata."
+            description="Leave out filler episodes."
             control={
               <Switch
                 id="skip-filler"
