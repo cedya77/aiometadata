@@ -168,7 +168,7 @@ async function syncSimkl(key: string, tokenId: string, config: any, watermark: a
 // --- MDBList ------------------------------------------------------------------------
 
 const MDBLIST_WATCH_FIELDS = ['watched_at', 'season_watched_at', 'episode_watched_at', 'journal_at'];
-const MDBLIST_MIRROR_FORMAT = 2;
+const MDBLIST_MIRROR_FORMAT = 3;
 
 function mdblistMovieRow(entry: any): MirrorRow | null {
   const id = entry?.movie?.ids?.mdblist;

@@ -502,6 +502,7 @@ export async function fetchMdblistWatched(apiKey: string, mediatype: 'episode' |
       `&limit=${pageSize}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}` +
       // Sent with every page: the cursor alone carries on into older history.
       `${since ? `&since=${encodeURIComponent(since)}` : ''}` +
+      `${mediatype === 'episode' ? '&append_to_response=tvdb' : ''}` +
       `&apikey=${apiKey}`;
     const response = await makeRateLimitedMDBListRequest(url, apiKey, `MDBList watched ${mediatype} page ${page + 1}`);
     const body = response?.data ?? {};
