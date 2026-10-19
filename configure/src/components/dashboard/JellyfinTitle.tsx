@@ -2,11 +2,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Bookmark, BookmarkCheck, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
+import { ArrowLeft, Bookmark, BookmarkCheck, Cast, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, Play, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinTitle, useJellyfinTitleAction, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitlePerson, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
 import JellyfinPersonView, { CastRow } from "./JellyfinPerson";
+import RemoteSheet, { type RemoteTarget } from "./JellyfinRemote";
 import { duration, useRemembered, when } from "./jellyfinUtils";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
@@ -118,7 +119,16 @@ function ActionMenu({ at, items, onClose }: { at: { x: number; y: number }; item
   );
 }
 
-function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, className, onToggleSelect, onAction }: {
+type Anchor = { x: number; y: number };
+
+const SHEET_WIDTH = 352;
+
+function under(button: Element): Anchor {
+  const box = button.getBoundingClientRect();
+  return { x: box.left + box.width / 2 - SHEET_WIDTH / 2, y: box.bottom + 8 };
+}
+
+function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, className, onToggleSelect, onAction, onPlayOn }: {
   ep: JellyfinTitleEpisode;
   now: number;
   selecting: boolean;
@@ -128,6 +138,7 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
   className?: string;
   onToggleSelect: () => void;
   onAction: (action: JellyfinTitleAction) => void;
+  onPlayOn: (at: Anchor) => void;
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -152,15 +163,23 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
         {ep.played && !selecting && <span className="absolute left-2 top-2 flex size-6 items-center justify-center rounded-full bg-blue-500 text-white shadow"><Check className="size-3.5" strokeWidth={3} /></span>}
         {selecting && <span className="absolute left-2 top-2 text-white drop-shadow">{selected ? <CheckSquare className="size-6 text-blue-300" /> : <Square className="size-6" />}</span>}
         {!selecting && !unaired && (
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="absolute inset-0 flex items-center justify-center gap-3 opacity-0 transition-opacity group-hover:opacity-100">
+            <button
+              type="button"
+              onClick={(event) => { event.stopPropagation(); onPlayOn(under(event.currentTarget)); }}
+              title="Play on a device"
+              className="rounded-full bg-black/60 p-4 transition hover:bg-black/75"
+            >
+              <Play className="size-6 fill-white text-white" />
+            </button>
             <button
               type="button"
               disabled={busy}
               onClick={(event) => { event.stopPropagation(); onAction(ep.played ? "unplayed" : "played"); }}
               title={ep.played ? "Mark unwatched" : "Mark watched"}
-              className={cx("rounded-full p-4 transition", ep.played ? "bg-blue-500/90 hover:bg-blue-500" : "bg-black/60 hover:bg-black/75")}
+              className={cx("rounded-full p-3 transition", ep.played ? "bg-blue-500/90 hover:bg-blue-500" : "bg-black/60 hover:bg-black/75")}
             >
-              {busy ? <Loader2 className="size-6 animate-spin text-white" /> : ep.played ? <Undo2 className="size-6 text-white" /> : <Check className="size-6 text-white" strokeWidth={3} />}
+              {busy ? <Loader2 className="size-5 animate-spin text-white" /> : ep.played ? <Undo2 className="size-5 text-white" /> : <Check className="size-5 text-white" strokeWidth={3} />}
             </button>
           </div>
         )}
@@ -178,6 +197,7 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
         )}
         {menu && (
           <ActionMenu at={menu} onClose={closeMenu} items={[
+            ...(unaired ? [] : [{ icon: <Cast className="size-4" />, label: "Play on a device", onSelect: () => onPlayOn({ x: menu.x, y: menu.y }) }]),
             { icon: <Check className="size-4" />, label: "Mark watched", onSelect: () => onAction("played") },
             { icon: <Undo2 className="size-4" />, label: "Mark unwatched", onSelect: () => onAction("unplayed") },
             { icon: <CheckCheck className="size-4" />, label: "Watched up to here", onSelect: () => onAction("playedUpTo") },
@@ -378,6 +398,8 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
   const [posterLoaded, setPosterLoaded] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
+  const [remote, setRemote] = useState<{ target: RemoteTarget; at: Anchor } | null>(null);
+  const closeRemote = useCallback(() => setRemote(null), []);
 
   const title = useMemo(() => {
     if (!data) return null;
@@ -441,6 +463,20 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
     return s !== null && aired.length > 0 && aired.every((ep) => ep.played);
   }).map(([s]) => s as number));
 
+  const episodeTarget = (ep: JellyfinTitleEpisode): RemoteTarget => ({
+    itemId: ep.id,
+    itemType: "Episode",
+    itemName: ep.name ?? code(ep),
+    heading: ep.name || code(ep) || "Episode",
+    sub: [title?.title, code(ep)].filter(Boolean).join(" · "),
+    still: sizedStill(ep.still, 320),
+  });
+  const titleTarget = (): RemoteTarget | null => {
+    if (!title) return null;
+    if (isSeries && next) return episodeTarget(next);
+    return { itemId: title.id, itemType: isSeries ? "Series" : "Movie", itemName: title.title, heading: title.title, sub: title.year, still: sizedArt(title.backdropUrl, 342) ?? title.backdropUrl };
+  };
+
   const card = (ep: JellyfinTitleEpisode, className?: string) => (
     <EpisodeCard
       key={ep.id}
@@ -452,6 +488,7 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
       highlighted={!selecting && ep.id === next?.id}
       busy={busy === ep.id + "played" || busy === ep.id + "unplayed" || busy === ep.id + "playedUpTo"}
       onToggleSelect={() => toggleSelect(ep.id)}
+      onPlayOn={(at) => setRemote({ target: episodeTarget(ep), at })}
       onAction={(action) => void run(action, [ep.id], action === "playedUpTo" ? `Watched up to ${code(ep)}` : action === "played" ? `${code(ep)} marked watched` : `${code(ep)} marked unwatched`, action === "playedUpTo" ? undefined : action === "played")}
     />
   );
@@ -552,6 +589,9 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
                           {title.played ? "Mark unwatched" : "Mark watched"}
                         </button>
                       )}
+                      <button type="button" className={GLASS_PILL} onClick={(event) => { const target = titleTarget(); if (target) setRemote({ target, at: under(event.currentTarget) }); }}>
+                        <Cast /> Play on…
+                      </button>
                       <div className="relative">
                         <button type="button" className={cx(GLASS_PILL, title.rating !== null && "!bg-white/20")} onClick={() => setRating((v) => !v)}>
                           <Star className={cx(title.rating !== null && "text-amber-400")} fill={title.rating !== null ? "currentColor" : "none"} />
@@ -625,6 +665,7 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
             )}
 
             {title && title.people.length > 0 && <CastRow people={title.people} onPerson={onPerson} />}
+            {remote && <RemoteSheet userUUID={userUUID} profile={profile} profileName={profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
 
             {title && (
               <section className="flex flex-col gap-4">

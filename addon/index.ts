@@ -8496,6 +8496,53 @@ addon.post("/api/dashboard/jellyfin/:userUUID/title/action", requireDashboardAdm
   }
 });
 
+addon.get("/api/dashboard/jellyfin/:userUUID/devices", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const devices = await require('./lib/jellyfin/dashboard').dashboardDevices(String(req.params.userUUID), profile);
+    if (!devices) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json({ devices });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to list devices' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/devices/open", requireDashboardAdmin, async (req, res) => {
+  try {
+    const deviceId = typeof req.body?.deviceId === 'string' ? req.body.deviceId : '';
+    const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : '';
+    if (!deviceId || !itemId) {
+      res.status(400).json({ error: 'Name a device and an item' });
+      return;
+    }
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    const start = Number(req.body?.startPositionTicks);
+    const sent = await require('./lib/jellyfin/dashboard').dashboardOpenOn(String(req.params.userUUID), profile, deviceId, {
+      itemId,
+      itemType: typeof req.body?.itemType === 'string' ? req.body.itemType : '',
+      itemName: typeof req.body?.itemName === 'string' ? req.body.itemName : '',
+      play: req.body?.play === true,
+      startPositionTicks: Number.isFinite(start) && start > 0 ? start : undefined,
+    });
+    if (sent === null) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (!sent) {
+      res.status(409).json({ error: 'That device is no longer connected' });
+      return;
+    }
+    res.json({ sent });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to reach the device' });
+  }
+});
+
 addon.post("/api/dashboard/jellyfin/:userUUID/shows/refresh", requireDashboardAdmin, async (req, res) => {
   try {
     const metaId = typeof req.body?.metaId === 'string' ? req.body.metaId.trim() : '';

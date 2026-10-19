@@ -1923,6 +1923,47 @@ export function useJellyfinTitleAction() {
   };
 }
 
+export interface JellyfinDevice {
+  deviceId: string;
+  client: string;
+  device: string;
+  version: string;
+  lastSeen: number;
+  canOpen: boolean;
+  canPlay: boolean;
+}
+
+export function useJellyfinDevices(userUUID: string | null, profile: string | null, open: boolean, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<{ devices: JellyfinDevice[] }>(
+    ['dashboard', 'jellyfin', 'devices', userUUID, profile] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/devices?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID) && open }
+  );
+}
+
+export interface JellyfinOpenOn {
+  itemId: string;
+  itemType: string;
+  itemName: string;
+  play: boolean;
+}
+
+export function useJellyfinOpenOn() {
+  const getHeaders = useApiHeaders();
+  return async (userUUID: string, profile: string | null, deviceId: string, target: JellyfinOpenOn): Promise<boolean> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/devices/open`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...target, deviceId, profile: profile ?? undefined }),
+    });
+    if (response.status === 409) return false;
+    if (!response.ok) throw new Error(`Could not reach the device (${response.status})`);
+    return true;
+  };
+}
+
 export function useJellyfinShowRefresh() {
   const getHeaders = useApiHeaders();
   return async (userUUID: string, metaId: string): Promise<boolean> => {

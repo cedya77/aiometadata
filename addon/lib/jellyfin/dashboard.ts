@@ -578,6 +578,53 @@ function asProfile<T>(userUUID: string, profile: string | null, work: (config: a
   });
 }
 
+export interface DeviceRow {
+  deviceId: string;
+  client: string;
+  device: string;
+  version: string;
+  lastSeen: number;
+  canOpen: boolean;
+  canPlay: boolean;
+}
+
+export function dashboardDevices(userUUID: string, profile: string | null): Promise<DeviceRow[] | null> {
+  return asProfile(userUUID, profile, async (config) => {
+    const { liveDevices } = require('./socket');
+    const devices: Array<{ deviceId: string; client: string; device: string; version: string; lastSeen: number; playableMediaTypes: string[]; supportedCommands: string[] }> =
+      await liveDevices(userUUID, profileKey(config));
+    return devices.map((device) => ({
+      deviceId: device.deviceId,
+      client: device.client,
+      device: device.device,
+      version: device.version,
+      lastSeen: device.lastSeen,
+      canOpen: device.supportedCommands.includes('DisplayContent'),
+      canPlay: device.playableMediaTypes.includes('Video'),
+    }));
+  });
+}
+
+export interface OpenOnTarget {
+  itemId: string;
+  itemType: string;
+  itemName: string;
+  play: boolean;
+  startPositionTicks?: number;
+}
+
+export function dashboardOpenOn(userUUID: string, profile: string | null, deviceId: string, target: OpenOnTarget): Promise<boolean | null> {
+  return asProfile(userUUID, profile, async (config) => {
+    const { sendToDevice } = require('./socket');
+    const { profileUserId } = require('./profiles');
+    const ControllingUserId = profileUserId(userUUID, profile || null);
+    const message = target.play
+      ? ['Play', { ItemIds: [target.itemId], PlayCommand: 'PlayNow', ControllingUserId, ...(target.startPositionTicks ? { StartPositionTicks: target.startPositionTicks } : {}) }]
+      : ['GeneralCommand', { Name: 'DisplayContent', ControllingUserId, Arguments: { ItemId: target.itemId, ItemName: target.itemName, ItemType: target.itemType } }];
+    return sendToDevice(userUUID, profileKey(config), deviceId, message[0], message[1]);
+  });
+}
+
 export interface ShowRow {
   metaId: string;
   title: string;
