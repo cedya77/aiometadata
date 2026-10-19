@@ -333,16 +333,71 @@ const bodies = new LRUCache<string, { body: string; contentType: string }>({
 const MAX_SUBTITLE_BYTES = 5 * 1024 * 1024;
 
 /** The file fetched and turned into the format asked; kept so a seek does not fetch it again. */
+// A player asks for every subtitle at once; a provider refuses that many at the same time, so
+// each host gets a few at a time and the rest wait their turn.
+const hostSlots = new Map<string, { active: number; waiting: Array<() => void> }>();
+
+async function inHostTurn<T>(url: string, work: () => Promise<T>): Promise<T> {
+  let host = '';
+  try {
+    host = new URL(url).host;
+  } catch {
+    return work();
+  }
+  const limit = envInt('JELLYFIN_SUBTITLE_FETCH_CONCURRENCY', 4, 1);
+  let slot = hostSlots.get(host);
+  if (!slot) {
+    slot = { active: 0, waiting: [] };
+    hostSlots.set(host, slot);
+  }
+  if (slot.active >= limit) await new Promise<void>((resolve) => slot!.waiting.push(resolve));
+  slot.active++;
+  try {
+    return await work();
+  } finally {
+    slot.active--;
+    const next = slot.waiting.shift();
+    if (next) next();
+    else if (slot.active === 0) hostSlots.delete(host);
+  }
+}
+
+const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+/** The provider's file, asked again after a refusal it says is passing, as long as it asks to wait. */
+async function fetchSubtitle(url: string): Promise<{ response: Response; done: () => void }> {
+  const retries = envInt('JELLYFIN_SUBTITLE_FETCH_RETRIES', 2, 0);
+  for (let attempt = 0; ; attempt++) {
+    // Timed from its turn, not from the wait for one.
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = () => clearTimeout(timer);
+    const response = await inHostTurn(url, () => {
+      timer = setTimeout(() => controller.abort(), envInt('JELLYFIN_SUBTITLE_FETCH_TIMEOUT_MS', 15000, 1000));
+      return fetch(url, { signal: controller.signal, redirect: 'follow' });
+    });
+    if (response.ok || !RETRY_STATUSES.has(response.status) || attempt >= retries) return { response, done };
+    done();
+    const after = Number(response.headers.get('retry-after'));
+    const wait = Math.min(Number.isFinite(after) && after > 0 ? after * 1000 : 1000 * 2 ** attempt, 8000);
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+}
+
 export async function subtitleBody(url: string, to: SubtitleFormat): Promise<{ body: string; contentType: string } | null> {
   const key = `${to}|${url}`;
   const held = bodies.get(key);
   if (held) return held;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), envInt('JELLYFIN_SUBTITLE_FETCH_TIMEOUT_MS', 15000, 1000));
+  let done = () => {};
   try {
-    const response = await fetch(url, { signal: controller.signal, redirect: 'follow' });
-    if (!response.ok) return null;
+    const fetched = await fetchSubtitle(url);
+    done = fetched.done;
+    const response = fetched.response;
+    if (!response.ok) {
+      logger.debug(`Subtitle fetch got ${response.status} for ${url}`);
+      return null;
+    }
     const length = Number(response.headers.get('content-length'));
     if (Number.isFinite(length) && length > MAX_SUBTITLE_BYTES) return null;
     const raw = Buffer.from(await response.arrayBuffer());
@@ -354,7 +409,7 @@ export async function subtitleBody(url: string, to: SubtitleFormat): Promise<{ b
     logger.debug(`Subtitle fetch failed for ${url}: ${error?.message || error}`);
     return null;
   } finally {
-    clearTimeout(timer);
+    done();
   }
 }
 
