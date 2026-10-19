@@ -817,7 +817,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     key: 'JELLYFIN_STREAM_USER_AGENT',
     envVar: 'JELLYFIN_STREAM_USER_AGENT',
     label: 'Jellyfin Stream Request User Agent',
-    description: 'The user agent sent to the stream addon when the Jellyfin server resolves streams. AIOStreams attaches what it parsed from a release, such as audio and subtitle tracks, only for a user agent it recognises.',
+    description: 'Replaces the user agent sent to the stream addon when the Jellyfin server resolves streams. Left empty, it is AIOMetadata\'s own followed by the app\'s name and user agent in brackets: AIOStreams attaches what it parsed from a release, such as its service and tracks, only for a user agent starting with AIO, and variant rules can still match the app with includes(userAgent, ...).',
     category: 'Features',
     type: 'string',
     default: '',

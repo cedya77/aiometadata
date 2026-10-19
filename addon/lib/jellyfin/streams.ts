@@ -34,8 +34,14 @@ export interface PlayableStream {
 }
 
 // The stream addon adds what it parsed from a release only for a user agent it knows.
-export function streamUserAgent(forwarded?: string): string {
-  return process.env.JELLYFIN_STREAM_USER_AGENT?.trim() || forwarded?.trim() || `AIOStreams/aiometadata-${buildInfo.version}`;
+export function streamUserAgent(client?: Pick<StreamClient, 'client' | 'version' | 'userAgent'>): string {
+  const override = process.env.JELLYFIN_STREAM_USER_AGENT?.trim();
+  if (override) return override;
+  const own = `AIOStreams/aiometadata-${buildInfo.version}`;
+  const app = [client?.client ? `${client.client}/${client.version || ''}`.replace(/\/$/, '') : '', client?.userAgent?.trim() || '']
+    .filter(Boolean)
+    .join('; ');
+  return app ? `${own} (${headerValue(app)})` : own;
 }
 
 export interface StreamClient {
@@ -365,7 +371,7 @@ export async function fetchStreams(
   const timer = setTimeout(() => controller.abort(), requestTimeoutMs());
 
   try {
-    const headers: Record<string, string> = { accept: 'application/json', 'user-agent': streamUserAgent(client?.userAgent) };
+    const headers: Record<string, string> = { accept: 'application/json', 'user-agent': streamUserAgent(client) };
     if (client) {
       headers['x-jellyfin-client'] = headerValue(`${client.client}/${client.version}`);
       headers['x-jellyfin-device'] = headerValue(client.device);
