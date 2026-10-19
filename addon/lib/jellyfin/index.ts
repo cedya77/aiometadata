@@ -50,7 +50,7 @@ import { cachedArtwork } from './artwork';
 import { SIZED_WIDTH, resizeToWidth, widthStep } from '../posterCache/resize';
 import { IMAGE_CSP } from '../posterCache/proxyResponse';
 import { registerStubs } from './stubs';
-import { recordPlayed, recordPlayedUpTo, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData, sessionTouchDue, touchSessions } from './playstate';
+import { forgetUserSettings, recordPlayed, recordPlayedUpTo, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData, sessionTouchDue, touchSessions } from './playstate';
 
 const database: any = require('../database');
 
@@ -640,6 +640,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       await database.savePreferences(userUUID, profile.id ?? '', USER_CONFIGURATION_ID, '', req.body).catch((error: any) =>
         logger.debug(`User configuration save failed: ${error?.message || error}`)
       );
+      forgetUserSettings(userUUID);
     }
     res.status(204).end();
   });

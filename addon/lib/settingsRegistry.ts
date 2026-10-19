@@ -486,6 +486,17 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     max: 100,
   },
   {
+    key: 'JELLYFIN_USER_SETTINGS_CACHE_MS',
+    envVar: 'JELLYFIN_USER_SETTINGS_CACHE_MS',
+    label: 'Jellyfin User Settings Cache (ms)',
+    description: 'How long a profile\'s own playback settings, such as the share of a title that counts as watched, are held before being read again. Saving them from a client takes effect at once.',
+    category: 'Features',
+    type: 'number',
+    default: 60000,
+    min: 0,
+    max: 3600000,
+  },
+  {
     key: 'JELLYFIN_PROGRESS_WRITE_INTERVAL',
     envVar: 'JELLYFIN_PROGRESS_WRITE_INTERVAL',
     label: 'Jellyfin Progress Write Interval (seconds)',
