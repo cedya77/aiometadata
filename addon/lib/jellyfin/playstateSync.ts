@@ -31,7 +31,7 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
   const digest = snapshot.fingerprint
     ? createHash('sha256').update(`${snapshot.fingerprint}|${resume.map((row: any) => `${row.videoId}:${row.progress}:${row.updatedAt}`).join(',')}`).digest('hex').substring(0, 16)
     : '';
-  const passKey = `jellyfin_playstate_pass_v1:${userUUID}${profile ? `:${profile}` : ''}`;
+  const passKey = `jellyfin_playstate_pass_v2:${userUUID}${profile ? `:${profile}` : ''}`;
   if (digest && (await readGlobalCache(passKey))?.digest === digest) return { added, skipped, unchanged: true };
   for (const row of resume) {
     // The most recent action wins: a point the tracker set after this row's last
@@ -66,17 +66,28 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
   const watched = await allWatched(snapshot);
   const finished = [...watched.episodes, ...watched.movies];
   const known = await getPlaystatesAcross(userUUID, finished, profile);
+  const logged = await database.watchedVideoIds(userUUID, profile);
   for (const videoId of finished) {
     const row = known.get(videoId);
+    const trackerAt = watched.at.get(videoId);
     // An import written without a date takes the tracker's once it has one.
-    if (row && row.played && !row.last_played_at && !Number(row.position_ms) && watched.at.get(videoId)) {
-      await upsertPlaystateEverywhere(userUUID, videoId, { lastPlayedAt: watched.at.get(videoId), origin }, profile);
+    if (row && row.played && !row.last_played_at && !Number(row.position_ms) && trackerAt) {
+      await upsertPlaystateEverywhere(userUUID, videoId, { lastPlayedAt: trackerAt, origin, watch: { at: trackerAt, kind: 'dated' } }, profile);
       added += 1;
       continue;
     }
-    const watchedAt = watched.at.get(videoId) ?? 0;
+    const watchedAt = trackerAt ?? 0;
     if (row && row.played && Number(row.position_ms) > 0 && !paused.has(videoId) && watchedAt > Number(row.updated_at)) {
-      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: watchedAt, origin }, profile);
+      const runtimeMs = Number(row.runtime_ms) || 0;
+      const gapMs = runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
+      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: watchedAt, origin, watch: { at: watchedAt, kind: 'finish', gapMs } }, profile);
+      added += 1;
+      continue;
+    }
+    if (row && row.played && trackerAt && !logged.has(videoId) && !logged.has(String(row.video_id))) {
+      for (const id of new Set([videoId, String(row.video_id)])) {
+        await database.logWatch(userUUID, profile, id, { at: trackerAt, kind: 'dated' }, true, origin);
+      }
       added += 1;
       continue;
     }
@@ -90,7 +101,8 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
       skipped += 1;
       continue;
     }
-    await upsertPlaystateEverywhere(userUUID, videoId, row ? { positionMs: 0, played: true, origin } : { positionMs: 0, played: true, lastPlayedAt: watched.at.get(videoId) ?? null, origin }, profile);
+    const watch = trackerAt ? { watch: { at: trackerAt, kind: 'first' } } : {};
+    await upsertPlaystateEverywhere(userUUID, videoId, row ? { positionMs: 0, played: true, origin, ...watch } : { positionMs: 0, played: true, lastPlayedAt: trackerAt ?? null, origin, ...watch }, profile);
     added += 1;
   }
 
@@ -127,7 +139,7 @@ export async function runtimeFromMeta(userUUID: string, row: any): Promise<numbe
 export async function forgetImported(userUUID: string, profile: string): Promise<number> {
   const removed = await database.deleteImportedPlaystate(userUUID, profile);
   const { writeGlobalCache } = require('../getCache');
-  await writeGlobalCache(`jellyfin_playstate_pass_v1:${userUUID}${profile ? `:${profile}` : ''}`, { digest: null }, 60);
+  await writeGlobalCache(`jellyfin_playstate_pass_v2:${userUUID}${profile ? `:${profile}` : ''}`, { digest: null }, 60);
   const { invalidateResume } = require('./resume');
   invalidateResume(userUUID);
   logger.info(`Forgot ${removed} imported playstate row(s) of ${userUUID}${profile ? ` (${profile})` : ''}`);

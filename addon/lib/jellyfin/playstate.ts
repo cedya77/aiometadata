@@ -367,9 +367,10 @@ async function recordPlaystate(
   event: 'start' | 'pause' | 'stop' | 'played' | 'unplayed',
   positionMs: number,
   played: boolean | null,
-  config: any
+  config: any,
+  finished = false
 ): Promise<void> {
-  await writePlaystate(userUUID, profile, session, event, positionMs, played);
+  await writePlaystate(userUUID, profile, session, event, positionMs, played, finished);
   announce(userUUID, config, profile, session).catch((error: any) =>
     logger.debug(`User data push failed for ${session.videoId}: ${error?.message || error}`)
   );
@@ -381,7 +382,8 @@ async function writePlaystate(
   session: ResolvedSession,
   event: 'start' | 'pause' | 'stop' | 'played' | 'unplayed',
   positionMs: number,
-  played: boolean | null
+  played: boolean | null,
+  finished = false
 ): Promise<void> {
   const database: any = require('../database');
   const videoId = session.videoId;
@@ -392,12 +394,15 @@ async function writePlaystate(
       await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: false, lastPlayedAt: null, origin: 'server' }, profile, session.aliases);
       return;
     }
+    const now = Date.now();
     if (event === 'played') {
-      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now(), origin: 'server' }, profile, session.aliases);
+      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: now, origin: 'server', watch: { at: now, kind: 'first' } }, profile, session.aliases);
       return;
     }
     if (event === 'stop' && played === true) {
-      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: Date.now(), origin: 'server' }, profile, session.aliases);
+      const gapMs = runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
+      const watch = finished ? { at: now, kind: 'finish', gapMs } : undefined;
+      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: now, origin: 'server', ...(watch ? { watch } : {}) }, profile, session.aliases);
       return;
     }
     const { belowResumeFloor } = require('./resume');
@@ -487,7 +492,7 @@ async function settle(
   resumedFrom: number | null = null
 ): Promise<void> {
   // The table is written before any tracker is told, so a read never waits on one.
-  await recordPlaystate(userUUID, profile, session, event, positionMs, played, config);
+  await recordPlaystate(userUUID, profile, session, event, positionMs, played, config, event === 'stop' && played === true);
   if (played === true && session.descriptor.k === 'episode') {
     const { undropOnWatch } = require('./dropped');
     undropOnWatch(userUUID, config, [session.descriptor.i]);

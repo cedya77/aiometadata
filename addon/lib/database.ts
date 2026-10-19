@@ -9,6 +9,12 @@ import consola from 'consola';
 
 const logger = consola.withTag('Database');
 
+export interface WatchPatch {
+  at: number;
+  kind: 'finish' | 'first' | 'dated';
+  gapMs?: number;
+}
+
 type DbType = 'sqlite' | 'postgres';
 
 function dbTypeFromUri(uri: string | undefined): DbType | null {
@@ -164,6 +170,7 @@ class Database {
     await this.ensureAccountColumns();
     await this.ensurePlaystateProfile();
     await this.ensurePlaystateOrigin();
+    await this.ensureWatches();
     await this.ensureWatchlistMetaType();
     await this.ensureTrackerOutboxProfile();
     await this.ensureRatingsMetaType();
@@ -247,6 +254,33 @@ class Database {
       }
     } catch (error: any) {
       logger.warn(`Could not add jellyfin_playstate.origin: ${error.message}`);
+    }
+  }
+
+  async ensureWatches(): Promise<void> {
+    try {
+      const sqlite = this.type === 'sqlite';
+      const existing = sqlite
+        ? await this.getQuery(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'jellyfin_watches'`)
+        : await this.getQuery(`SELECT table_name FROM information_schema.tables WHERE table_name = 'jellyfin_watches'`);
+      await this.runQuery(`CREATE TABLE IF NOT EXISTS jellyfin_watches (
+        user_uuid ${sqlite ? 'TEXT' : 'VARCHAR(64)'} NOT NULL,
+        profile TEXT NOT NULL DEFAULT '',
+        video_id TEXT NOT NULL,
+        watched_at ${sqlite ? 'INTEGER' : 'BIGINT'} NOT NULL,
+        origin TEXT,
+        PRIMARY KEY (user_uuid, profile, video_id, watched_at)
+      )`);
+      await this.runQuery(`CREATE INDEX IF NOT EXISTS idx_jellyfin_watches_recent ON jellyfin_watches(user_uuid, profile, watched_at DESC)`);
+      await this.runQuery(`CREATE INDEX IF NOT EXISTS idx_jellyfin_watches_at ON jellyfin_watches(watched_at)`);
+      if (existing) return;
+      const result = await this.runQuery(`INSERT INTO jellyfin_watches (user_uuid, profile, video_id, watched_at, origin)
+        SELECT user_uuid, profile, video_id, last_played_at, origin FROM jellyfin_playstate
+        WHERE played = 1 AND last_played_at IS NOT NULL AND position_ms = 0
+        ON CONFLICT DO NOTHING`);
+      logger.info(`Created jellyfin_watches with ${Number(sqlite ? result?.changes : result?.rowCount) || 0} watches from the play state`);
+    } catch (error: any) {
+      logger.warn(`Could not create jellyfin_watches: ${error.message}`);
     }
   }
 
@@ -1343,7 +1377,7 @@ class Database {
   async upsertPlaystate(
     userUUID: string,
     videoId: string,
-    patch: { positionMs?: number; runtimeMs?: number; played?: boolean; lastPlayedAt?: number | null; origin?: string | null },
+    patch: { positionMs?: number; runtimeMs?: number; played?: boolean; lastPlayedAt?: number | null; origin?: string | null; watch?: WatchPatch },
     profile = ''
   ): Promise<void> {
     const existing = await this.getPlaystate(userUUID, videoId, profile);
@@ -1352,9 +1386,17 @@ class Database {
     const positionMs = patch.positionMs ?? existing?.position_ms ?? 0;
     const runtimeMs = patch.runtimeMs ?? existing?.runtime_ms ?? 0;
     const played = patch.played ?? Boolean(existing?.played);
-    const playCount = (existing?.play_count ?? 0) + (patch.played === true && !existing?.played ? 1 : 0);
-    const lastPlayedAt = patch.lastPlayedAt === undefined ? (existing?.last_played_at ?? null) : patch.lastPlayedAt;
+    const becamePlayed = patch.played === true && !existing?.played;
     const origin = patch.origin === undefined ? (existing?.origin ?? null) : patch.origin;
+
+    let logged = false;
+    if (patch.played === false) {
+      await this.deleteWatches(userUUID, profile, videoId);
+    } else if (patch.watch && Number.isFinite(patch.watch.at) && patch.watch.at > 0) {
+      logged = await this.logWatch(userUUID, profile, videoId, patch.watch, Boolean(existing?.played), origin);
+    }
+    const playCount = (existing?.play_count ?? 0) + (becamePlayed || (logged && patch.watch?.kind === 'finish') ? 1 : 0);
+    const lastPlayedAt = patch.lastPlayedAt === undefined ? (existing?.last_played_at ?? null) : patch.lastPlayedAt;
 
     const query = this.type === 'sqlite'
       ? `INSERT INTO jellyfin_playstate (user_uuid, profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin)
@@ -1373,6 +1415,92 @@ class Database {
     await this.runQuery(query, [userUUID, profile, videoId, positionMs, runtimeMs, played ? 1 : 0, playCount, lastPlayedAt, now, origin]);
   }
 
+  async logWatch(userUUID: string, profile: string, videoId: string, watch: WatchPatch, wasPlayed: boolean, origin: string | null): Promise<boolean> {
+    if (watch.kind === 'first' && wasPlayed) return false;
+    const sqlite = this.type === 'sqlite';
+    if (watch.kind !== 'first') {
+      const since = watch.kind === 'dated' ? 0 : watch.at - Math.max(0, watch.gapMs ?? 0);
+      const held = await this.getQuery(
+        sqlite
+          ? 'SELECT 1 AS held FROM jellyfin_watches WHERE user_uuid = ? AND profile = ? AND video_id = ? AND watched_at >= ? LIMIT 1'
+          : 'SELECT 1 AS held FROM jellyfin_watches WHERE user_uuid = $1 AND profile = $2 AND video_id = $3 AND watched_at >= $4 LIMIT 1',
+        [userUUID, profile, videoId, since]
+      );
+      if (held) return false;
+    }
+    const result = await this.runQuery(
+      sqlite
+        ? 'INSERT INTO jellyfin_watches (user_uuid, profile, video_id, watched_at, origin) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING'
+        : 'INSERT INTO jellyfin_watches (user_uuid, profile, video_id, watched_at, origin) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING',
+      [userUUID, profile, videoId, Math.round(watch.at), origin]
+    );
+    return (Number(sqlite ? result?.changes : result?.rowCount) || 0) > 0;
+  }
+
+  async deleteWatches(userUUID: string, profile: string, videoId: string): Promise<void> {
+    const query = this.type === 'sqlite'
+      ? 'DELETE FROM jellyfin_watches WHERE user_uuid = ? AND profile = ? AND video_id = ?'
+      : 'DELETE FROM jellyfin_watches WHERE user_uuid = $1 AND profile = $2 AND video_id = $3';
+    await this.runQuery(query, [userUUID, profile, videoId]);
+  }
+
+  async listWatchesFor(userUUID: string, profile: string, videoIds: string[]): Promise<Array<{ video_id: string; watched_at: number; origin: string | null }>> {
+    const out: any[] = [];
+    const ids = [...new Set(videoIds)];
+    for (let at = 0; at < ids.length; at += 500) {
+      const chunk = ids.slice(at, at + 500);
+      const marks = chunk.map((_, i) => (this.type === 'sqlite' ? '?' : `$${i + 3}`)).join(', ');
+      const query = this.type === 'sqlite'
+        ? `SELECT video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = ? AND profile = ? AND video_id IN (${marks})`
+        : `SELECT video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = $1 AND profile = $2 AND video_id IN (${marks})`;
+      out.push(...((await this.allQuery(query, [userUUID, profile, ...chunk])) || []));
+    }
+    return out.map((row) => ({ video_id: String(row.video_id), watched_at: Number(row.watched_at), origin: row.origin ?? null }));
+  }
+
+  async watchedVideoIds(userUUID: string, profile = ''): Promise<Set<string>> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT DISTINCT video_id FROM jellyfin_watches WHERE user_uuid = ? AND profile = ?'
+      : 'SELECT DISTINCT video_id FROM jellyfin_watches WHERE user_uuid = $1 AND profile = $2';
+    return new Set(((await this.allQuery(query, [userUUID, profile])) || []).map((row: any) => String(row.video_id)));
+  }
+
+  async listViewingHistory(userUUID: string, limit: number, profile: string | null = null): Promise<any[]> {
+    const sqlite = this.type === 'sqlite';
+    const scoped = profile === null ? '' : ` AND w.profile = ${sqlite ? '?' : '$3'}`;
+    const query = `SELECT w.profile, w.video_id, w.watched_at, w.origin,
+        p.position_ms, p.runtime_ms, p.played, p.last_played_at, p.updated_at,
+        (SELECT COUNT(*) FROM jellyfin_watches e WHERE e.user_uuid = w.user_uuid AND e.profile = w.profile AND e.video_id = w.video_id AND e.watched_at < w.watched_at) AS earlier
+      FROM jellyfin_watches w
+      LEFT JOIN jellyfin_playstate p ON p.user_uuid = w.user_uuid AND p.profile = w.profile AND p.video_id = w.video_id
+      WHERE w.user_uuid = ${sqlite ? '?' : '$1'}${scoped}
+      ORDER BY w.watched_at DESC, w.video_id LIMIT ${sqlite ? '?' : '$2'}`;
+    const params = profile === null ? [userUUID, limit] : sqlite ? [userUUID, profile, limit] : [userUUID, limit, profile];
+    return (await this.allQuery(query, params)) || [];
+  }
+
+  async listWatchesSince(userUUID: string, since: number): Promise<Array<{ profile: string; video_id: string; watched_at: number }>> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT profile, video_id, watched_at FROM jellyfin_watches WHERE user_uuid = ? AND watched_at >= ?'
+      : 'SELECT profile, video_id, watched_at FROM jellyfin_watches WHERE user_uuid = $1 AND watched_at >= $2';
+    return ((await this.allQuery(query, [userUUID, since])) || []).map((row: any) => ({ profile: String(row.profile ?? ''), video_id: String(row.video_id), watched_at: Number(row.watched_at) }));
+  }
+
+  async listWatchesForConfiguration(userUUID: string): Promise<any[]> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT profile, video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = ? ORDER BY profile, watched_at DESC'
+      : 'SELECT profile, video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = $1 ORDER BY profile, watched_at DESC';
+    return (await this.allQuery(query, [userUUID])) || [];
+  }
+
+  async countWatchesSince(since: number): Promise<number> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT COUNT(*) AS count FROM (SELECT DISTINCT user_uuid, profile, watched_at FROM jellyfin_watches WHERE watched_at >= ?) w'
+      : 'SELECT COUNT(*) AS count FROM (SELECT DISTINCT user_uuid, profile, watched_at FROM jellyfin_watches WHERE watched_at >= $1) w';
+    const row = await this.getQuery(query, [since]);
+    return Number(row?.count) || 0;
+  }
+
   async deleteImportedPlaystate(userUUID: string, profile: string): Promise<number> {
     const [a, b] = this.type === 'sqlite' ? ['?', '?'] : ['$1', '$2'];
     const imported = `(origin IS NOT NULL AND origin NOT IN ('server', 'play'))
@@ -1381,6 +1509,9 @@ class Database {
     const where = `user_uuid = ${a} AND profile = ${b} AND (${imported})`;
     const counted: any = await this.getQuery(`SELECT COUNT(*) AS count FROM jellyfin_playstate WHERE ${where}`, [userUUID, profile]);
     await this.runQuery(`DELETE FROM jellyfin_playstate WHERE ${where}`, [userUUID, profile]);
+    await this.runQuery(`DELETE FROM jellyfin_watches WHERE user_uuid = ${a} AND profile = ${b} AND (
+      (origin IS NOT NULL AND origin NOT IN ('server', 'play'))
+      OR NOT EXISTS (SELECT 1 FROM jellyfin_playstate p WHERE p.user_uuid = jellyfin_watches.user_uuid AND p.profile = jellyfin_watches.profile AND p.video_id = jellyfin_watches.video_id))`, [userUUID, profile]);
     return Number(counted?.count) || 0;
   }
 

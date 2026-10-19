@@ -32,6 +32,8 @@ export interface PlayRow {
   runtimeMs: number;
   played: boolean;
   lastPlayedAt: number | null;
+  watchedAt: number | null;
+  rewatch: boolean;
   updatedAt: number;
 }
 
@@ -160,18 +162,30 @@ function historyKeyOf(config: any, userUUID: string, profile: string | null): st
 const profileLabel = (names: Map<string, string>, key: string): string =>
   names.get(key) ?? (key ? key.slice(0, 8) : 'Main');
 
+function sameViewingMs(runtimeMs: number): number {
+  return runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
+}
+
 async function playRows(userUUID: string, rows: any[], names: Map<string, string>): Promise<PlayRow[]> {
   const described = await mapWithConcurrency(rows, envInt('JELLYFIN_DASHBOARD_DESCRIBE_CONCURRENCY', 8, 1), (row: any) => describe(userUUID, String(row.video_id)));
-  const seen = new Set<string>();
+  const seen = new Map<string, PlayRow[]>();
   const out: PlayRow[] = [];
   rows.forEach((row, i) => {
     const videoId = String(row.video_id);
     const named = described[i];
-    // One title, one card: the same play is stored under every spelling, and a rewatch shows as the newest.
+    const watchedAt = row.watched_at ? Number(row.watched_at) : null;
     const keys = named.keys.map((id) => `${row.profile}|${id}`);
-    if (keys.some((key) => seen.has(key))) return;
-    for (const key of keys) seen.add(key);
-    out.push({
+    const earlier = Number(row.earlier) > 0;
+    const within = sameViewingMs(Number(row.runtime_ms) || 0);
+    const held = keys.flatMap((key) => seen.get(key) ?? [])
+      .find((entry) => watchedAt === null || entry.watchedAt === null || Math.abs(entry.watchedAt - watchedAt) < within);
+    if (held) {
+      if (earlier) held.rewatch = true;
+      return;
+    }
+    const played = Boolean(row.played);
+    const positionMs = Number(row.position_ms) || 0;
+    const entry: PlayRow = {
       profile: profileLabel(names, String(row.profile ?? '')),
       videoId,
       imageUrl: named.imageUrl,
@@ -183,12 +197,16 @@ async function playRows(userUUID: string, rows: any[], names: Map<string, string
       season: named.season,
       number: named.number,
       episodeTitle: named.episodeTitle,
-      positionMs: Number(row.position_ms) || 0,
+      positionMs,
       runtimeMs: Number(row.runtime_ms) || 0,
-      played: Boolean(row.played),
+      played,
       lastPlayedAt: row.last_played_at ? Number(row.last_played_at) : null,
+      watchedAt,
+      rewatch: watchedAt ? earlier : played && positionMs > 0,
       updatedAt: Number(row.updated_at) || 0,
-    });
+    };
+    for (const key of keys) seen.set(key, [...(seen.get(key) ?? []), entry]);
+    out.push(entry);
   });
   return out;
 }
@@ -215,8 +233,8 @@ export async function dashboardOverview(): Promise<any> {
     return { ...overviewMemo.value, ...liveCounts(sessions, now), sync: syncStatus() };
   }
   const [playedDay, playedWeek, seen] = await Promise.all([
-    database.countPlayedSince(now - 24 * 60 * 60 * 1000),
-    database.countPlayedSince(now - 7 * 24 * 60 * 60 * 1000),
+    database.countWatchesSince(now - 24 * 60 * 60 * 1000),
+    database.countWatchesSince(now - 7 * 24 * 60 * 60 * 1000),
     seenConfigurations(),
   ]);
   const value = {
@@ -299,7 +317,7 @@ function statsFingerprint(summary: any[]): string {
     .join('|');
 }
 
-const statsStoreKey = (key: string) => `jf:dashstats:v2:${key}`;
+const statsStoreKey = (key: string) => `jf:dashstats:v3:${key}`;
 
 async function storedStats(key: string): Promise<{ fingerprint: string; stats: Map<string, ProfileStats> } | null> {
   if (!redis) return null;
@@ -355,6 +373,12 @@ async function readProfileStats(userUUID: string, offsetMinutes: number): Promis
     byProfile.get(key)!.push(row);
   }
   const since = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
+  const watches = new Map<string, number[]>();
+  for (const watch of await database.listWatchesSince(userUUID, since)) {
+    const key = `${watch.profile}|${watch.video_id}`;
+    watches.set(key, [...(watches.get(key) ?? []), watch.watched_at]);
+  }
+  const dayOf = (at: number) => new Date(at - offsetMinutes * 60_000).toISOString().slice(0, 10);
   const out = new Map<string, ProfileStats>();
   for (const [profile, list] of byProfile) {
     const stats: ProfileStats = { played: 0, inProgress: 0, movies: 0, episodes: 0, days: {} };
@@ -368,11 +392,12 @@ async function readProfileStats(userUUID: string, offsetMinutes: number): Promis
         if (parsed?.episode !== null && parsed?.episode !== undefined) stats.episodes += 1;
         else stats.movies += 1;
       }
-      if (!played && !group.some((row) => Number(row.position_ms) >= watchedMs)) continue;
+      const finishes = new Set(group.flatMap((row) => watches.get(`${profile}|${row.video_id}`) ?? []));
+      for (const at of finishes) stats.days[dayOf(at)] = (stats.days[dayOf(at)] ?? 0) + 1;
+      if (!group.some((row) => Number(row.position_ms) >= watchedMs)) continue;
       const at = group.reduce((max, row) => Math.max(max, Number(row.last_played_at) || 0), 0);
-      if (at < since) continue;
-      const day = new Date(at - offsetMinutes * 60_000).toISOString().slice(0, 10);
-      stats.days[day] = (stats.days[day] ?? 0) + 1;
+      if (at < since || finishes.has(at)) continue;
+      stats.days[dayOf(at)] = (stats.days[dayOf(at)] ?? 0) + 1;
     }
     out.set(profile, stats);
   }
@@ -484,7 +509,7 @@ export type PlayKind = 'progress' | 'played';
 async function foldedPlays(userUUID: string, names: Map<string, string>, kind: PlayKind, profile: string | null, want: number): Promise<{ rows: PlayRow[]; exhausted: boolean }> {
   const read = (n: number) => kind === 'progress'
     ? database.listPlaystateInProgressFor(userUUID, n, profile)
-    : database.listPlaystatePlayedFor(userUUID, n, profile);
+    : database.listViewingHistory(userUUID, n, profile);
   let ask = want * 2;
   for (;;) {
     const raw: any[] = await read(ask);
@@ -510,6 +535,7 @@ export async function dashboardExport(userUUID: string): Promise<any> {
   const config = await database.getUserConfig(userUUID).catch(() => null);
   const names = config ? profileNames(config, userUUID) : new Map<string, string>();
   const rows: any[] = await database.listPlaystateFor(userUUID);
+  const watches: any[] = await database.listWatchesForConfiguration(userUUID).catch(() => []);
   return {
     userUUID,
     label: config ? defaultUserName(config, userUUID) : userUUID.slice(0, 8),
@@ -524,6 +550,12 @@ export async function dashboardExport(userUUID: string): Promise<any> {
       playCount: Number(row.play_count) || 0,
       lastPlayedAt: row.last_played_at ? new Date(Number(row.last_played_at)).toISOString() : null,
       updatedAt: new Date(Number(row.updated_at)).toISOString(),
+    })),
+    watches: watches.map((row) => ({
+      profile: String(row.profile ?? ''),
+      videoId: String(row.video_id),
+      watchedAt: new Date(Number(row.watched_at)).toISOString(),
+      origin: row.origin ?? null,
     })),
   };
 }

@@ -830,6 +830,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         const { groupBySpelling } = require('./aliases');
         const rows: any[] = await database.listPlaystatePlayedFor(userUUID, envInt('JELLYFIN_HISTORY_LOCAL_LIMIT', 5000, 1), profile).catch(() => []);
         const onTracker = await watchedAmong(snapshot, rows.map((row) => String(row.video_id)));
+        const finishedAt = new Map<string, number>();
+        for (const watch of await database.listWatchesFor(userUUID, profile, rows.map((row) => String(row.video_id))).catch(() => [])) {
+          finishedAt.set(watch.video_id, Math.max(finishedAt.get(watch.video_id) ?? 0, watch.watched_at));
+        }
         for (const group of (await groupBySpelling(rows)) as any[][]) {
           if (group.some((row: any) => onTracker.has(String(row.video_id)))) continue;
           const row = group.find((r: any) => String(r.video_id).startsWith('tt')) ?? group[0];
@@ -838,7 +842,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           if (!parsed) continue;
           const isEpisode = parsed.episode !== null;
           if (!kinds.has(isEpisode ? 'episode' : 'movie')) continue;
-          const at = Math.max(...group.map((r: any) => Number(r.last_played_at) || 0));
+          const finished = Math.max(0, ...group.map((r: any) => finishedAt.get(String(r.video_id)) ?? 0));
+          const at = finished || Math.max(...group.map((r: any) => Number(r.last_played_at) || 0));
           played.push(
             isEpisode
               ? { kind: 'episode', id: videoId, metaId: parsed.base, mediaType: videoId.startsWith('kitsu:') ? 'anime' : 'series', at }

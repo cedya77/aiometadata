@@ -475,6 +475,17 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     max: 49,
   },
   {
+    key: 'JELLYFIN_REWATCH_MIN_GAP_MINUTES',
+    envVar: 'JELLYFIN_REWATCH_MIN_GAP_MINUTES',
+    label: 'Jellyfin Rewatch Gap (minutes)',
+    description: 'A second finish of a title with no known runtime counts as a rewatch only this long after the last one. With a runtime, half of it is the gap.',
+    category: 'Features',
+    type: 'number',
+    default: 10,
+    min: 0,
+    max: 1440,
+  },
+  {
     key: 'JELLYFIN_PLAYED_THRESHOLD',
     envVar: 'JELLYFIN_PLAYED_THRESHOLD',
     label: 'Jellyfin Played Threshold (%)',

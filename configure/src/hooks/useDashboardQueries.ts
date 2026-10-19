@@ -1532,6 +1532,8 @@ export interface JellyfinPlayRow {
   runtimeMs: number;
   played: boolean;
   lastPlayedAt: number | null;
+  watchedAt: number | null;
+  rewatch: boolean;
   updatedAt: number;
 }
 

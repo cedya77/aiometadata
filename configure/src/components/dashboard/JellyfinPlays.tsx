@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2 } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2, Repeat } from "lucide-react";
 import { type JellyfinPlayRow } from "@/hooks/useDashboardQueries";
 import { Art, Sentinel } from "./JellyfinShared";
 import { when, clock, percentOf, duration, useOpenTitle, titleRefOf } from "./jellyfinUtils";
@@ -15,7 +15,7 @@ export function ProgressCard({ row }: { row: JellyfinPlayRow }) {
     <div role={open ? "button" : undefined} tabIndex={open ? 0 : undefined} onClick={open ? () => open(titleRefOf(row)) : undefined} onKeyDown={open ? (event) => { if (event.key === "Enter") open(titleRefOf(row)); } : undefined} className={`group relative overflow-hidden rounded-lg bg-muted/40 ring-1 ring-white/[0.06] transition hover:ring-white/20 ${open ? "cursor-pointer" : ""}`} title={`${row.title}${row.episode ? ` · ${row.episode}` : ""}`}>
       <div className="transition-transform duration-500 group-hover:scale-[1.03]"><Art src={row.backdropUrl && !row.seriesId ? row.backdropUrl : row.imageUrl ?? row.backdropUrl} title="" wide /></div>
       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/45 to-black/0" />
-      <span className="glass absolute top-2 left-2 rounded-full px-2 py-0.5 text-[10px] text-white/85">{row.profile} · {when(row.lastPlayedAt ?? row.updatedAt)}</span>
+      <span className="glass absolute top-2 left-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] text-white/85">{row.rewatch && <><Repeat className="size-2.5" /> Rewatching ·</>} {row.profile} · {when(row.lastPlayedAt ?? row.updatedAt)}</span>
       <div className="absolute inset-x-0 bottom-0 space-y-1.5 p-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold leading-tight text-white">{row.title}</p>
@@ -79,7 +79,10 @@ function episodeCode(row: JellyfinPlayRow, spaced = false): string {
   if (row.season === null) return e;
   return `S${String(row.season).padStart(2, "0")}${spaced ? " " : ""}${e}`;
 }
-const playedAt = (row: JellyfinPlayRow): number => row.lastPlayedAt ?? row.updatedAt;
+const playedAt = (row: JellyfinPlayRow): number => row.watchedAt ?? row.lastPlayedAt ?? row.updatedAt;
+function RewatchChip() {
+  return <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80"><Repeat className="size-2.5" /> Rewatch</span>;
+}
 interface DayTile {
   key: string;
   title: string;
@@ -138,7 +141,7 @@ function EpisodeLine({ row }: { row: JellyfinPlayRow }) {
       <div className="w-24 shrink-0"><Art src={row.imageUrl ?? row.posterUrl} title={row.title} wide /></div>
       <div className="min-w-0 flex-1">
         <p className="text-xs leading-tight truncate"><span className="text-primary font-medium">{episodeCode(row, true)}</span>{row.episodeTitle ? ` ${row.episodeTitle}` : ""}</p>
-        <p className="text-[11px] text-muted-foreground">{stamp(row.lastPlayedAt)}</p>
+        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">{stamp(playedAt(row))}{row.rewatch && <RewatchChip />}</p>
       </div>
       {row.runtimeMs > 0 && <span className="self-end rounded bg-black/60 px-1.5 py-0.5 text-[10px] tabular-nums text-white">{duration(row.runtimeMs)}</span>}
     </div>
@@ -163,7 +166,8 @@ function DayTileCard({ tile }: { tile: DayTile }) {
           {tile.show && !many && (
             <p className="mt-1 text-xs truncate"><span className="text-primary font-medium">{episodeCode(first, true)}</span>{first.episodeTitle ? ` ${first.episodeTitle}` : ""}</p>
           )}
-          {!many && <p className="text-[11px] text-muted-foreground">{stamp(first.lastPlayedAt)}</p>}
+          {!many && <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">{stamp(playedAt(first))}{first.rewatch && <RewatchChip />}</p>}
+          {many && tile.rows.some((row) => row.rewatch) && <p className="mt-1"><RewatchChip /></p>}
         </div>
         <div className="flex flex-col items-end justify-between shrink-0">
           {many
@@ -257,7 +261,7 @@ export function PlayTable({ rows, kind }: { rows: JellyfinPlayRow[]; kind: "prog
                 <td className="py-2 pr-3 text-right tabular-nums whitespace-nowrap">
                   {kind === "progress"
                     ? <>{clock(row.positionMs)}{pct !== null && <span className="text-muted-foreground"> · {pct}%</span>}</>
-                    : when(row.lastPlayedAt)}
+                    : <>{when(row.watchedAt ?? row.lastPlayedAt)}{row.rewatch && <span className="text-muted-foreground"> · rewatch</span>}</>}
                 </td>
                 <td className="py-2 text-right tabular-nums text-muted-foreground whitespace-nowrap">
                   {kind === "progress" ? when(row.lastPlayedAt ?? row.updatedAt) : row.runtimeMs > 0 ? clock(row.runtimeMs) : "—"}
