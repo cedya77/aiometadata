@@ -1969,6 +1969,7 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
     [RELEASE_AVAILABILITY_FIELD]: meta[RELEASE_AVAILABILITY_FIELD],
     runtime: meta.runtime,
     country: meta.country,
+    _originalLanguage: meta._originalLanguage,
     status: meta.status,
     imdbRating: meta.imdbRating,
     behaviorHints: meta.behaviorHints,

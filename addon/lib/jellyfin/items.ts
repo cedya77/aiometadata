@@ -583,6 +583,13 @@ function peopleFrom(meta: any, serverId: string): any[] {
   return people.filter((p: any) => p.Name && !seen.has(`${p.Type}|${p.Id}`) && seen.add(`${p.Type}|${p.Id}`));
 }
 
+export function originalLanguage(meta: any): string | null {
+  const { languageCode } = require('./streams');
+  const { subtitleLanguage } = require('./subtitles');
+  const raw = meta?._originalLanguage || meta?._providerArt?.originalLanguage || (meta?._providerArt?.anime ? 'ja' : null);
+  return raw ? subtitleLanguage(String(raw), languageCode) || null : null;
+}
+
 // A direct video link plays in the client's own player, so those go first.
 function remoteTrailers(meta: any): any[] {
   const streams = Array.isArray(meta.trailerStreams) ? meta.trailerStreams : [];
@@ -688,6 +695,7 @@ export function metaToBaseItem(
     Tags: Array.isArray(meta.keywords) ? meta.keywords : [],
     Taglines: [],
     RemoteTrailers: remoteTrailers(meta),
+    OriginalLanguage: originalLanguage(meta),
     ImageTags: imageTags,
     BackdropImageTags: images.backdrop ? [imageTag(images.backdrop)] : [],
     ImageBlurHashes: {},
@@ -1071,6 +1079,7 @@ export function buildEpisode(
       SeasonId: hasSeason ? parentSeasonId : null,
       SeriesId: seriesId,
       SeriesName: meta.name,
+      OriginalLanguage: originalLanguage(meta),
       OfficialRating: meta.app_extras?.certification || null,
       ParentIndexNumber: hasSeason ? video.season : null,
       IndexNumber: Number(video.episode),
@@ -1079,6 +1088,7 @@ export function buildEpisode(
       DateCreated: premiere || EPOCH_DATE,
       RunTimeTicks: parseRuntimeTicks(video.runtime),
       ProviderIds: {},
+      Tags: [(video.isFiller ?? video.filler) === true && 'Filler', (video.isRecap ?? video.recap) === true && 'Recap'].filter(Boolean),
       ImageTags: video.thumbnail ? { Primary: imageTag(video.thumbnail) } : {},
       BackdropImageTags: [],
       ImageBlurHashes: {},
