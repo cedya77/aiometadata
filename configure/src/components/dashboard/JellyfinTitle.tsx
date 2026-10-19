@@ -2,13 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Bookmark, BookmarkCheck, Cast, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, Play, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
+import { ArrowLeft, Bookmark, BookmarkCheck, Cast, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, Play, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinTitle, useJellyfinTitleAction, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitlePerson, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
 import JellyfinPersonView, { CastRow } from "./JellyfinPerson";
 import RemoteSheet, { type RemoteTarget } from "./JellyfinRemote";
-import { duration, useRemembered, when } from "./jellyfinUtils";
+import { duration, ordinal, rewatchLabel, timesWatched, useRemembered, watchedWhen, when } from "./jellyfinUtils";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
@@ -208,7 +208,8 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {ep.number !== null && <Badge>{code(ep)}</Badge>}
         {ep.airsAt && <Badge>{unaired ? `Airs ${longDate(ep.airsAt)}` : longDate(ep.airsAt)}</Badge>}
-        {ep.played && <Badge tone="brand"><Check className="size-3" strokeWidth={3} /> {ep.lastPlayedAt ? when(ep.lastPlayedAt) : "Watched"}{ep.playCount > 1 ? ` · ×${ep.playCount}` : ""}</Badge>}
+        {ep.played && <Badge tone="brand"><Check className="size-3" strokeWidth={3} /> {ep.watches[0] ? when(ep.watches[0]) : "Watched"}{timesWatched(ep) > 1 ? ` · ×${timesWatched(ep)}` : ""}</Badge>}
+        {ep.played && ep.positionMs > 0 && <Badge><Repeat className="size-3" /> {rewatchLabel(ep.positionMs)}</Badge>}
         {!ep.played && ep.positionMs > 0 && ep.runtimeMs > 0 && <Badge tone="brand">{duration(Math.max(0, ep.runtimeMs - ep.positionMs))} left</Badge>}
       </div>
     </div>
@@ -309,17 +310,32 @@ function EpisodeRow({ children }: { children: React.ReactNode }) {
   );
 }
 
+type HistoryEntry = { key: string; label: string; sub: string; at: number | null; image: string | null; again: boolean };
+
+function historyOf(item: { played: boolean; playCount: number; watches: number[]; positionMs: number; lastPlayedAt: number | null }, key: string, label: string, image: string | null): HistoryEntry[] {
+  const out: HistoryEntry[] = item.watches.map((at, i) => {
+    const n = item.watches.length - i;
+    return { key: `${key}|${at}`, label, sub: n > 1 ? `Watched · ${ordinal(n)} time` : "Watched", at, image, again: n > 1 };
+  });
+  if (item.positionMs > 0 && item.lastPlayedAt) {
+    out.push({ key: `${key}|now`, label, sub: item.played ? rewatchLabel(item.positionMs) : `${duration(item.positionMs) || "Under a minute"} in`, at: item.lastPlayedAt, image, again: item.played });
+  }
+  if (item.played && !item.watches.length) out.push({ key: `${key}|undated`, label, sub: "Watched", at: null, image, again: false });
+  return out;
+}
+
 function History({ title }: { title: JellyfinTitle }) {
   const plays = useMemo(() => {
+    const backdrop = sizedArt(title.backdropUrl, 342) ?? title.backdropUrl;
     const rows = title.type === "movie"
-      ? (title.lastPlayedAt ? [{ key: title.id, label: title.title, sub: title.played ? "Watched" : `${duration(title.positionMs)} in`, at: title.lastPlayedAt, count: title.playCount, still: null as string | null }] : [])
-      : title.episodes.filter((ep) => ep.lastPlayedAt).map((ep) => ({ key: ep.id, label: `${code(ep)}${ep.name ? ` · ${ep.name}` : ""}`, sub: ep.played ? "Watched" : `${duration(ep.positionMs)} in`, at: ep.lastPlayedAt!, count: ep.playCount, still: ep.still }));
-    return rows.sort((a, b) => b.at - a.at).slice(0, 60);
+      ? historyOf(title, title.id, title.title, backdrop)
+      : title.episodes.flatMap((ep) => historyOf(ep, ep.id, `${code(ep)}${ep.name ? ` · ${ep.name}` : ""}`, sizedStill(ep.still, 342) ?? backdrop));
+    return rows.sort((a, b) => (b.at ?? -1) - (a.at ?? -1)).slice(0, 80);
   }, [title]);
   const days = useMemo(() => {
     const out: Array<{ day: string; rows: typeof plays }> = [];
     for (const row of plays) {
-      const day = new Date(row.at).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+      const day = row.at === null ? "Date not recorded" : new Date(row.at).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
       const last = out[out.length - 1];
       if (last?.day === day) last.rows.push(row);
       else out.push({ day, rows: [row] });
@@ -331,17 +347,18 @@ function History({ title }: { title: JellyfinTitle }) {
     <div className="relative max-w-3xl space-y-8 before:absolute before:bottom-2 before:left-[7px] before:top-2 before:w-px before:bg-white/10">
       {days.map((d) => (
         <section key={d.day} className="relative pl-8">
-          <span className="absolute left-0 top-1 size-[15px] rounded-full border-2 border-blue-500 bg-background" />
-          <h4 className="mb-3 text-sm font-semibold text-foreground/90">{d.day}</h4>
+          <span className={cx("absolute left-0 top-1 size-[15px] rounded-full border-2 bg-background", d.rows[0]?.at === null ? "border-white/25" : "border-blue-500")} />
+          <h4 className={cx("mb-3 text-sm font-semibold", d.rows[0]?.at === null ? "text-muted-foreground" : "text-foreground/90")}>{d.day}</h4>
+          {d.rows[0]?.at === null && <p className="-mt-2 mb-3 text-xs text-muted-foreground">Marked watched before plays were dated, or imported without a date.</p>}
           <div className="space-y-2">
             {d.rows.map((row) => (
               <div key={row.key} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-2">
-                {row.still ? <img src={sizedStill(row.still, 342) ?? undefined} alt="" loading="lazy" className="aspect-video w-24 shrink-0 rounded-md object-cover" /> : <span className="flex aspect-video w-24 shrink-0 items-center justify-center rounded-md bg-white/5"><Film className="size-4 text-muted-foreground" /></span>}
+                {row.image ? <img src={row.image} alt="" loading="lazy" className="aspect-video w-24 shrink-0 rounded-md object-cover" /> : <span className="flex aspect-video w-24 shrink-0 items-center justify-center rounded-md bg-white/5"><Film className="size-4 text-muted-foreground" /></span>}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{row.label}</p>
-                  <p className="text-xs text-muted-foreground">{row.sub} · {new Date(row.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</p>
+                  <p className="text-xs text-muted-foreground">{row.sub}{row.at !== null ? ` · ${new Date(row.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : ""}</p>
                 </div>
-                {row.count > 1 && <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">×{row.count}</span>}
+                {row.again && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-foreground/80"><Repeat className="size-3" /> Rewatch</span>}
               </div>
             ))}
           </div>
@@ -356,7 +373,11 @@ function Details({ title }: { title: JellyfinTitle }) {
   const links = [
     title.ids.imdb && { label: "IMDb", href: `https://www.imdb.com/title/${title.ids.imdb}/` },
     title.ids.tmdb && { label: "TMDB", href: `https://www.themoviedb.org/${title.type === "movie" ? "movie" : "tv"}/${title.ids.tmdb}` },
-    title.ids.tvdb && title.type === "series" && { label: "TVDB", href: `https://thetvdb.com/dereferrer/series/${title.ids.tvdb}` },
+    title.ids.tvdb && { label: "TVDB", href: `https://thetvdb.com/dereferrer/${title.type === "movie" ? "movie" : "series"}/${title.ids.tvdb}` },
+    title.ids.mal && { label: "MyAnimeList", href: `https://myanimelist.net/anime/${title.ids.mal}` },
+    title.ids.anilist && { label: "AniList", href: `https://anilist.co/anime/${title.ids.anilist}` },
+    title.ids.kitsu && { label: "Kitsu", href: `https://kitsu.app/anime/${title.ids.kitsu}` },
+    title.ids.anidb && { label: "AniDB", href: `https://anidb.net/anime/${title.ids.anidb}` },
   ].filter(Boolean) as Array<{ label: string; href: string }>;
   return (
     <div className="flex flex-wrap gap-2 max-sm:justify-center">
@@ -454,7 +475,11 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
   const progress = title && title.aired ? (title.watched / title.aired) * 100 : 0;
   const stateLine = !title ? null : isSeries
     ? allWatched ? (title.status === "Ended" ? "Finished" : "Caught up, waiting for new episodes") : next ? `${title.watched ? "Up next" : "Start with"} ${code(next)}${next.name ? ` · ${next.name}` : ""}` : "Not started"
-    : title.played ? `Watched${title.lastPlayedAt ? ` ${when(title.lastPlayedAt)}` : ""}${title.playCount > 1 ? ` · ×${title.playCount}` : ""}` : title.positionMs > 0 ? `${duration(title.positionMs)} in` : "Not watched";
+    : title.played ? [
+      title.watches[0] ? `Watched ${watchedWhen(title.watches[0])}` : "Watched",
+      timesWatched(title) > 1 ? `${timesWatched(title)} times` : "",
+      title.positionMs > 0 ? (title.positionMs < 60_000 ? `started again ${when(title.lastPlayedAt)}` : rewatchLabel(title.positionMs).toLowerCase()) : "",
+    ].filter(Boolean).join(" · ") : title.positionMs > 0 ? `${duration(title.positionMs) || "Under a minute"} in` : "Not watched";
   const ready = episodes.filter((ep) => !(ep.airsAt && ep.airsAt > now));
   const seasonDone = ready.length > 0 && ready.every((ep) => ep.played);
   const seasonId = title?.seasons.find((s) => s.season === shownSeason)?.id;

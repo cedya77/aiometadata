@@ -1777,6 +1777,7 @@ export interface JellyfinTitleEpisode {
   playCount: number;
   lastPlayedAt: number | null;
   positionMs: number;
+  watches: number[];
 }
 
 export interface JellyfinTitle {
@@ -1793,7 +1794,7 @@ export interface JellyfinTitle {
   posterUrl: string | null;
   backdropUrl: string | null;
   logoUrl: string | null;
-  ids: { imdb: string | null; tmdb: string | number | null; tvdb: string | number | null };
+  ids: { imdb: string | null; tmdb: string | number | null; tvdb: string | number | null; mal?: string | null; kitsu?: string | null; anilist?: string | null; anidb?: string | null };
   onWatchlist: boolean;
   dropped: boolean;
   rating: number | null;
@@ -1801,6 +1802,7 @@ export interface JellyfinTitle {
   playCount: number;
   lastPlayedAt: number | null;
   positionMs: number;
+  watches: number[];
   episodes: JellyfinTitleEpisode[];
   seasons: Array<{ season: number; id: string; name: string | null; tag: string | null; poster: string | null; count: number }>;
   people: JellyfinTitlePerson[];

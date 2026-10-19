@@ -19,6 +19,20 @@ export function clock(ms: number): string {
 }
 export const percentOf = (row: JellyfinPlayRow): number | null =>
   row.runtimeMs > 0 ? Math.round((row.positionMs / row.runtimeMs) * 100) : null;
+export function watchedWhen(at: number): string {
+  if (Date.now() - at < 7 * 86_400_000) return when(at);
+  return `on ${new Date(at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}`;
+}
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th";
+  return `${n}${suffix}`;
+}
+export function rewatchLabel(positionMs: number): string {
+  return positionMs < 60_000 ? "Started again" : `Rewatching, ${duration(positionMs)} in`;
+}
+export const timesWatched = (item: { played: boolean; playCount: number; watches: number[] }): number =>
+  item.played ? Math.max(1, item.playCount, item.watches.length) : 0;
 export function duration(ms: number): string {
   const minutes = Math.round(ms / 60_000);
   if (minutes <= 0) return "";

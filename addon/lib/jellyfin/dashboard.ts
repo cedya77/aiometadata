@@ -993,6 +993,83 @@ function playOf(data: any) {
   };
 }
 
+type TitleIds = Record<'imdb' | 'tmdb' | 'tvdb' | 'mal' | 'kitsu' | 'anilist' | 'anidb', string | null>;
+
+async function titleIds(meta: any, film: boolean): Promise<TitleIds> {
+  const text = (value: unknown) => (value === null || value === undefined || value === '' ? null : String(value));
+  const ids: TitleIds = {
+    imdb: text(meta.imdb_id ?? meta._imdbId),
+    tmdb: text(meta._tmdbId),
+    tvdb: text(meta._tvdbId),
+    mal: text(meta._malId),
+    kitsu: text(meta._kitsuId),
+    anilist: text(meta._anilistId),
+    anidb: text(meta._anidbId),
+  };
+  const fill = (id: string) => {
+    if (/^tt\d+$/.test(id)) ids.imdb ??= id;
+    const [kind, value] = id.split(':');
+    if (value && kind in ids && kind !== 'imdb') ids[kind as keyof TitleIds] ??= value;
+  };
+  if (meta.id) fill(String(meta.id));
+  if (film) {
+    const { videoIdAliases } = require('./aliases');
+    for (const id of [meta.id, ids.imdb, ids.tmdb && `tmdb:${ids.tmdb}`]) {
+      if (id) for (const alias of await videoIdAliases(String(id)).catch(() => [] as string[])) fill(alias);
+    }
+  } else if (!ids.mal && !ids.kitsu && !ids.anilist && !ids.anidb) {
+    const idMapper: any = require('../id-mapper');
+    const seasonOf = (entry: any) => Number(entry.season?.tvdb ?? entry.season?.tmdb ?? 1);
+    const first = [...(ids.tvdb ? idMapper.getSiblingsByTvdbId(ids.tvdb) : []), ...(ids.tmdb ? idMapper.getSeriesMappingsByTmdbId(ids.tmdb) : [])]
+      .filter((entry: any) => entry?.type && idMapper.mappingIsType(entry, 'series') && seasonOf(entry) > 0)
+      .sort((x: any, y: any) => seasonOf(x) - seasonOf(y) || (Number(x.mal_id) || Infinity) - (Number(y.mal_id) || Infinity))[0];
+    if (first) {
+      ids.mal = text(first.mal_id);
+      ids.kitsu = text(first.kitsu_id);
+      ids.anilist = text(first.anilist_id);
+      ids.anidb = text(first.anidb_id);
+    }
+  }
+  return ids;
+}
+
+function viewings(ats: number[], runtimeMs: number): number[] {
+  const within = sameViewingMs(runtimeMs);
+  const out: number[] = [];
+  for (const at of [...new Set(ats)].sort((x, y) => x - y)) {
+    if (!out.length || at - out[out.length - 1] >= within) out.push(at);
+  }
+  return out.reverse();
+}
+
+async function titleWatches(userUUID: string, config: any, meta: any, item: any, episodes: any[]): Promise<Map<string, number[]>> {
+  const { videoIdAliases } = require('./aliases');
+  const videoOf = async (id: unknown): Promise<string | null> => {
+    const descriptor = await decodeJellyfinId(String(id)).catch(() => null);
+    return descriptor ? stremioIdFor(descriptor) : null;
+  };
+  const spellings = new Map<string, string[]>();
+  const runtimes = new Map<string, number>([[String(item.Id), (Number(item.RunTimeTicks) || 0) / 10_000]]);
+  for (const ep of episodes) runtimes.set(String(ep.Id), (Number(ep.RunTimeTicks) || 0) / 10_000);
+  if (item.Type === 'Movie') {
+    const own = await videoOf(item.Id);
+    spellings.set(String(item.Id), [own, meta.id, meta._imdbId, meta.imdb_id, meta._tmdbId && `tmdb:${meta._tmdbId}`].filter(Boolean).map(String));
+  }
+  await mapWithConcurrency(episodes, 8, async (ep: any) => {
+    const own = await videoOf(ep.Id);
+    if (own) spellings.set(String(ep.Id), [own, ...(await videoIdAliases(own).catch(() => [] as string[]))]);
+  });
+  const rows = await database.listWatchesFor(userUUID, profileKey(config), [...spellings.values()].flat());
+  const byVideo = new Map<string, number[]>();
+  for (const row of rows) byVideo.set(row.video_id, [...(byVideo.get(row.video_id) ?? []), row.watched_at]);
+  const out = new Map<string, number[]>();
+  for (const [id, ids] of spellings) {
+    const ats = viewings(ids.flatMap((videoId) => byVideo.get(videoId) ?? []), runtimes.get(id) ?? 0);
+    if (ats.length) out.set(id, ats);
+  }
+  return out;
+}
+
 export async function dashboardTitle(userUUID: string, profile: string | null, ref: { item?: string; id?: string; type?: string }): Promise<any | null> {
   return asProfile(userUUID, profile, async (config) => {
     const itemId = titleItemId(ref);
@@ -1001,6 +1078,7 @@ export async function dashboardTitle(userUUID: string, profile: string | null, r
     const read = await readTitle(userUUID, config, itemId);
     if (!read) return null;
     const { meta, item, episodes, seasons: builtSeasons } = read;
+    const watches = await titleWatches(userUUID, config, meta, item, episodes).catch(() => new Map<string, number[]>());
     const image = (id: unknown, type: string, tag: unknown): string | null =>
       id && tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(id))}/Images/${type}?tag=${encodeURIComponent(String(tag))}` : null;
     const now = Date.now();
@@ -1014,6 +1092,7 @@ export async function dashboardTitle(userUUID: string, profile: string | null, r
       runtimeMs: Math.round((Number(ep.RunTimeTicks) || 0) / TICKS_PER_MS),
       still: image(ep.Id, 'Primary', ep.ImageTags?.Primary),
       ...playOf(ep.UserData),
+      watches: watches.get(String(ep.Id)) ?? [],
     }));
     const aired = list.filter((ep: any) => ep.season !== 0 && !(ep.airsAt && ep.airsAt > now));
     const seasons = (builtSeasons ?? []).map((season: any) => ({
@@ -1038,11 +1117,12 @@ export async function dashboardTitle(userUUID: string, profile: string | null, r
       posterUrl: meta.poster ?? null,
       backdropUrl: meta.background ?? null,
       logoUrl: meta.logo ?? null,
-      ids: { imdb: meta.imdb_id ?? meta._imdbId ?? null, tmdb: meta._tmdbId ?? null, tvdb: meta._tvdbId ?? null },
+      ids: await titleIds(meta, item.Type === 'Movie'),
       onWatchlist: item.UserData?.IsFavorite === true,
       dropped: item.UserData?.Likes === false,
       rating: Number.isFinite(Number(item.UserData?.Rating)) && item.UserData?.Rating !== null ? Number(item.UserData.Rating) : null,
       ...playOf(item.UserData),
+      watches: watches.get(String(item.Id)) ?? [],
       episodes: list,
       seasons,
       people: (Array.isArray(item.People) ? item.People : []).map((person: any) => ({
