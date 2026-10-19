@@ -24,6 +24,7 @@ const {
 }: any = require('./imdbRatingProjection');
 const { applyTrailerAddonProjection }: any = require('./trailerProjection');
 const { applyAnimeEpisodeDatesProjection }: any = require('./animeEpisodeDates');
+const { applyAnimeFillerProjection }: any = require('./animeFillerProjection');
 const {
   RELEASE_AVAILABILITY_FIELD,
   normalizeMetaReleaseAvailability,
@@ -1007,6 +1008,7 @@ function getMetaSmartLockContextHash(config: any, metaId: string, type: string |
       blurThumbs: config.blurThumbs || false,
       displayAgeRating: config.displayAgeRating || false,
       ...(config.animeEpisodeDates && config.animeEpisodeDates !== 'provider' ? { animeEpisodeDates: config.animeEpisodeDates } : {}),
+      ...(config.mal?.skipMixedFiller ? { skipMixedFiller: true } : {}),
       ...(seasonNumbering ? { seasonNumbering } : {}),
     },
     includeVideos: !!includeVideos,
@@ -1277,6 +1279,7 @@ async function projectMetaForUser(meta: any, config: any, opts: { addonTrailers?
   applyLinksUserScopeProjection(meta, config);
   await applyImdbRatingProjection(meta);
   await applyAnimeEpisodeDatesProjection(meta, config);
+  await applyAnimeFillerProjection(meta, config);
   return meta;
 }
 

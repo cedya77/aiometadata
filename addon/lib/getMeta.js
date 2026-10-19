@@ -3057,15 +3057,6 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
           : thumbnailUrl;
 
-        if (config.mal?.allowEpisodeMarking) {
-          if (ep.filler) {
-            episodeSynopsis = `[Filler] ${episodeSynopsis}`;
-          }
-          if (ep.recap) {
-            episodeSynopsis = `[Recap] ${episodeSynopsis}`;
-          }
-        }
-        
         return {
           id: episodeId,
           title: episodeTitle,

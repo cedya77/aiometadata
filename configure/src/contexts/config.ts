@@ -262,6 +262,7 @@ export interface AppConfig {
     skipFiller: boolean;
     skipRecap: boolean;
     allowEpisodeMarking: boolean;
+    skipMixedFiller?: boolean;
     /** If true, prefer IMDb IDs for catalog and search items when available */
     useImdbIdForCatalogAndSearch?: boolean;
   };

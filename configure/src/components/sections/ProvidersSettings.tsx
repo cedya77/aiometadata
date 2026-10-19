@@ -80,7 +80,7 @@ export function ProvidersSettings() {
     setConfig(prev => ({ ...prev, tvdbSeasonType: value }));
   };
 
-  const handleMalToggle = (key: 'skipFiller' | 'skipRecap' | 'allowEpisodeMarking', checked: boolean) => {
+  const handleMalToggle = (key: 'skipFiller' | 'skipMixedFiller' | 'skipRecap' | 'allowEpisodeMarking', checked: boolean) => {
     setConfig(prev => ({
       ...prev,
       mal: {
@@ -389,6 +389,60 @@ export function ProvidersSettings() {
               </p>
             }
           />
+          <SettingRow
+            htmlFor="skip-filler"
+            label="Skip Filler Episodes"
+            description="Leave out filler episodes. Applies to TVDB (Aired or Official order), Kitsu and MyAnimeList metadata."
+            control={
+              <Switch
+                id="skip-filler"
+                checked={!!config.mal.skipFiller}
+                onCheckedChange={(val) => handleMalToggle('skipFiller', val)}
+              />
+            }
+          />
+          <SettingRow
+            htmlFor="skip-mixed-filler"
+            label="Also Skip Mixed Canon/Filler"
+            description="Leave out episodes that mix canon with filler as well."
+            control={
+              <Switch
+                id="skip-mixed-filler"
+                checked={!!config.mal.skipFiller && !!config.mal.skipMixedFiller}
+                disabled={!config.mal.skipFiller}
+                onCheckedChange={(val) => handleMalToggle('skipMixedFiller', val)}
+              />
+            }
+          />
+          <SettingRow
+            htmlFor="skip-recap"
+            label="Skip Recap Episodes"
+            description="Leave out recap episodes."
+            control={
+              <Switch
+                id="skip-recap"
+                checked={!!config.mal.skipRecap}
+                onCheckedChange={(val) => handleMalToggle('skipRecap', val)}
+              />
+            }
+          />
+          <SettingRow
+            htmlFor="allow-episode-marking"
+            label="Mark Filler and Recap Episodes"
+            description="Put [Filler], [Mixed] or [Recap] in front of the episode title."
+            control={
+              <Switch
+                id="allow-episode-marking"
+                checked={!!config.mal.allowEpisodeMarking}
+                onCheckedChange={(val) => handleMalToggle('allowEpisodeMarking', val)}
+              />
+            }
+            note={
+              <p className="text-xs text-muted-foreground">
+                Episode types from <a href="https://www.animefillerlist.com" target="_blank" rel="noopener noreferrer" className="underline">animefillerlist.com</a>; recaps from <a href="https://myanimelist.net" target="_blank" rel="noopener noreferrer" className="underline">MyAnimeList</a>.
+              </p>
+            }
+          />
           {/*
             Bottom, not top: these notices describe the rows above them, and a
             summary that precedes what it summarises reads as an error banner.
@@ -403,50 +457,6 @@ export function ProvidersSettings() {
         </CardContent>
       </Card>
 
-      {/* MyAnimeList Specific Settings */}
-      <CollapsibleSettingCard
-        title="MyAnimeList (MAL) Settings"
-        anchorIds={['skip-filler', 'skip-recap', 'allow-episode-marking']}
-        inUse={isInUse(config, 'mal')}
-        description="Customize how data is handled when MyAnimeList is the source."
-      >
-        <SettingRow
-          htmlFor="skip-filler"
-          label="Skip Filler Episodes"
-          description="Automatically filter out episodes marked as filler."
-          control={
-            <Switch
-              id="skip-filler"
-              checked={config.mal.skipFiller}
-              onCheckedChange={(val) => handleMalToggle('skipFiller', val)}
-            />
-          }
-        />
-        <SettingRow
-          htmlFor="skip-recap"
-          label="Skip Recap Episodes"
-          description="Automatically filter out episodes marked as recaps."
-          control={
-            <Switch
-              id="skip-recap"
-              checked={config.mal.skipRecap}
-              onCheckedChange={(val) => handleMalToggle('skipRecap', val)}
-            />
-          }
-        />
-        <SettingRow
-          htmlFor="allow-episode-marking"
-          label="Allow Episode Marking"
-          description="Enable users to mark episodes as filler or recap."
-          control={
-            <Switch
-              id="allow-episode-marking"
-              checked={config.mal.allowEpisodeMarking}
-              onCheckedChange={(val) => handleMalToggle('allowEpisodeMarking', val)}
-            />
-          }
-        />
-      </CollapsibleSettingCard>
     </div>
   );
 }

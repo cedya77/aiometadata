@@ -324,20 +324,26 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   {
     id: 'providers.skipFiller', section: 'providers', anchor: 'skip-filler',
     label: 'Skip Filler Episodes',
-    description: 'Automatically filter out episodes marked as filler.',
-    keywords: ['mal', 'filler', 'anime', 'episode'],
+    description: 'Leave out filler episodes of anime on TVDB, Kitsu and MyAnimeList metadata.',
+    keywords: ['mal', 'filler', 'anime', 'episode', 'tvdb', 'kitsu', 'animefillerlist'],
+  },
+  {
+    id: 'providers.skipMixedFiller', section: 'providers', anchor: 'skip-mixed-filler',
+    label: 'Also Skip Mixed Canon/Filler',
+    description: 'Leave out episodes that mix canon with filler as well.',
+    keywords: ['mixed', 'canon', 'filler', 'anime', 'episode'],
   },
   {
     id: 'providers.skipRecap', section: 'providers', anchor: 'skip-recap',
     label: 'Skip Recap Episodes',
-    description: 'Automatically filter out episodes marked as recaps.',
+    description: 'Leave out recap episodes.',
     keywords: ['mal', 'recap', 'anime', 'episode'],
   },
   {
     id: 'providers.allowEpisodeMarking', section: 'providers', anchor: 'allow-episode-marking',
-    label: 'Allow Episode Marking',
-    description: 'Enable users to mark episodes as filler or recap.',
-    keywords: ['mal', 'filler', 'recap', 'mark'],
+    label: 'Mark Filler and Recap Episodes',
+    description: 'Put [Filler], [Mixed] or [Recap] in front of the episode title.',
+    keywords: ['mal', 'filler', 'recap', 'mark', 'mixed', 'tag'],
   },
 
   // ── Art Providers — sections/ArtProviderSettings.tsx ──

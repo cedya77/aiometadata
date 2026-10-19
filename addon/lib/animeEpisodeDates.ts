@@ -1,4 +1,4 @@
-import { withEpisodeOrder } from '../utils/episodeOrder';
+import { resolveAnimeEpisode } from './animeEpisodeIds';
 import { anilistIdForMal, anilistReleaseTimes, hasAnime, isStale, releaseTime } from './animeAiringSchedule';
 import type { ScheduleKind } from './animeAiringSchedule';
 
@@ -13,47 +13,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // Dubs trail the original by months, so the window reaches well back.
 const LOOKBACK_MS = 365 * DAY_MS;
 
-function positive(value: unknown): number | null {
-  const number = Number(value);
-  return Number.isInteger(number) && number > 0 ? number : null;
-}
-
-function anilistIdOf(mapping: any): number | null {
-  return positive(mapping?.anilist_id) ?? anilistIdForMal(mapping?.mal_id);
-}
-
 /** The AniList anime and episode a video belongs to, or null when the mapping is not certain. */
 async function resolveTarget(meta: any, video: any, config: any): Promise<Target | null> {
-  const season = positive(video?.season);
-  const episode = positive(video?.episode);
-  if (!season || !episode) return null;
-
-  if (meta._metaProvider === 'tvdb') {
-    const tvdbId = positive(meta._tvdbId);
-    if (!tvdbId) return null;
-    const order = withEpisodeOrder(config, String(tvdbId)).tvdbSeasonType || 'default';
-    if (order !== 'default' && order !== 'official') return null;
-    const animeList = require('./anime-list-mapper');
-    const anidb = await animeList.resolveAnidbEpisodeFromTvdbEpisode(tvdbId, season, episode);
-    if (!positive(anidb?.anidbId) || !positive(anidb?.anidbEpisode) || Number(anidb.anidbSeason) !== 1) return null;
-    // Only a mapping that leads back to the same episode is trusted.
-    const back = animeList.resolveTvdbEpisodeFromAnidbEpisode(anidb.anidbId, 1, anidb.anidbEpisode);
-    if (Number(back?.tvdbId) !== tvdbId || Number(back?.tvdbSeason) !== season || Number(back?.tvdbEpisode) !== episode) return null;
-    const anilistId = anilistIdOf(require('./id-mapper').getMappingByAnidbId(anidb.anidbId));
-    return anilistId ? { anilistId, episode: anidb.anidbEpisode } : null;
-  }
-
-  // Kitsu and MAL describe one anime entry, numbered from 1 in a single season.
-  if ((meta._metaProvider === 'kitsu' || meta._metaProvider === 'mal') && season === 1) {
-    const mapper = require('./id-mapper');
-    const anilistId = positive(meta._anilistId)
-      ?? anilistIdForMal(meta._malId)
-      ?? (meta._malId ? anilistIdOf(mapper.getMappingByMalId(meta._malId)) : null)
-      ?? (meta._kitsuId ? anilistIdOf(mapper.getMappingByKitsuId(meta._kitsuId)) : null);
-    return anilistId ? { anilistId, episode } : null;
-  }
-
-  return null;
+  const found = await resolveAnimeEpisode(meta, video, config);
+  const anilistId = found ? found.anilistId ?? anilistIdForMal(found.malId) : null;
+  return found && anilistId ? { anilistId, episode: found.episode } : null;
 }
 
 function releasedMs(video: any): number | null {

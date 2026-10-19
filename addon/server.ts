@@ -158,6 +158,12 @@ const initializationTasks: InitTask[] = [
     run: () => initializeTmdbKeywordIndex()
   },
   {
+    key: 'fillerData',
+    timeoutMs: 60_000,
+    run: () => require('./lib/fillerData').initializeFillerData(),
+    summary: () => require('./lib/fillerData').fillerDataStats()
+  },
+  {
     key: 'animeSchedule',
     timeoutMs: 60_000,
     run: () => require('./lib/animeAiringSchedule').initializeAnimeSchedule(),

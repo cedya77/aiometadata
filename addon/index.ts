@@ -8822,6 +8822,11 @@ addon.post("/api/dashboard/maintenance/execute", requireDashboardAdmin, async (r
           result = { success: false, message: `Failed to update ID Mappings: ${error.message}` };
         }
       }
+    } else if (taskId === 14) { // Update filler data
+      if (action === 'restart' || action === 'enable') {
+        const { forceUpdateFillerData } = require('./lib/fillerData');
+        result = await forceUpdateFillerData();
+      }
     } else if (taskId === 13) { // Update anime release schedule
       if (action === 'restart' || action === 'enable') {
         const { forceUpdateAnimeSchedule } = require('./lib/animeAiringSchedule');

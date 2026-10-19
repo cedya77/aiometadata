@@ -1088,7 +1088,7 @@ export function buildEpisode(
       DateCreated: premiere || EPOCH_DATE,
       RunTimeTicks: parseRuntimeTicks(video.runtime),
       ProviderIds: {},
-      Tags: [(video.isFiller ?? video.filler) === true && 'Filler', (video.isRecap ?? video.recap) === true && 'Recap'].filter(Boolean),
+      Tags: [(video.isFiller ?? video.filler) === true && 'Filler', video.isMixedFiller === true && 'Mixed Canon/Filler', (video.isRecap ?? video.recap) === true && 'Recap'].filter(Boolean),
       ImageTags: video.thumbnail ? { Primary: imageTag(video.thumbnail) } : {},
       BackdropImageTags: [],
       ImageBlurHashes: {},

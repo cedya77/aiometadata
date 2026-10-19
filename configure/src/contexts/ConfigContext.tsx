@@ -154,6 +154,7 @@ const initialConfig: AppConfig = {
     skipFiller: false, 
     skipRecap: false,
     allowEpisodeMarking: false,
+    skipMixedFiller: false,
     useImdbIdForCatalogAndSearch: false,
   },
   tmdb: {

@@ -1720,6 +1720,51 @@ class DashboardAPI {
         });
       }
 
+      // 14. Filler data
+      try {
+        const { getFillerDataStats } = require('./fillerData');
+        const fillerStats = getFillerDataStats();
+        const status = !fillerStats.enabled
+          ? "disabled"
+          : fillerStats.running
+            ? "running"
+            : fillerStats.lastError
+              ? "error"
+              : fillerStats.loaded ? "completed" : "scheduled";
+
+        let nextRunDisplay = "Disabled";
+        if (fillerStats.enabled) {
+          const nextRunTime = (fillerStats.lastCheck || 0) + fillerStats.refreshHours * 60 * 60 * 1000;
+          nextRunDisplay = nextRunTime > Date.now() ? this.getTimeUntil(new Date(nextRunTime)) : "On next request";
+        }
+        const detail = fillerStats.lastError
+          ? `last refresh failed: ${fillerStats.lastError}`
+          : `${fillerStats.anime.toLocaleString()} anime${fillerStats.generated ? `, file built ${this.getTimeAgo(new Date(fillerStats.generated))}` : ""}`;
+
+        tasks.push({
+          id: 14,
+          name: "Update Filler Data",
+          status,
+          lastRun: fillerStats.lastRefreshAt ? this.getTimeAgo(new Date(fillerStats.lastRefreshAt)) : "Never",
+          description: `Filler, mixed canon/filler and recap episodes for anime (${detail})`,
+          nextRun: nextRunDisplay,
+          action: fillerStats.enabled ? "restart" : null,
+          category: "mapping"
+        });
+      } catch (error) {
+        logger.warn("Failed to get filler data status:", error.message);
+        tasks.push({
+          id: 14,
+          name: "Update Filler Data",
+          status: "error",
+          lastRun: "Unknown",
+          description: "Filler, mixed canon/filler and recap episodes for anime",
+          nextRun: "Unknown",
+          action: "restart",
+          category: "mapping"
+        });
+      }
+
       // 13. Anime release schedule (AniSchedule), refreshed in memory as requests arrive
       try {
         const { getAnimeScheduleStats } = require('./animeAiringSchedule');
