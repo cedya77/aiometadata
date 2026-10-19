@@ -27,6 +27,7 @@ import {
 } from './dto';
 import { buildViews, catalogView, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBoxSetCatalog, isBrowsable, requiresGenre, rowFor } from './views';
 import { decodeJellyfinId } from './ids';
+import { liveDevices, saveCapabilities, sendToDevice } from './socket';
 import { artTag, imageTag, isWideTag } from './imageTags';
 import { buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, filterByIncludeTypes, includeTypesFilter, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
@@ -3454,17 +3455,114 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   registerStubs(router);
   router.get(['/Items/:itemId', '/Users/:userId/Items/:itemId'], singleItemHandler);
 
+  // Query names arrive in either case, as ASP.NET binds them.
+  const param = (source: any, name: string): any => {
+    if (!source || typeof source !== 'object') return undefined;
+    const key = Object.keys(source).find((k) => k.toLowerCase() === name.toLowerCase());
+    return key === undefined ? undefined : source[key];
+  };
+  const list = (value: unknown): string[] =>
+    (Array.isArray(value) ? value : String(value ?? '').split(',')).map((v) => String(v).trim()).filter(Boolean);
+  const ticks = (value: unknown): number | undefined => {
+    const n = Number(value);
+    return value !== undefined && value !== '' && Number.isFinite(n) ? n : undefined;
+  };
+
   router.get('/Sessions', async (req: any, res: any) => {
     const userUUID = req.params.userUUID;
     const serverId = serverIdFor(userUUID);
     const config = await database.getUserConfig(userUUID);
     const profile = sessionProfile(req, config);
-    res.json([sessionInfo(profile.userId, serverId, profile.name, clientInfo(req))]);
+    const own = clientInfo(req);
+    const devices = await liveDevices(userUUID, profileKey(await loadConfig(req)));
+    const sessions = devices.map((device) => sessionInfo(profile.userId, serverId, profile.name, device, device));
+    if (!param(req.query, 'ControllableByUserId') && !devices.some((device) => device.deviceId === own.deviceId)) {
+      sessions.unshift(sessionInfo(profile.userId, serverId, profile.name, own));
+    }
+    const deviceId = param(req.query, 'DeviceId');
+    res.json(deviceId ? sessions.filter((session) => session.DeviceId === String(deviceId)) : sessions);
   });
 
-  router.post(['/Sessions/Capabilities', '/Sessions/Capabilities/Full'], (_req: any, res: any) => {
+  router.post(['/Sessions/Capabilities', '/Sessions/Capabilities/Full'], async (req: any, res: any) => {
     res.status(204).end();
+    const own = clientInfo(req);
+    if (own.deviceId === 'unknown') return;
+    const source = req.body && typeof req.body === 'object' && Object.keys(req.body).length ? req.body : req.query;
+    try {
+      await saveCapabilities(req.params.userUUID, profileKey(await loadConfig(req)), own.deviceId, {
+        client: own.client,
+        device: own.device,
+        version: own.version,
+        playableMediaTypes: list(param(source, 'PlayableMediaTypes')),
+        supportedCommands: list(param(source, 'SupportedCommands')),
+        supportsMediaControl: String(param(source, 'SupportsMediaControl')).toLowerCase() === 'true',
+      });
+    } catch (error: any) {
+      logger.debug(`Capabilities save failed: ${error?.message || error}`);
+    }
   });
+
+  const toSession = async (req: any, res: any, MessageType: string, data: (controllingUserId: string) => any) => {
+    const userUUID = req.params.userUUID;
+    const config = await loadConfig(req);
+    const profile = sessionProfile(req, await database.getUserConfig(userUUID));
+    const key = profileKey(config);
+    const device = (await liveDevices(userUUID, key)).find((d) => `${profile.userId}-${d.deviceId}` === req.params.sessionId);
+    if (!device || !(await sendToDevice(userUUID, key, device.deviceId, MessageType, data(profile.userId)))) {
+      res.status(404).json({ error: 'No such session' });
+      return;
+    }
+    res.status(204).end();
+  };
+
+  router.post('/Sessions/:sessionId/Playing', (req: any, res: any) =>
+    toSession(req, res, 'Play', (ControllingUserId) => {
+      const optional: Record<string, unknown> = {
+        StartPositionTicks: ticks(param(req.query, 'startPositionTicks')),
+        MediaSourceId: param(req.query, 'mediaSourceId'),
+        AudioStreamIndex: ticks(param(req.query, 'audioStreamIndex')),
+        SubtitleStreamIndex: ticks(param(req.query, 'subtitleStreamIndex')),
+        StartIndex: ticks(param(req.query, 'startIndex')),
+      };
+      return {
+        ItemIds: list(param(req.query, 'itemIds')),
+        PlayCommand: String(param(req.query, 'playCommand') ?? 'PlayNow'),
+        ControllingUserId,
+        ...Object.fromEntries(Object.entries(optional).filter(([, value]) => value !== undefined)),
+      };
+    })
+  );
+
+  router.post('/Sessions/:sessionId/Playing/:command', (req: any, res: any) =>
+    toSession(req, res, 'Playstate', (ControllingUserId) => {
+      const seek = ticks(param(req.query, 'seekPositionTicks'));
+      return { Command: req.params.command, ControllingUserId, ...(seek === undefined ? {} : { SeekPositionTicks: seek }) };
+    })
+  );
+
+  router.post('/Sessions/:sessionId/Viewing', (req: any, res: any) =>
+    toSession(req, res, 'GeneralCommand', (ControllingUserId) => ({
+      Name: 'DisplayContent',
+      ControllingUserId,
+      Arguments: {
+        ItemId: String(param(req.query, 'itemId') ?? ''),
+        ItemName: String(param(req.query, 'itemName') ?? ''),
+        ItemType: String(param(req.query, 'itemType') ?? ''),
+      },
+    }))
+  );
+
+  router.post('/Sessions/:sessionId/Command', (req: any, res: any) =>
+    toSession(req, res, 'GeneralCommand', (ControllingUserId) => ({
+      Name: String(param(req.body, 'Name') ?? ''),
+      ControllingUserId,
+      Arguments: param(req.body, 'Arguments') ?? {},
+    }))
+  );
+
+  router.post('/Sessions/:sessionId/Command/:command', (req: any, res: any) =>
+    toSession(req, res, 'GeneralCommand', (ControllingUserId) => ({ Name: req.params.command, ControllingUserId, Arguments: {} }))
+  );
 
   // Home rows, sort choices and the like live here per user and client.
   const prefsClient = (req: any): string => String(req.query.client ?? req.query.Client ?? '');

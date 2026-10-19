@@ -156,8 +156,10 @@ export function sessionInfo(
   userId: string,
   serverId: string,
   userName: string,
-  client: { client: string; device: string; deviceId: string; version: string }
+  client: { client: string; device: string; deviceId: string; version: string },
+  remote?: { playableMediaTypes: string[]; supportedCommands: string[]; lastSeen: number }
 ): any {
+  const seen = new Date(remote?.lastSeen ?? Date.now()).toISOString();
   return {
     Id: `${userId}-${client.deviceId}`,
     UserId: userId,
@@ -168,16 +170,17 @@ export function sessionInfo(
     DeviceId: client.deviceId,
     ApplicationVersion: client.version,
     IsActive: true,
-    SupportsMediaControl: false,
-    SupportsRemoteControl: false,
+    // As on Jellyfin, an open socket is what makes a client controllable.
+    SupportsMediaControl: remote ? true : false,
+    SupportsRemoteControl: remote ? true : false,
     HasCustomDeviceName: false,
-    PlayableMediaTypes: ['Video'],
-    SupportedCommands: [],
+    PlayableMediaTypes: remote?.playableMediaTypes.length ? remote.playableMediaTypes : ['Video'],
+    SupportedCommands: remote?.supportedCommands ?? [],
     NowPlayingQueue: [],
     NowPlayingQueueFullItems: [],
     AdditionalUsers: [],
-    LastActivityDate: new Date().toISOString(),
-    LastPlaybackCheckIn: new Date().toISOString(),
+    LastActivityDate: seen,
+    LastPlaybackCheckIn: seen,
   };
 }
 

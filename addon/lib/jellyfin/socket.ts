@@ -73,6 +73,7 @@ function readFrame(buffer: Buffer): { opcode: number; payload: Buffer; size: num
 
 interface Listener {
   userId: string;
+  deviceId: string | null;
   send: (MessageType: string, Data?: any) => void;
 }
 
@@ -80,7 +81,10 @@ const listeners = new Map<string, Set<Listener>>();
 const pending = new Map<string, Map<string, any>>();
 
 const CHANNEL = 'jf:userdata';
+const COMMANDS = 'jf:commands';
 const LISTENING = 'jf:userdata:listening:';
+const DEVICES = 'jf:devices:';
+const CAPABILITIES = 'jf:capabilities:';
 const ORIGIN = randomUUID();
 const PUSH_PART = 100;
 let subscribed = false;
@@ -96,15 +100,17 @@ function subscribe(): void {
   subscribed = true;
   const subscriber = redis.duplicate();
   subscriber.on('error', (error: Error) => logger.debug(`User data subscriber: ${error.message}`));
-  subscriber.on('message', (_channel: string, raw: string) => {
+  subscriber.on('message', (channel: string, raw: string) => {
     try {
       const message = JSON.parse(raw);
-      if (message?.o !== ORIGIN && typeof message?.s === 'string' && Array.isArray(message.l)) deliver(message.s, message.l);
+      if (message?.o === ORIGIN || typeof message?.s !== 'string') return;
+      if (channel === CHANNEL && Array.isArray(message.l)) deliver(message.s, message.l);
+      else if (channel === COMMANDS && typeof message.d === 'string' && typeof message.t === 'string') command(message.s, message.d, message.t, message.p);
     } catch {
       /* not ours */
     }
   });
-  subscriber.subscribe(CHANNEL).catch((error: Error) => {
+  subscriber.subscribe(CHANNEL, COMMANDS).catch((error: Error) => {
     subscribed = false;
     subscriber.disconnect();
     logger.debug(`User data subscribe failed: ${error.message}`);
@@ -127,8 +133,99 @@ function pingMs(): number {
   return envInt('JELLYFIN_SOCKET_PING_MS', 30000, 1000);
 }
 
-function markListening(scope: string): void {
-  redis?.set(`${LISTENING}${scope}`, '1', 'PX', pingMs() * 3).catch(() => undefined);
+function markListening(scope: string, deviceId: string | null): void {
+  const ttl = pingMs() * 3;
+  redis?.set(`${LISTENING}${scope}`, '1', 'PX', ttl).catch(() => undefined);
+  if (!deviceId || !redis) return;
+  redis
+    .multi()
+    .hset(`${DEVICES}${scope}`, deviceId, String(Date.now()))
+    .pexpire(`${DEVICES}${scope}`, ttl)
+    .pexpire(`${CAPABILITIES}${scope}:${deviceId}`, ttl)
+    .exec()
+    .catch(() => undefined);
+}
+
+function command(scope: string, deviceId: string, MessageType: string, Data: any): number {
+  let sent = 0;
+  for (const listener of listeners.get(scope) ?? []) {
+    if (listener.deviceId !== deviceId) continue;
+    listener.send(MessageType, Data);
+    sent++;
+  }
+  return sent;
+}
+
+export interface DeviceCapabilities {
+  client: string;
+  device: string;
+  version: string;
+  playableMediaTypes: string[];
+  supportedCommands: string[];
+  supportsMediaControl: boolean;
+}
+
+export interface LiveDevice extends DeviceCapabilities {
+  deviceId: string;
+  lastSeen: number;
+}
+
+const localCapabilities = new Map<string, DeviceCapabilities>();
+
+/** Kept while the device's socket stays open, so a client that never opens one is forgotten. */
+export async function saveCapabilities(userUUID: string, profile: string, deviceId: string, capabilities: DeviceCapabilities): Promise<void> {
+  const key = `${userUUID}:${profile}:${deviceId}`;
+  if (!redis) return void localCapabilities.set(key, capabilities);
+  await redis.set(`${CAPABILITIES}${key}`, JSON.stringify(capabilities), 'PX', pingMs() * 3).catch(() => undefined);
+}
+
+export async function liveDevices(userUUID: string, profile: string): Promise<LiveDevice[]> {
+  const scope = `${userUUID}:${profile}`;
+  const now = Date.now();
+  const seen = new Map<string, number>();
+  for (const listener of listeners.get(scope) ?? []) if (listener.deviceId) seen.set(listener.deviceId, now);
+  if (redis) {
+    try {
+      const stored: Record<string, string> = await redis.hgetall(`${DEVICES}${scope}`);
+      const fresh = now - pingMs() * 3;
+      for (const [deviceId, at] of Object.entries(stored)) {
+        const time = Number(at);
+        if (time > fresh && !seen.has(deviceId)) seen.set(deviceId, time);
+      }
+    } catch {
+      /* the local sockets still answer */
+    }
+  }
+  const ids = [...seen.keys()];
+  let stored: Array<string | null> = [];
+  if (redis && ids.length) stored = await redis.mget(ids.map((id) => `${CAPABILITIES}${scope}:${id}`)).catch(() => []);
+  return ids.map((deviceId, i) => {
+    let capabilities: DeviceCapabilities | undefined;
+    try {
+      capabilities = stored[i] ? JSON.parse(stored[i] as string) : undefined;
+    } catch {
+      capabilities = undefined;
+    }
+    capabilities ??= localCapabilities.get(`${scope}:${deviceId}`);
+    return {
+      client: capabilities?.client ?? 'Unknown',
+      device: capabilities?.device ?? 'Unknown',
+      version: capabilities?.version ?? '0.0.0',
+      playableMediaTypes: capabilities?.playableMediaTypes ?? [],
+      supportedCommands: capabilities?.supportedCommands ?? [],
+      supportsMediaControl: capabilities?.supportsMediaControl ?? false,
+      deviceId,
+      lastSeen: seen.get(deviceId)!,
+    };
+  });
+}
+
+export async function sendToDevice(userUUID: string, profile: string, deviceId: string, MessageType: string, Data: any): Promise<boolean> {
+  const scope = `${userUUID}:${profile}`;
+  if (!(await liveDevices(userUUID, profile)).some((device) => device.deviceId === deviceId)) return false;
+  command(scope, deviceId, MessageType, Data);
+  redis?.publish(COMMANDS, JSON.stringify({ o: ORIGIN, s: scope, d: deviceId, t: MessageType, p: Data })).catch(() => undefined);
+  return true;
 }
 
 export async function hasListeners(userUUID: string, profile: string): Promise<boolean> {
@@ -188,6 +285,9 @@ export function attachJellyfinSocket(server: any): void {
 
     const query = new URLSearchParams(url.split('?')[1] ?? '');
     const token = query.get('api_key') ?? query.get('ApiKey') ?? undefined;
+    const { parseMediaBrowserHeader } = require('./context');
+    const header = parseMediaBrowserHeader(req.headers.authorization || req.headers['x-emby-authorization']);
+    const deviceId: string | null = query.get('deviceId') || query.get('DeviceId') || header.deviceid || null;
     const key = req.headers['sec-websocket-key'];
 
     if (!key) {
@@ -232,7 +332,7 @@ export function attachJellyfinSocket(server: any): void {
       if (!socket.destroyed) socket.write(textFrame(JSON.stringify({ MessageType, MessageId: randomUUID().replace(/-/g, ''), Data })));
     };
 
-    const listener: Listener = { userId: dashedGuid(profileUserId(userUUID, session.profileId)), send };
+    const listener: Listener = { userId: dashedGuid(profileUserId(userUUID, session.profileId)), deviceId, send };
     let followers = listeners.get(scope);
     if (!followers) {
       followers = new Set();
@@ -240,12 +340,12 @@ export function attachJellyfinSocket(server: any): void {
     }
     followers.add(listener);
     subscribe();
-    markListening(scope);
+    markListening(scope, deviceId);
 
     send('ForceKeepAlive', 60);
     const timer = setInterval(() => {
       send('KeepAlive');
-      markListening(scope);
+      markListening(scope, deviceId);
     }, pingMs());
 
     let pending = Buffer.alloc(0);
@@ -285,6 +385,10 @@ export function attachJellyfinSocket(server: any): void {
       const held = listeners.get(scope);
       held?.delete(listener);
       if (held && held.size === 0) listeners.delete(scope);
+      if (deviceId && ![...(held ?? [])].some((other) => other.deviceId === deviceId)) {
+        localCapabilities.delete(`${scope}:${deviceId}`);
+        redis?.hdel(`${DEVICES}${scope}`, deviceId).catch(() => undefined);
+      }
       const left = (perUser.get(userUUID as string) ?? 1) - 1;
       if (left <= 0) perUser.delete(userUUID as string);
       else perUser.set(userUUID as string, left);
