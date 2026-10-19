@@ -14,10 +14,43 @@ function wholeTmdbSeason(mapping: any): number | null {
   return sharing.length === 1 ? season : null;
 }
 
+function filmAliases(videoId: string, parsed: any): string[] {
+  const numeric = parseInt(String(parsed.base).split(':')[1], 10);
+  const film =
+    parsed.idType === 'kitsu' ? idMapper.getMappingByKitsuId(numeric)
+    : parsed.idType === 'mal' ? idMapper.getMappingByMalId(numeric) ?? { type: 'MOVIE', mal_id: numeric }
+    : parsed.idType === 'anilist' ? idMapper.getMappingByAnilistId(numeric)
+    : parsed.idType === 'anidb' ? idMapper.getMappingByAnidbId(numeric)
+    : parsed.idType === 'imdb' ? idMapper.filmMappingFor({ imdbId: parsed.base })
+    : parsed.idType === 'tmdb' ? idMapper.filmMappingFor({ tmdbId: numeric })
+    : null;
+  if (!film) return [];
+  const { tmdbId, imdbId } = idMapper.filmIdsFor(film);
+  if (!tmdbId && !imdbId) return [];
+  const out = new Set<string>();
+  for (const id of [
+    film.kitsu_id && `kitsu:${film.kitsu_id}`,
+    film.mal_id && `mal:${film.mal_id}`,
+    film.anilist_id && `anilist:${film.anilist_id}`,
+    film.anidb_id && `anidb:${film.anidb_id}`,
+    imdbId,
+    tmdbId && `tmdb:${tmdbId}`,
+  ]) {
+    if (id && id !== videoId) out.add(String(id));
+  }
+  return [...out];
+}
+
 export async function videoIdAliases(videoId: string): Promise<string[]> {
   const parsed = parseStremioId(videoId);
-  // A film's other spelling comes from its meta at write time; Wikidata's pairing is not trusted for it.
-  if (!parsed || parsed.episode === null || parsed.episode === undefined) return [];
+  if (!parsed) return [];
+  if (parsed.episode === null || parsed.episode === undefined) {
+    try {
+      return filmAliases(videoId, parsed);
+    } catch {
+      return [];
+    }
+  }
 
   const out = new Set<string>();
   const add = (id: string | null | undefined) => {

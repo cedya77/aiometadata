@@ -496,6 +496,7 @@ function processAndIndexData(data) {
 
     const imdbIds = toIdList(item.imdb_id);
     item.imdb_id = imdbIds[0] ?? null;
+    item.multi_part = tmdbIds.length > 1 || imdbIds.length > 1;
 
     if (item.mal_id) {
       animeIdMap.set(item.mal_id, item);
@@ -2849,6 +2850,32 @@ function getTraktAnimeMovieByImdbId(imdbId) {
   return imdbIdToTraktMovieMap.get(imdbId) || null;
 }
 
+function filmIdsFor(mapping, { shown = false } = {}) {
+  const none = { tmdbId: null, imdbId: null };
+  if (!mapping) return none;
+  const curated = mapping.mal_id && isTraktAnimeMoviesInitialized ? malIdToTraktMovieMap.get(parseInt(mapping.mal_id, 10)) : null;
+  if (curated?.externals) {
+    return { tmdbId: curated.externals.tmdb ? String(curated.externals.tmdb) : null, imdbId: curated.externals.imdb || null };
+  }
+  if (!mapping.type || !mappingIsType(mapping, 'movie') || mapping.multi_part) return none;
+  const tmdbId = mapping.themoviedb_id && mapping.themoviedb_type === 'movie' ? String(mapping.themoviedb_id) : null;
+  const imdbId = mapping.imdb_id && (imdbIdToAnimeListMap.get(mapping.imdb_id) || []).length === 1 ? mapping.imdb_id : null;
+  if (shown && !tmdbId) return none;
+  return { tmdbId, imdbId };
+}
+
+function filmMappingFor({ imdbId = null, tmdbId = null } = {}) {
+  const curated = isTraktAnimeMoviesInitialized
+    ? (imdbId ? imdbIdToTraktMovieMap.get(imdbId) : null) || (tmdbId ? tmdbIdToTraktMovieMap.get(parseInt(tmdbId, 10)) : null)
+    : null;
+  if (curated?.myanimelist?.id) return animeIdMap.get(curated.myanimelist.id) || { type: 'MOVIE', mal_id: curated.myanimelist.id };
+  const candidates = imdbId ? imdbIdToAnimeListMap.get(imdbId) || [] : tmdbId ? tmdbIdToAnimeListMap.get(parseInt(tmdbId, 10)) || [] : [];
+  const films = candidates.filter((item) => item.type && mappingIsType(item, 'movie'));
+  if (films.length !== 1) return null;
+  const ids = filmIdsFor(films[0]);
+  return (imdbId ? ids.imdbId === imdbId : ids.tmdbId === String(tmdbId)) ? films[0] : null;
+}
+
 /**
  * Force update the ID Mapper (Fribb's Anime-List)
  * @returns {Promise<Object>} Result object with success, message, and count
@@ -2973,6 +3000,8 @@ function getKitsuImdbStats() {
 }
 
 module.exports = {
+  filmIdsFor,
+  filmMappingFor,
   initializeMapper,
   getMappingByMalId,
   getMappingByTmdbId,

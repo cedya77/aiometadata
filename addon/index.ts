@@ -6075,8 +6075,8 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
       mdblist: { success: false, error: null }
     };
 
-    const isImdbIdAnime = stremioId.startsWith('tt') && !!idMapper.getTraktAnimeMovieByImdbId(stremioId) && type.toLowerCase() === 'movie';
-    const isTmdbIdAnime = stremioId.startsWith('tmdb:') && !!idMapper.getTraktAnimeMovieByTmdbId(stremioId.replace('tmdb:', '')) && type.toLowerCase() === 'movie';
+    const isImdbIdAnime = stremioId.startsWith('tt') && type.toLowerCase() === 'movie' && !!idMapper.filmMappingFor({ imdbId: stremioId });
+    const isTmdbIdAnime = stremioId.startsWith('tmdb:') && type.toLowerCase() === 'movie' && !!idMapper.filmMappingFor({ tmdbId: stremioId.replace('tmdb:', '') });
     // Check if the Stremio ID is from an anime provider (anilist, mal, kitsu, anidb)
     const isAnimeId = stremioId && typeof stremioId === 'string' && (
       stremioId.startsWith('anilist:') || 
@@ -6091,8 +6091,9 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
     const allIds = await resolveAllIds(stremioId, finalType, config);
     if (type.toLowerCase() === 'movie') {
       if (allIds?.malId) {
-        allIds.imdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.imdb;
-        allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb || allIds.tmdbId;
+        const film = idMapper.filmIdsFor(idMapper.getMappingByMalId(allIds.malId) ?? { type: 'MOVIE', mal_id: allIds.malId });
+        allIds.imdbId = film.imdbId;
+        allIds.tmdbId = film.tmdbId || allIds.tmdbId;
         allIds.tvdbId = (idMappings.getByImdbId(allIds.imdbId, 'movie'))?.tvdbId || null;
       }
     }
@@ -6167,12 +6168,12 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
           }
 
           if (isImdbIdAnime) {
-            const malId =  idMapper.getTraktAnimeMovieByImdbId(stremioId)?.myanimelist.id;
+            const malId = idMapper.filmMappingFor({ imdbId: stremioId })?.mal_id;
             if (malId) {
               anilistId = idMapper.getMappingByMalId(malId)?.anilist_id;
             }
           } else if (isTmdbIdAnime) {
-            const malId = idMapper.getTraktAnimeMovieByTmdbId(stremioId.replace('tmdb:', ''))?.myanimelist.id;
+            const malId = idMapper.filmMappingFor({ tmdbId: stremioId.replace('tmdb:', '') })?.mal_id;
             if (malId) {
               anilistId = idMapper.getMappingByMalId(malId)?.anilist_id;
             }
@@ -6677,8 +6678,8 @@ addon.get("/stremio/:userUUID/rating", async function (req, res) {
       mdblist: false
     };
     consola.debug(`[Rating Page] Checking if ID is anime - id: ${id}, metaType: ${metaType}, gettraktanimemoviebyimdbid: ${JSON.stringify(idMapper.getTraktAnimeMovieByImdbId(id))}`);  
-    const isImdbIdAnime = id && id.startsWith('tt') && !!idMapper.getTraktAnimeMovieByImdbId(id) && metaType === 'Movie';
-    const isTmdbIdAnime = id && id.startsWith('tmdb:') && !!idMapper.getTraktAnimeMovieByTmdbId(id.replace('tmdb:', '')) && metaType === 'Movie';
+    const isImdbIdAnime = id && id.startsWith('tt') && metaType === 'Movie' && !!idMapper.filmMappingFor({ imdbId: id });
+    const isTmdbIdAnime = id && id.startsWith('tmdb:') && metaType === 'Movie' && !!idMapper.filmMappingFor({ tmdbId: id.replace('tmdb:', '') });
     // Check if the Stremio ID in URL is from an anime provider (anilist, mal, kitsu, anidb)
     const isAnimeId = id && typeof id === 'string' && (
       id.startsWith('anilist:') || 

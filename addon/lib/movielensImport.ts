@@ -69,9 +69,9 @@ function mappedFilmImdb(ids: any): string | null {
     || (ids.anilist && idMapper.getMappingByAnilistId(ids.anilist))
     || (ids.kitsu && idMapper.getMappingByKitsuId(ids.kitsu))
     || null;
-  if (!mapping?.imdb_id) return null;
-  if (!ANIME_FILM_TYPES.has(String(mapping.type || '').toLowerCase())) return null;
-  return normalizeImdb(mapping.imdb_id);
+  if (!mapping || !ANIME_FILM_TYPES.has(String(mapping.type || '').toLowerCase())) return null;
+  const { imdbId } = idMapper.filmIdsFor({ ...mapping, type: 'MOVIE' });
+  return imdbId ? normalizeImdb(imdbId) : null;
 }
 
 /**

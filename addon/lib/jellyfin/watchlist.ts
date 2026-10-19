@@ -182,12 +182,13 @@ export function idsFor(meta: any, stremioType: 'movie' | 'series'): WatchlistIds
   if (/^kitsu:\d+$/.test(base)) {
     const mapping = idMapper.getMappingByKitsuId(parseInt(base.split(':')[1], 10));
     ids.kitsu = base.split(':')[1];
-    if (!ids.imdb && mapping?.imdb_id) ids.imdb = mapping.imdb_id;
-    if (!ids.tmdb && mapping?.themoviedb_id) ids.tmdb = mapping.themoviedb_id;
+    const film = stremioType === 'movie' ? idMapper.filmIdsFor(mapping) : null;
+    if (!ids.imdb && (film ? film.imdbId : mapping?.imdb_id)) ids.imdb = film ? film.imdbId : mapping.imdb_id;
+    if (!ids.tmdb && (film ? film.tmdbId : mapping?.themoviedb_id)) ids.tmdb = film ? film.tmdbId : mapping.themoviedb_id;
     if (!ids.tvdb && mapping?.tvdb_id && stremioType === 'series') ids.tvdb = mapping.tvdb_id;
     if (mapping?.mal_id) ids.mal = mapping.mal_id;
   } else if (ids.imdb) {
-    const mapping = idMapper.getMappingByImdbId(ids.imdb);
+    const mapping = stremioType === 'movie' ? idMapper.filmMappingFor({ imdbId: ids.imdb }) : idMapper.getMappingByImdbId(ids.imdb);
     if (mapping && idMapper.mappingIsType(mapping, stremioType)) {
       if (mapping.kitsu_id) ids.kitsu = mapping.kitsu_id;
       if (mapping.mal_id) ids.mal = mapping.mal_id;

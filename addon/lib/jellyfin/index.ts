@@ -1395,10 +1395,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const numeric = parseInt(parsed.base.split(':')[1], 10);
     const mapping =
       parsed.idType === 'kitsu' ? idMapper.getMappingByKitsuId(numeric)
-      : parsed.idType === 'mal' ? idMapper.getMappingByMalId(numeric)
+      : parsed.idType === 'mal' ? idMapper.getMappingByMalId(numeric) ?? { type: 'MOVIE', mal_id: numeric }
       : parsed.idType === 'anilist' ? idMapper.getMappingByAnilistId(numeric)
       : null;
-    const imdb = mapping?.imdb_id || (mapping?.mal_id ? idMapper.getTraktAnimeMovieByMalId?.(mapping.mal_id)?.externals?.imdb : null);
+    const imdb = idMapper.filmIdsFor(mapping).imdbId;
     return imdb ? String(imdb) : videoId;
   };
 

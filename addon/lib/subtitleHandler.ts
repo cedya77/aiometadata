@@ -285,14 +285,9 @@ function normalizeIdsForMovie(parsedId: ParsedMediaId): Record<string, any> | nu
         return null;
       }
 
-      const mapping = idMapper.getMappingByKitsuId(kitsuId);
-      const malId = mapping?.mal_id;
-      if (malId) {
-        const traktMovie = idMapper.getTraktAnimeMovieByMalId(malId);
-        const imdbId = traktMovie?.externals?.imdb;
-        if (imdbId) {
-          return { imdb: imdbId };
-        }
+      const { imdbId } = idMapper.filmIdsFor(idMapper.getMappingByKitsuId(kitsuId));
+      if (imdbId) {
+        return { imdb: imdbId };
       }
 
       logger.debug(`[Watch Tracking] Falling back to Kitsu ID for movie ${parsedId.id}`);

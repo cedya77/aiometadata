@@ -289,8 +289,9 @@ async function performKitsuSearch(type: string, query: string, language: string,
           }
           const isMovie = itemType === 'movie';
 
-          let tmdbId = isMovie ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.tmdb : mapping?.themoviedb_id;
-          let imdbId = isMovie ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.imdb : mapping?.imdb_id;
+          const film = isMovie ? idMapper.filmIdsFor(mapping ?? { type: 'MOVIE', mal_id: malId }, { shown: true }) : null;
+          let tmdbId = film ? film.tmdbId : mapping?.themoviedb_id;
+          let imdbId = film ? film.imdbId : mapping?.imdb_id;
           let tvdbId = isMovie ? (idMappings.getByImdbId(imdbId, itemType))?.tvdbId || null : mapping?.tvdb_id;
 
           let id = imdbId || `kitsu:${kitsuId}`;

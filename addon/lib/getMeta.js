@@ -400,19 +400,17 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
     let isImdbIdAnime = false;
     let detectedAnimeMapping = null;
     if (stremioId.startsWith('tt')) {
-        const found = idMapper.getMappingByImdbId(stremioId);
+        const found = type === 'movie' ? idMapper.filmMappingFor({ imdbId: stremioId }) : idMapper.getMappingByImdbId(stremioId);
         const fribbMapping = idMapper.mappingIsType(found, type) ? found : null;
-        const traktMapping = type === 'movie' ? idMapper.getTraktAnimeMovieByImdbId(stremioId) : null;
-        isImdbIdAnime = !!fribbMapping || !!traktMapping;
+        isImdbIdAnime = !!fribbMapping;
         detectedAnimeMapping = fribbMapping;
     }
 
     let isTmdbIdAnime = false;
     if (stremioId.startsWith('tmdb:')) {
         const tmdbId = stremioId.replace('tmdb:', '');
-        const fribbMapping = idMapper.getMappingByTmdbId(tmdbId, type);
-        const traktMapping = type === 'movie' ? idMapper.getTraktAnimeMovieByTmdbId(tmdbId) : null;
-        isTmdbIdAnime = !!fribbMapping || !!traktMapping;
+        const fribbMapping = type === 'movie' ? idMapper.filmMappingFor({ tmdbId }) : idMapper.getMappingByTmdbId(tmdbId, type);
+        isTmdbIdAnime = !!fribbMapping;
         detectedAnimeMapping = fribbMapping;
     }
 

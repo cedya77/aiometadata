@@ -58,7 +58,7 @@ async function _processAnimeItem(item, provider, id, language, config, includeVi
 
   const malId = mapping.mal_id;
   const isMovie = item.type === 'movie';
-  const imdbId = isMovie ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.imdb : mapping.imdb_id;
+  const imdbId = isMovie ? idMapper.filmIdsFor(mapping, { shown: true }).imdbId : mapping.imdb_id;
 
 
   if(config.mal?.useImdbIdForCatalogAndSearch && item.type === 'series' && imdbId){

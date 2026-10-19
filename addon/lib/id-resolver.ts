@@ -63,7 +63,7 @@ function _parseStremioId(stremioId: string): AllIds {
   return ids;
 }
 
-function _handleAnimeMapping(allIds: AllIds): void {
+function _handleAnimeMapping(allIds: AllIds, type: string): void {
   const providers = ['mal', 'kitsu', 'anidb', 'anilist'];
   const mappingFunctions: Record<string, (id: string) => any> = {
     mal: idMapper.getMappingByMalId,
@@ -75,11 +75,12 @@ function _handleAnimeMapping(allIds: AllIds): void {
   for (const provider of providers) {
     const id = allIds[`${provider}Id`];
     if (id) {
-      const mapping = mappingFunctions[provider](id);
+      const mapping = mappingFunctions[provider](id) ?? (provider === 'mal' && type === 'movie' ? { type: 'MOVIE', mal_id: Number(id) } : null);
       if (mapping) {
-        allIds.tmdbId = allIds.tmdbId || mapping.themoviedb_id;
-        allIds.imdbId = allIds.imdbId || mapping.imdb_id;
-        allIds.tvdbId = allIds.tvdbId || mapping.tvdb_id;
+        const film = type === 'movie' || mapping.type === 'MOVIE' ? idMapper.filmIdsFor(mapping) : null;
+        allIds.tmdbId = allIds.tmdbId || (film ? film.tmdbId : mapping.themoviedb_id);
+        allIds.imdbId = allIds.imdbId || (film ? film.imdbId : mapping.imdb_id);
+        allIds.tvdbId = allIds.tvdbId || (film ? null : mapping.tvdb_id);
         allIds.tvmazeId = allIds.tvmazeId || mapping.tvmaze_id;
         allIds.malId = allIds.malId || mapping.mal_id;
         allIds.kitsuId = allIds.kitsuId || mapping.kitsu_id;
@@ -282,7 +283,7 @@ async function resolveAllIds(stremioId: string, type: string, config: any, prefe
 
   if (isAnime) {
     performanceStats.animeResolutions++;
-    _handleAnimeMapping(allIds);
+    _handleAnimeMapping(allIds, type);
     const duration = Date.now() - startTime;
     timingMetrics.recordTiming('id_resolution_anime', duration, {
       type,

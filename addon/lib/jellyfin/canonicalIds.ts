@@ -104,11 +104,11 @@ export async function watchlistIdentity(metaId: string, mediaType: 'movie' | 'se
     if (!entry) return { key: base, anime: true };
     const movie = entry.type === 'MOVIE' || entry.themoviedb_type === 'movie';
     const tmdb = firstId(entry.themoviedb_id);
-    if (movie) return { key: identityFromIds({ tmdb }, 'movie') ?? base, anime: true };
+    if (movie) return { key: identityFromIds({ tmdb: idMapper.filmIdsFor(entry).tmdbId }, 'movie') ?? base, anime: true };
     const tvdb = firstId(entry.tvdb_id);
     return { key: identityFromIds({ tvdb, tmdb: entry.themoviedb_type === 'tv' ? tmdb : null }, 'series') ?? base, anime: true };
   }
-  const movie = mediaType === 'movie' || (mediaType === 'anime' && idMapper.getMappingByImdbId?.(base)?.type === 'MOVIE');
+  const movie = mediaType === 'movie' || (mediaType === 'anime' && Boolean(idMapper.filmMappingFor?.({ imdbId: base })));
   return movie
     ? { key: identityKey('movie', await titleIdentity(base, config)), anime: false }
     : { key: identityKey('series', await showIdentity(base, config)), anime: false };
