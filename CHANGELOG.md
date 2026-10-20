@@ -2,6 +2,84 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.6.0](https://github.com/cedya77/aiometadata/compare/v3.5.1...v3.6.0) (2026-10-20)
+
+
+### Features
+
+* **anime:** bring filler marking and episode dates to IMDb, TMDB and every TVDB episode order ([75e81d5](https://github.com/cedya77/aiometadata/commit/75e81d584157a399819d9aa3bb68bb4d79d0e052))
+* **anime:** skip or mark filler, mixed canon/filler and recap episodes on every anime provider ([661ba9d](https://github.com/cedya77/aiometadata/commit/661ba9da1ebb798c1733de72ecac9d89f80f6528))
+* **art:** serve a smaller copy of cached art when the path names a width ([88385dc](https://github.com/cedya77/aiometadata/commit/88385dc6a228b01aeceeb82ab57fd84956e7e9b1))
+* **catalog:** offer a More Like This catalog for a title's similar titles ([01ef1d9](https://github.com/cedya77/aiometadata/commit/01ef1d934661b3a520d3197914fd936dd44b8d8c))
+* **collections:** give a folder's focus GIF to apps as its animated poster ([75aae54](https://github.com/cedya77/aiometadata/commit/75aae54fd291c6928e61a1a4d5a192857108c026))
+* **dashboard:** export and import instance settings ([8c59f4a](https://github.com/cedya77/aiometadata/commit/8c59f4aca7a9b8e219fa483a31c122f3b8e0de3e))
+* **dashboard:** give the Jellyfin tab a profile hero, library, calendar and Next Up view ([88385dc](https://github.com/cedya77/aiometadata/commit/88385dc6a228b01aeceeb82ab57fd84956e7e9b1))
+* **jellyfin:** choose TMDB or Simkl for a title's similar titles ([0c48832](https://github.com/cedya77/aiometadata/commit/0c4883284a5efe4fb4c03d194960fba61506cb00))
+* **jellyfin:** filter a person's filmography by role ([d22ec82](https://github.com/cedya77/aiometadata/commit/d22ec82a8137389c17730096fd345e5e6e5a3d58))
+* **jellyfin:** flag filler and recap episodes for AIOStreams clients ([46ea896](https://github.com/cedya77/aiometadata/commit/46ea896056a5bec7963b743b06930a347b899698))
+* **jellyfin:** give titles their original language and mark filler and recap episodes ([77cd76e](https://github.com/cedya77/aiometadata/commit/77cd76e8f00e5027d0b4d5acd0d9d52c67923de6))
+* **jellyfin:** import a tracker's watchlist into this server's own list ([7283723](https://github.com/cedya77/aiometadata/commit/7283723390a4727d9ccd8b46d2d87513eba056fc))
+* **jellyfin:** keep every viewing in a watch history, rewatches included ([bfeee22](https://github.com/cedya77/aiometadata/commit/bfeee227629519e56ef25c3525adb58b636d9349))
+* **jellyfin:** keep no resume point below a minimum share of the runtime ([1b9c6ce](https://github.com/cedya77/aiometadata/commit/1b9c6ce33ea989f642fbd3b68c8924891d32d968))
+* **jellyfin:** let each profile choose how much of a title counts as watched ([2ac9719](https://github.com/cedya77/aiometadata/commit/2ac97197a96f973b295d5065f340f0574c6d8cac))
+* **jellyfin:** let the main user have a PIN ([1fe16dd](https://github.com/cedya77/aiometadata/commit/1fe16ddf6a165264fb4cd08fba897e8f133b2005))
+* **jellyfin:** list a profile's rated titles and dropped shows ([433c85f](https://github.com/cedya77/aiometadata/commit/433c85f01403a145769b49a55f0ec385b092da20))
+* **jellyfin:** log each request with the client that made it ([e3d0daa](https://github.com/cedya77/aiometadata/commit/e3d0daa4c4badf547621d5b4312e2d9f3cc38475))
+* **jellyfin:** offer streams that need headers to a player that sends them ([e45c84e](https://github.com/cedya77/aiometadata/commit/e45c84e1a1bb6f34bb68039fd7b6c382b5ac8fdb))
+* **jellyfin:** push watch state changes to open clients over the socket ([adc6ce1](https://github.com/cedya77/aiometadata/commit/adc6ce1eb9f309aef4d9e0ba6398158a1467acd2))
+* **mdblist:** read Up Next and upcoming episodes by the TVDB numbering MDBList names ([3d5867d](https://github.com/cedya77/aiometadata/commit/3d5867d91ca5d4b085a7dacdd2a28e73918cc99d))
+* **meta:** serve person metas for TMDB and TVDB person ids ([8b4c883](https://github.com/cedya77/aiometadata/commit/8b4c88389e914d10f34f5badcf65dc18dd4ea5e0))
+
+
+### Bug Fixes
+
+* **anime:** count an airing anime's episodes into it, past the specials filed with it ([de135b7](https://github.com/cedya77/aiometadata/commit/de135b7d10fbf3d5b304a1956db0dc6d62cd30e1))
+* **anime:** find a TVDB episode's Kitsu entry in the id mapping when the anime list has none ([d3cec6c](https://github.com/cedya77/aiometadata/commit/d3cec6cb787b3ea3335adbf74dc97bba6981bf6c))
+* **anime:** take a film's TMDB and IMDb ids only where the mapping holds up ([c06ff27](https://github.com/cedya77/aiometadata/commit/c06ff27845b851ae8dc5a7f17ccfe6a82a2c0c17))
+* **art:** apply the custom poster pattern to titles with no IMDb, TMDB or TVDB id when the poster proxy is on ([55e6c04](https://github.com/cedya77/aiometadata/commit/55e6c04d24e52d5ab22443d1d3b7233f64f5ed50)), closes [#825](https://github.com/cedya77/aiometadata/issues/825)
+* **jellyfin:** a profile kept apart from the account with no tracker connected reads no tracker ([88385dc](https://github.com/cedya77/aiometadata/commit/88385dc6a228b01aeceeb82ab57fd84956e7e9b1))
+* **jellyfin:** accept a socket opened through the account alias ([d4b7b31](https://github.com/cedya77/aiometadata/commit/d4b7b31883bf415a580931bba98e59f007860f89))
+* **jellyfin:** ask only for a PIN when switching users ([b09988a](https://github.com/cedya77/aiometadata/commit/b09988af208e0ff6d82de7aa05d283c1e94866ff))
+* **jellyfin:** bring an undropped MDBList show back to Next Up straight away ([f2daa84](https://github.com/cedya77/aiometadata/commit/f2daa84307bc52fd470ef3dc1a20c2c7b0b94268))
+* **jellyfin:** build filmography and similar title cards from ids and art alone ([03459d1](https://github.com/cedya77/aiometadata/commit/03459d16f406e4d5211d71a8649e40f008cfd5f0))
+* **jellyfin:** clear a title's other watchlist spellings when it is removed, and share one identity rule ([c8c9efb](https://github.com/cedya77/aiometadata/commit/c8c9efbc50db5be9655c1a4a821546dcbd2ba601))
+* **jellyfin:** clear a title's score when its rating is cleared ([6bea67f](https://github.com/cedya77/aiometadata/commit/6bea67f7dff09f3fdbfae5a8b93d9d721dcba5c2))
+* **jellyfin:** date titles on the server's own watchlist by when they were added ([ab2e690](https://github.com/cedya77/aiometadata/commit/ab2e690948143bd5ae46e807714de154fe33c964))
+* **jellyfin:** drop a show taken off an MDBList watchlist from Upcoming straight away ([bbbb3a8](https://github.com/cedya77/aiometadata/commit/bbbb3a838ae7a576a6bc5b6d0c5d6aa071d28541))
+* **jellyfin:** give only Apple TV the YouTube app's trailer links ([a7c6eac](https://github.com/cedya77/aiometadata/commit/a7c6eac18a2dc8bd496ca7df0e46098b7ed96ae3))
+* **jellyfin:** index started shows a tracker gives no total for after each sync ([6019bac](https://github.com/cedya77/aiometadata/commit/6019bac55e652c0b80acd5b3d84fb5cf0f68f54f))
+* **jellyfin:** keep a show's other MDBList episodes watched when one is unwatched ([701ba38](https://github.com/cedya77/aiometadata/commit/701ba383a8fb716de6be1d0159c6dc87d4983234))
+* **jellyfin:** keep a title bookmarked across its anime and show copies ([1f04c93](https://github.com/cedya77/aiometadata/commit/1f04c9381c56569d69b361cf0ca24abfcce03944))
+* **jellyfin:** keep an anime episode's TMDB spelling in step with its others ([15a9a78](https://github.com/cedya77/aiometadata/commit/15a9a7893cfeeee035195ff271c822d682261823))
+* **jellyfin:** list the watchlist identity cache settings in the dashboard ([895193a](https://github.com/cedya77/aiometadata/commit/895193a9d80400a028965336f43338bb2a4ce2d0))
+* **jellyfin:** load every subtitle when a player asks for all of them at once ([7f83303](https://github.com/cedya77/aiometadata/commit/7f83303322ce6dc1189688ca3b52f2558e8918a8))
+* **jellyfin:** mark MDBList shows watched from their aired episode total ([f8b709b](https://github.com/cedya77/aiometadata/commit/f8b709b04c15c1c6ffa1a585fd347797ab49028b))
+* **jellyfin:** mark PublicMetaDB shows watched from TMDB's aired episode total ([d264059](https://github.com/cedya77/aiometadata/commit/d264059b1575d4a07f16bc5566f3651a669a5254))
+* **jellyfin:** open a cast member's own profile and filmography instead of a namesake ([5a968ba](https://github.com/cedya77/aiometadata/commit/5a968bad68609121086be8064e397b57107946e5))
+* **jellyfin:** push a favourite or rating change to open clients ([3f9fb4b](https://github.com/cedya77/aiometadata/commit/3f9fb4b0de3bda63d00cf5064afaaf2e6ae6d880))
+* **jellyfin:** push a position moved while paused to open clients ([3892bc2](https://github.com/cedya77/aiometadata/commit/3892bc2f0c9e16723f0ae633dc1609204aac27f2))
+* **jellyfin:** read a completed Simkl anime film as a watched film ([596b9eb](https://github.com/cedya77/aiometadata/commit/596b9eb624f867f10e5668b99a47239371fed789)), closes [#833](https://github.com/cedya77/aiometadata/issues/833)
+* **jellyfin:** send AIOStreams the release details while still naming the app ([1a03628](https://github.com/cedya77/aiometadata/commit/1a0362823a0426f945e2bec4b423795713cf46c6))
+* **jellyfin:** show a drop or undrop on the first press ([8c098b2](https://github.com/cedya77/aiometadata/commit/8c098b27245e84ae3fc096fc691f9ae62099a1d5))
+* **jellyfin:** show a favourite on the first press when the watchlist is read uncached ([af1fe94](https://github.com/cedya77/aiometadata/commit/af1fe942202f1c80a3fe51aa8c6cf7cb424792b6))
+* **jellyfin:** show a premiere once in Upcoming when its show arrives under two ids ([d0c6f4e](https://github.com/cedya77/aiometadata/commit/d0c6f4ee4572dbc60cae37e8d65277dd76c6fa45))
+* **jellyfin:** show a started show's watched mark on the first search ([21f7cc6](https://github.com/cedya77/aiometadata/commit/21f7cc62843ce38c0be953d2f32c5b91b442cbda))
+* **jellyfin:** show a title that comes with landscape art, such as an Up Next episode, in landscape ([02bb3f8](https://github.com/cedya77/aiometadata/commit/02bb3f8e7aae731b007bee9c509f9b3d73c0b7ca))
+* **jellyfin:** show an anime episode once in Continue Watching when a tracker has a newer position ([ab0e58a](https://github.com/cedya77/aiometadata/commit/ab0e58a198b1f950a4fee53d7867eb4e23b00a5d))
+* **jellyfin:** show the watchlist as favourites on every client ([55bbfcd](https://github.com/cedya77/aiometadata/commit/55bbfcd5a3635fe2ae1c5dc2665d06a99edbe148))
+* **mdblist:** place a show MDBList knows only by TMDB at its TVDB episode in history ([46988f6](https://github.com/cedya77/aiometadata/commit/46988f6a70285b8583319d2dd035f1aa7fa75832))
+* **meta:** keep a series' TMDB and TVDB ids when IMDb or TVmaze builds it ([9b539c7](https://github.com/cedya77/aiometadata/commit/9b539c7f51bba397d2405679026d643bd2d47ad1))
+* **meta:** weigh a non-English title's original-language TMDB art in every build ([3632743](https://github.com/cedya77/aiometadata/commit/36327438047eb76bd6fb1318f53c07842e320dc1))
+* **posters:** keep a landscape poster landscape in the image cache ([eb88102](https://github.com/cedya77/aiometadata/commit/eb881026ff22a1065b89f86ca85995ae82e31813))
+* **tracking:** send a Kitsu episode missing from the anime mapping to Simkl by its MAL id ([fcf9f68](https://github.com/cedya77/aiometadata/commit/fcf9f680e9923410da592280824f87608a324fc4))
+* **tvdb:** give anime the textless TVDB backdrop instead of the titled one ([ee49829](https://github.com/cedya77/aiometadata/commit/ee498297aa4ce7d323de8f2dcc53058ec9fa567f))
+* **tvdb:** keep genuine YouTube series in TVDB search results ([#827](https://github.com/cedya77/aiometadata/issues/827)) ([d5b2765](https://github.com/cedya77/aiometadata/commit/d5b27650cae3e9b198e4ca137766de4d831138a9))
+
+
+### Performance Improvements
+
+* **jellyfin:** mark a title watched once playback passes the threshold, without waiting for a stop ([63ab9b0](https://github.com/cedya77/aiometadata/commit/63ab9b0d4a73234b29e3908185046b52df6ca8eb))
+
 ## [3.5.1](https://github.com/cedya77/aiometadata/compare/v3.5.0...v3.5.1) (2026-10-14)
 
 
