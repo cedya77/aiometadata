@@ -276,20 +276,22 @@ async function syncMdblist(key: string, apiKey: string, watermark: any): Promise
       else if (row.item_type === 'episode') await database.deleteTrackerMirror(key, [`ep:${show}:${row.season}:${row.episode}`]);
     }
 
-    const { fetchMdblistWatched, fetchMdblistUpNext } = require('./watched');
+    const { fetchMdblistWatched } = require('./watched');
     const movies = await fetchMdblistWatched(apiKey, 'movie', watermark.server_time);
     const episodes = await fetchMdblistWatched(apiKey, 'episode', watermark.server_time);
     const shows = await fetchMdblistWatched(apiKey, 'show', watermark.server_time);
     const rows = [...movies.map(mdblistMovieRow), ...episodes.map(mdblistEpisodeRow), ...shows.map(mdblistShowRow)].filter(Boolean) as MirrorRow[];
     if (rows.length) await database.upsertTrackerMirror(key, rows);
-    // MDBList works out what is next itself; it moves with any watch.
-    await database.upsertTrackerMirror(key, [{ key: 'upnext', data: await fetchMdblistUpNext(apiKey) }]);
   }
   if (dropped) {
     const { fetchMdblistDropped } = require('./watched');
     await database.upsertTrackerMirror(key, [{ key: 'dropped', data: await fetchMdblistDropped(apiKey) }]);
   }
-  const upNextMark = watched
+  // MDBList works out what is next itself and leaves dropped shows out; it moves with any watch or drop.
+  const { fetchMdblistUpNext } = require('./watched');
+  const upNext = await fetchMdblistUpNext(apiKey);
+  if (upNext.length || watched) await database.upsertTrackerMirror(key, [{ key: 'upnext', data: upNext }]);
+  const upNextMark = watched || dropped
     ? await mdblistUpNextMark(apiKey)
     : { upnext_at: watermark?.upnext_at ?? 0, upnext_next: watermark?.upnext_next ?? null };
   return { changed: true, watermark: { ...activities, ...upNextMark, format: MDBLIST_MIRROR_FORMAT }, full: false };

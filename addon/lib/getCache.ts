@@ -1009,6 +1009,7 @@ function getMetaSmartLockContextHash(config: any, metaId: string, type: string |
       displayAgeRating: config.displayAgeRating || false,
       ...(config.animeEpisodeDates && config.animeEpisodeDates !== 'provider' ? { animeEpisodeDates: config.animeEpisodeDates } : {}),
       ...(config.mal?.skipMixedFiller ? { skipMixedFiller: true } : {}),
+      ...(config.flagEpisodeKinds ? { flagEpisodeKinds: true } : {}),
       ...(seasonNumbering ? { seasonNumbering } : {}),
     },
     includeVideos: !!includeVideos,

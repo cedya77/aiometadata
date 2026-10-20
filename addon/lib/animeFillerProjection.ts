@@ -10,7 +10,7 @@ export async function applyAnimeFillerProjection(meta: any, config: any): Promis
   const skipMixed = skipFiller && !!options.skipMixedFiller;
   const skipRecap = !!options.skipRecap;
   const mark = !!options.allowEpisodeMarking;
-  if (!(skipFiller || skipRecap || mark) || !Array.isArray(meta?.videos) || !meta.videos.length) return;
+  if (!(skipFiller || skipRecap || mark || config?.flagEpisodeKinds) || !Array.isArray(meta?.videos) || !meta.videos.length) return;
   if (!['tvdb', 'imdb', 'tmdb', 'kitsu', 'mal'].includes(meta._metaProvider)) return;
 
   try {

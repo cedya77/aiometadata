@@ -806,6 +806,12 @@ const metaMemo = new LRUCache<string, any>({
 });
 const metaInFlight = new Map<string, Promise<any | null>>();
 
+function episodeKindExtension(video: any): any {
+  const filler = (video.isFiller ?? video.filler) === true;
+  const recap = (video.isRecap ?? video.recap) === true;
+  return filler || recap ? { aiostreams: { ...(filler ? { filler: true } : {}), ...(recap ? { recap: true } : {}) } } : {};
+}
+
 export async function fetchMeta(
   userUUID: string,
   stremioType: string,
@@ -834,7 +840,7 @@ async function readMeta(
   const work = (async () => {
     try {
       const { invokeRoute } = require('../inProcessRoutes');
-      const reply = await invokeRoute('meta', url, { userUUID, type: stremioType, id, ...(beforeArt ? { beforeArt: '1' } : {}) }, routeTimeout());
+      const reply = await invokeRoute('meta', url, { userUUID, type: stremioType, id, episodeKinds: '1', ...(beforeArt ? { beforeArt: '1' } : {}) }, routeTimeout());
       if (reply.status < 200 || reply.status >= 300) {
         logger.debug(`Meta ${stremioType}/${id} returned ${reply.status}`);
         return null;
@@ -1089,6 +1095,7 @@ export function buildEpisode(
       RunTimeTicks: parseRuntimeTicks(video.runtime),
       ProviderIds: {},
       Tags: [(video.isFiller ?? video.filler) === true && 'Filler', video.isMixedFiller === true && 'Mixed Canon/Filler', (video.isRecap ?? video.recap) === true && 'Recap'].filter(Boolean),
+      ...(viewerReadsExtensions() ? episodeKindExtension(video) : {}),
       ImageTags: video.thumbnail ? { Primary: imageTag(video.thumbnail) } : {},
       BackdropImageTags: [],
       ImageBlurHashes: {},
