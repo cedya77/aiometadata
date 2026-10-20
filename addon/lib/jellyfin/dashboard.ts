@@ -592,8 +592,10 @@ async function droppedShows(userUUID: string, profile: string, ids: string[], co
   const memo = `${userUUID}:${profile}:${keys.join(',')}`;
   const held = droppedMemo.get(memo);
   if (held) return held;
-  const { showIdentity } = require('./canonicalIds');
-  const identities: string[] = await mapWithConcurrency(keys, 8, (id: string) => showIdentity(id, config).catch(() => id));
+  const { watchlistIdentity } = require('./canonicalIds');
+  const identities: string[] = await mapWithConcurrency(keys, 8, (id: string) =>
+    watchlistIdentity(id, 'series', config).then((identity: { key: string }) => identity.key).catch(() => id)
+  );
   const groups = new Map<string, string[]>();
   keys.forEach((id, i) => groups.set(identities[i], [...(groups.get(identities[i]) ?? []), id]));
   const shows = [...groups.values()].map(preferredKey);
