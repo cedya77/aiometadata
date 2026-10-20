@@ -1309,6 +1309,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 60,
   },
   {
+    key: 'JELLYFIN_ACTIVITY_COUNTS_TTL',
+    envVar: 'JELLYFIN_ACTIVITY_COUNTS_TTL',
+    label: 'Jellyfin Activity Counts (seconds)',
+    description: 'How long a user\'s played, in-progress and favourite counts on the apps\' Activity page are held before they are counted again. The apps ask every few seconds while the page is open.',
+    category: 'Features',
+    type: 'number',
+    default: 300,
+    min: 10,
+  },
+  {
     key: 'JELLYFIN_DASHBOARD_LIVE_SECONDS',
     envVar: 'JELLYFIN_DASHBOARD_LIVE_SECONDS',
     label: 'Jellyfin Dashboard Live Window (seconds)',

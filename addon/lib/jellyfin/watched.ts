@@ -1447,12 +1447,13 @@ export async function invalidateWatched(config: any): Promise<void> {
  * item's own guid, so this stays one pass over a finished list rather than a
  * parameter threaded through every builder.
  */
-function airedFrom(videos: any[]): string[] {
+function airedFrom(videos: any[], season?: number): string[] {
   const now = Date.now();
-  const dates = videos.some((v: any) => Number(v?.season) !== 0 && Number.isFinite(Date.parse(v?.released ?? v?.firstAired ?? '')));
+  const counted = (v: any) => (season === undefined ? Number(v?.season) !== 0 : Number(v?.season) === season);
+  const dates = videos.some((v: any) => counted(v) && Number.isFinite(Date.parse(v?.released ?? v?.firstAired ?? '')));
   return videos
     .filter((v: any) => {
-      if (Number(v?.season) === 0) return false;
+      if (!counted(v)) return false;
       const at = Date.parse(v?.released ?? v?.firstAired ?? '');
       if (!Number.isFinite(at)) return !dates;
       return at <= now;
@@ -1466,10 +1467,10 @@ function airedFrom(videos: any[]): string[] {
  * A listing never builds one: that is a full meta read per show on the page, all
  * competing with the page itself. Started shows are queued instead.
  */
-async function airedEpisodeIds(userUUID: string, descriptor: any): Promise<string[] | null> {
+async function indexedVideos(userUUID: string, metaId: string): Promise<any[] | null> {
   const { seriesIndex } = require('./episodeIndex');
-  const indexed = await seriesIndex(userUUID, String(descriptor.i), { held: true }).catch(() => null);
-  return indexed ? airedFrom(Array.isArray(indexed.videos) ? indexed.videos : []) : null;
+  const indexed = await seriesIndex(userUUID, metaId, { held: true }).catch(() => null);
+  return indexed ? (Array.isArray(indexed.videos) ? indexed.videos : []) : null;
 }
 
 const ownPlayedMemo = new LRUCache<string, Set<string>>({
@@ -1520,7 +1521,7 @@ export async function applyWatchedState(
   userUUID?: string,
   profile = '',
   config?: any,
-  opts: { indexWaitMs?: number } = {}
+  opts: { indexWaitMs?: number; seriesVideos?: Map<string, any[]> } = {}
 ): Promise<void> {
   if (!items.length) return;
 
@@ -1557,38 +1558,47 @@ export async function applyWatchedState(
     ? await trackerPositions(userUUID, config).catch(() => new Map())
     : new Map();
 
-  const ownPlayed = userUUID && [...descriptors.values()].some((d) => d.k === 'series')
+  const ownPlayed = userUUID && [...descriptors.values()].some((d) => d.k === 'series' || d.k === 'season')
     ? await ownPlayedEpisodes(userUUID, profile)
     : new Set<string>();
 
   // The page's titles are asked of the watch index together: each film and episode, the
   // series counts, then each held show's aired episodes, other spellings only for a miss.
-  const seriesDescriptors = [...descriptors.values()].filter((d) => d.k === 'series');
-  const seriesCounts = await seriesCountsAmong(snapshot, seriesDescriptors.map((d) => String(d.i)));
+  const showIds = [...new Set([...descriptors.values()].filter((d) => d.k === 'series' || d.k === 'season').map((d) => String(d.i)))];
+  const seriesCounts = await seriesCountsAmong(snapshot, showIds);
   const ownUnwatched = userUUID && seriesCounts.size ? await ownUnwatchedEpisodes(userUUID, profile) : new Map<string, number>();
-  const airedBySeries = new Map<string, string[] | null>();
+  const videosBySeries = new Map<string, any[] | null>();
   if (userUUID) {
-    await Promise.all(seriesDescriptors.map(async (d) => {
-      if (seriesCounts.has(String(d.i)) || ownPlayed.size) airedBySeries.set(String(d.i), await airedEpisodeIds(userUUID, d));
+    await Promise.all(showIds.map(async (metaId) => {
+      if (seriesCounts.has(metaId) || ownPlayed.size) {
+        videosBySeries.set(metaId, (await indexedVideos(userUUID, metaId)) ?? opts.seriesVideos?.get(metaId) ?? null);
+      }
     }));
-    const missing = [...airedBySeries.entries()].filter(([, aired]) => !aired).map(([metaId]) => metaId);
+    const missing = [...videosBySeries.entries()].filter(([, videos]) => !videos).map(([metaId]) => metaId);
     const playedShows = missing.length && ownPlayed.size ? new Set([...ownPlayed].map((id) => id.replace(/:\d+:\d+$/, ''))) : new Set<string>();
     const started = missing.filter((metaId) => seriesCounts.has(metaId) || playedShows.has(metaId));
     if (started.length && opts.indexWaitMs) {
       await require('./episodeIndex').indexSeriesWithin(userUUID, started, opts.indexWaitMs);
-      await Promise.all(started.map(async (metaId) => airedBySeries.set(metaId, await airedEpisodeIds(userUUID, { i: metaId }))));
+      await Promise.all(started.map(async (metaId) => videosBySeries.set(metaId, await indexedVideos(userUUID, metaId))));
     } else if (started.length) {
       require('./episodeIndex').queueSeriesIndex(userUUID, started);
     }
   }
+  const airedBySeries = new Map<string, string[] | null>(
+    [...videosBySeries.entries()].map(([metaId, videos]) => [metaId, videos ? airedFrom(videos) : null])
+  );
+  const specials = [...descriptors.values()]
+    .filter((d) => d.k === 'season' && d.s === 0)
+    .flatMap((d) => airedFrom(videosBySeries.get(String(d.i)) ?? [], 0));
+  const showEpisodes = [...[...airedBySeries.values()].flatMap((ids) => ids ?? []), ...specials];
   const direct = [
     ...[...descriptors.values()].filter((d) => d.k === 'movie' || d.k === 'episode').map((d) => stremioIdFor(d)).filter(Boolean) as string[],
-    ...[...airedBySeries.values()].flatMap((ids) => ids ?? []),
+    ...showEpisodes,
   ];
   const watched = await watchedAmong(snapshot, direct);
   const aliasesOf = new Map<string, string[]>();
   const { videoIdAliases } = require('./aliases');
-  for (const videoId of new Set([...airedBySeries.values()].flatMap((ids) => ids ?? []))) {
+  for (const videoId of new Set(showEpisodes)) {
     if (!watched.has(videoId) && !ownPlayed.has(videoId)) aliasesOf.set(videoId, await videoIdAliases(videoId));
   }
   for (const [id, at] of await watchedAmong(snapshot, [...aliasesOf.values()].flat())) watched.set(id, at);
@@ -1632,6 +1642,21 @@ export async function applyWatchedState(
           UnplayedItemCount: unplayed,
           Played: unplayed === 0,
           PlayedPercentage: Math.min(100, (watchedCount / total) * 100),
+        };
+        return;
+      }
+
+      if (descriptor.k === 'season') {
+        const videos = videosBySeries.get(String(descriptor.i));
+        const aired = videos ? airedFrom(videos, descriptor.s) : [];
+        if (!aired.length) return;
+        const watchedCount = aired.filter((videoId) => playedUnderAnySpelling(videoId)).length;
+        const unplayed = aired.length - watchedCount;
+        item.UserData = {
+          ...item.UserData,
+          UnplayedItemCount: unplayed,
+          Played: unplayed === 0,
+          PlayedPercentage: (watchedCount / aired.length) * 100,
         };
         return;
       }

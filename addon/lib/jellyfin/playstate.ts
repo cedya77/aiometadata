@@ -55,6 +55,8 @@ interface SessionPosition {
   /** The profile signed in, which may be playing into the account's shared history. */
   viewer?: string | null;
   device?: string;
+  /** The app and device names the client gave, for showing the session. */
+  app?: { client: string; device: string; version: string };
   playSession?: string;
   /** When progress passed the watched mark, so the stop that follows does not report it again. */
   playedAt?: number;
@@ -80,14 +82,25 @@ const POSITIONS_KEY = 'jf:pos';
 // polls every ten seconds and only wants what is current. An index scored by
 // last tick keeps that read proportional to live sessions, not to the day.
 const POSITIONS_INDEX = 'jf:pos:live';
+// The same, per configuration, so one account's read never walks every other's.
+const accountIndex = (userUUID: string) => `${POSITIONS_INDEX}:${userUUID}`;
+
+function liveWindowSeconds(): number {
+  return envInt('JELLYFIN_LIVE_SESSION_WINDOW', 60 * 60, 60);
+}
 
 function liveWindowMs(): number {
-  return envInt('JELLYFIN_LIVE_SESSION_WINDOW', 60 * 60, 60) * 1000;
+  return liveWindowSeconds() * 1000;
 }
 
 function playSessionOf(body: any): string | undefined {
   const id = body?.PlaySessionId ?? body?.playSessionId;
   return typeof id === 'string' && id ? id : undefined;
+}
+
+function appOf(req: any): SessionPosition['app'] {
+  const { client, device, version } = require('./context').clientInfo(req);
+  return { client, device, version };
 }
 
 function sameSession(known: SessionPosition, device: string, playSession: string | undefined): boolean {
@@ -114,6 +127,7 @@ function setPosition(key: string, value: SessionPosition): void {
   positions.set(key, value);
   if (!redis) return;
   const ttl = sessionTtlSeconds();
+  const own = accountIndex(key.split(':')[0]);
   redis.multi()
     .hsetex(POSITIONS_KEY, 'EX', ttl, 'FIELDS', 1, key, JSON.stringify(value))
     .expire(POSITIONS_KEY, ttl, 'NX')
@@ -121,16 +135,18 @@ function setPosition(key: string, value: SessionPosition): void {
     .zadd(POSITIONS_INDEX, value.at, key)
     .expire(POSITIONS_INDEX, ttl, 'NX')
     .expire(POSITIONS_INDEX, ttl, 'GT')
+    .zadd(own, value.at, key)
+    .expire(own, liveWindowSeconds())
     .exec()
     .catch(() => undefined);
 }
 
 function deletePosition(key: string): void {
   positions.delete(key);
-  if (redis) redis.multi().hdel(POSITIONS_KEY, key).zrem(POSITIONS_INDEX, key).exec().catch(() => undefined);
+  if (redis) redis.multi().hdel(POSITIONS_KEY, key).zrem(POSITIONS_INDEX, key).zrem(accountIndex(key.split(':')[0]), key).exec().catch(() => undefined);
 }
 
-export type LiveSession = { userUUID: string; profile: string; viewer: string | null; itemId: string; positionMs: number; at: number; paused: boolean };
+export type LiveSession = { userUUID: string; profile: string; viewer: string | null; itemId: string; positionMs: number; at: number; paused: boolean; device: string | null; app: SessionPosition['app'] | null; playSession: string | null };
 
 /**
  * Every session the instance has heard from, newest first. Read from Redis so
@@ -138,15 +154,24 @@ export type LiveSession = { userUUID: string; profile: string; viewer: string | 
  * entries win, being the fresher of the two.
  */
 export async function liveSessions(): Promise<LiveSession[]> {
+  return readLive(POSITIONS_INDEX, '');
+}
+
+/** One configuration's sessions, read from its own index. */
+export async function liveSessionsFor(userUUID: string): Promise<LiveSession[]> {
+  return readLive(accountIndex(userUUID), `${userUUID}:`);
+}
+
+async function readLive(index: string, prefix: string): Promise<LiveSession[]> {
   const cutoff = Date.now() - liveWindowMs();
   const rows = new Map<string, SessionPosition>();
-  for (const [key, value] of positions.entries()) if (value.at >= cutoff) rows.set(key, value);
+  for (const [key, value] of positions.entries()) if (value.at >= cutoff && key.startsWith(prefix)) rows.set(key, value);
 
   if (redis) {
     try {
       const cap = envInt('JELLYFIN_SESSION_CACHE_MAX', 5000, 1);
-      const keys: string[] = await redis.zrevrangebyscore(POSITIONS_INDEX, '+inf', cutoff, 'LIMIT', 0, cap);
-      redis.zremrangebyscore(POSITIONS_INDEX, '-inf', `(${cutoff}`).catch(() => undefined);
+      const keys: string[] = await redis.zrevrangebyscore(index, '+inf', cutoff, 'LIMIT', 0, cap);
+      redis.zremrangebyscore(index, '-inf', `(${cutoff}`).catch(() => undefined);
       const wanted = keys.filter((key) => !rows.has(key));
       if (wanted.length > 0) {
         const stored: Array<string | null> = await redis.hmget(POSITIONS_KEY, ...wanted);
@@ -163,7 +188,7 @@ export async function liveSessions(): Promise<LiveSession[]> {
   for (const [key, value] of rows) {
     const [userUUID, profile, itemId] = key.split(':');
     if (!userUUID || !itemId) continue;
-    out.push({ userUUID, profile: profile || '', viewer: value.viewer ?? null, itemId, positionMs: value.positionMs, at: value.at, paused: value.paused === true });
+    out.push({ userUUID, profile: profile || '', viewer: value.viewer ?? null, itemId, positionMs: value.positionMs, at: value.at, paused: value.paused === true, device: value.device ?? null, app: value.app ?? null, playSession: value.playSession ?? null });
   }
   return out.sort((a, b) => b.at - a.at);
 }
@@ -444,6 +469,7 @@ async function report(
   const key = `${userUUID}:${profile}:${itemId}`;
   const known = await getPosition(key);
   const device = require('./context').clientInfo(req).deviceId as string;
+  const app = appOf(req);
   const playSession = playSessionOf(body);
   const reported = ticksToMs(body?.PositionTicks ?? body?.positionTicks);
   // A resume reported at zero is the client's habit, not a seek to the start.
@@ -454,7 +480,7 @@ async function report(
   // A client re-sends Playing while it runs; reopening an already-playing
   // session is noise. A resume comes through the pause edge instead.
   if (event === 'start' && known && known.paused === false && sameSession(known, device, playSession)) {
-    setPosition(key, { positionMs, at: Date.now(), paused: false, viewer: req.jellyfin?.profileId ?? null, device, playSession, playedAt: known.playedAt, rewound: known.rewound });
+    setPosition(key, { positionMs, at: Date.now(), paused: false, viewer: req.jellyfin?.profileId ?? null, device, app, playSession, playedAt: known.playedAt, rewound: known.rewound });
     return;
   }
   const same = known && sameSession(known, device, playSession);
@@ -471,7 +497,7 @@ async function report(
   } else {
     // Recorded as playing, not unknown: a following tick reporting the same
     // state would otherwise read as a change and reopen the session.
-    setPosition(key, { positionMs, at: Date.now(), paused: event === 'pause', viewer: req.jellyfin?.profileId ?? null, device, playSession, playedAt, rewound: same ? known.rewound : undefined });
+    setPosition(key, { positionMs, at: Date.now(), paused: event === 'pause', viewer: req.jellyfin?.profileId ?? null, device, app, playSession, playedAt, rewound: same ? known.rewound : undefined });
   }
 
   if (playedAt && (event === 'start' || event === 'pause' || played === true)) {
@@ -734,7 +760,7 @@ export async function recordProgress(req: any, body: any): Promise<void> {
   const newSession = !paused && !!previous?.playSession && !!session && previous.playSession !== session;
   if (!changed && !startsPaused && !newSession) {
     const now = Date.now();
-    const next: SessionPosition = { positionMs, at: now, paused, writtenAt: previous?.writtenAt, writtenMs: previous?.writtenMs, viewer: req.jellyfin?.profileId ?? previous?.viewer ?? null, device: previous?.device ?? require('./context').clientInfo(req).deviceId, playSession: previous?.playSession ?? playSessionOf(body), playedAt: previous?.playedAt, rewound: previous?.rewound };
+    const next: SessionPosition = { positionMs, at: now, paused, writtenAt: previous?.writtenAt, writtenMs: previous?.writtenMs, viewer: req.jellyfin?.profileId ?? previous?.viewer ?? null, device: previous?.device ?? require('./context').clientInfo(req).deviceId, app: previous?.app ?? appOf(req), playSession: previous?.playSession ?? playSessionOf(body), playedAt: previous?.playedAt, rewound: previous?.rewound };
     // Table only; a tracker still hears edges alone.
     const interval = envInt('JELLYFIN_PROGRESS_WRITE_INTERVAL', 60, 0) * 1000;
     const moved = positionMs !== (previous?.writtenMs ?? -1);

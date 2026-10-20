@@ -1,4 +1,6 @@
 import consola from 'consola';
+import { createHash } from 'crypto';
+import { countryName } from '../metaDetails';
 import { imageTag, wideTag } from './imageTags';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
@@ -691,9 +693,10 @@ export function metaToBaseItem(
     ProviderIds: ids,
     ExternalUrls: externalUrls(ids, itemType === 'Series'),
     People: peopleFrom(meta, serverId),
-    Studios: [],
+    Studios: studiosOf(meta),
     Tags: Array.isArray(meta.keywords) ? meta.keywords : [],
-    Taglines: [],
+    Taglines: typeof meta.tagline === 'string' && meta.tagline ? [meta.tagline] : [],
+    ProductionLocations: countriesOf(meta),
     RemoteTrailers: remoteTrailers(meta),
     OriginalLanguage: originalLanguage(meta),
     ImageTags: imageTags,
@@ -709,8 +712,23 @@ export function metaToBaseItem(
     LockData: false,
     ChildCount: itemType === 'BoxSet' && Array.isArray(meta.videos) ? meta.videos.length : null,
     ...(itemType === 'Movie' ? { EnableMediaSourceDisplay: true, MediaSources: placeholderSources(id) } : {}),
-    ...(itemType === 'Series' ? { Status: seriesStatus(meta), EndDate: endDate(meta) } : {}),
+    ...(itemType === 'Series' ? { Status: seriesStatus(meta), EndDate: endDate(meta), ...airScheduleOf(meta) } : {}),
   };
+}
+
+function studiosOf(meta: any): any[] {
+  const names = [...new Set([...(Array.isArray(meta.studios) ? meta.studios : []), ...(Array.isArray(meta.networks) ? meta.networks : [])].filter((name) => typeof name === 'string' && name))];
+  return names.map((name) => ({ Name: name, Id: createHash('md5').update(`studio:${name}`).digest('hex') }));
+}
+
+function countriesOf(meta: any): string[] {
+  if (Array.isArray(meta.countries) && meta.countries.length) return meta.countries.map((country: string) => countryName(String(country)));
+  return typeof meta.country === 'string' ? meta.country.split(', ').filter(Boolean).map(countryName) : [];
+}
+
+function airScheduleOf(meta: any): any {
+  if (!Array.isArray(meta.airDays) || !meta.airDays.length) return {};
+  return { AirDays: meta.airDays, ...(typeof meta.airTime === 'string' && meta.airTime ? { AirTime: meta.airTime } : {}) };
 }
 
 function catalogSettingsFor(config: any, catalog: { id: string; type: string }): any {

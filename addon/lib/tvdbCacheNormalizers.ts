@@ -36,10 +36,28 @@ const SERIES_EXTENDED_KEYS = [
   'defaultSeasonType',
   'airsTime',
   'airsDayOfWeek',
+  'airsDays',
   'aliases',
   'nameTranslations',
   'overviewTranslations',
 ];
+const COMPANY_KEYS = ['name'];
+const MOVIE_COMPANY_KINDS = ['studio', 'production'];
+
+function normalizeTvdbCompanyForCache(company: any) {
+  if (!company || typeof company !== 'object') return company;
+  const result = pickDefined(company, COMPANY_KEYS);
+  if (company.companyType?.companyTypeName) result.companyType = { companyTypeName: company.companyType.companyTypeName };
+  return result;
+}
+
+function normalizeTvdbMovieCompaniesForCache(companies: any) {
+  if (!companies || typeof companies !== 'object' || Array.isArray(companies)) return companies;
+  return Object.fromEntries(
+    MOVIE_COMPANY_KINDS.filter((kind) => Array.isArray(companies[kind])).map((kind) => [kind, mapIfArray(companies[kind], (company: any) => pickDefined(company, COMPANY_KEYS))])
+  );
+}
+
 const MOVIE_EXTENDED_KEYS = [
   'id',
   'name',
@@ -196,6 +214,9 @@ export function normalizeTvdbSeriesExtendedForCache(series: any) {
   return {
     ...pickDefined(series, SERIES_EXTENDED_KEYS),
     ...(series.status !== undefined ? { status: normalizeTvdbStatusForCache(series.status) } : {}),
+    ...(series.originalNetwork?.name ? { originalNetwork: { name: series.originalNetwork.name } } : {}),
+    ...(series.latestNetwork?.name ? { latestNetwork: { name: series.latestNetwork.name } } : {}),
+    ...(Array.isArray(series.companies) ? { companies: mapIfArray(series.companies, normalizeTvdbCompanyForCache) } : {}),
     ...(Array.isArray(series.genres) ? { genres: mapIfArray(series.genres, normalizeTvdbGenreForCache) } : {}),
     ...(Array.isArray(series.contentRatings) ? { contentRatings: mapIfArray(series.contentRatings, normalizeTvdbContentRatingForCache) } : {}),
     ...(Array.isArray(series.characters) ? { characters: mapIfArray(series.characters.filter(isUsedTvdbCharacter), normalizeTvdbCharacterForCache) } : {}),
@@ -213,6 +234,8 @@ export function normalizeTvdbMovieExtendedForCache(movie: any) {
   return {
     ...pickDefined(movie, MOVIE_EXTENDED_KEYS),
     ...(movie.first_release !== undefined ? { first_release: normalizeTvdbFirstReleaseForCache(movie.first_release) } : {}),
+    ...(movie.companies !== undefined ? { companies: normalizeTvdbMovieCompaniesForCache(movie.companies) } : {}),
+    ...(Array.isArray(movie.production_countries) ? { production_countries: mapIfArray(movie.production_countries, (country: any) => pickDefined(country, ['name'])) } : {}),
     ...(Array.isArray(movie.genres) ? { genres: mapIfArray(movie.genres, normalizeTvdbGenreForCache) } : {}),
     ...(Array.isArray(movie.contentRatings) ? { contentRatings: mapIfArray(movie.contentRatings, normalizeTvdbContentRatingForCache) } : {}),
     ...(Array.isArray(movie.characters) ? { characters: mapIfArray(movie.characters.filter(isUsedTvdbCharacter), normalizeTvdbCharacterForCache) } : {}),

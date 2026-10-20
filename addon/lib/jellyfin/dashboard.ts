@@ -2,7 +2,7 @@ import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { parseStremioId } from './idsCodec';
 import { decodeJellyfinId, stremioIdFor } from './ids';
-import { liveSessions, type LiveSession } from './playstate';
+import { liveSessions, liveSessionsFor, type LiveSession } from './playstate';
 import { syncStatus } from './playstateSync';
 import { seenConfigurations } from './context';
 import { seriesIndex } from './episodeIndex';
@@ -211,7 +211,7 @@ async function playRows(userUUID: string, rows: any[], names: Map<string, string
   return out;
 }
 async function sessionRows(userUUID: string, names: Map<string, string>): Promise<SessionRow[]> {
-  const own = (await liveSessions()).filter((s) => s.userUUID === userUUID);
+  const own = await liveSessionsFor(userUUID);
   return mapWithConcurrency(own, 2, async (s) => {
     const descriptor = await decodeJellyfinId(s.itemId);
     const videoId = descriptor ? stremioIdFor(descriptor) : null;
@@ -362,6 +362,23 @@ function profileStats(userUUID: string, offsetMinutes: number, summary: any[]): 
   statsMemo.set(key, { fingerprint, work });
   work.catch(() => statsMemo.delete(key));
   return work;
+}
+
+/** Each history's titles played and in progress, a title's spellings counted once, and its latest play. */
+export async function playCounts(userUUID: string): Promise<Map<string, { played: number; movies: number; episodes: number; inProgress: number; lastAt: number | null }>> {
+  const byProfile: any[] = await database.playstateForConfiguration(userUUID);
+  const stats = await profileStats(userUUID, 0, byProfile);
+  return new Map(byProfile.map((row: any) => {
+    const key = String(row.profile ?? '');
+    const titles = stats.get(key);
+    return [key, {
+      played: titles?.played ?? 0,
+      movies: titles?.movies ?? 0,
+      episodes: titles?.episodes ?? 0,
+      inProgress: titles?.inProgress ?? 0,
+      lastAt: Number(row.last_played_at) || null,
+    }];
+  }));
 }
 
 async function readProfileStats(userUUID: string, offsetMinutes: number): Promise<Map<string, ProfileStats>> {

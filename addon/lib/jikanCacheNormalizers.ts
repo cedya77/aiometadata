@@ -35,6 +35,7 @@ const DETAIL_KEYS = [
   'title',
   'title_english',
   'genres',
+  'broadcast',
 ];
 
 // We only need `images.jpg.large_image_url` but keep the `images` sub-tree
@@ -129,6 +130,10 @@ export function normalizeJikanAnimeDetailsForCache(detail: any) {
   // trailer - only keep youtube_id
   if (detail.trailer !== undefined) {
     normalized.trailer = normalizeJikanTrailerForCache(detail.trailer);
+  }
+
+  if (Array.isArray(detail.studios)) {
+    normalized.studios = mapIfArray(detail.studios, (studio: any) => pickDefined(studio, ['name']));
   }
 
   // genres - only keep name

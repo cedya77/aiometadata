@@ -19,6 +19,7 @@ const buildInfo: any = require('../buildInfo');
 /** The AIOStreams Jellyfin extensions this server offers, each with its version. */
 const EXTENSIONS = {
   users: 1,
+  history: 1,
   playedUpTo: 1,
   dropped: 1,
   refreshVersions: 1,

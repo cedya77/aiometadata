@@ -1,4 +1,5 @@
 import express from 'express';
+import { LRUCache } from 'lru-cache';
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
 import { mapWithConcurrency } from '../../utils/concurrency';
@@ -50,7 +51,8 @@ import { cachedArtwork } from './artwork';
 import { SIZED_WIDTH, resizeToWidth, widthStep } from '../posterCache/resize';
 import { IMAGE_CSP } from '../posterCache/proxyResponse';
 import { registerStubs } from './stubs';
-import { forgetUserSettings, recordPlayed, recordPlayedUpTo, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData, sessionTouchDue, touchSessions } from './playstate';
+import { decodeCursor, exportRow, findUser, historyPage, historyUsers, isEpisodeVideo, itemIdForVideo, userByKey, videoIdsOf } from './history';
+import { forgetUserSettings, liveSessionsFor, recordPlayed, recordPlayedUpTo, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData, sessionTouchDue, touchSessions, type LiveSession } from './playstate';
 
 const database: any = require('../database');
 
@@ -66,6 +68,11 @@ function streamNoticesOffered(): boolean {
 
 function encodeSeriesId(descriptor: any): string {
   return encodeJellyfinId({ k: 'series', t: descriptor.t, i: descriptor.i });
+}
+
+/** A show's episodes from the meta in hand, for seasons counted before the show is indexed. */
+function seriesVideosOf(meta: any): Map<string, any[]> {
+  return new Map(meta?.id && Array.isArray(meta.videos) ? [[String(meta.id), meta.videos]] : []);
 }
 
 /**
@@ -123,6 +130,105 @@ async function seriesForEpisode(userUUID: string, config: any, descriptor: any):
   }
   const meta = await fetchMeta(userUUID, 'series', descriptor.i);
   return meta ? { meta, seriesId: encodeSeriesId(descriptor) } : null;
+}
+
+async function nowPlayingItem(userUUID: string, config: any, serverId: string, itemId: string): Promise<any | null> {
+  const descriptor = await decodeJellyfinId(itemId);
+  if (descriptor?.k === 'movie') {
+    const meta = await fetchMeta(userUUID, 'movie', descriptor.i);
+    if (!meta) return null;
+    const item = metaToBaseItem(meta, descriptor.t, serverId, null);
+    item.Id = normaliseJellyfinId(itemId);
+    return item;
+  }
+  if (descriptor?.k !== 'episode') return null;
+  const found = await seriesForEpisode(userUUID, config, descriptor);
+  if (!found) return null;
+  const episodes = buildEpisodes(found.meta, descriptor.t, found.seriesId, serverId, null);
+  const wanted = normaliseJellyfinId(itemId);
+  return episodes.find((e: any) => e.Id === wanted) ?? episodes.find((e: any) => e.IndexNumber === descriptor.e && e.ParentIndexNumber === descriptor.s) ?? null;
+}
+
+type ActivityCounts = { byKey: Map<string, any>; favourites: Map<string, number> };
+
+const activityMemo = new LRUCache<string, Promise<ActivityCounts>>({ max: envInt('JELLYFIN_RESUME_CACHE_MAX', 500, 1) });
+
+/**
+ * The Activity page's counts, held for a while: the apps ask every few seconds
+ * while it is open, and counting folds every row a history holds.
+ */
+function activityCounts(userUUID: string, config: any): Promise<ActivityCounts> {
+  const held = activityMemo.get(userUUID);
+  if (held) return held;
+  const work = (async (): Promise<ActivityCounts> => {
+    const byKey: Map<string, any> = await require('./dashboard').playCounts(userUUID);
+    const owners = historyUsers(config, userUUID, null).filter((user) => user.owns);
+    const favourites = new Map<string, number>();
+    for (const user of owners) {
+      const scoped = scopeConfigToProfile({ ...config }, userUUID, user.profile.id);
+      scoped.userUUID = userUUID;
+      favourites.set(user.key, (await watchlistEntries(userUUID, scoped).catch(() => ({ entries: [] }))).entries.length);
+    }
+    return { byKey, favourites };
+  })();
+  activityMemo.set(userUUID, work, { ttl: envInt('JELLYFIN_ACTIVITY_COUNTS_TTL', 300, 10) * 1000 });
+  work.catch(() => activityMemo.delete(userUUID));
+  return work;
+}
+
+/** What each device is playing, from its last progress report, as a Jellyfin session carries it. */
+async function withNowPlaying(userUUID: string, config: any, serverId: string, sessions: any[]): Promise<void> {
+  const profile = profileKey(config);
+  const window = envInt('JELLYFIN_DASHBOARD_LIVE_SECONDS', 120, 10) * 1000;
+  const now = Date.now();
+  const playing = new Map<string, LiveSession>();
+  for (const live of await liveSessionsFor(userUUID)) {
+    if (live.profile !== profile || !live.device || now - live.at > window) continue;
+    if (!playing.has(live.device)) playing.set(live.device, live);
+  }
+  await Promise.all(sessions.map(async (session) => {
+    const live = playing.get(String(session.DeviceId));
+    if (!live) return;
+    const item = await nowPlayingItem(userUUID, config, serverId, live.itemId).catch(() => null);
+    if (!item) return;
+    session.NowPlayingItem = item;
+    session.PlayState = playStateOf(live);
+  }));
+}
+
+function playStateOf(live: LiveSession): any {
+  return {
+    PositionTicks: live.positionMs * 10000,
+    CanSeek: true,
+    IsPaused: live.paused,
+    IsMuted: false,
+    PlayMethod: 'DirectStream',
+    RepeatMode: 'RepeatNone',
+    PlaybackOrder: 'Default',
+    ...(live.playSession ? { PlaySessionId: live.playSession } : {}),
+  };
+}
+
+/** What every user of the account is playing now, one session per device. */
+async function playingSessions(userUUID: string, config: any, serverId: string): Promise<any[]> {
+  const window = envInt('JELLYFIN_DASHBOARD_LIVE_SECONDS', 120, 10) * 1000;
+  const now = Date.now();
+  const seen = new Set<string>();
+  const live = (await liveSessionsFor(userUUID)).filter((s) => {
+    if (!s.device || now - s.at > window || seen.has(`${s.profile}|${s.device}`)) return false;
+    seen.add(`${s.profile}|${s.device}`);
+    return true;
+  });
+  const sessions = await Promise.all(live.map(async (s) => {
+    const viewer = profileById(config, userUUID, s.viewer ?? (s.profile || null));
+    const scoped = scopeConfigToProfile({ ...config }, userUUID, viewer.id);
+    scoped.userUUID = userUUID;
+    const item = await nowPlayingItem(userUUID, scoped, serverId, s.itemId).catch(() => null);
+    if (!item) return null;
+    const client = { client: s.app?.client ?? 'Unknown', device: s.app?.device ?? 'Unknown', deviceId: s.device!, version: s.app?.version ?? '0.0.0' };
+    return { ...sessionInfo(viewer.userId, serverId, viewer.name, client), NowPlayingItem: item, PlayState: playStateOf(s) };
+  }));
+  return sessions.filter(Boolean);
 }
 
 /** An episode its meta does not list yet, built from the tracker's air date. */
@@ -594,6 +700,153 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return;
     }
     await signIn(req, res, userUUID, config, profile);
+  });
+
+  router.get('/AIOStreams/Activity', async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const config = await database.getUserConfig(userUUID).catch(() => null);
+    if (!config) {
+      res.json({ users: [], sessions: [] });
+      return;
+    }
+    const serverId = serverIdFor(userUUID);
+    const caller = req.jellyfin?.profileId ?? null;
+    const users = historyUsers(config, userUUID, caller);
+    const [{ byKey, favourites }, sessions] = await Promise.all([
+      activityCounts(userUUID, config),
+      caller ? Promise.resolve([]) : playingSessions(userUUID, config, serverId),
+    ]);
+    const main = listProfiles(config, userUUID)[0];
+    res.json({
+      users: users.map((user) => {
+        const row: any = byKey.get(user.key);
+        return {
+          user: userFor(user.profile, serverId),
+          avatar: user.profile.avatar,
+          hidden: false,
+          locked: Boolean(user.profile.pin),
+          historyOf: dashedGuid(user.key ? user.profile.userId : main.userId),
+          counts: user.owns
+            ? { played: row?.played ?? 0, movies: row?.movies ?? 0, episodes: row?.episodes ?? 0, inProgress: row?.inProgress ?? 0, favorites: favourites.get(user.key) ?? 0, lastAt: row?.lastAt ?? null }
+            : null,
+        };
+      }),
+      sessions,
+    });
+  });
+
+  router.get('/AIOStreams/History', async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const config = await loadConfig(req);
+    const stored = await database.getUserConfig(userUUID).catch(() => null);
+    if (!config || !stored) {
+      res.json({ items: [], cursor: null });
+      return;
+    }
+    const users = historyUsers(stored, userUUID, req.jellyfin?.profileId ?? null);
+    const asked = req.query.userId ?? req.query.UserId;
+    const scoped = asked ? findUser(users, asked) : undefined;
+    if (asked && !scoped) {
+      res.status(404).json({ Message: 'User not found' });
+      return;
+    }
+    const owners = userByKey(users);
+    const keys = scoped ? [scoped.key] : [...owners.keys()];
+    const limit = Math.min(Math.max(1, parseInt(String(req.query.limit ?? req.query.Limit ?? 50), 10) || 50), 200);
+    const localOnly = String(req.query.source ?? '') === 'local';
+    const serverId = serverIdFor(userUUID);
+    const { entries, cursor } = await historyPage(
+      (take, after) => database.listHistoryRows(userUUID, keys, { limit: take, after, localOnly }),
+      (candidates) => mapWithConcurrency(candidates, envInt('JELLYFIN_DASHBOARD_DESCRIBE_CONCURRENCY', 8, 1), (entry) =>
+        nowPlayingItem(userUUID, config, serverId, itemIdForVideo(entry.videoId)).catch(() => null)
+      ),
+      limit,
+      decodeCursor(req.query.cursor)
+    );
+    res.json({
+      items: entries.map((entry) => {
+        const episode = isEpisodeVideo(entry.videoId);
+        const { profile, videoId, item, ...rest } = entry;
+        return {
+          userId: dashedGuid((owners.get(profile) ?? users[0]).profile.userId),
+          kind: episode ? 'episode' : 'movie',
+          favorite: false,
+          ...rest,
+          item: item ?? { Id: itemIdForVideo(videoId), Name: videoId, Type: episode ? 'Episode' : 'Movie' },
+        };
+      }),
+      cursor,
+    });
+  });
+
+  // Local only: a tracker that still lists a title brings it back on its next sync.
+  router.post('/AIOStreams/History/Clear', async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const stored = await database.getUserConfig(userUUID).catch(() => null);
+    const users = stored ? historyUsers(stored, userUUID, req.jellyfin?.profileId ?? null) : [];
+    const user = findUser(users, req.body?.userId ?? req.body?.UserId);
+    if (!user) {
+      res.status(404).json({ Message: 'User not found' });
+      return;
+    }
+    const keys = req.body?.itemKeys;
+    if (keys !== undefined && (!Array.isArray(keys) || !keys.length || keys.length > 1000 || keys.some((key: any) => typeof key !== 'string' || !key))) {
+      res.status(400).json({ Message: 'userId and optional itemKeys expected' });
+      return;
+    }
+    activityMemo.delete(userUUID);
+    const cleared = await database.clearHistory(userUUID, user.key, keys ? [...new Set(keys.flatMap((key: string) => videoIdsOf(key)))] : undefined);
+    const { invalidateResume } = require('./resume');
+    invalidateResume(userUUID);
+    logger.info(`Cleared ${cleared} history row(s) of ${userUUID}${user.key ? ` (${user.key})` : ''}${keys ? '' : ', all of it'}`);
+    res.json({ cleared });
+  });
+
+  // Written a page at a time, so a long history is never held whole.
+  router.get('/AIOStreams/History/Export', async (req: any, res: any) => {
+    const userUUID = req.params.userUUID;
+    const stored = await database.getUserConfig(userUUID).catch(() => null);
+    const owners = stored ? historyUsers(stored, userUUID, req.jellyfin?.profileId ?? null).filter((user) => user.owns) : [];
+    const keys = owners.map((user) => user.key);
+    res.setHeader('Content-Disposition', `attachment; filename="watch-history-${userUUID.slice(0, 8)}.json"`);
+    res.type('json');
+    let gone = false;
+    res.once('close', () => (gone = true));
+    const write = (chunk: string): Promise<void> => {
+      if (res.write(chunk)) return Promise.resolve();
+      return new Promise((resolve) => {
+        const done = () => {
+          res.off('drain', done);
+          res.off('close', done);
+          resolve();
+        };
+        res.once('drain', done);
+        res.once('close', done);
+      });
+    };
+    try {
+      const head = JSON.stringify({
+        exportedAt: new Date().toISOString(),
+        users: owners.map((user) => ({ id: dashedGuid(user.profile.userId), profile: user.key, name: user.profile.name })),
+      });
+      await write(`${head.slice(0, -1)},"rows":[`);
+      const size = 1000;
+      let after: { profile: string; videoId: string } | undefined;
+      let first = true;
+      while (!gone) {
+        const page: any[] = await database.listPlaystatePage(userUUID, keys, size, after);
+        if (!page.length) break;
+        await write(`${first ? '' : ','}${page.map((row) => JSON.stringify(exportRow(row))).join(',')}`);
+        first = false;
+        if (page.length < size) break;
+        const last = page[page.length - 1];
+        after = { profile: String(last.profile ?? ''), videoId: String(last.video_id) };
+      }
+      res.end(']}');
+    } catch (error: any) {
+      logger.warn(`History export failed for ${userUUID}: ${error?.message || error}`);
+      res.destroy();
+    }
   });
 
   router.post('/QuickConnect/Authorize', async (req: any, res: any) => {
@@ -1104,7 +1357,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         const sortBy = String(req.query.SortBy ?? req.query.sortBy ?? '');
         const descending = String(req.query.SortOrder ?? req.query.sortOrder ?? '').toLowerCase() === 'descending';
         const applyState = async (items: any[]) =>
-          applyWatchedState(items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
+          applyWatchedState(items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config, {
+            seriesVideos: seriesVideosOf(meta),
+          });
 
         // Filtering on played judges every child, so only an unfiltered page is built alone.
         if (wantsEpisodes && !filters.includes('IsPlayed') && !filters.includes('IsUnplayed')) {
@@ -1542,7 +1797,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return;
     }
 
-    const requested = await requestedSource(req.query.MediaSourceId ?? req.body?.MediaSourceId);
+    const requested = await requestedSource(req.query.MediaSourceId ?? req.query.mediaSourceId ?? req.body?.MediaSourceId);
     // A named version keeps the list it came from.
     const named = typeof requested === 'string' && !!requested && normaliseJellyfinId(requested) !== normaliseJellyfinId(itemId);
     const all = await resolveMediaSources(req, descriptor, null, req.body?.Refresh === true && !named, req.body?.EnableRequiredHttpHeaders === true);
@@ -2455,7 +2710,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
     const seasons = await withSeasonAnimeIds(found.meta, buildSeasons(found.meta, found.descriptor.t, String(req.params.seriesId), serverIdFor(req.params.userUUID)));
     const seasonsConfig = await loadConfig(req);
-    if (seasonsConfig) await applyRatings(seasons, req.params.userUUID, profileKey(seasonsConfig));
+    if (seasonsConfig) {
+      await applyWatchedState(seasons, await watchedSnapshot(req.params.userUUID, seasonsConfig), req.params.userUUID, profileKey(seasonsConfig), seasonsConfig, {
+        seriesVideos: seriesVideosOf(found.meta),
+      });
+    }
     res.json(itemList(seasons, seasons.length, 0));
   });
 
@@ -3378,7 +3637,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
       const seasonConfig = await loadConfig(req);
       if (seasonConfig) {
-        await applyWatchedState([season], await watchedSnapshot(userUUID, seasonConfig), userUUID, profileKey(seasonConfig));
+        await applyWatchedState([season], await watchedSnapshot(userUUID, seasonConfig), userUUID, profileKey(seasonConfig), seasonConfig, {
+          seriesVideos: seriesVideosOf(meta),
+        });
       }
 
       res.json(season);
@@ -3480,13 +3741,16 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const config = await database.getUserConfig(userUUID);
     const profile = sessionProfile(req, config);
     const own = clientInfo(req);
-    const devices = await liveDevices(userUUID, profileKey(await loadConfig(req)));
+    const scoped = await loadConfig(req);
+    const devices = await liveDevices(userUUID, profileKey(scoped));
     const sessions = devices.map((device) => sessionInfo(profile.userId, serverId, profile.name, device, device));
     if (!param(req.query, 'ControllableByUserId') && !devices.some((device) => device.deviceId === own.deviceId)) {
       sessions.unshift(sessionInfo(profile.userId, serverId, profile.name, own));
     }
     const deviceId = param(req.query, 'DeviceId');
-    res.json(deviceId ? sessions.filter((session) => session.DeviceId === String(deviceId)) : sessions);
+    const answered = deviceId ? sessions.filter((session) => session.DeviceId === String(deviceId)) : sessions;
+    if (scoped) await withNowPlaying(userUUID, scoped, serverId, answered);
+    res.json(answered);
   });
 
   router.post(['/Sessions/Capabilities', '/Sessions/Capabilities/Full'], async (req: any, res: any) => {

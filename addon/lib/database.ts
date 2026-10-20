@@ -17,6 +17,12 @@ export interface WatchPatch {
 
 type DbType = 'sqlite' | 'postgres';
 
+// A row a tracker sync wrote rather than a play here: a tracker's origin, or an
+// unmarked row whose last play is not when it was written.
+const IMPORTED_PLAYSTATE = `(origin IS NOT NULL AND origin NOT IN ('server', 'play'))
+      OR ((origin IS NULL OR origin = 'play') AND (played = 1 OR position_ms > 0)
+        AND (last_played_at IS NULL OR ABS(updated_at - last_played_at) >= 2000))`;
+
 function dbTypeFromUri(uri: string | undefined): DbType | null {
   if (!uri) return null;
   if (uri.startsWith('sqlite://')) return 'sqlite';
@@ -1501,12 +1507,88 @@ class Database {
     return Number(row?.count) || 0;
   }
 
+  /** A title's play state, newest first, for the profiles given; imported rows left out for localOnly. */
+  async listHistoryRows(
+    userUUID: string,
+    profiles: string[],
+    opts: { limit: number; after?: { sortAt: number; profile: string; videoId: string }; localOnly?: boolean }
+  ): Promise<any[]> {
+    if (!profiles.length) return [];
+    const params: any[] = [];
+    const mark = (value: any) => {
+      params.push(value);
+      return this.type === 'sqlite' ? '?' : `$${params.length}`;
+    };
+    const sortAt = 'COALESCE(last_played_at, updated_at)';
+    const where = [
+      `user_uuid = ${mark(userUUID)}`,
+      `profile IN (${profiles.map((profile) => mark(profile)).join(', ')})`,
+      '(played = 1 OR position_ms > 0)',
+    ];
+    if (opts.localOnly) where.push(`NOT (${IMPORTED_PLAYSTATE})`);
+    if (opts.after) {
+      const at = mark(opts.after.sortAt);
+      const at2 = mark(opts.after.sortAt);
+      const profile = mark(opts.after.profile);
+      const profile2 = mark(opts.after.profile);
+      const videoId = mark(opts.after.videoId);
+      where.push(`(${sortAt} < ${at} OR (${sortAt} = ${at2} AND (profile > ${profile} OR (profile = ${profile2} AND video_id > ${videoId}))))`);
+    }
+    const limit = mark(opts.limit);
+    const query = `SELECT profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin, ${sortAt} AS sort_at
+      FROM jellyfin_playstate WHERE ${where.join(' AND ')}
+      ORDER BY sort_at DESC, profile, video_id LIMIT ${limit}`;
+    return (await this.allQuery(query, params)) || [];
+  }
+
+  /** The profiles' played and started rows in key order, a page at a time, for an export. */
+  async listPlaystatePage(userUUID: string, profiles: string[], limit: number, after?: { profile: string; videoId: string }): Promise<any[]> {
+    if (!profiles.length) return [];
+    const params: any[] = [];
+    const mark = (value: any) => {
+      params.push(value);
+      return this.type === 'sqlite' ? '?' : `$${params.length}`;
+    };
+    const where = [
+      `user_uuid = ${mark(userUUID)}`,
+      `profile IN (${profiles.map((profile) => mark(profile)).join(', ')})`,
+      '(played = 1 OR position_ms > 0)',
+    ];
+    if (after) {
+      const profile = mark(after.profile);
+      const profile2 = mark(after.profile);
+      const videoId = mark(after.videoId);
+      where.push(`(profile > ${profile} OR (profile = ${profile2} AND video_id > ${videoId}))`);
+    }
+    const query = `SELECT profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin
+      FROM jellyfin_playstate WHERE ${where.join(' AND ')} ORDER BY profile, video_id LIMIT ${mark(limit)}`;
+    return (await this.allQuery(query, params)) || [];
+  }
+
+  /** Removes a profile's play state and watches, for the titles given or all of them. */
+  async clearHistory(userUUID: string, profile: string, videoIds?: string[]): Promise<number> {
+    const sqlite = this.type === 'sqlite';
+    const scoped = (table: string, ids: string[] | undefined) => {
+      const params: any[] = [userUUID, profile, ...(ids ?? [])];
+      const marks = (ids ?? []).map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
+      const where = `user_uuid = ${sqlite ? '?' : '$1'} AND profile = ${sqlite ? '?' : '$2'}${ids ? ` AND video_id IN (${marks})` : ''}`;
+      return { sql: `DELETE FROM ${table} WHERE ${where}`, params };
+    };
+    let cleared = 0;
+    const chunks = videoIds ? Array.from({ length: Math.ceil(videoIds.length / 500) }, (_, i) => videoIds.slice(i * 500, i * 500 + 500)) : [undefined];
+    for (const ids of chunks) {
+      const playstate = scoped('jellyfin_playstate', ids);
+      const result = await this.runQuery(playstate.sql, playstate.params);
+      cleared += Number(sqlite ? result?.changes : result?.rowCount) || 0;
+      const watches = scoped('jellyfin_watches', ids);
+      await this.runQuery(watches.sql, watches.params);
+    }
+    return cleared;
+  }
+
   async deleteImportedPlaystate(userUUID: string, profile: string): Promise<number> {
     const [a, b] = this.type === 'sqlite' ? ['?', '?'] : ['$1', '$2'];
-    const imported = `(origin IS NOT NULL AND origin NOT IN ('server', 'play'))
-      OR ((origin IS NULL OR origin = 'play') AND (played = 1 OR position_ms > 0)
-        AND (last_played_at IS NULL OR ABS(updated_at - last_played_at) >= 2000))`;
-    const where = `user_uuid = ${a} AND profile = ${b} AND (${imported})`;
+    const where = `user_uuid = ${a} AND profile = ${b} AND (${IMPORTED_PLAYSTATE})`;
     const counted: any = await this.getQuery(`SELECT COUNT(*) AS count FROM jellyfin_playstate WHERE ${where}`, [userUUID, profile]);
     await this.runQuery(`DELETE FROM jellyfin_playstate WHERE ${where}`, [userUUID, profile]);
     await this.runQuery(`DELETE FROM jellyfin_watches WHERE user_uuid = ${a} AND profile = ${b} AND (
