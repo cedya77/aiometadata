@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.6.1](https://github.com/cedya77/aiometadata/compare/v3.6.0...v3.6.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **jellyfin:** list a dropped anime once instead of once per anime id ([491f490](https://github.com/cedya77/aiometadata/commit/491f4906a71aa5f6fd3d2463bf1a7bd1607efbcc))
+* **jellyfin:** play the version a client names in lowercase ([1a9df69](https://github.com/cedya77/aiometadata/commit/1a9df69a7e9d82724b73248be64f11ce4f6add57))
+* **jellyfin:** show watched counts and ticks on seasons ([3be414a](https://github.com/cedya77/aiometadata/commit/3be414a273c3e3ecb64617cab67efd575554a9d2))
+
 ## [3.6.0](https://github.com/cedya77/aiometadata/compare/v3.5.1...v3.6.0) (2026-10-20)
 
 
