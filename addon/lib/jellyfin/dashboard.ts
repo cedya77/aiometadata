@@ -431,24 +431,35 @@ export interface SyncRow {
   oldestPendingAt: number | null;
   attempts: number;
   lastError: string | null;
+  readError: string | null;
 }
 
-async function trackerSync(config: any, userUUID: string): Promise<SyncRow[]> {
-  const sources = new Map<string, { service: string; profiles: string[]; keys: Set<string> }>();
+type SyncSource = { service: string; profiles: string[]; keys: Set<string>; credential: string; scoped: any };
+
+function syncSources(config: any, userUUID: string, only: string | null = null): Map<string, SyncSource> {
+  const sources = new Map<string, SyncSource>();
   for (const profile of historyProfiles(config, userUUID)) {
+    if (only !== null && profile.key !== only) continue;
     const scoped = scopeConfigToProfile(config, userUUID, profile.key || null);
     for (const service of CAPABLE) {
       const credential = credentialFor(scoped, service);
       if (!credential) continue;
       const key = sourceKeyFor(service, credential);
-      const source = sources.get(key) ?? { service, profiles: [], keys: new Set<string>() };
+      const source = sources.get(key) ?? { service, profiles: [], keys: new Set<string>(), credential, scoped };
       source.profiles.push(profile.name);
       source.keys.add(profile.key);
       sources.set(key, source);
     }
   }
+  return sources;
+}
+
+async function trackerSync(config: any, userUUID: string): Promise<SyncRow[]> {
+  const sources = syncSources(config, userUUID);
   const queued: any[] = await database.outboxForConfiguration(userUUID).catch(() => []);
+  const reads: any[] = await database.listTrackerActivity([...sources.keys()], Date.now() - 2 * DAY_MS, 1000).catch(() => []);
   return mapWithConcurrency([...sources.entries()], 4, async ([key, source]): Promise<SyncRow> => {
+    const lastRead = reads.find((row) => row.source_key === key && (row.kind === 'read' || row.kind === 'readFailed'));
     const state = await database.getTrackerSync(key).catch(() => null);
     const waiting = queued.filter((row) => row.service === source.service && source.keys.has(String(row.profile ?? '')));
     const failed = [...waiting].reverse().find((row) => row.last_error);
@@ -462,8 +473,148 @@ async function trackerSync(config: any, userUUID: string): Promise<SyncRow[]> {
       oldestPendingAt: waiting.length ? Math.min(...waiting.map((row) => Number(row.created_at) || Date.now())) : null,
       attempts: waiting.reduce((max, row) => Math.max(max, Number(row.attempts) || 0), 0),
       lastError: failed ? String(failed.last_error) : null,
+      readError: lastRead?.kind === 'readFailed' ? String(parseDetail(lastRead.detail).error ?? 'The last read failed') : null,
     };
   });
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const QUIET_VERBS = new Set(['Started watching', 'Paused']);
+
+const parseDetail = (value: unknown): Record<string, any> => {
+  try {
+    return value ? JSON.parse(String(value)) : {};
+  } catch {
+    return {};
+  }
+};
+
+export async function dashboardSync(userUUID: string, profile: string | null): Promise<any | null> {
+  const config = await database.getUserConfig(userUUID).catch(() => null);
+  if (!config) return null;
+  const sources = syncSources(config, userUUID, profile);
+  const keys = [...sources.keys()];
+  const now = Date.now();
+  const { summariseJob } = require('../trackerActivity');
+  const [queued, activity, states] = await Promise.all([
+    database.outboxRowsForConfiguration(userUUID).catch(() => []),
+    database.listTrackerActivity(keys, now - envInt('JELLYFIN_TRACKER_ACTIVITY_DAYS', 14, 1) * DAY_MS).catch(() => []),
+    Promise.all(keys.map((key) => database.getTrackerSync(key).catch(() => null))),
+  ]);
+  const laneOf = (service: string, profileKeyOfRow: string) => keys.find((key) => sources.get(key)!.service === service && sources.get(key)!.keys.has(profileKeyOfRow));
+
+  const writes = (queued as any[]).map((row) => {
+    let payload: any = {};
+    try {
+      payload = JSON.parse(row.payload);
+    } catch {}
+    const job = summariseJob(row.op, payload, row.item_key);
+    return {
+      id: Number(row.id),
+      lane: laneOf(String(row.service), String(row.profile ?? '')),
+      service: String(row.service),
+      op: String(row.op),
+      verb: job.verb,
+      count: job.count,
+      video: job.video,
+      attempts: Number(row.attempts) || 0,
+      createdAt: Number(row.created_at) || now,
+      nextAt: Number(row.next_at) || now,
+      sending: Number(row.claimed_until) > now,
+      lastError: row.last_error ? String(row.last_error) : null,
+    };
+  }).filter((write) => write.lane);
+
+  const events = (activity as any[]).map((row) => ({ ...row, at: Number(row.at), detail: parseDetail(row.detail) }));
+  const feedRows = events.filter((row) => row.user_uuid === userUUID && ['sent', 'failed', 'dropped'].includes(row.kind) && !QUIET_VERBS.has(row.detail.verb)
+    && (profile === null || String(row.profile ?? '') === profile));
+  const feed: any[] = [];
+  for (const row of feedRows) {
+    const held = feed.find((entry) => entry.video === row.video && entry.verb === row.detail.verb && Math.abs(entry.at - row.at) < 2 * 60 * 1000);
+    const mark = { service: String(row.service), kind: String(row.kind), reason: row.detail.reason ?? null };
+    if (held) {
+      if (!held.services.some((s: any) => s.service === mark.service)) held.services.push(mark);
+      continue;
+    }
+    if (feed.length >= envInt('JELLYFIN_DASHBOARD_SYNC_FEED', 60, 10)) continue;
+    feed.push({ at: row.at, verb: String(row.detail.verb ?? row.op ?? ''), count: Number(row.detail.count) || 1, video: row.video ? String(row.video) : null, services: [mark] });
+  }
+
+  const videos = [...new Set([...writes.map((w) => w.video), ...feed.map((f) => f.video)].filter(Boolean) as string[])].slice(0, 120);
+  const named = new Map<string, Named | null>();
+  await mapWithConcurrency(videos, envInt('JELLYFIN_DASHBOARD_DESCRIBE_CONCURRENCY', 8, 1), async (video: string) => {
+    named.set(video, await withDeadline(describe(userUUID, video).catch(() => null)));
+  });
+  const label = (video: string | null) => {
+    const n = video ? named.get(video) : null;
+    return { title: n?.title && n.title !== video ? n.title : null, episode: n?.episode ?? null, imageUrl: n?.imageUrl ?? n?.backdropUrl ?? null };
+  };
+
+  const lanes = keys.map((key, i) => {
+    const source = sources.get(key)!;
+    const state: any = states[i];
+    const mine = events.filter((row) => row.source_key === key);
+    const lastRead = mine.find((row) => row.kind === 'read');
+    const lastReadFailure = mine.find((row) => row.kind === 'readFailed');
+    const day = mine.filter((row) => row.at >= now - DAY_MS);
+    const waiting = writes.filter((w) => w.lane === key);
+    return {
+      key,
+      service: source.service,
+      profiles: source.profiles,
+      syncedAt: Number(state?.synced_at) || null,
+      fullAt: Number(state?.full_at) || null,
+      imported: Number(state?.version) > 0,
+      readError: lastReadFailure && (!lastRead || lastReadFailure.at > lastRead.at) ? String(lastReadFailure.detail.error ?? '') : null,
+      pending: waiting.length,
+      nextTryAt: waiting.length ? Math.min(...waiting.map((w) => w.nextAt)) : null,
+      lastError: [...waiting].reverse().find((w) => w.lastError)?.lastError ?? null,
+      sent: day.filter((row) => row.kind === 'sent').length,
+      failed: day.filter((row) => row.kind === 'failed').length,
+      pulse: day.slice(0, 400).map((row) => ({ at: row.at, kind: row.kind, verb: row.detail.verb ?? null, video: row.video ?? null, reason: row.detail.reason ?? row.detail.error ?? null, changed: row.detail.changed ?? null, full: row.detail.full ?? null })),
+    };
+  });
+
+  return {
+    now,
+    lanes,
+    queue: writes.map((w) => ({ ...w, ...label(w.video) })),
+    feed: feed.map((f) => ({ ...f, ...label(f.video) })),
+  };
+}
+
+export async function dashboardSyncNow(userUUID: string, key: string, full: boolean): Promise<{ ms: number; changed: boolean } | null> {
+  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const source = config ? syncSources(config, userUUID).get(key) : null;
+  if (!source) return null;
+  const { syncMirror } = require('./trackerMirror');
+  const before = Number((await database.getTrackerSync(key).catch(() => null))?.version) || 0;
+  const started = Date.now();
+  const version = await syncMirror(source.service, source.credential, source.scoped, { full });
+  return { ms: Date.now() - started, changed: version !== before };
+}
+
+export async function dashboardOutbox(userUUID: string, action: 'retry' | 'drop', ids: number[]): Promise<number | null> {
+  const config = await database.getUserConfig(userUUID).catch(() => null);
+  if (!config) return null;
+  if (action === 'retry') {
+    const hurried = await database.hurryTrackerOutbox(userUUID, ids);
+    require('../trackerOutbox').wakeTrackerOutbox();
+    return hurried;
+  }
+  const dropped: any[] = await database.dropTrackerOutbox(userUUID, ids);
+  const { noteActivity, summariseJob } = require('../trackerActivity');
+  for (const row of dropped) {
+    const credential = credentialFor(scopeConfigToProfile(config, userUUID, row.profile || null), row.service);
+    if (!credential) continue;
+    let payload: any = {};
+    try {
+      payload = JSON.parse(row.payload);
+    } catch {}
+    const job = summariseJob(row.op, payload, row.item_key);
+    await noteActivity({ sourceKey: sourceKeyFor(row.service, credential), service: row.service, kind: 'dropped', userUUID, profile: row.profile ?? '', op: row.op, video: job.video, detail: { verb: job.verb, count: job.count, reason: 'Dropped from the dashboard' } });
+  }
+  return dropped.length;
 }
 
 /** One configuration: its profiles with counts, and the sessions, positions and recent plays of one profile or all. */

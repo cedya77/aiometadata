@@ -41,19 +41,20 @@ export function duration(ms: number): string {
   const m = minutes % 60;
   return m ? `${h}h ${m}m` : `${h}h`;
 }
-export function useFolded(key: string): [boolean, () => void] {
+export function useFolded(key: string, initial = false): [boolean, () => void] {
   const [folded, setFolded] = useState(() => {
     try {
-      return localStorage.getItem(key) === "1";
+      const stored = localStorage.getItem(key);
+      return stored === null ? initial : stored === "1";
     } catch {
-      return false;
+      return initial;
     }
   });
   const toggle = () => {
     setFolded(!folded);
     try {
-      if (folded) localStorage.removeItem(key);
-      else localStorage.setItem(key, "1");
+      if (!folded === initial) localStorage.removeItem(key);
+      else localStorage.setItem(key, folded ? "0" : "1");
     } catch {}
   };
   return [folded, toggle];

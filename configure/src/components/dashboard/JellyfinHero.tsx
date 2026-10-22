@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sizedArt } from "./art";
 import { Loader2, Pause, Play } from "lucide-react";
-import { type JellyfinConfiguration, type JellyfinProfileSummary, type JellyfinSessionRow, type JellyfinSyncRow } from "@/hooks/useDashboardQueries";
+import { type JellyfinConfiguration, type JellyfinProfileSummary, type JellyfinSessionRow } from "@/hooks/useDashboardQueries";
 import { Art, ShelfTitle } from "./JellyfinShared";
 import { when, clock, duration, useFolded, dayKey, type Activity } from "./jellyfinUtils";
 
-const SERVICE_LABELS: Record<string, string> = { mdblist: "MDBList", simkl: "Simkl", anilist: "AniList", mal: "MyAnimeList", publicmetadb: "PublicMetaDB" };
 function Avatar({ src, name, size }: { src: string | null; name: string; size: "sm" | "lg" }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
@@ -120,41 +119,6 @@ export function Hero({ data, profile, onProfile, activity, controls, switching }
         )}
       </div>
     </div>
-  );
-}
-function SyncChip({ row }: { row: JellyfinSyncRow }) {
-  const tone = row.lastError ? "bg-red-500" : row.pending > 0 ? "bg-amber-400" : row.imported ? "bg-emerald-500" : "bg-muted-foreground";
-  const detail = [
-    row.profiles.join(", "),
-    row.fullAt ? `full read ${when(row.fullAt)}` : "never read in full",
-    row.pending ? `${row.pending} waiting since ${when(row.oldestPendingAt)}, ${row.attempts} ${row.attempts === 1 ? "try" : "tries"}` : "",
-    row.lastError ?? "",
-  ].filter(Boolean).join(" · ");
-  return (
-    <span title={detail} className="glass inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs">
-      <span className={`h-1.5 w-1.5 rounded-full ${tone}`} />
-      <span className="font-medium">{SERVICE_LABELS[row.service] ?? row.service}</span>
-      <span className="text-muted-foreground">{row.imported ? `synced ${when(row.syncedAt)}` : "not imported yet"}</span>
-      {row.pending > 0 && <span className="text-amber-400 tabular-nums">{row.pending} waiting</span>}
-    </span>
-  );
-}
-export function SyncStrip({ rows }: { rows: JellyfinSyncRow[] }) {
-  const failed = rows.filter((r) => r.lastError);
-  return (
-    <section className="px-4 py-3 sm:px-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-1 text-[11px] uppercase tracking-wide text-muted-foreground">Trackers</span>
-        {rows.length === 0
-          ? <span className="text-xs text-muted-foreground">None connected. History is kept on this server only.</span>
-          : rows.map((row, i) => <SyncChip key={`${row.service}-${i}`} row={row} />)}
-      </div>
-      {failed.map((row, i) => (
-        <p key={`${row.service}-error-${i}`} className="mt-2 text-[11px] text-red-400 truncate" title={row.lastError ?? undefined}>
-          {SERVICE_LABELS[row.service] ?? row.service}: {row.lastError}
-        </p>
-      ))}
-    </section>
   );
 }
 const HEAT = ["bg-muted/50", "bg-blue-500/25", "bg-blue-500/50", "bg-blue-500/80", "bg-blue-400"];

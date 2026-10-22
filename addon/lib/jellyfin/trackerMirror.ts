@@ -39,13 +39,39 @@ const running = new Map<string, Promise<number>>();
  * and returns its version, which moves only when something did. The first sync of an
  * account reads its whole library once.
  */
-export function syncMirror(service: MirrorService, credential: string, config: any): Promise<number> {
+export function syncMirror(service: MirrorService, credential: string, config: any, options: { full?: boolean } = {}): Promise<number> {
   const key = sourceKeyFor(service, credential);
   const held = running.get(key);
-  if (held) return held;
-  const work = runSync(service, key, credential, config).finally(() => running.delete(key));
+  if (held && !options.full) return held;
+  const work = (held ? held.catch(() => 0) : Promise.resolve(0))
+    .then(async () => {
+      const { recordingTrackerCalls } = require('../../utils/trackerCalls');
+      let version = 0;
+      const { calls, error } = await recordingTrackerCalls(async () => { version = await runSync(service, key, credential, config, options.full === true); });
+      if (!error) return version;
+      const said = readFailure(calls, error);
+      require('../trackerActivity').noteRead(key, service, { error: said });
+      if (error && typeof error === 'object') error.trackerSaid = said;
+      throw error;
+    })
+    .finally(() => { if (running.get(key) === work) running.delete(key); });
   running.set(key, work);
   return work;
+}
+
+function readFailure(calls: Array<{ status: number; body?: string }>, error: any): string {
+  const failed = [...calls].reverse().find((call) => call.status >= 400 || call.status === 0);
+  if (!failed) return String(error?.message || error).slice(0, 300);
+  if (failed.status === 0) return 'The tracker did not answer';
+  let said: string | null = null;
+  try {
+    const data = failed.body ? JSON.parse(failed.body) : null;
+    said = data?.errors?.[0]?.message ?? data?.error_description ?? data?.message ?? (typeof data?.error === 'string' ? data.error : null);
+  } catch {
+    // Bodies are kept short, so a long one is cut before it parses.
+    said = failed.body?.match(/"(?:message|error_description|error)"\s*:\s*"([^"]+)"/)?.[1] ?? (failed.body ? failed.body.slice(0, 160) : null);
+  }
+  return `${failed.status}${said ? `: ${said}` : ''}`.slice(0, 300);
 }
 
 /** The version a mirror was last left at, without syncing; 0 when never imported. */
@@ -54,7 +80,7 @@ export async function mirrorVersion(service: MirrorService, credential: string):
   return Number(state?.version) || 0;
 }
 
-async function runSync(service: MirrorService, key: string, credential: string, config: any): Promise<number> {
+async function runSync(service: MirrorService, key: string, credential: string, config: any, full = false): Promise<number> {
   const state = await database.getTrackerSync(key);
   let watermark: any = null;
   try {
@@ -64,7 +90,7 @@ async function runSync(service: MirrorService, key: string, credential: string, 
   }
   let version = Number(state?.version) || 0;
   // A mirror never filled starts from a full read, whatever its watermark says.
-  if (!version) watermark = null;
+  if (!version || full) watermark = null;
 
   const started = Date.now();
   const outcome = service === 'simkl'
@@ -85,6 +111,7 @@ async function runSync(service: MirrorService, key: string, credential: string, 
   if (outcome.changed) {
     logger.debug(`${service} mirror ${key} ${outcome.full ? 'imported in full' : 'updated'} to version ${version} in ${Date.now() - started}ms`);
   }
+  require('../trackerActivity').noteRead(key, service, { changed: Boolean(outcome.changed), full: Boolean(outcome.full), ms: Date.now() - started });
   return version;
 }
 

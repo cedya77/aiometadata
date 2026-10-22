@@ -1578,6 +1578,7 @@ export interface JellyfinSyncRow {
   oldestPendingAt: number | null;
   attempts: number;
   lastError: string | null;
+  readError?: string | null;
 }
 
 export interface JellyfinConfiguration {
@@ -1927,6 +1928,98 @@ export function useJellyfinTitleAction() {
       body: JSON.stringify({ action, itemIds, profile: profile ?? undefined, rating }),
     });
     if (!response.ok) throw new Error(`Could not save the change (${response.status})`);
+  };
+}
+
+export type JellyfinSyncKind = 'read' | 'readFailed' | 'sent' | 'retry' | 'failed' | 'dropped';
+
+export interface JellyfinSyncPulse {
+  at: number;
+  kind: JellyfinSyncKind;
+  verb: string | null;
+  video: string | null;
+  reason: string | null;
+  changed: boolean | null;
+  full: boolean | null;
+}
+
+export interface JellyfinSyncLane {
+  key: string;
+  service: string;
+  profiles: string[];
+  syncedAt: number | null;
+  fullAt: number | null;
+  imported: boolean;
+  readError: string | null;
+  pending: number;
+  nextTryAt: number | null;
+  lastError: string | null;
+  sent: number;
+  failed: number;
+  pulse: JellyfinSyncPulse[];
+}
+
+export interface JellyfinSyncWrite {
+  id: number;
+  lane: string;
+  service: string;
+  op: string;
+  verb: string;
+  count: number;
+  video: string | null;
+  attempts: number;
+  createdAt: number;
+  nextAt: number;
+  sending: boolean;
+  lastError: string | null;
+  title: string | null;
+  episode: string | null;
+  imageUrl: string | null;
+}
+
+export interface JellyfinSyncFeedItem {
+  at: number;
+  verb: string;
+  count: number;
+  video: string | null;
+  services: Array<{ service: string; kind: JellyfinSyncKind; reason: string | null }>;
+  title: string | null;
+  episode: string | null;
+  imageUrl: string | null;
+}
+
+export interface JellyfinSync {
+  now: number;
+  lanes: JellyfinSyncLane[];
+  queue: JellyfinSyncWrite[];
+  feed: JellyfinSyncFeedItem[];
+}
+
+export function useJellyfinSync(userUUID: string, profile: string | null, open: boolean, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<JellyfinSync>(
+    ['dashboard', 'jellyfin', 'sync', userUUID, profile],
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync${params.size ? `?${params}` : ''}`,
+    { ...options, enabledWhen: open }
+  );
+}
+
+export function useJellyfinSyncActions() {
+  const getHeaders = useApiHeaders();
+  const post = async <T,>(userUUID: string, path: string, body: unknown): Promise<T> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/${path}`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error || `The request failed (${response.status})`);
+    return data as T;
+  };
+  return {
+    run: (userUUID: string, key: string, full = false) => post<{ ms: number; changed: boolean }>(userUUID, 'run', { key, full }),
+    outbox: (userUUID: string, action: 'retry' | 'drop', ids: number[]) => post<{ count: number }>(userUUID, 'outbox', { action, ids }),
   };
 }
 

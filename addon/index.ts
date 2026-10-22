@@ -8518,6 +8518,60 @@ addon.post("/api/dashboard/jellyfin/:userUUID/title/watch-date", requireDashboar
   }
 });
 
+addon.get("/api/dashboard/jellyfin/:userUUID/sync", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const sync = await require('./lib/jellyfin/dashboard').dashboardSync(String(req.params.userUUID), profile);
+    if (!sync) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(sync);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the tracker sync' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/run", requireDashboardAdmin, async (req, res) => {
+  try {
+    const key = typeof req.body?.key === 'string' ? req.body.key : '';
+    if (!key) {
+      res.status(400).json({ error: 'Name the tracker account to read' });
+      return;
+    }
+    const done = await require('./lib/jellyfin/dashboard').dashboardSyncNow(String(req.params.userUUID), key, req.body?.full === true);
+    if (!done) {
+      res.status(404).json({ error: 'No such tracker account on this configuration' });
+      return;
+    }
+    res.json(done);
+  } catch (error: any) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(502).json({ error: `The tracker refused the read: ${String(error?.trackerSaid ?? error?.message ?? 'no answer').slice(0, 200)}` });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/outbox", requireDashboardAdmin, async (req, res) => {
+  try {
+    const action = req.body?.action === 'retry' || req.body?.action === 'drop' ? req.body.action : null;
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter((id) => Number.isInteger(id) && id > 0).slice(0, 500) : [];
+    if (!action || !ids.length) {
+      res.status(400).json({ error: 'Name retry or drop and the writes it applies to' });
+      return;
+    }
+    const count = await require('./lib/jellyfin/dashboard').dashboardOutbox(String(req.params.userUUID), action, ids);
+    if (count === null) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json({ count });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to change the waiting writes' });
+  }
+});
+
 addon.get("/api/dashboard/jellyfin/:userUUID/devices", requireDashboardAdmin, async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;

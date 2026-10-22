@@ -330,6 +330,8 @@ async function deliver(row: any): Promise<void> {
 
   if (outcome.kind === 'done') {
     await database.deleteTrackerOutbox(row.id);
+    // No calls means the tracker had no use for the write, so nothing was sent.
+    if (calls.length) noteDelivery(row, config, payload, 'sent', { status: calls[calls.length - 1]?.status ?? null, attempts: row.attempts + 1 });
     if (row.attempts > 0) logger.info(`Sent ${label} after ${row.attempts + 1} attempts`);
     settle(row.user_uuid, config, [row.op]);
     return;
@@ -337,8 +339,13 @@ async function deliver(row: any): Promise<void> {
   if (outcome.kind === 'drop') {
     await database.deleteTrackerOutbox(row.id);
     // Nothing to clear or remove is the outcome those writes wanted.
-    if (outcome.status === 404 && (row.op === 'clearResume' || row.op === 'unwatch')) logger.debug(`Nothing to change for ${label}: ${outcome.reason}`);
-    else logger.warn(`Gave up on ${label}: ${outcome.reason}`);
+    if (outcome.status === 404 && (row.op === 'clearResume' || row.op === 'unwatch')) {
+      noteDelivery(row, config, payload, 'sent', { status: 404, attempts: row.attempts + 1 });
+      logger.debug(`Nothing to change for ${label}: ${outcome.reason}`);
+    } else {
+      noteDelivery(row, config, payload, 'failed', { status: outcome.status ?? null, reason: outcome.reason, attempts: row.attempts + 1 });
+      logger.warn(`Gave up on ${label}: ${outcome.reason}`);
+    }
     return;
   }
 
@@ -346,11 +353,35 @@ async function deliver(row: any): Promise<void> {
   const nextAt = Math.max(outcome.at ?? 0, Date.now() + (outcome.reason === 'Simkl write lock' ? 0 : backoffMs(attempts)));
   if (nextAt >= row.expires_at) {
     await database.deleteTrackerOutbox(row.id);
+    noteDelivery(row, config, payload, 'failed', { reason: outcome.reason, attempts });
     logger.warn(`Gave up on ${label} after ${attempts} attempts: ${outcome.reason}`);
     return;
   }
   await database.retryTrackerOutbox(row.id, attempts, nextAt, outcome.reason);
+  noteDelivery(row, config, payload, 'retry', { reason: outcome.reason, attempts, nextAt });
   logger.debug(`Will retry ${label} at ${new Date(nextAt).toISOString()}: ${outcome.reason}`);
+}
+
+function noteDelivery(row: any, config: any, payload: any, kind: 'sent' | 'retry' | 'failed', detail: Record<string, unknown>): void {
+  const credential = credentialOf(config, row.service);
+  if (!credential) return;
+  const { sourceKeyFor } = require('./jellyfin/trackerMirror');
+  const { noteActivity, summariseJob } = require('./trackerActivity');
+  const job = summariseJob(row.op, payload, row.item_key);
+  void noteActivity({
+    sourceKey: sourceKeyFor(row.service, credential),
+    service: row.service,
+    kind,
+    userUUID: row.user_uuid,
+    profile: row.profile ?? '',
+    op: row.op,
+    video: job.video,
+    detail: { verb: job.verb, count: job.count, ...detail },
+  });
+}
+
+export function wakeTrackerOutbox(): void {
+  kick();
 }
 
 // --- After a write lands ------------------------------------------------------------

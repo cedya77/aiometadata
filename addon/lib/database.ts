@@ -448,6 +448,20 @@ class Database {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_coalesce ON tracker_outbox(lane, coalesce_key)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
+      `CREATE TABLE IF NOT EXISTS tracker_activity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_key TEXT NOT NULL,
+        service TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        user_uuid TEXT,
+        profile TEXT,
+        op TEXT,
+        video TEXT,
+        detail TEXT,
+        at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_activity_source ON tracker_activity(source_key, at)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_activity_user ON tracker_activity(user_uuid, at)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_watch_index (
         source_key TEXT NOT NULL,
         video_id TEXT NOT NULL,
@@ -687,6 +701,20 @@ class Database {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_coalesce ON tracker_outbox(lane, coalesce_key)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
+      `CREATE TABLE IF NOT EXISTS tracker_activity (
+        id BIGSERIAL PRIMARY KEY,
+        source_key VARCHAR(64) NOT NULL,
+        service TEXT NOT NULL,
+        kind VARCHAR(16) NOT NULL,
+        user_uuid VARCHAR(64),
+        profile TEXT,
+        op TEXT,
+        video TEXT,
+        detail TEXT,
+        at BIGINT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_activity_source ON tracker_activity(source_key, at)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_activity_user ON tracker_activity(user_uuid, at)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_watch_index (
         source_key VARCHAR(64) NOT NULL,
         video_id TEXT NOT NULL,
@@ -1860,6 +1888,56 @@ class Database {
       [lane, Date.now()]
     );
     return rows.map((row: any) => ({ ...row, created_at: Number(row.created_at) }));
+  }
+
+  async outboxRowsForConfiguration(userUUID: string, limit = 200): Promise<any[]> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT id, profile, service, op, item_key, payload, attempts, next_at, claimed_until, created_at, last_error FROM tracker_outbox WHERE user_uuid = ? AND expires_at > ? ORDER BY id LIMIT ?'
+      : 'SELECT id, profile, service, op, item_key, payload, attempts, next_at, claimed_until, created_at, last_error FROM tracker_outbox WHERE user_uuid = $1 AND expires_at > $2 ORDER BY id LIMIT $3';
+    return (await this.allQuery(query, [userUUID, Date.now(), limit])) || [];
+  }
+
+  async hurryTrackerOutbox(userUUID: string, ids: number[]): Promise<number> {
+    if (!ids.length) return 0;
+    const sqlite = this.type === 'sqlite';
+    const marks = ids.map((_, i) => (sqlite ? '?' : `$${i + 4}`)).join(', ');
+    const result = await this.runQuery(
+      `UPDATE tracker_outbox SET next_at = ${sqlite ? '?' : '$1'} WHERE user_uuid = ${sqlite ? '?' : '$2'} AND claimed_until <= ${sqlite ? '?' : '$3'} AND id IN (${marks})`,
+      [Date.now(), userUUID, Date.now(), ...ids]
+    );
+    return Number(result?.changes ?? result?.rowCount ?? 0);
+  }
+
+  async dropTrackerOutbox(userUUID: string, ids: number[]): Promise<any[]> {
+    if (!ids.length) return [];
+    const sqlite = this.type === 'sqlite';
+    const marks = ids.map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
+    const where = `user_uuid = ${sqlite ? '?' : '$1'} AND claimed_until <= ${sqlite ? '?' : '$2'} AND id IN (${marks})`;
+    const params = [userUUID, Date.now(), ...ids];
+    const rows = (await this.allQuery(`SELECT id, profile, service, op, item_key, payload FROM tracker_outbox WHERE ${where}`, params)) || [];
+    if (rows.length) await this.runQuery(`DELETE FROM tracker_outbox WHERE ${where}`, params);
+    return rows;
+  }
+
+  async addTrackerActivity(row: { sourceKey: string; service: string; kind: string; userUUID?: string | null; profile?: string | null; op?: string | null; video?: string | null; detail?: unknown; at: number }): Promise<void> {
+    const query = this.type === 'sqlite'
+      ? 'INSERT INTO tracker_activity (source_key, service, kind, user_uuid, profile, op, video, detail, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      : 'INSERT INTO tracker_activity (source_key, service, kind, user_uuid, profile, op, video, detail, at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)';
+    await this.runQuery(query, [row.sourceKey, row.service, row.kind, row.userUUID ?? null, row.profile ?? null, row.op ?? null, row.video ?? null, row.detail ? JSON.stringify(row.detail) : null, row.at]);
+  }
+
+  async listTrackerActivity(sourceKeys: string[], since: number, limit = 2000): Promise<any[]> {
+    if (!sourceKeys.length) return [];
+    const sqlite = this.type === 'sqlite';
+    const marks = sourceKeys.map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
+    const query = `SELECT id, source_key, service, kind, user_uuid, profile, op, video, detail, at FROM tracker_activity
+      WHERE at >= ${sqlite ? '?' : '$1'} AND source_key IN (${marks}) ORDER BY at DESC, id DESC LIMIT ${sqlite ? '?' : '$2'}`;
+    const params = sqlite ? [since, ...sourceKeys, limit] : [since, limit, ...sourceKeys];
+    return (await this.allQuery(query, params)) || [];
+  }
+
+  async pruneTrackerActivity(before: number): Promise<void> {
+    await this.runQuery(`DELETE FROM tracker_activity WHERE at < ${this.type === 'sqlite' ? '?' : '$1'}`, [before]);
   }
 
   async deleteTrackerOutbox(id: number): Promise<void> {

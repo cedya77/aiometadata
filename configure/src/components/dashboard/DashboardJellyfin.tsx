@@ -18,7 +18,8 @@ import {
   type JellyfinPlayRow,
   type JellyfinTitleRef,
 } from "@/hooks/useDashboardQueries";
-import { ActivityMap, Hero, SyncStrip } from "./JellyfinHero";
+import { ActivityMap, Hero } from "./JellyfinHero";
+import JellyfinSync from "./JellyfinSync";
 import { MoreFooter, PlayTable, PlayedByDay, ProgressCard, Row } from "./JellyfinPlays";
 import { Sentinel, Shelf, Stat } from "./JellyfinShared";
 import { Shows } from "./JellyfinShows";
@@ -134,7 +135,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
         </div>
       ) : (
       <div className={`divide-y divide-white/[0.06] border-t border-white/[0.06] transition-opacity ${isFetching && !isLoading ? "opacity-60" : "opacity-100"}`}>
-        <SyncStrip rows={data.sync} />
+        <JellyfinSync key={`sync:${profile ?? ""}`} userUUID={userUUID} profile={profile} rows={data.sync} activeTab={activeTab} />
         <Shelf
           title="Continue watching"
           count={progress.more ? data.totals?.progress ?? progress.rows.length : progress.rows.length}
