@@ -151,6 +151,7 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
     <div
       onClick={selecting ? onToggleSelect : undefined}
       onContextMenu={(event) => { if (!selecting) { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); } }}
+      data-episode={ep.id}
       className={cx("group relative", selecting && "cursor-pointer", unaired && "opacity-60", className)}
     >
       <div className="relative aspect-video w-full overflow-hidden rounded-md bg-white/5">
@@ -186,7 +187,7 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
         )}
         <div className="pointer-events-none absolute inset-0 z-20 rounded-md ring-1 ring-inset ring-white/10 transition group-hover:ring-white/25" />
         {progress > 0 && (
-          <div className="absolute inset-x-0 bottom-0 h-1 bg-gray-700"><div className="h-full bg-blue-500 transition-[width]" style={{ width: `${progress}%` }} /></div>
+          <div className="absolute inset-x-0 bottom-0 z-30 h-1 bg-gray-700"><div className="h-full bg-blue-500 transition-[width]" style={{ width: `${progress}%` }} /></div>
         )}
       </div>
       <div className="relative mt-2 flex items-start gap-1">
@@ -289,8 +290,9 @@ function SeasonRail({ seasons, watched, selected, onSelect, onMenu }: { seasons:
   );
 }
 
-function EpisodeRow({ children }: { children: React.ReactNode }) {
+function EpisodeRow({ focus, children }: { focus: string | null; children: React.ReactNode }) {
   const track = useRef<HTMLDivElement>(null);
+  const focused = useRef(false);
   const [edges, setEdges] = useState({ start: true, end: false });
   const measure = () => {
     const el = track.current;
@@ -299,6 +301,13 @@ function EpisodeRow({ children }: { children: React.ReactNode }) {
     const end = el.scrollLeft + el.clientWidth >= el.scrollWidth - 4;
     setEdges((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
   };
+  useLayoutEffect(() => {
+    const el = track.current;
+    const card = focus && !focused.current ? el?.querySelector<HTMLElement>(`[data-episode="${CSS.escape(focus)}"]`) : null;
+    if (!el || !card) return;
+    focused.current = true;
+    el.scrollLeft = card.offsetLeft - el.offsetLeft - (Number.parseFloat(getComputedStyle(el).scrollPaddingLeft) || 0);
+  }, [focus]);
   useEffect(measure, [children]);
   const page = (dir: 1 | -1) => track.current?.scrollBy({ left: dir * track.current.clientWidth * 0.85, behavior: "smooth" });
   const arrow = "glass absolute top-[22%] z-20 hidden size-11 items-center justify-center rounded-full text-white transition hover:bg-black/60 md:flex";
@@ -688,7 +697,7 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
                   })()}
                 </div>
                 {layout === "row" || isPhone
-                  ? <EpisodeRow>{episodes.map((ep) => card(ep, "w-64 shrink-0 snap-start lg:w-72 2xl:w-80"))}</EpisodeRow>
+                  ? <EpisodeRow key={shownSeason ?? ""} focus={next?.season === shownSeason ? next.id : null}>{episodes.map((ep) => card(ep, "w-64 shrink-0 snap-start lg:w-72 2xl:w-80"))}</EpisodeRow>
                   : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">{episodes.map((ep) => card(ep))}</div>}
               </section>
             )}
