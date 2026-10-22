@@ -447,6 +447,7 @@ class Database {
         last_error TEXT
       )`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_coalesce ON tracker_outbox(lane, coalesce_key)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_watch_index (
         source_key TEXT NOT NULL,
         video_id TEXT NOT NULL,
@@ -685,6 +686,7 @@ class Database {
         last_error TEXT
       )`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_coalesce ON tracker_outbox(lane, coalesce_key)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_watch_index (
         source_key VARCHAR(64) NOT NULL,
         video_id TEXT NOT NULL,
@@ -856,6 +858,18 @@ class Database {
       const result = await this.readDb.query(query, params);
       return result.rows;
     }
+  }
+
+  async allPrimaryQuery(query: string, params: any[] = []): Promise<any[]> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    if (this.type === 'sqlite') {
+      return this.executeSQLiteStatement(this.db.prepare(query), 'all', params);
+    }
+    const result = await this.db.query(query, params);
+    return result.rows;
   }
 
   generateUserUUID(): string {
@@ -1447,7 +1461,7 @@ class Database {
     if (watch.kind === 'first' && wasPlayed) return false;
     const sqlite = this.type === 'sqlite';
     if (watch.kind !== 'first') {
-      const since = watch.kind === 'dated' ? 0 : watch.at - Math.max(0, watch.gapMs ?? 0);
+      const since = watch.kind === 'dated' ? 0 : Math.round(watch.at - Math.max(0, watch.gapMs ?? 0));
       const held = await this.getQuery(
         sqlite
           ? 'SELECT 1 AS held FROM jellyfin_watches WHERE user_uuid = ? AND profile = ? AND video_id = ? AND watched_at >= ? LIMIT 1'
@@ -1774,10 +1788,18 @@ class Database {
     }
   }
 
-  async listTrackerOutbox(limit: number): Promise<any[]> {
-    const rows = await this.allQuery(
-      `SELECT id, lane, user_uuid, profile, service, op, item_key, payload, attempts, next_at, expires_at, claimed_until, created_at FROM tracker_outbox ORDER BY id LIMIT ${this.type === 'sqlite' ? '?' : '$1'}`,
-      [limit]
+  async readyTrackerOutbox(now: number, limit: number): Promise<any[]> {
+    const sqlite = this.type === 'sqlite';
+    const at = sqlite ? '?' : '$1';
+    const rows = await this.allPrimaryQuery(
+      `SELECT id, lane, user_uuid, profile, service, op, item_key, payload, attempts, next_at, expires_at, claimed_until, created_at FROM (
+         SELECT o.*, ROW_NUMBER() OVER (PARTITION BY o.lane ORDER BY o.id) AS lane_rank
+         FROM tracker_outbox o
+         WHERE o.next_at <= ${at} AND o.claimed_until <= ${at}
+           AND NOT EXISTS (SELECT 1 FROM tracker_outbox c WHERE c.lane = o.lane AND c.claimed_until > ${at})
+           AND NOT EXISTS (SELECT 1 FROM tracker_outbox w WHERE w.lane = o.lane AND w.item_key = o.item_key AND w.id < o.id AND w.next_at > ${at})
+       ) ready WHERE lane_rank = 1 ORDER BY id LIMIT ${sqlite ? '?' : '$2'}`,
+      sqlite ? [now, now, now, now, limit] : [now, limit]
     );
     // Postgres hands BIGINT back as a string.
     return rows.map((row: any) => ({
@@ -1789,6 +1811,27 @@ class Database {
       claimed_until: Number(row.claimed_until),
       created_at: Number(row.created_at),
     }));
+  }
+
+  async trackerOutboxWakeAt(now: number): Promise<number | null> {
+    const sqlite = this.type === 'sqlite';
+    const at = sqlite ? '?' : '$1';
+    const [row] = await this.allPrimaryQuery(
+      `SELECT MIN(CASE WHEN claimed_until > ${at} THEN claimed_until ELSE next_at END) AS wake_at FROM tracker_outbox WHERE claimed_until > ${at} OR next_at > ${at}`,
+      sqlite ? [now, now, now] : [now]
+    );
+    const wakeAt = Number(row?.wake_at);
+    return Number.isFinite(wakeAt) && wakeAt > 0 ? wakeAt : null;
+  }
+
+  async purgeTrackerOutbox(now: number): Promise<number> {
+    const result = await this.runQuery(
+      this.type === 'sqlite'
+        ? 'DELETE FROM tracker_outbox WHERE expires_at <= ? AND claimed_until <= ?'
+        : 'DELETE FROM tracker_outbox WHERE expires_at <= $1 AND claimed_until <= $1',
+      this.type === 'sqlite' ? [now, now] : [now]
+    );
+    return Number(result?.changes ?? result?.rowCount ?? 0);
   }
 
   async claimTrackerOutbox(id: number, until: number): Promise<boolean> {

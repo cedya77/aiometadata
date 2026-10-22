@@ -52,10 +52,13 @@ const CHANGES_RESUME = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'clea
 const CHANGES_UPCOMING = new Set<OutboxOp>(['watchlist']);
 
 const LEASE_MS = 5 * 60 * 1000;
-const SCAN_LIMIT = 1000;
+const HEARTBEAT_MS = 60 * 1000;
+const PASS_STUCK_MS = 60 * 1000;
 
 const concurrency = (): number => envInt('TRACKER_OUTBOX_CONCURRENCY', 6, 1);
 const maxAgeMs = (): number => envInt('TRACKER_OUTBOX_MAX_AGE_HOURS', 72, 1) * 60 * 60 * 1000;
+const sendTimeoutMs = (): number => envInt('TRACKER_OUTBOX_SEND_TIMEOUT', 120, 10) * 1000;
+const leaseMs = (): number => Math.max(LEASE_MS, sendTimeoutMs() + 60 * 1000);
 
 /** How long a "now watching" stays worth sending. */
 export const startWindowSeconds = (): number => envInt('TRACKER_OUTBOX_START_WINDOW', 600, 30);
@@ -157,26 +160,29 @@ export async function enqueueTrackerWrites(userUUID: string | undefined, config:
 // --- Delivery -----------------------------------------------------------------------
 
 const active = new Set<string>();
-let pumping = false;
 let again = false;
+let passId = 0;
+let passStartedAt = 0;
+let lastPurgeAt = 0;
+let heartbeat: NodeJS.Timeout | null = null;
 let wakeTimer: NodeJS.Timeout | null = null;
 let wakeAt = Infinity;
-let started = false;
 
 export function startTrackerOutbox(): void {
-  if (started) return;
-  started = true;
   kick();
 }
 
 function kick(): void {
-  started = true;
+  if (!heartbeat) {
+    heartbeat = setInterval(kick, HEARTBEAT_MS);
+    heartbeat.unref?.();
+  }
   // A fresh, empty scope: the pump must not inherit whichever request's viewer queued the write.
   setImmediate(() => { runInViewerScope(false, () => pump()).catch((error: any) => logger.warn(`Outbox pass failed: ${error?.message || error}`)); });
 }
 
-function wakeBy(at: number): void {
-  if (!Number.isFinite(at) || at >= wakeAt) return;
+function wakeBy(at: number | null): void {
+  if (at === null || !Number.isFinite(at) || at >= wakeAt) return;
   if (wakeTimer) clearTimeout(wakeTimer);
   wakeAt = at;
   wakeTimer = setTimeout(() => {
@@ -188,56 +194,74 @@ function wakeBy(at: number): void {
 }
 
 async function pump(): Promise<void> {
-  if (pumping) {
-    again = true;
-    return;
+  if (passStartedAt) {
+    if (Date.now() - passStartedAt < PASS_STUCK_MS) {
+      again = true;
+      return;
+    }
+    logger.warn(`An outbox pass has not finished in ${Math.round((Date.now() - passStartedAt) / 1000)}s, starting another`);
   }
-  pumping = true;
+  const pass = ++passId;
+  passStartedAt = Date.now();
   try {
     do {
       again = false;
       const now = Date.now();
-      const rows: any[] = await database.listTrackerOutbox(SCAN_LIMIT);
-      const busyLanes = new Set<string>(active);
-      const waiting = new Set<string>();
-      const picks: any[] = [];
-      let wake = Infinity;
-
-      for (const row of rows) {
-        const title = `${row.lane}|${row.item_key}`;
-        if (row.claimed_until > now) {
-          // Being sent, here or by another process: the lane waits for it.
-          busyLanes.add(row.lane);
-          wake = Math.min(wake, row.claimed_until);
-          continue;
-        }
-        if (waiting.has(title) || busyLanes.has(row.lane)) continue;
-        if (row.next_at > now) {
-          // A later write about the same title must not overtake this one.
-          waiting.add(title);
-          wake = Math.min(wake, row.next_at);
-          continue;
-        }
-        picks.push(row);
-        busyLanes.add(row.lane);
+      if (now - lastPurgeAt >= HEARTBEAT_MS) {
+        lastPurgeAt = now;
+        const purged = await database.purgeTrackerOutbox(now);
+        if (purged) logger.info(`Dropped ${purged} tracker write(s) too late to send`);
       }
 
       const slots = concurrency() - active.size;
-      for (const row of picks.slice(0, Math.max(0, slots))) {
-        if (!(await database.claimTrackerOutbox(row.id, Date.now() + LEASE_MS))) continue;
-        active.add(row.lane);
-        deliver(row)
-          .catch((error: any) => logger.warn(`Delivering ${row.service} ${row.op} failed: ${error?.message || error}`))
-          .finally(() => {
-            active.delete(row.lane);
-            kick();
-          });
+      if (slots > 0) {
+        const rows: any[] = await database.readyTrackerOutbox(now, slots + active.size);
+        let free = slots;
+        for (const row of rows) {
+          if (pass !== passId) return;
+          if (free <= 0) break;
+          if (active.has(row.lane)) continue;
+          if (!(await database.claimTrackerOutbox(row.id, Date.now() + leaseMs()))) continue;
+          free--;
+          send(row);
+        }
       }
-      wakeBy(wake);
-    } while (again);
+      if (pass !== passId) return;
+      wakeBy(await database.trackerOutboxWakeAt(Date.now()));
+    } while (again && pass === passId);
   } finally {
-    pumping = false;
+    if (pass === passId) passStartedAt = 0;
   }
+}
+
+function send(row: any): void {
+  active.add(row.lane);
+  let released = false;
+  const release = () => {
+    if (released) return false;
+    released = true;
+    active.delete(row.lane);
+    return true;
+  };
+  const timer = setTimeout(() => {
+    if (!release()) return;
+    const attempts = row.attempts + 1;
+    logger.warn(`${row.service} ${row.op} for ${row.item_key} did not finish in ${Math.round(sendTimeoutMs() / 1000)}s`);
+    database.retryTrackerOutbox(row.id, attempts, Date.now() + backoffMs(attempts), 'timed out')
+      .catch(() => undefined)
+      .finally(kick);
+  }, sendTimeoutMs());
+  timer.unref?.();
+  deliver(row)
+    .catch((error: any) => {
+      logger.warn(`Delivering ${row.service} ${row.op} failed: ${error?.message || error}`);
+      const attempts = row.attempts + 1;
+      return database.retryTrackerOutbox(row.id, attempts, Date.now() + backoffMs(attempts), String(error?.message || error)).catch(() => undefined);
+    })
+    .finally(() => {
+      clearTimeout(timer);
+      if (release()) kick();
+    });
 }
 
 type Outcome = { kind: 'done' } | { kind: 'retry'; at?: number; reason: string } | { kind: 'drop'; reason: string; status?: number };
@@ -251,6 +275,9 @@ function judge(calls: TrackerCall[], error: any): Outcome {
   // Simkl's write lock clears once the write holding it finishes.
   if (status === 400 && last.host === 'api.simkl.com' && /rate_limit/i.test(body ?? '')) {
     return { kind: 'retry', at: Date.now() + 5000 + Math.random() * 5000, reason: 'Simkl write lock' };
+  }
+  if (status === 403 && last.host === 'graphql.anilist.co' && /temporarily disabled/i.test(body ?? '')) {
+    return { kind: 'retry', at: last.retryAt, reason: 'AniList API disabled' };
   }
   if (status === 0 || status === 408 || status === 429 || status >= 500) {
     return { kind: 'retry', at: last.retryAt, reason: status === 0 ? `${last.host} did not answer` : `${last.host} answered ${status}` };

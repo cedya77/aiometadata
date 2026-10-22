@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.7.0](https://github.com/cedya77/aiometadata/compare/v3.6.1...v3.7.0) (2026-10-21)
+
+
+### Features
+
+* **anime:** flag filler, mixed and recap episodes whether or not marking is on ([e22cd9b](https://github.com/cedya77/aiometadata/commit/e22cd9b22685fe8889678aada87e08d347cfeceb))
+* **settings:** make the anime TMDB episode cache size and lifetime configurable ([632a46f](https://github.com/cedya77/aiometadata/commit/632a46f501559aee9ff3a89c6cb07a2807158d07))
+
+
+### Bug Fixes
+
+* **jellyfin:** order Next Up by when the next episode came out ([bb8cd48](https://github.com/cedya77/aiometadata/commit/bb8cd48f6b8cf75f943a0ebb44c9f70d95b7085c))
+* **jellyfin:** save finished plays with an odd runtime on Postgres ([60ccccb](https://github.com/cedya77/aiometadata/commit/60ccccb022cb575386cf6cd9c25b8f6721eb6bbe))
+* **trackers:** keep the write queue moving when writes wait, hang or stall ([c38f3ae](https://github.com/cedya77/aiometadata/commit/c38f3aebab16af04a9c1cad717a549d14f1de916))
+
+## [3.6.1](https://github.com/cedya77/aiometadata/compare/v3.6.0...v3.6.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **jellyfin:** list a dropped anime once instead of once per anime id ([491f490](https://github.com/cedya77/aiometadata/commit/491f4906a71aa5f6fd3d2463bf1a7bd1607efbcc))
+* **jellyfin:** play the version a client names in lowercase ([1a9df69](https://github.com/cedya77/aiometadata/commit/1a9df69a7e9d82724b73248be64f11ce4f6add57))
+* **jellyfin:** show watched counts and ticks on seasons ([3be414a](https://github.com/cedya77/aiometadata/commit/3be414a273c3e3ecb64617cab67efd575554a9d2))
+
 ## [3.6.0](https://github.com/cedya77/aiometadata/compare/v3.5.1...v3.6.0) (2026-10-20)
 
 

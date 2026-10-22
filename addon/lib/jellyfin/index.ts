@@ -2870,6 +2870,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       })
       .sort((a, b) => b.lastWatchedAt - a.lastWatchedAt);
     const sources = new Map(offered.map((row) => [row, sourceOf(row)]));
+    const trackerRanks = new Map<string, number>();
+    for (const row of snapshot.nextUp) {
+      const identity = identities.get(row.metaId) ?? row.metaId;
+      if (Number.isFinite(row.trackerRank) && !trackerRanks.has(identity)) trackerRanks.set(identity, row.trackerRank!);
+    }
 
     // A series page asks for its own next episode; an unplayed show starts at the first.
     const seriesParam = req.query.SeriesId ?? req.query.seriesId ?? req.query.ParentId ?? req.query.parentId;
@@ -2911,6 +2916,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     // Every candidate is tried once; a page needs no second scan.
     const items: any[] = [];
     const identity: string[] = [];
+    const availableAt: number[] = [];
     let skipped = 0;
     await warmSeriesIndex(userUUID, rows.map((row) => row.metaId));
     await mapWithConcurrency(rows, shelfConcurrency(), async (row, index) => {
@@ -3016,11 +3022,13 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
       if (Number.isFinite(airedAt) && airedAt !== Date.parse(next.PremiereDate || '')) next.PremiereDate = new Date(airedAt).toISOString();
       items[index] = next;
+      availableAt[index] = Math.max(row.lastWatchedAt || 0, Number.isFinite(airedAt) ? airedAt : 0);
       await traced({ outcome: 'shown', next: episodeLabel(next) });
     });
 
     const shown = new Set<string>();
     const capped = keepsUnderProfileCap(config);
+    const rankOf = (row: any) => trackerRanks.get(identities.get(row.metaId) ?? row.metaId) ?? Number.MAX_SAFE_INTEGER;
     const found = items
       .map((item, index) => ({ item, row: rows[index], index }))
       .filter(({ item, row, index }) => {
@@ -3034,6 +3042,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         trace?.(row, sources.get(row) ?? 'server', { outcome: 'rating-cap' });
         return false;
       })
+      .sort((a, b) => availableAt[b.index] - availableAt[a.index] || rankOf(a.row) - rankOf(b.row))
       .map(({ item }) => item);
     logger.info(`Next Up built for ${userUUID}: ${found.length} of ${rows.length} candidates (${own.length} own, ${snapshot.nextUp.length} tracker), ${skipped} skipped, in ${Date.now() - t0}ms (snapshot ${lap.snapshot}, resumable ${lap.resumable}, own rows ${lap.own}, meta ${lap.meta}, episodes ${lap.episodes}, state ${lap.state}, summed over ${shelfConcurrency()} lanes)`);
     return found;

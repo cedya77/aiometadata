@@ -8,6 +8,7 @@ import { cacheWrapMetaSmart, cacheWrapMDBListGenres, cacheWrapGlobal } from "../
 import { UserConfig } from "../types/index.js";
 import { getSetting } from "../lib/settingsService.js";
 import { envInt } from "./envNumber.js";
+import { noteTrackerCall } from "./trackerCalls";
 const consola = require('consola');
 const crypto = require('crypto');
 const { socksDispatcher } = require('fetch-socks');
@@ -180,6 +181,7 @@ async function makeRateLimitedRequest<T>(
     quotaError.code = 'MDBLIST_QUOTA_EXHAUSTED';
     quotaError.response = { status: 429 };
     logger.warn(`[MDBList] Quota exhausted, skipping request - ${context}`);
+    noteTrackerCall('https://api.mdblist.com/', 429, 'quota exhausted', null, state.lastReset * 1000);
     throw quotaError;
   }
 

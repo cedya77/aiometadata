@@ -66,6 +66,8 @@ export interface NextUpRow {
   airsAt?: number | null;
   /** The tracker says the episode is out: its next airing is a later one, or the show has finished. */
   aired?: boolean;
+  /** Where the tracker's own Up Next places the show, when it ranks one. */
+  trackerRank?: number;
 }
 
 export interface HistoryEntry {
@@ -616,6 +618,7 @@ export async function assembleMdblist(data: MdblistData, config: any): Promise<R
       episode: resolved.mediaType === 'anime' ? Number(String(resolved.videoId).split(':').pop()) : number,
       mediaType: resolved.mediaType,
       lastWatchedAt: Date.parse(item?.last_watched_at ?? '') || 0,
+      trackerRank: index,
     });
   }
   if (!upNext.length) {
@@ -660,7 +663,7 @@ export async function assembleMdblist(data: MdblistData, config: any): Promise<R
 type MirroredService = 'simkl' | 'mdblist' | 'publicmetadb' | 'anilist' | 'mal';
 
 // Raised to rebuild indexes written in an older spelling.
-const INDEX_FORMAT = 7;
+const INDEX_FORMAT = 8;
 
 interface SummaryData {
   format?: number;

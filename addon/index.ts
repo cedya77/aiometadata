@@ -5742,7 +5742,7 @@ const metaRoute = async function (req, res) {
   const cacheOptions = {
     enableErrorCaching: true,
     maxRetries: 2, // Allow retries for temporary failures
-    config: req.params.episodeKinds === '1' ? { ...fullConfig, flagEpisodeKinds: true } : fullConfig,
+    config: fullConfig,
   };
   
   try {

@@ -1,4 +1,5 @@
 import { LRUCache } from 'lru-cache';
+import { envInt } from '../utils/envNumber';
 import { withEpisodeOrder } from '../utils/episodeOrder';
 
 export interface AnimeEpisode {
@@ -7,14 +8,14 @@ export interface AnimeEpisode {
   episode: number;
 }
 
-const tmdbEpisodes = new LRUCache<string, { kitsuId: number; episodeNumber: number } | false>({ max: 20000, ttl: 60 * 60 * 1000 });
+const tmdbEpisodes = new LRUCache<string, { kitsuId: number; episodeNumber: number } | false>({ max: envInt('ANIME_TMDB_EPISODE_CACHE_MAX', 20000, 1) });
 
 async function kitsuEpisodeFromTmdb(tmdbId: number, season: number, episode: number, config: any) {
   const key = `${tmdbId}:${season}:${episode}`;
   const held = tmdbEpisodes.get(key);
   if (held !== undefined) return held || null;
   const found = await require('./id-mapper').resolveKitsuEpisodeFromTmdb(tmdbId, season, episode, config).catch(() => null);
-  tmdbEpisodes.set(key, found || false);
+  tmdbEpisodes.set(key, found || false, { ttl: envInt('ANIME_TMDB_EPISODE_CACHE_TTL', 3600, 60) * 1000 });
   return found;
 }
 
@@ -31,6 +32,35 @@ function airedPositionsFor(meta: any, tvdbId: number, config: any) {
   return held!;
 }
 
+function imdbIdOf(meta: any): string | null {
+  return meta._imdbId || (typeof meta.id === 'string' && /^tt\d+$/.test(meta.id) ? meta.id : null);
+}
+
+function tmdbIdOf(meta: any): number | null {
+  return positive(meta._tmdbId) ?? positive(String(meta.id || '').replace(/^tmdb:/, ''));
+}
+
+export function mayBeAnime(meta: any): boolean {
+  const mapper = require('./id-mapper');
+  switch (meta?._metaProvider) {
+    case 'kitsu':
+    case 'mal':
+      return true;
+    case 'tmdb': {
+      const tmdbId = tmdbIdOf(meta);
+      return !!tmdbId && !!mapper.getMappingByTmdbId(tmdbId, 'series');
+    }
+    case 'tvdb':
+    case 'imdb': {
+      const imdbId = meta._metaProvider === 'imdb' ? imdbIdOf(meta) : null;
+      const tvdbId = positive((imdbId ? mapper.getMappingByImdbId(imdbId) : null)?.tvdb_id) ?? positive(meta._tvdbId);
+      return !!tvdbId && require('./anime-list-mapper').getAnimeByTvdbId(tvdbId).length > 0;
+    }
+    default:
+      return false;
+  }
+}
+
 export function positive(value: unknown): number | null {
   const number = Number(value);
   return Number.isInteger(number) && number > 0 ? number : null;
@@ -45,7 +75,7 @@ export async function resolveAnimeEpisode(meta: any, video: any, config: any): P
   if (meta?._metaProvider === 'tvdb' || meta?._metaProvider === 'imdb') {
     let tvdbId: number | null;
     if (meta._metaProvider === 'imdb') {
-      const imdbId = meta._imdbId || (typeof meta.id === 'string' && /^tt\d+$/.test(meta.id) ? meta.id : null);
+      const imdbId = imdbIdOf(meta);
       const found = imdbId ? mapper.getMappingByImdbId(imdbId) : null;
       if (found && !mapper.mappingIsType(found, 'series')) return null;
       tvdbId = positive(found?.tvdb_id) ?? positive(meta._tvdbId);
@@ -73,7 +103,7 @@ export async function resolveAnimeEpisode(meta: any, video: any, config: any): P
   }
 
   if (meta?._metaProvider === 'tmdb') {
-    const tmdbId = positive(meta._tmdbId) ?? positive(String(meta.id || '').replace(/^tmdb:/, ''));
+    const tmdbId = tmdbIdOf(meta);
     if (!tmdbId || !mapper.getMappingByTmdbId(tmdbId, 'series')) return null;
     const kitsu = await kitsuEpisodeFromTmdb(tmdbId, season, episode, config);
     const mapping = kitsu ? mapper.getMappingByKitsuId(kitsu.kitsuId) : null;
