@@ -251,7 +251,8 @@ async function syncMdblist(key: string, apiKey: string, watermark: any): Promise
     const removals: any[] = [];
     let backdated = false;
     let cursor = '';
-    for (let page = 0; page < envInt('JELLYFIN_WATCHED_MAX_PAGES', 50, 1); page += 1) {
+    const read = new Set<string>();
+    for (;;) {
       const query = cursor
         ? `cursor=${encodeURIComponent(cursor)}`
         : `since=${encodeURIComponent(watermark.server_time)}`;
@@ -265,6 +266,11 @@ async function syncMdblist(key: string, apiKey: string, watermark: any): Promise
       }
       cursor = body?.pagination?.next_cursor ?? '';
       if (!cursor) break;
+      if (read.has(cursor)) {
+        logger.warn(`MDBList journal for ${key} repeated a page; reading it in full instead`);
+        return mdblistFull(key, apiKey, activities);
+      }
+      read.add(cursor);
     }
     if (backdated) return mdblistFull(key, apiKey, activities);
 
@@ -340,13 +346,12 @@ function pmdbPlayRow(row: any): MirrorRow | null {
 
 async function pmdbAllPlays(key: string, apiKey: string): Promise<void> {
   const { fetchWatched } = require('../../utils/publicmetadbUtils');
-  const rows: MirrorRow[] = [];
-  for (let page = 1; page <= envInt('JELLYFIN_WATCHED_MAX_PAGES', 50, 1); page += 1) {
-    const result = await fetchWatched(apiKey, page, 500);
-    rows.push(...(result.items.map(pmdbPlayRow).filter(Boolean) as MirrorRow[]));
-    if (page >= result.totalPages || !result.items.length) break;
-  }
-  await replaceMirror(key, rows, (itemKey) => itemKey.startsWith('play:'));
+  const { readToEnd } = require('../../utils/readToEnd');
+  const plays = await readToEnd('PublicMetaDB plays', async (page: number) => {
+    const result = await fetchWatched(apiKey, page + 1, 500);
+    return { items: result.items, more: page + 1 < result.totalPages };
+  }, (play: any) => String(play?.id));
+  await replaceMirror(key, plays.map(pmdbPlayRow).filter(Boolean) as MirrorRow[], (itemKey) => itemKey.startsWith('play:'));
 }
 
 async function syncPmdb(key: string, apiKey: string, watermark: any): Promise<SyncOutcome> {
@@ -367,15 +372,17 @@ async function syncPmdb(key: string, apiKey: string, watermark: any): Promise<Sy
     const { fetchWatched } = require('../../utils/publicmetadbUtils');
     const fresh: MirrorRow[] = [];
     let reachedKnown = false;
-    for (let page = 1; page <= envInt('JELLYFIN_WATCHED_MAX_PAGES', 50, 1) && !reachedKnown; page += 1) {
+    const taken = new Set<string>();
+    for (let page = 1; !reachedKnown; page += 1) {
       const result = await fetchWatched(apiKey, page, 100);
       const rows = result.items.map(pmdbPlayRow).filter(Boolean) as MirrorRow[];
       const held = await database.hasTrackerMirrorKeys(key, rows.map((row) => row.key));
       for (const row of rows) {
-        if (held.has(row.key)) {
+        if (held.has(row.key) || taken.has(row.key)) {
           reachedKnown = true;
           break;
         }
+        taken.add(row.key);
         fresh.push(row);
       }
       if (page >= result.totalPages || !result.items.length) break;
