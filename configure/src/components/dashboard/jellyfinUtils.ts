@@ -58,24 +58,30 @@ export function useFolded(key: string): [boolean, () => void] {
   };
   return [folded, toggle];
 }
-export function useRemembered<T>(key: string, initial: T): [T, (value: T) => void] {
-  const [value, setValue] = useState<T>(() => {
-    try {
-      const stored = sessionStorage.getItem(key);
-      return stored === null ? initial : (JSON.parse(stored) as T);
-    } catch {
-      return initial;
-    }
-  });
-  const remember = (next: T) => {
-    setValue(next);
-    try {
-      if (next === initial) sessionStorage.removeItem(key);
-      else sessionStorage.setItem(key, JSON.stringify(next));
-    } catch {}
-  };
-  return [value, remember];
+export function recall<T>(key: string, initial: T): T {
+  try {
+    const stored = sessionStorage.getItem(key);
+    return stored === null ? initial : (JSON.parse(stored) as T);
+  } catch {
+    return initial;
+  }
 }
+export function remember<T>(key: string, value: T, initial: T): void {
+  try {
+    if (value === initial) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+export function useRemembered<T>(key: string, initial: T): [T, (value: T) => void] {
+  const [value, setValue] = useState<T>(() => recall(key, initial));
+  const set = (next: T) => {
+    setValue(next);
+    remember(key, next, initial);
+  };
+  return [value, set];
+}
+export const SELECTED_KEY = "jellyfin.selected";
+export const profileKey = (userUUID: string) => `jellyfin.profile.${userUUID}`;
 export const dayKey = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 export interface Activity {
   days: Record<string, number>;

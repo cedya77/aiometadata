@@ -6801,7 +6801,7 @@ addon.use(express.static(publicDir));
 addon.use(express.static(clientDistDir, { setHeaders: setClientDistCacheHeaders }));
 
 // Dedicated Dashboard Page Route
-addon.get("/dashboard", (req, res) => {
+addon.get(["/dashboard", "/dashboard/{*page}"], (req, res) => {
   // Serve the same HTML but with dashboard-specific handling
   try {
     let html = fs.readFileSync(clientIndexPath, 'utf8');
@@ -6835,11 +6835,6 @@ addon.get("/dashboard", (req, res) => {
     consola.error('Error serving dashboard page:', error);
     res.status(500).send('Error loading dashboard');
   }
-});
-
-// Dashboard with trailing slash
-addon.get("/dashboard/", (req, res) => {
-  res.redirect('/dashboard');
 });
 
 addon.get('/api/config/addon-info', (req, res) => {

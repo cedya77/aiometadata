@@ -22,7 +22,8 @@ import { ActivityMap, Hero, SyncStrip } from "./JellyfinHero";
 import { MoreFooter, PlayTable, PlayedByDay, ProgressCard, Row } from "./JellyfinPlays";
 import { Sentinel, Shelf, Stat } from "./JellyfinShared";
 import { Shows } from "./JellyfinShows";
-import { when, useFolded, useRemembered, activityOf, usePagedPlays, OpenTitleContext, titleRefOf } from "./jellyfinUtils";
+import { when, useFolded, useRemembered, activityOf, usePagedPlays, OpenTitleContext, titleRefOf, recall, remember, SELECTED_KEY, profileKey } from "./jellyfinUtils";
+import { navigateDashboard, useDashboardRoute, type DashboardLocation, type DashboardPage } from "@/lib/dashboardRoute";
 
 const TRACKER_LABELS: Record<string, string> = { mdblist: "MDBList", simkl: "Simkl", anilist: "AniList", mal: "MyAnimeList", publicmetadb: "PublicMetaDB" };
 
@@ -58,8 +59,10 @@ function ConfigurationSkeleton() {
   );
 }
 const EMPTY_PLAYS: JellyfinPlayRow[] = [];
-function Configuration({ userUUID, activeTab, onClose }: { userUUID: string; activeTab: DashboardTab; onClose: () => void }) {
-  const [profile, setProfile] = useRemembered<string | null>(`jellyfin.profile.${userUUID}`, null);
+function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: string; route: DashboardLocation; activeTab: DashboardTab; onClose: () => void }) {
+  const profile = route.profile;
+  useEffect(() => remember(profileKey(userUUID), profile, null), [userUUID, profile]);
+  const setProfile = (next: string | null) => navigateDashboard({ tab: "jellyfin", config: userUUID, profile: next, page: null }, { replace: true });
   const [view, setView] = useRemembered<View>("jellyfin.view", "cards");
   const [exporting, setExporting] = useState(false);
   const [allProgress, setAllProgress] = useRemembered<boolean>("jellyfin.allProgress", false);
@@ -69,7 +72,6 @@ function Configuration({ userUUID, activeTab, onClose }: { userUUID: string; act
   const { data, isLoading, isError, isFetching, isPlaceholderData } = useJellyfinConfiguration(userUUID, profile, null, { activeTab });
   const progress = usePagedPlays(userUUID, profile, "progress", data?.inProgress ?? EMPTY_PLAYS, data?.totals?.progress ?? 0, activeTab);
   const played = usePagedPlays(userUUID, profile, "played", data?.recentlyPlayed ?? EMPTY_PLAYS, data?.totals?.played ?? 0, activeTab);
-  const [openTitle, setOpenTitle] = useState<JellyfinTitleRef | null>(null);
   const localTitles = useMemo<LocalTitle[]>(() => {
     const out = new Map<string, LocalTitle>();
     for (const row of [...progress.rows, ...played.rows]) {
@@ -79,7 +81,8 @@ function Configuration({ userUUID, activeTab, onClose }: { userUUID: string; act
     }
     return [...out.values()];
   }, [progress.rows, played.rows]);
-  const closeTitle = useCallback(() => setOpenTitle(null), []);
+  const openTitle = useCallback((ref: JellyfinTitleRef) => navigateDashboard({ tab: "jellyfin", config: userUUID, profile, page: { kind: "title", ref } }), [userUUID, profile]);
+  const openStack = useCallback((stack: DashboardPage[]) => navigateDashboard({ tab: "jellyfin", config: userUUID, profile, page: stack[stack.length - 1] }, { stack }), [userUUID, profile]);
 
   const runExport = async () => {
     setExporting(true);
@@ -119,9 +122,9 @@ function Configuration({ userUUID, activeTab, onClose }: { userUUID: string; act
 
   const trackers = data.sync.filter((row) => row.profiles.includes(historyName)).map((row) => TRACKER_LABELS[row.service] ?? row.service);
   return (
-    <OpenTitleContext.Provider value={setOpenTitle}>
+    <OpenTitleContext.Provider value={openTitle}>
     <div className="border-t border-white/[0.06]">
-      {openTitle && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} trackers={trackers} titleRef={openTitle} activeTab={activeTab} onClose={closeTitle} />}
+      {route.stack.length > 0 && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} trackers={trackers} stack={route.stack} activeTab={activeTab} onOpen={openStack} />}
       <Hero data={data} profile={profile} onProfile={setProfile} activity={activity} controls={controls} switching={switching} />
       {switching ? (
         <div className="divide-y divide-white/[0.06] border-t border-white/[0.06]">
@@ -179,7 +182,11 @@ function Configuration({ userUUID, activeTab, onClose }: { userUUID: string; act
 export default function DashboardJellyfin({ activeTab }: { activeTab: DashboardTab }) {
   const [typed, setTyped] = useState("");
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useRemembered<string | null>("jellyfin.selected", null);
+  const route = useDashboardRoute();
+  const selected = route.tab === "jellyfin" ? route.config : null;
+  useEffect(() => {
+    if (selected) remember(SELECTED_KEY, selected, null);
+  }, [selected]);
   useEffect(() => {
     const timer = setTimeout(() => setQuery(typed.trim()), 300);
     return () => clearTimeout(timer);
@@ -196,8 +203,12 @@ export default function DashboardJellyfin({ activeTab }: { activeTab: DashboardT
       : "not yet run";
 
   const pick = (userUUID: string) => {
-    setSelected(userUUID);
+    navigateDashboard({ tab: "jellyfin", config: userUUID, profile: recall<string | null>(profileKey(userUUID), null), page: null });
     setTyped("");
+  };
+  const close = () => {
+    remember<string | null>(SELECTED_KEY, null, null);
+    navigateDashboard({ tab: "jellyfin", config: null, profile: null, page: null });
   };
 
   return (
@@ -253,7 +264,7 @@ export default function DashboardJellyfin({ activeTab }: { activeTab: DashboardT
         </CardHeader>
         <CardContent className="p-0">
           {selected
-            ? <Configuration key={selected} userUUID={selected} activeTab={activeTab} onClose={() => setSelected(null)} />
+            ? <Configuration key={selected} userUUID={selected} route={route} activeTab={activeTab} onClose={close} />
             : <p className="text-xs text-muted-foreground px-4 py-3">Search for a configuration to see its playback.</p>}
         </CardContent>
       </Card>

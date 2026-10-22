@@ -1784,6 +1784,8 @@ export interface JellyfinTitle {
   id: string;
   metaId: string;
   type: 'movie' | 'series';
+  /** Whether the title opens again from its metaId and type alone. */
+  linkable?: boolean;
   title: string;
   year: string | null;
   overview: string | null;

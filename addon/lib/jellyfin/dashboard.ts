@@ -1003,6 +1003,11 @@ function titleItemId(ref: { item?: string; id?: string; type?: string }): string
   return encodeJellyfinId({ k: movie ? 'movie' : 'series', t: movie ? 'movie' : ANIME_IDS.test(ref.id) ? 'anime' : 'series', i: ref.id });
 }
 
+function sameItem(a: string | null, b: string): boolean {
+  const { normaliseJellyfinId } = require('./ids');
+  return Boolean(a) && normaliseJellyfinId(a) === normaliseJellyfinId(b);
+}
+
 function playOf(data: any) {
   return {
     played: data?.Played === true,
@@ -1126,6 +1131,7 @@ export async function dashboardTitle(userUUID: string, profile: string | null, r
       id: String(item.Id),
       metaId: String(meta.id),
       type: item.Type === 'Movie' ? 'movie' : 'series',
+      linkable: sameItem(titleItemId({ id: String(meta.id), type: item.Type === 'Movie' ? 'movie' : 'series' }), String(item.Id)),
       title: meta.name ?? item.Name,
       year: meta.releaseInfo ? String(meta.releaseInfo) : meta.year ? String(meta.year) : null,
       overview: meta.description ?? null,

@@ -96,7 +96,7 @@ export function SettingsLayout() {
   useEffect(() => {
     // Writing a section into the URL during first run would make a refresh look like an
     // explicit request for that section, skipping setup.
-    if (isFirstRun) return;
+    if (isFirstRun || (window as Window & { DASHBOARD_MODE?: boolean }).DASHBOARD_MODE) return;
     const route = parseRoute(window.location.hash);
     const canonical = hashFor(route.section, route.anchor);
     if (window.location.hash !== canonical) {

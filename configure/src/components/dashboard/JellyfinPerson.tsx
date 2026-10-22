@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "reac
 import { createPortal } from "react-dom";
 import { ArrowDownWideNarrow, ArrowLeft, ArrowUpNarrowWide, Check, ChevronLeft, ChevronRight, ImageOff, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { nameDashboardPage } from "@/lib/dashboardRoute";
 import {
   useJellyfinPerson,
   useJellyfinPersonTitles,
@@ -332,6 +333,9 @@ export default function JellyfinPersonView({ userUUID, profile, profileName, per
   const [photoFailed, setPhotoFailed] = useState(false);
   const photo = sized(person?.photo ?? cast.photo, 576);
   const name = person?.name || cast.name;
+  useEffect(() => {
+    if (shown && person?.name) nameDashboardPage(person.name);
+  }, [shown, person?.name]);
 
   return createPortal(
     <div className={cx("fixed inset-0 z-[100] overflow-y-auto overflow-x-hidden overscroll-contain bg-background animate-fade-in", !shown && "invisible")} aria-hidden={!shown} role="dialog" aria-modal="true" aria-label={name}>

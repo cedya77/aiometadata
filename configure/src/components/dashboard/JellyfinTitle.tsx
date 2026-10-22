@@ -9,6 +9,7 @@ import { sizedArt } from "./art";
 import JellyfinPersonView, { CastRow } from "./JellyfinPerson";
 import RemoteSheet, { type RemoteTarget } from "./JellyfinRemote";
 import { duration, ordinal, rewatchLabel, timesWatched, useRemembered, watchedWhen, when } from "./jellyfinUtils";
+import { nameDashboardPage, type DashboardPage } from "@/lib/dashboardRoute";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
@@ -429,6 +430,9 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
     const aired = episodes.filter((ep) => ep.season !== 0 && !(ep.airsAt && ep.airsAt > now));
     return { ...data, episodes, watched: aired.filter((ep) => ep.played).length, played: data.id in pending ? pending[data.id] : data.played };
   }, [data, pending, now]);
+  useEffect(() => {
+    if (shown && data?.title) nameDashboardPage(`${data.title} ${data.year ?? ""}`, data.linkable ? { kind: "title", ref: { id: data.metaId, type: data.type } } : undefined);
+  }, [shown, data?.title, data?.year, data?.linkable, data?.metaId, data?.type]);
 
   const seasons = useMemo(() => {
     const out = new Map<number | null, JellyfinTitleEpisode[]>();
@@ -717,58 +721,33 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
   );
 }
 
-type StackEntry = { kind: "title"; ref: JellyfinTitleRef } | { kind: "person"; person: JellyfinTitlePerson };
-
-export default function JellyfinTitlePage({ userUUID, profile, profileName, trackers, titleRef, activeTab, onClose }: {
+export default function JellyfinTitlePage({ userUUID, profile, profileName, trackers, stack, activeTab, onOpen }: {
   userUUID: string;
   profile: string | null;
   profileName: string;
   trackers: string[];
-  titleRef: JellyfinTitleRef;
+  stack: DashboardPage[];
   activeTab: DashboardTab;
-  onClose: () => void;
+  onOpen: (stack: DashboardPage[]) => void;
 }) {
-  const [stack, setStack] = useState<StackEntry[]>(() => [{ kind: "title", ref: titleRef }]);
-  const depth = useRef(1);
-  const closing = useRef(false);
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  const depth = useRef(stack.length);
+  depth.current = stack.length;
 
   useEffect(() => {
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    window.history.pushState({ jellyfinTitle: true }, "");
-    const onPop = () => {
-      if (closing.current) {
-        closeRef.current();
-        return;
-      }
-      depth.current -= 1;
-      if (depth.current <= 0) closeRef.current();
-      else setStack((held) => held.slice(0, depth.current));
-    };
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") window.history.back(); };
-    window.addEventListener("popstate", onPop);
     window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = previous;
-      window.removeEventListener("popstate", onPop);
       window.removeEventListener("keydown", onKey);
     };
   }, []);
 
-  const push = useCallback((entry: StackEntry) => {
-    window.history.pushState({ jellyfinTitle: true }, "");
-    depth.current += 1;
-    setStack((held) => [...held.slice(0, depth.current - 1), entry]);
-  }, []);
   const back = useCallback(() => window.history.back(), []);
-  const closeAll = useCallback(() => {
-    closing.current = true;
-    window.history.go(-depth.current);
-  }, []);
-  const openPerson = useCallback((person: JellyfinTitlePerson) => push({ kind: "person", person }), [push]);
-  const openTitle = useCallback((ref: JellyfinTitleRef) => push({ kind: "title", ref }), [push]);
+  const closeAll = useCallback(() => window.history.go(-depth.current), []);
+  const openPerson = useCallback((person: JellyfinTitlePerson) => onOpen([...stack, { kind: "person", person }]), [onOpen, stack]);
+  const openTitle = useCallback((ref: JellyfinTitleRef) => onOpen([...stack, { kind: "title", ref }]), [onOpen, stack]);
 
   return (
     <>
