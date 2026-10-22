@@ -2729,6 +2729,13 @@ const MergedCatalogCard = ({
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [newName, setNewName] = useState(catalog.name);
   const [newType, setNewType] = useState(catalog.displayType || catalog.type);
+  // Rows are keyed by id+type, so loading a saved config reuses this instance
+  // and leaves the dialog fields on the pre-load values. Reseed on open.
+  useEffect(() => {
+    if (!showEditDialog) return;
+    setNewName(catalog.name);
+    setNewType(catalog.displayType || catalog.type);
+  }, [showEditDialog, catalog.name, catalog.displayType, catalog.type]);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsMergeMode, setSettingsMergeMode] = useState<'interleaved' | 'sequential' | 'alternating'>(catalog.metadata?.mergeMode || 'interleaved');
   const [settingsPosterShape, setSettingsPosterShape] = useState<'inherit' | 'poster' | 'landscape'>(catalog.metadata?.posterShape || 'inherit');
@@ -3169,6 +3176,13 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [newName, setNewName] = useState(catalog.name);
   const [newType, setNewType] = useState(catalog.displayType || catalog.type);
+  // Rows are keyed by id+type, so loading a saved config reuses this instance
+  // and leaves the dialog fields on the pre-load values. Reseed on open.
+  useEffect(() => {
+    if (!showEditDialog) return;
+    setNewName(catalog.name);
+    setNewType(catalog.displayType || catalog.type);
+  }, [showEditDialog, catalog.name, catalog.displayType, catalog.type]);
   const [showSettings, setShowSettings] = useState(false);
   const [showDeleteWarning, setShowDeleteWarning] = useState(false);
   const SettingsDialog = resolveSettingsDialog(catalog);
