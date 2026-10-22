@@ -1319,6 +1319,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 10,
   },
   {
+    key: 'JELLYFIN_FINGERPRINT_DAYS',
+    envVar: 'JELLYFIN_FINGERPRINT_DAYS',
+    label: 'Jellyfin Audio Fingerprints (days)',
+    description: 'Apps that find intros and credits by their audio share each episode\'s fingerprint here, so the next episode of the season is matched without fetching another. A fingerprint not sent again for this many days is removed.',
+    category: 'Features',
+    type: 'number',
+    default: 365,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_DASHBOARD_LIVE_SECONDS',
     envVar: 'JELLYFIN_DASHBOARD_LIVE_SECONDS',
     label: 'Jellyfin Dashboard Live Window (seconds)',

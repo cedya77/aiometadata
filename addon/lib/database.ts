@@ -498,6 +498,17 @@ class Database {
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (user_uuid, profile, meta_id)
       )`,
+      `CREATE TABLE IF NOT EXISTS jellyfin_fingerprints (
+        series_id TEXT NOT NULL,
+        season INTEGER NOT NULL,
+        episode INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        start_ms INTEGER NOT NULL,
+        points TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (series_id, season, episode, kind)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_jellyfin_fingerprints_updated ON jellyfin_fingerprints(updated_at)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_tokens (
         token_hash TEXT PRIMARY KEY,
         user_uuid TEXT NOT NULL,
@@ -725,6 +736,17 @@ class Database {
         updated_at BIGINT NOT NULL,
         PRIMARY KEY (user_uuid, profile, meta_id)
       )`,
+      `CREATE TABLE IF NOT EXISTS jellyfin_fingerprints (
+        series_id TEXT NOT NULL,
+        season INTEGER NOT NULL,
+        episode INTEGER NOT NULL,
+        kind VARCHAR(16) NOT NULL,
+        start_ms BIGINT NOT NULL,
+        points TEXT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        PRIMARY KEY (series_id, season, episode, kind)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_jellyfin_fingerprints_updated ON jellyfin_fingerprints(updated_at)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_tokens (
         token_hash VARCHAR(64) PRIMARY KEY,
         user_uuid VARCHAR(64) NOT NULL,
@@ -1973,6 +1995,27 @@ class Database {
       return;
     }
     await this.runQuery(`DELETE FROM jellyfin_tracker_mirror WHERE source_key = ${sqlite ? '?' : '$1'} AND group_key = ${sqlite ? '?' : '$2'} AND sub_key = ${sqlite ? '?' : '$3'}`, [sourceKey, group, sub]);
+  }
+
+  async saveFingerprint(seriesId: string, season: number, episode: number, kind: string, startMs: number, points: string): Promise<void> {
+    const query = this.type === 'sqlite'
+      ? 'INSERT INTO jellyfin_fingerprints (series_id, season, episode, kind, start_ms, points, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (series_id, season, episode, kind) DO UPDATE SET start_ms = excluded.start_ms, points = excluded.points, updated_at = excluded.updated_at'
+      : 'INSERT INTO jellyfin_fingerprints (series_id, season, episode, kind, start_ms, points, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (series_id, season, episode, kind) DO UPDATE SET start_ms = EXCLUDED.start_ms, points = EXCLUDED.points, updated_at = EXCLUDED.updated_at';
+    await this.runQuery(query, [seriesId, season, episode, kind, Math.round(startMs), points, Date.now()]);
+  }
+
+  async listFingerprints(seriesId: string, season: number, kind: string): Promise<any[]> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT episode, start_ms, points FROM jellyfin_fingerprints WHERE series_id = ? AND season = ? AND kind = ?'
+      : 'SELECT episode, start_ms, points FROM jellyfin_fingerprints WHERE series_id = $1 AND season = $2 AND kind = $3';
+    return this.allQuery(query, [seriesId, season, kind]);
+  }
+
+  async pruneFingerprints(before: number): Promise<void> {
+    const query = this.type === 'sqlite'
+      ? 'DELETE FROM jellyfin_fingerprints WHERE updated_at < ?'
+      : 'DELETE FROM jellyfin_fingerprints WHERE updated_at < $1';
+    await this.runQuery(query, [before]);
   }
 
   async listDropped(userUUID: string, profile = ''): Promise<any[]> {

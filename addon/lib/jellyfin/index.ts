@@ -36,6 +36,7 @@ import { coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourc
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
 import { memoNextUp, resumeSnapshot, resumeUserData } from './resume';
 import { animeSequels } from './sequels';
+import { listSeasonFingerprints, saveSeasonFingerprint } from './fingerprints';
 import { isAnimeTitle, showIdentity } from './canonicalIds';
 import { keepsAnimeOnly, sourceFor } from './trackerSource';
 import { refreshSeriesIndex, seriesIndex, warmSeriesIndex } from './episodeIndex';
@@ -3494,6 +3495,24 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const ticks = runtimeTicksFrom(video?.runtime ? video : meta);
     return ticks ? Math.round(ticks / 10000) : null;
   };
+
+  router.get('/AudioFingerprints/:itemId', async (req: any, res: any) => {
+    const config = await loadConfig(req);
+    const items = config ? await listSeasonFingerprints(req.params.itemId, req.query.Kind ?? req.query.kind, config) : null;
+    if (!items) {
+      res.status(400).json({ Message: 'An episode and a kind of intro or credits expected' });
+      return;
+    }
+    res.json({ Items: items });
+  });
+  router.post('/AudioFingerprints/:itemId', async (req: any, res: any) => {
+    const config = await loadConfig(req);
+    if (!config || !(await saveSeasonFingerprint(req.params.itemId, req.body, config))) {
+      res.status(400).json({ Message: 'An episode, a kind, StartMs and Points expected' });
+      return;
+    }
+    res.status(204).end();
+  });
 
   router.get('/MediaSegments/:itemId', async (req: any, res: any) => {
     const userUUID = req.params.userUUID;
