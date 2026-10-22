@@ -1138,6 +1138,7 @@ export async function dashboardTitle(userUUID: string, profile: string | null, r
       genres: Array.isArray(meta.genres) ? meta.genres.map(String) : [],
       score: Number.isFinite(Number.parseFloat(meta.imdbRating)) ? String(meta.imdbRating) : null,
       runtime: meta.runtime ? String(meta.runtime) : null,
+      releasedAt: meta.released ? Date.parse(String(meta.released)) || null : null,
       status: item.Type === 'Movie' ? null : seriesStatus(meta) ?? null,
       posterUrl: meta.poster ?? null,
       backdropUrl: meta.background ?? null,
@@ -1247,9 +1248,26 @@ export async function dashboardTitleAction(userUUID: string, profile: string | n
         }
       }
     }
-    for (const key of [...showsMemo.keys()]) if (key.startsWith(`${userUUID}:`)) showsMemo.delete(key);
-    for (const key of [...droppedMemo.keys()]) if (key.startsWith(`${userUUID}:`)) droppedMemo.delete(key);
+    forgetMemos(userUUID);
     return true;
+  });
+}
+
+function forgetMemos(userUUID: string): void {
+  for (const key of [...showsMemo.keys()]) if (key.startsWith(`${userUUID}:`)) showsMemo.delete(key);
+  for (const key of [...droppedMemo.keys()]) if (key.startsWith(`${userUUID}:`)) droppedMemo.delete(key);
+}
+
+/** Moves one viewing of a film or episode to another date; with `from` null, dates an undated one. */
+export async function dashboardWatchDate(userUUID: string, profile: string | null, itemId: string, from: number | null, to: number): Promise<boolean | null> {
+  const { runInViewerScope } = require('./viewer');
+  return runInViewerScope(false, async () => {
+    const req = { params: { userUUID }, jellyfin: { userUUID, profileId: profile || null }, query: {}, headers: {} };
+    const { loadConfig } = require('./context');
+    if (!(await loadConfig(req).catch(() => null))) return null;
+    const moved = await require('./playstate').recordWatchDate(req, itemId, from, to);
+    forgetMemos(userUUID);
+    return moved;
   });
 }
 

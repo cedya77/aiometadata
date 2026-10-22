@@ -8492,6 +8492,32 @@ addon.post("/api/dashboard/jellyfin/:userUUID/title/action", requireDashboardAdm
   }
 });
 
+addon.post("/api/dashboard/jellyfin/:userUUID/title/watch-date", requireDashboardAdmin, async (req, res) => {
+  try {
+    const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : '';
+    const from = req.body?.from === null ? null : Number(req.body?.from);
+    const to = Number(req.body?.to);
+    if (!itemId || (from !== null && !Number.isFinite(from)) || !Number.isFinite(to) || to < Date.UTC(1900, 0, 1) || to > Date.now() + 5 * 60 * 1000) {
+      res.status(400).json({ error: 'Name the item, the viewing and a date that is not in the future' });
+      return;
+    }
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    const moved = await require('./lib/jellyfin/dashboard').dashboardWatchDate(String(req.params.userUUID), profile, itemId, from, Math.round(to));
+    if (moved === null) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (!moved) {
+      res.status(409).json({ error: 'That viewing is no longer in the history' });
+      return;
+    }
+    res.json({ moved });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to change the watch date' });
+  }
+});
+
 addon.get("/api/dashboard/jellyfin/:userUUID/devices", requireDashboardAdmin, async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;

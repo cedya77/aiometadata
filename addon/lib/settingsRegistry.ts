@@ -486,6 +486,17 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     max: 1440,
   },
   {
+    key: 'JELLYFIN_WATCH_DATE_MATCH_HOURS',
+    envVar: 'JELLYFIN_WATCH_DATE_MATCH_HOURS',
+    label: 'Jellyfin Watch Date Match (hours)',
+    description: 'When a watch date is changed from the dashboard, the play a tracker holds is the one nearest the old date, within this many hours. A tracker holding no play that close is left as it is.',
+    category: 'Features',
+    type: 'number',
+    default: 12,
+    min: 0,
+    max: 720,
+  },
+  {
     key: 'JELLYFIN_PLAYED_THRESHOLD',
     envVar: 'JELLYFIN_PLAYED_THRESHOLD',
     label: 'Jellyfin Played Threshold (%)',

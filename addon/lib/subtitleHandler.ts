@@ -496,6 +496,164 @@ async function creditHistory(parsedId: ParsedMediaId, config: any, only: Tracked
   else await eachHistoryService(parsedId, config, mediaType, 'addToHistory', 'Crediting a watch', only);
 }
 
+export interface WatchDateChange {
+  /** The viewing's date as the tracker holds it, and the date it should hold, in ms. */
+  from: number;
+  to: number;
+  /** The episode's latest viewing once moved, for Simkl, which keeps one date per episode. */
+  latest?: number | null;
+}
+
+const SAME_PLAY_MS = 60_000;
+
+function playTime(value: unknown): number | null {
+  const at = Date.parse(String(value ?? '').replace(' ', 'T'));
+  return Number.isFinite(at) ? at : null;
+}
+
+function nearestPlay<T>(plays: T[], at: number, dateOf: (play: T) => unknown, within: number): T | null {
+  let best: T | null = null;
+  let gap = Infinity;
+  for (const play of plays) {
+    const when = playTime(dateOf(play));
+    if (when === null) continue;
+    const off = Math.abs(when - at);
+    if (off <= within && off < gap) {
+      best = play;
+      gap = off;
+    }
+  }
+  return best;
+}
+
+/**
+ * Moves one viewing to another date on one tracker. A tracker that never got the viewing
+ * is left alone, and each step reads what the tracker holds first, so a retry repeats nothing.
+ */
+async function redateHistory(parsedId: ParsedMediaId, config: any, only: TrackedService, change: WatchDateChange): Promise<void> {
+  const mediaType = parsedId.type === 'movie' ? 'movie' : 'series';
+  if (!shouldTrackServiceMediaType(config, only, mediaType)) return;
+  let ids: Record<string, any> | null = null;
+  let season: number | undefined;
+  let episode: number | undefined;
+  if (parsedId.type === 'movie') {
+    const normalized = normalizeIdsForMovie(parsedId);
+    if (normalized) ids = await withTmdbId(normalized, 'movie');
+  } else {
+    const resolution = await resolveSeriesIds(parsedId, config, only === 'simkl');
+    if (resolution) {
+      ids = await withTmdbId(resolution.ids, 'series');
+      season = resolution.season;
+      episode = resolution.episode;
+    }
+  }
+  if (!ids) {
+    logger.debug(`[${only}] Moving a watch date skipped: no ids for ${parsedId.provider}:${parsedId.id}`);
+    return;
+  }
+  const { envInt } = require('../utils/envNumber');
+  const within = envInt('JELLYFIN_WATCH_DATE_MATCH_HOURS', 12, 0) * 60 * 60 * 1000;
+  if (only === 'publicmetadb') await redatePublicMetaDb(config, ids, mediaType, season, episode, change, within);
+  else if (only === 'mdblist') await redateMdblist(config, ids, mediaType, season, episode, change, within);
+  else if (only === 'simkl') await redateSimkl(config, ids, mediaType, season, episode, change);
+}
+
+async function redatePublicMetaDb(
+  config: any,
+  ids: Record<string, any>,
+  mediaType: 'movie' | 'series',
+  season: number | undefined,
+  episode: number | undefined,
+  change: WatchDateChange,
+  within: number
+): Promise<void> {
+  const apiKey = config.apiKeys?.publicmetadb;
+  if (!apiKey) return;
+  const { tmdbIdFrom, fetchWatched, setWatchedDate } = require('../utils/publicmetadbUtils');
+  const tmdbId = await tmdbIdFrom(ids, mediaType);
+  if (!tmdbId) return;
+  const kind = mediaType === 'movie' ? 'movie' : 'tv';
+  const isTitle = (play: any) => Number(play?.tmdb_id) === Number(tmdbId) && play?.media_type === kind
+    && (kind === 'movie' || (Number(play.season) === season && Number(play.episode) === episode));
+  const { sourceKeyFor } = require('./jellyfin/trackerMirror');
+  const database: any = require('./database');
+  const mirrorKey = sourceKeyFor('publicmetadb', apiKey);
+  const group = `${kind}:${tmdbId}`;
+
+  let plays: any[] = ((await database.listTrackerMirrorGroup(mirrorKey, group).catch(() => [])) as any[])
+    .map((row) => { try { return JSON.parse(row.data); } catch { return null; } })
+    .filter(isTitle);
+  if (!nearestPlay(plays, change.from, (play) => play.watched_at, within)) {
+    // Newest first, so the read stops once a page is older than the viewing.
+    const { envInt } = require('../utils/envNumber');
+    plays = [];
+    for (let page = 1; page <= envInt('JELLYFIN_WATCHED_MAX_PAGES', 50, 1); page += 1) {
+      const result = await fetchWatched(apiKey, page, 500);
+      plays.push(...result.items.filter(isTitle));
+      const oldest = playTime(result.items[result.items.length - 1]?.watched_at);
+      if (page >= result.totalPages || !result.items.length || (oldest !== null && oldest < change.from - within)) break;
+    }
+  }
+  const placed = nearestPlay(plays, change.to, (play) => play.watched_at, SAME_PLAY_MS);
+  const old = nearestPlay(plays.filter((play) => play !== placed), change.from, (play) => play.watched_at, within);
+  if (!old?.id) return;
+  const answer = await setWatchedDate(apiKey, String(old.id), new Date(change.to).toISOString());
+  const moved = answer?.item ?? { ...old, watched_at: new Date(change.to).toISOString() };
+  await database.upsertTrackerMirror(mirrorKey, [{ key: `play:${old.id}`, group, data: moved }]).catch(() => undefined);
+}
+
+async function redateMdblist(
+  config: any,
+  ids: Record<string, any>,
+  mediaType: 'movie' | 'series',
+  season: number | undefined,
+  episode: number | undefined,
+  change: WatchDateChange,
+  within: number
+): Promise<void> {
+  const apiKey = config.apiKeys?.mdblist;
+  const tmdbId = Number(ids.tmdb);
+  if (!apiKey || !tmdbId) return;
+  const mdblist = require('../utils/mdbList');
+  const all = await mdblist.historyPlays(mediaType === 'movie' ? 'movie' : 'show', tmdbId, apiKey);
+  if (!all) return;
+  const plays = mediaType === 'movie' ? all : all.filter((play: any) => play.season_num === season && play.episode_num === episode);
+  const placed = nearestPlay(plays, change.to, (play: any) => play.watched_at, SAME_PLAY_MS);
+  const old = nearestPlay(plays.filter((play: any) => play !== placed), change.from, (play: any) => play.watched_at, within);
+  if (!old) {
+    // MDBList records a play a while after it is sent, so a viewing this recent may not be there yet.
+    if (!placed && Date.now() - change.from < 15 * 60 * 1000) {
+      require('../utils/trackerCalls').noteTrackerCall('https://api.mdblist.com/sync/history', 429, 'play not recorded yet', null, Date.now() + 60_000);
+    }
+    return;
+  }
+  // Added before the old one goes, so the title never reads as unwatched in between.
+  if (!placed && !(await mdblist.addToHistory(ids, apiKey, season, episode, undefined, new Date(change.to).toISOString()))) return;
+  await mdblist.removePlays([old.play_id], apiKey);
+}
+
+async function redateSimkl(
+  config: any,
+  ids: Record<string, any>,
+  mediaType: 'movie' | 'series',
+  season: number | undefined,
+  episode: number | undefined,
+  change: WatchDateChange
+): Promise<void> {
+  // A movie's date only changes by removing it, which wipes its rating.
+  if (mediaType === 'movie' || season == null || episode == null || change.latest == null) return;
+  const tokenId = config.apiKeys?.simklTokenId;
+  const token = tokenId ? (await simklUtils.getSimklToken(tokenId))?.access_token : null;
+  if (!token) return;
+  const held = await simklUtils.episodeWatchedAt(ids, token, season, episode);
+  if (held === undefined) return;
+  const heldAt = playTime(held);
+  if (heldAt !== null && Math.abs(heldAt - change.latest) < SAME_PLAY_MS) return;
+  // Sending a date for a watched episode changes nothing, so it is unmarked first.
+  if (held !== null && !(await simklUtils.removeFromHistory(ids, token, season, episode))) return;
+  await simklUtils.addToHistory(ids, token, season, episode, undefined, new Date(change.latest).toISOString());
+}
+
 // PublicMetaDB keeps plays rather than a watched flag and is keyed on TMDB.
 async function publicMetaDbHistory(
   parsedId: ParsedMediaId,
@@ -849,6 +1007,7 @@ export {
   clearResumePoint,
   creditWatch,
   creditHistory,
+  redateHistory,
   markEpisodes,
   resolveSeriesIds,
   shouldTrackMdblistWatch,
@@ -864,6 +1023,7 @@ module.exports = {
   clearResumePoint,
   creditWatch,
   creditHistory,
+  redateHistory,
   markEpisodes,
   resolveSeriesIds,
   shouldTrackMdblistWatch,

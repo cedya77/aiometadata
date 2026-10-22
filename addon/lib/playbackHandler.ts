@@ -383,7 +383,7 @@ export async function deliverScrobble(service: WatchTrackingService, p: ReportPa
   else if (service === 'publicmetadb') await reportPublicMetaDB(p.type, p.id, p.report, config);
 }
 
-function trackedMediaId(p: ReportPayload): any | null {
+function trackedMediaId(p: Pick<ReportPayload, 'type' | 'id'>): any | null {
   const { parseMediaId } = require('./subtitleHandler');
   const { normalizeWatchTrackingMediaType } = require('./watchTracking');
   const parsedId = parseMediaId(p.id);
@@ -399,6 +399,11 @@ export async function deliverCredit(service: WatchTrackingService, p: ReportPayl
 export async function deliverUnwatch(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {
   const parsedId = trackedMediaId(p);
   if (parsedId) await require('./subtitleHandler').unwatch(parsedId, config, service);
+}
+
+export async function deliverWatchDate(service: WatchTrackingService, p: { type: string; id: string; from: number; to: number; latest?: number | null }, config: any): Promise<void> {
+  const parsedId = trackedMediaId(p);
+  if (parsedId) await require('./subtitleHandler').redateHistory(parsedId, config, service, p);
 }
 
 export async function deliverClearResume(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {

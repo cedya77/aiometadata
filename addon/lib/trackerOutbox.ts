@@ -17,7 +17,7 @@ import type { WatchTrackingService } from './watchTracking';
 const logger = consola.withTag('TrackerOutbox');
 const database: any = require('./database');
 
-export type OutboxOp = 'scrobble' | 'credit' | 'unwatch' | 'clearResume' | 'anime' | 'episodes' | 'dropped' | 'watchlist' | 'rate';
+export type OutboxOp = 'scrobble' | 'credit' | 'unwatch' | 'redate' | 'clearResume' | 'anime' | 'episodes' | 'dropped' | 'watchlist' | 'rate';
 
 export interface OutboxJob {
   service: WatchTrackingService;
@@ -37,6 +37,7 @@ const executors: Record<OutboxOp, Executor> = {
   scrobble: (service, p, config, userUUID) => require('./playbackHandler').deliverScrobble(service, p, config, userUUID),
   credit: (service, p, config) => require('./playbackHandler').deliverCredit(service, p, config),
   unwatch: (service, p, config) => require('./playbackHandler').deliverUnwatch(service, p, config),
+  redate: (service, p, config) => require('./playbackHandler').deliverWatchDate(service, p, config),
   clearResume: (service, p, config) => require('./playbackHandler').deliverClearResume(service, p, config),
   anime: (service, p, config, userUUID) => require('./playbackHandler').deliverAnime(service, p, config, userUUID),
   episodes: (service, p, config) => require('./subtitleHandler').markEpisodes(p.videos, config, p.method, p.scope, service),
@@ -46,7 +47,7 @@ const executors: Record<OutboxOp, Executor> = {
 };
 
 // Writes that change what the trackers report as watched, rather than only where playback stands.
-const CHANGES_WATCHED = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'episodes', 'dropped', 'anime']);
+const CHANGES_WATCHED = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'redate', 'episodes', 'dropped', 'anime']);
 const CHANGES_RESUME = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'clearResume', 'episodes']);
 const CHANGES_UPCOMING = new Set<OutboxOp>(['watchlist']);
 

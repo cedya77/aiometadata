@@ -718,6 +718,46 @@ export async function recordUnplayed(req: any, body: any): Promise<void> {
   await markEach(req, body, 'unplayed');
 }
 
+/**
+ * Moves one viewing of a film or episode to another date, or dates one recorded without a
+ * date, here and on the trackers holding it. False when there was no such viewing.
+ */
+export async function recordWatchDate(req: any, itemId: string, from: number | null, to: number): Promise<boolean> {
+  const userUUID = req.params?.userUUID;
+  if (!userUUID) return false;
+  const { loadConfig } = require('./context');
+  const config = await loadConfig(req);
+  if (!config) return false;
+  const session = await resolveSession(userUUID, itemId);
+  if (!session) return false;
+
+  const { profileKey } = require('./profiles');
+  const { videoIdAliases } = require('./aliases');
+  const profile = profileKey(config);
+  const spellings = [session.videoId, ...session.aliases, ...(await videoIdAliases(session.videoId).catch(() => [] as string[]))];
+  const runtimeMs = session.runtimeMs ?? 0;
+  const sameViewing = runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
+  const database: any = require('../database');
+  const { moved, latestBefore, latestAfter } = await database.redateWatch(userUUID, profile, spellings, from, to, Math.max(sameViewing, 60_000));
+  if (!moved) return false;
+
+  const { invalidateResume } = require('./resume');
+  invalidateResume(userUUID);
+  announce(userUUID, config, profile, session).catch((error: any) =>
+    logger.debug(`User data push failed for ${session.videoId}: ${error?.message || error}`)
+  );
+  // An undated watch came without a date from the tracker too, so there is no play there to move.
+  if (from === null || !tellsTrackers(config)) return true;
+  const { enqueueTrackerWrites, hasCredential } = require('../trackerOutbox');
+  const latest = session.descriptor.k === 'episode' && latestAfter !== latestBefore ? latestAfter : null;
+  const services = ['mdblist', 'publicmetadb', ...(latest ? ['simkl'] : [])].filter((service) => hasCredential(config, service));
+  await enqueueTrackerWrites(userUUID, config, services.map((service) => ({
+    service, op: 'redate', item: session.descriptor.i,
+    payload: { type: session.stremioType, id: session.videoId, from, to, latest },
+  }))).catch((error: any) => logger.debug(`Moving the watch date on trackers failed for ${session.videoId}: ${error?.message || error}`));
+  return true;
+}
+
 /** The episode and every aired one before it in its series, specials left out. */
 export async function recordPlayedUpTo(req: any, itemId: string): Promise<void> {
   await markEach(req, { ItemId: itemId }, 'played', true);

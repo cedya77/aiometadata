@@ -2,13 +2,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Bookmark, BookmarkCheck, Cast, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, Play, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
+import { ArrowLeft, Bookmark, BookmarkCheck, CalendarPlus, Cast, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Clock, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, PencilLine, Play, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useJellyfinTitle, useJellyfinTitleAction, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitlePerson, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
+import { useJellyfinTitle, useJellyfinTitleAction, useJellyfinWatchDate, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitlePerson, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
 import JellyfinPersonView, { CastRow } from "./JellyfinPerson";
 import RemoteSheet, { type RemoteTarget } from "./JellyfinRemote";
-import { duration, ordinal, rewatchLabel, timesWatched, useRemembered, watchedWhen, when } from "./jellyfinUtils";
+import WatchDateSheet, { type WatchDateAnchor, type WatchDateTarget } from "./JellyfinWatchDate";
+import { anchorOf, duration, ordinal, rewatchLabel, timesWatched, useRemembered, watchedWhen, when } from "./jellyfinUtils";
 import { nameDashboardPage, type DashboardPage } from "@/lib/dashboardRoute";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
@@ -129,7 +130,7 @@ function under(button: Element): Anchor {
   return { x: box.left + box.width / 2 - SHEET_WIDTH / 2, y: box.bottom + 8 };
 }
 
-function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, className, onToggleSelect, onAction, onPlayOn }: {
+function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, className, onToggleSelect, onAction, onPlayOn, onDate }: {
   ep: JellyfinTitleEpisode;
   now: number;
   selecting: boolean;
@@ -140,6 +141,7 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
   onToggleSelect: () => void;
   onAction: (action: JellyfinTitleAction) => void;
   onPlayOn: (at: Anchor) => void;
+  onDate: (anchor: WatchDateAnchor) => void;
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -210,7 +212,19 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {ep.number !== null && <Badge>{code(ep)}</Badge>}
         {ep.airsAt && <Badge>{unaired ? `Airs ${longDate(ep.airsAt)}` : longDate(ep.airsAt)}</Badge>}
-        {ep.played && <Badge tone="brand"><Check className="size-3" strokeWidth={3} /> {ep.watches[0] ? when(ep.watches[0]) : "Watched"}{timesWatched(ep) > 1 ? ` · ×${timesWatched(ep)}` : ""}</Badge>}
+        {ep.played && (selecting ? (
+          <Badge tone="brand"><Check className="size-3" strokeWidth={3} /> {ep.watches[0] ? when(ep.watches[0]) : "Watched"}{timesWatched(ep) > 1 ? ` · ×${timesWatched(ep)}` : ""}</Badge>
+        ) : (
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); onDate(anchorOf(event.currentTarget)); }}
+            title={ep.watches[0] ? "Change when you watched it" : "Add when you watched it"}
+            className="group/date inline-flex items-center gap-1 rounded-md border border-blue-400/40 bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-200 transition-colors hover:border-blue-300/70 hover:bg-blue-500/20"
+          >
+            <Check className="size-3" strokeWidth={3} /> {ep.watches[0] ? when(ep.watches[0]) : "Watched"}{timesWatched(ep) > 1 ? ` · ×${timesWatched(ep)}` : ""}
+            <PencilLine className="size-3 opacity-0 transition-opacity group-hover/date:opacity-100" />
+          </button>
+        ))}
         {ep.played && ep.positionMs > 0 && <Badge><Repeat className="size-3" /> {rewatchLabel(ep.positionMs)}</Badge>}
         {!ep.played && ep.positionMs > 0 && ep.runtimeMs > 0 && <Badge tone="brand">{duration(Math.max(0, ep.runtimeMs - ep.positionMs))} left</Badge>}
       </div>
@@ -320,21 +334,24 @@ function EpisodeRow({ focus, children }: { focus: string | null; children: React
   );
 }
 
-type HistoryEntry = { key: string; label: string; sub: string; at: number | null; image: string | null; again: boolean };
+type HistoryEntry = { key: string; itemId: string; label: string; sub: string; at: number | null; dated: number | null | undefined; image: string | null; again: boolean };
 
 function historyOf(item: { played: boolean; playCount: number; watches: number[]; positionMs: number; lastPlayedAt: number | null }, key: string, label: string, image: string | null): HistoryEntry[] {
   const out: HistoryEntry[] = item.watches.map((at, i) => {
     const n = item.watches.length - i;
-    return { key: `${key}|${at}`, label, sub: n > 1 ? `Watched · ${ordinal(n)} time` : "Watched", at, image, again: n > 1 };
+    return { key: `${key}|${at}`, itemId: key, label, sub: n > 1 ? `Watched · ${ordinal(n)} time` : "Watched", at, dated: at, image, again: n > 1 };
   });
   if (item.positionMs > 0 && item.lastPlayedAt) {
-    out.push({ key: `${key}|now`, label, sub: item.played ? rewatchLabel(item.positionMs) : `${duration(item.positionMs) || "Under a minute"} in`, at: item.lastPlayedAt, image, again: item.played });
+    out.push({ key: `${key}|now`, itemId: key, label, sub: item.played ? rewatchLabel(item.positionMs) : `${duration(item.positionMs) || "Under a minute"} in`, at: item.lastPlayedAt, dated: undefined, image, again: item.played });
   }
-  if (item.played && !item.watches.length) out.push({ key: `${key}|undated`, label, sub: "Watched", at: null, image, again: false });
+  if (item.played && !item.watches.length) out.push({ key: `${key}|undated`, itemId: key, label, sub: "Watched", at: null, dated: null, image, again: false });
   return out;
 }
 
-function History({ title }: { title: JellyfinTitle }) {
+type Glide = { key: string; from: DOMRect | null };
+
+function History({ title, glide, onDate, onGlided }: { title: JellyfinTitle; glide: Glide | null; onDate: (entry: HistoryEntry, anchor: WatchDateAnchor) => void; onGlided: () => void }) {
+  const list = useRef<HTMLDivElement>(null);
   const plays = useMemo(() => {
     const backdrop = sizedArt(title.backdropUrl, 342) ?? title.backdropUrl;
     const rows = title.type === "movie"
@@ -352,23 +369,63 @@ function History({ title }: { title: JellyfinTitle }) {
     }
     return out;
   }, [plays]);
+  useLayoutEffect(() => {
+    if (!glide) return;
+    const row = list.current?.querySelector<HTMLElement>(`[data-play="${CSS.escape(glide.key)}"]`);
+    if (!row) return;
+    onGlided();
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const day = row.closest("section");
+    const pulse = () => {
+      day?.querySelector("[data-dot]")?.animate([{ transform: "scale(1)", boxShadow: "0 0 0 0 rgba(59,130,246,.7)" }, { transform: "scale(1.35)", boxShadow: "0 0 0 10px rgba(59,130,246,0)" }, { transform: "scale(1)", boxShadow: "0 0 0 0 rgba(59,130,246,0)" }], { duration: 900, easing: "ease-out" });
+      const head = day?.querySelector("h4");
+      if (head) {
+        head.style.color = "rgb(147 197 253)";
+        window.setTimeout(() => { head.style.color = ""; }, 1100);
+      }
+      row.animate([{ boxShadow: "0 0 0 1px rgba(96,165,250,.6)" }, { boxShadow: "0 0 0 1px rgba(96,165,250,0)" }], { duration: 1400, easing: "ease-out" });
+    };
+    const box = row.getBoundingClientRect();
+    const shown = box.top >= 0 && box.bottom <= window.innerHeight;
+    if (glide.from && shown && !calm) {
+      row.animate([{ transform: `translate(${glide.from.left - box.left}px, ${glide.from.top - box.top}px)` }, { transform: "none" }], { duration: 650, easing: "cubic-bezier(.2,.8,.2,1)" }).finished.then(pulse, pulse);
+      return;
+    }
+    row.scrollIntoView({ block: "center", behavior: calm ? "auto" : "smooth" });
+    window.setTimeout(pulse, calm ? 0 : 450);
+  }, [glide, plays, onGlided]);
   if (!plays.length) return <p className="text-sm text-muted-foreground">Nothing played yet on this profile.</p>;
   return (
-    <div className="relative max-w-3xl space-y-8 before:absolute before:bottom-2 before:left-[7px] before:top-2 before:w-px before:bg-white/10">
+    <div ref={list} className="relative max-w-3xl space-y-8 before:absolute before:bottom-2 before:left-[7px] before:top-2 before:w-px before:bg-white/10">
       {days.map((d) => (
         <section key={d.day} className="relative pl-8">
-          <span className={cx("absolute left-0 top-1 size-[15px] rounded-full border-2 bg-background", d.rows[0]?.at === null ? "border-white/25" : "border-blue-500")} />
-          <h4 className={cx("mb-3 text-sm font-semibold", d.rows[0]?.at === null ? "text-muted-foreground" : "text-foreground/90")}>{d.day}</h4>
+          <span data-dot className={cx("absolute left-0 top-1 size-[15px] rounded-full border-2 bg-background", d.rows[0]?.at === null ? "border-white/25" : "border-blue-500")} />
+          <h4 className={cx("mb-3 text-sm font-semibold transition-colors duration-700", d.rows[0]?.at === null ? "text-muted-foreground" : "text-foreground/90")}>{d.day}</h4>
           {d.rows[0]?.at === null && <p className="-mt-2 mb-3 text-xs text-muted-foreground">Marked watched before plays were dated, or imported without a date.</p>}
           <div className="space-y-2">
             {d.rows.map((row) => (
-              <div key={row.key} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-2">
-                {row.image ? <img src={row.image} alt="" loading="lazy" className="aspect-video w-24 shrink-0 rounded-md object-cover" /> : <span className="flex aspect-video w-24 shrink-0 items-center justify-center rounded-md bg-white/5"><Film className="size-4 text-muted-foreground" /></span>}
+              <div key={row.key} data-play={row.key} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-2">
+                {row.image ? <img src={row.image} alt="" loading="lazy" className="aspect-video w-20 shrink-0 rounded-md object-cover sm:w-24" /> : <span className="flex aspect-video w-20 shrink-0 items-center justify-center rounded-md bg-white/5 sm:w-24"><Film className="size-4 text-muted-foreground" /></span>}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{row.label}</p>
-                  <p className="text-xs text-muted-foreground">{row.sub}{row.at !== null ? ` · ${new Date(row.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : ""}</p>
+                  <p className="line-clamp-2 text-sm font-medium sm:truncate">{row.label}</p>
+                  <p className="truncate text-xs text-muted-foreground">{row.sub}</p>
                 </div>
                 {row.again && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-foreground/80"><Repeat className="size-3" /> Rewatch</span>}
+                {row.dated === undefined ? (
+                  row.at !== null && <span className="flex h-9 shrink-0 items-center gap-1.5 px-2.5 text-xs tabular-nums text-muted-foreground sm:px-3"><Clock className="size-3.5 max-sm:hidden" />{new Date(row.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(event) => onDate(row, anchorOf(event.currentTarget))}
+                    title={row.dated === null ? "Add when you watched it" : "Change when you watched it"}
+                    className={cx(
+                      "group/date flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs sm:px-3 font-medium tabular-nums ring-1 ring-inset transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60",
+                      row.dated === null ? "bg-blue-500/15 text-blue-200 ring-blue-400/40 hover:bg-blue-500/25" : "bg-white/[0.05] text-foreground/80 ring-white/10 hover:bg-white/[0.12] hover:text-foreground"
+                    )}
+                  >
+                    {row.dated === null ? <><CalendarPlus className="size-3.5" /> Add date</> : <><Clock className="size-3.5 text-muted-foreground transition-colors group-hover/date:text-foreground max-sm:hidden" />{new Date(row.dated).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}<PencilLine className="-mr-0.5 size-3.5 w-0 opacity-0 transition-all group-hover/date:w-3.5 group-hover/date:opacity-100 group-focus-visible/date:w-3.5 group-focus-visible/date:opacity-100 [@media(hover:none)]:w-3.5 [@media(hover:none)]:opacity-60" /></>}
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -413,6 +470,7 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
 }) {
   const queryClient = useQueryClient();
   const act = useJellyfinTitleAction();
+  const moveDate = useJellyfinWatchDate();
   const { data, isLoading, isError, isFetching, refetch } = useJellyfinTitle(userUUID, profile, titleRef, { activeTab });
   const [season, setSeason] = useState<number | null | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
@@ -467,6 +525,43 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
       toast.error(error instanceof Error ? error.message : "Could not save the change");
     } finally {
       setBusy(null);
+    }
+  };
+
+  const [dateSheet, setDateSheet] = useState<{ target: WatchDateTarget; anchor: WatchDateAnchor } | null>(null);
+  const closeDateSheet = useCallback(() => setDateSheet(null), []);
+  const [glide, setGlide] = useState<Glide | null>(null);
+  const glided = useCallback(() => setGlide(null), []);
+  const openDate = (itemId: string, from: number | null, anchor: WatchDateAnchor) => {
+    if (!title) return;
+    const ep = title.episodes.find((e) => e.id === itemId);
+    const backdrop = sizedArt(title.backdropUrl, 342) ?? title.backdropUrl;
+    setDateSheet({
+      anchor,
+      target: {
+        itemId,
+        episode: Boolean(ep),
+        heading: ep ? `${code(ep)}${ep.name ? ` · ${ep.name}` : ""}` : title.title,
+        sub: null,
+        still: ep ? sizedStill(ep.still, 320) ?? backdrop : backdrop,
+        from,
+        releasedAt: ep ? ep.airsAt : title.releasedAt,
+        others: ep ? ep.watches : title.watches,
+      },
+    });
+  };
+  const redate = async (itemId: string, from: number | null, to: number): Promise<boolean> => {
+    try {
+      const before = document.querySelector(`[data-play="${CSS.escape(`${itemId}|${from ?? "undated"}`)}"]`)?.getBoundingClientRect() ?? null;
+      await moveDate(userUUID, profile, itemId, from, to);
+      await refetch();
+      setGlide({ key: `${itemId}|${to}`, from: before });
+      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "dashboard" && q.queryKey[1] === "jellyfin" && q.queryKey[2] !== "title" });
+      toast.success(`Watched ${longDate(to)}`);
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not change the date");
+      return false;
     }
   };
 
@@ -527,6 +622,7 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
       busy={busy === ep.id + "played" || busy === ep.id + "unplayed" || busy === ep.id + "playedUpTo"}
       onToggleSelect={() => toggleSelect(ep.id)}
       onPlayOn={(at) => setRemote({ target: episodeTarget(ep), at })}
+      onDate={(anchor) => openDate(ep.id, ep.watches[0] ?? null, anchor)}
       onAction={(action) => void run(action, [ep.id], action === "playedUpTo" ? `Watched up to ${code(ep)}` : action === "played" ? `${code(ep)} marked watched` : `${code(ep)} marked unwatched`, action === "playedUpTo" ? undefined : action === "played")}
     />
   );
@@ -606,7 +702,15 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
                     </div>
 
                     <div className="flex w-full max-w-xl flex-col gap-2 max-sm:items-center">
-                      <p className="text-[15px] font-semibold text-blue-200">{stateLine}</p>
+                      {!isSeries && title.played && title.watches[0] ? (
+                        <p className="text-[15px] font-semibold text-blue-200">
+                          <button type="button" onClick={(event) => openDate(title.id, title.watches[0], anchorOf(event.currentTarget))} className="group/date -mx-1 inline-flex items-center gap-1.5 rounded-md px-1 underline decoration-blue-300/30 decoration-dotted underline-offset-4 transition-colors hover:bg-white/10 hover:decoration-blue-200">
+                            {`Watched ${watchedWhen(title.watches[0])}`}
+                            <PencilLine className="size-3.5 opacity-60 transition-opacity group-hover/date:opacity-100" />
+                          </button>
+                          {stateLine?.replace(`Watched ${watchedWhen(title.watches[0])}`, "")}
+                        </p>
+                      ) : <p className="text-[15px] font-semibold text-blue-200">{stateLine}</p>}
                       {isSeries && title.aired > 0 && (
                         <div className="flex w-full items-center gap-3">
                           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/15"><div className={cx("h-full rounded-full transition-all duration-500", allWatched ? "bg-emerald-400" : "bg-blue-500")} style={{ width: `${Math.max(1, progress)}%` }} /></div>
@@ -703,12 +807,13 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
             )}
 
             {title && title.people.length > 0 && <CastRow people={title.people} onPerson={onPerson} />}
+            {dateSheet && <WatchDateSheet target={dateSheet.target} anchor={dateSheet.anchor} trackers={trackers} onClose={closeDateSheet} onSave={async (to) => { const saved = await redate(dateSheet.target.itemId, dateSheet.target.from, to); if (saved) setDateSheet(null); return saved; }} />}
             {remote && <RemoteSheet userUUID={userUUID} profile={profile} profileName={profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
 
             {title && (
               <section className="flex flex-col gap-4">
                 <h3 className={SECTION_TITLE}>History</h3>
-                <History title={title} />
+                <History title={title} glide={glide} onGlided={glided} onDate={(entry, anchor) => openDate(entry.itemId, entry.dated ?? null, anchor)} />
               </section>
             )}
           </div>

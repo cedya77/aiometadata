@@ -69,7 +69,7 @@ function isPermanentError(status: number): boolean {
 async function makeRequest(
   endpoint: string,
   apiKey: string,
-  method: 'GET' | 'POST' | 'DELETE' = 'GET',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE' = 'GET',
   body?: any
 ): Promise<any> {
   const state = getRateLimitState(apiKey);
@@ -363,6 +363,11 @@ async function markWatched(
     body.episode = episode;
   }
   return makeRequest('/api/external/watched?dedupe=true', apiKey, 'POST', body);
+}
+
+/** Moves one play to another date, keeping the play and the item's other plays. */
+async function setWatchedDate(apiKey: string, playId: string, watchedAt: string): Promise<any> {
+  return makeRequest(`/api/external/watched/${encodeURIComponent(playId)}`, apiKey, 'PATCH', { watched_at: watchedAt });
 }
 
 // --- Parse functions for catalog ---
@@ -709,6 +714,7 @@ export {
   fetchResume,
   fetchDropped,
   fetchWatched,
+  setWatchedDate,
   saveResume,
   clearResume,
   tmdbIdFrom,

@@ -884,9 +884,10 @@ export async function addToHistory(
   accessToken: string,
   season?: number,
   episode?: number,
-  episodes?: EpisodeRef[]
+  episodes?: EpisodeRef[],
+  watchedAt?: string
 ): Promise<boolean> {
-  const payload = historyPayload(idInput, season, episode, episodes);
+  const payload = historyPayload(idInput, season, episode, episodes, watchedAt);
 
   try {
     const response = await makeAuthenticatedSimklRequest(
@@ -901,6 +902,31 @@ export async function addToHistory(
   } catch (error: any) {
     logger.error(`[Simkl] Failed to add to history: ${error.message}`);
     return false;
+  }
+}
+
+/**
+ * When the user last watched an episode: null when they have not, undefined when Simkl
+ * could not say.
+ */
+export async function episodeWatchedAt(
+  idInput: Record<string, string | number>,
+  accessToken: string,
+  season: number,
+  episode: number
+): Promise<string | null | undefined> {
+  try {
+    const response = await makeAuthenticatedSimklRequest(
+      `${SIMKL_BASE_URL}/sync/watched?extended=episodes`, accessToken, 'Simkl episode state', 'POST', [{ ids: idInput, type: 'show' }], 10000
+    );
+    if (response.status < 200 || response.status >= 300) return undefined;
+    const entry = Array.isArray(response.data) ? response.data[0] : null;
+    if (!entry || entry.result === 'not_found') return undefined;
+    const found = entry?.seasons?.find((s: any) => s.number === season)?.episodes?.find((e: any) => e.number === episode);
+    return found?.watched ? (found.last_watched_at ?? null) : null;
+  } catch (error: any) {
+    logger.error(`[Simkl] Reading the episode state failed: ${error.message}`);
+    return undefined;
   }
 }
 

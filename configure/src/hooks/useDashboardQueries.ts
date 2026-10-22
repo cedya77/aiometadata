@@ -1792,6 +1792,7 @@ export interface JellyfinTitle {
   genres: string[];
   score: string | null;
   runtime: string | null;
+  releasedAt: number | null;
   status: 'Continuing' | 'Ended' | null;
   posterUrl: string | null;
   backdropUrl: string | null;
@@ -1926,6 +1927,19 @@ export function useJellyfinTitleAction() {
       body: JSON.stringify({ action, itemIds, profile: profile ?? undefined, rating }),
     });
     if (!response.ok) throw new Error(`Could not save the change (${response.status})`);
+  };
+}
+
+export function useJellyfinWatchDate() {
+  const getHeaders = useApiHeaders();
+  return async (userUUID: string, profile: string | null, itemId: string, from: number | null, to: number): Promise<void> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/title/watch-date`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemId, from, to, profile: profile ?? undefined }),
+    });
+    if (response.status === 409) throw new Error('That viewing is no longer in the history');
+    if (!response.ok) throw new Error(`Could not change the date (${response.status})`);
   };
 }
 

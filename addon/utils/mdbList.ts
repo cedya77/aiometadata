@@ -1345,9 +1345,10 @@ async function historySync(
   apiKey: string,
   season?: number,
   episode?: number,
-  episodes?: EpisodeRef[]
+  episodes?: EpisodeRef[],
+  watchedAt?: string
 ): Promise<boolean> {
-  const payload = historyPayload(idInput, season, episode, episodes);
+  const payload = historyPayload(idInput, season, episode, episodes, watchedAt);
 
   try {
     const response: any = await makeRateLimitedRequest(
@@ -1379,9 +1380,51 @@ async function addToHistory(
   apiKey: string,
   season?: number,
   episode?: number,
-  episodes?: EpisodeRef[]
+  episodes?: EpisodeRef[],
+  watchedAt?: string
 ): Promise<boolean> {
-  return historySync('watched', idInput, apiKey, season, episode, episodes);
+  return historySync('watched', idInput, apiKey, season, episode, episodes, watchedAt);
+}
+
+export interface MdblistPlay {
+  play_id: number;
+  watched_at: string | null;
+  season_num?: number;
+  episode_num?: number;
+}
+
+/** Every recorded play of a movie or of a show's episodes, newest first, or null when the lookup failed. */
+async function historyPlays(kind: 'movie' | 'show', tmdbId: number, apiKey: string): Promise<MdblistPlay[] | null> {
+  try {
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(`https://api.mdblist.com/sync/history/${kind}/tmdb/${tmdbId}?apikey=${apiKey}`, { timeout: 10000, dispatcher: mdblistDispatcher }),
+      apiKey,
+      `MDBList /sync/history/${kind}/tmdb/${tmdbId}`
+    );
+    return Array.isArray(response?.data?.plays) ? response.data.plays : [];
+  } catch (error: any) {
+    logger.error(`[MDBList] Reading the plays of ${kind} ${tmdbId} failed: ${error.message}`);
+    return null;
+  }
+}
+
+/** Removes single plays, leaving the title's other plays and its watched state. */
+async function removePlays(playIds: number[], apiKey: string): Promise<boolean> {
+  try {
+    await makeRateLimitedRequest(
+      () => httpPost(`https://api.mdblist.com/sync/watched/plays/remove?apikey=${apiKey}`, { play_ids: playIds }, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+        dispatcher: mdblistDispatcher,
+      }),
+      apiKey,
+      'MDBList /sync/watched/plays/remove'
+    );
+    return true;
+  } catch (error: any) {
+    logger.error(`[MDBList] Removing plays ${playIds.join(',')} failed: ${error.message}`);
+    return false;
+  }
 }
 
 async function removeFromHistory(
@@ -1682,6 +1725,8 @@ export {
   checkinEpisode,
   addToHistory,
   removeFromHistory,
+  historyPlays,
+  removePlays,
   clearScrobbleSession,
   clearScrobbleSession as clearPlayback,
   fetchMDBListCatalog
