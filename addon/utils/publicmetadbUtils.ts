@@ -355,9 +355,10 @@ async function markWatched(
   tmdbId: number,
   mediaType: 'movie' | 'tv',
   season?: number,
-  episode?: number
+  episode?: number,
+  watchedAt?: string | null
 ): Promise<any> {
-  const body: any = { tmdb_id: tmdbId, media_type: mediaType };
+  const body: any = { tmdb_id: tmdbId, media_type: mediaType, ...(watchedAt !== undefined ? { watched_at: watchedAt } : {}) };
   if (mediaType === 'tv' && season != null && episode != null) {
     body.season = season;
     body.episode = episode;
@@ -365,7 +366,6 @@ async function markWatched(
   return makeRequest('/api/external/watched?dedupe=true', apiKey, 'POST', body);
 }
 
-/** Moves one play to another date, keeping the play and the item's other plays. */
 async function setWatchedDate(apiKey: string, playId: string, watchedAt: string): Promise<any> {
   return makeRequest(`/api/external/watched/${encodeURIComponent(playId)}`, apiKey, 'PATCH', { watched_at: watchedAt });
 }
@@ -526,6 +526,7 @@ export interface PmdbPlaybackOptions {
   played?: boolean;
   positionMs?: number;
   runtimeMs?: number;
+  watchedAt?: string | null;
 }
 
 async function createRating(apiKey: string, tmdbId: number, mediaType: 'movie' | 'tv', score: number): Promise<string | null> {
@@ -619,7 +620,7 @@ async function reportPlayback(
     if (!options.played) return true;
   }
 
-  const result = await markWatched(apiKey, tmdbId, mediaType, season, episode);
+  const result = await markWatched(apiKey, tmdbId, mediaType, season, episode, options.watchedAt);
   return !!result?.success;
 }
 

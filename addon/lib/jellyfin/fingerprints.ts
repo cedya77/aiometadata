@@ -7,9 +7,7 @@ const logger = consola.withTag('Jellyfin');
 const database: any = require('../database');
 
 const KINDS = new Set(['intro', 'credits']);
-// About 16 minutes of audio, past any window a client fingerprints.
 const MAX_POINTS = 8000;
-// The other episodes of the season sent back, nearest first.
 const NEIGHBOURS = 6;
 const PRUNE_EVERY_MS = 60 * 60 * 1000;
 let prunedAt = 0;
@@ -25,7 +23,6 @@ function kindOf(value: unknown): string | null {
   return KINDS.has(kind) ? kind : null;
 }
 
-/** The fingerprints clients took of the other episodes of this one's season. */
 export async function listSeasonFingerprints(itemId: unknown, kindValue: unknown, config: any): Promise<any[] | null> {
   const kind = kindOf(kindValue);
   const at = await episodeOf(itemId, config);
@@ -38,7 +35,6 @@ export async function listSeasonFingerprints(itemId: unknown, kindValue: unknown
     .map((row: any) => ({ Episode: Number(row.episode), StartMs: Number(row.start_ms), Points: String(row.points) }));
 }
 
-/** Keeps a client's fingerprint of one episode's intro or credits for the others of its season. */
 export async function saveSeasonFingerprint(itemId: unknown, body: any, config: any): Promise<boolean> {
   const kind = kindOf(body?.Kind);
   const startMs = Number(body?.StartMs);

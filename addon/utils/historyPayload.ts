@@ -33,3 +33,37 @@ export function historyPayload(
     }],
   };
 }
+
+export interface HistoryWrite {
+  ids: Record<string, string | number>;
+  season?: number;
+  episode?: number;
+  watchedAt?: string | null;
+}
+
+export function historyBatchPayload(writes: HistoryWrite[]): any {
+  const movies: any[] = [];
+  const shows = new Map<string, { ids: Record<string, string | number>; seasons: Map<number, any[]> }>();
+  for (const write of writes) {
+    const at = write.watchedAt ? { watched_at: write.watchedAt } : {};
+    if (write.season == null || write.episode == null) {
+      movies.push({ ids: write.ids, ...at });
+      continue;
+    }
+    const key = JSON.stringify(write.ids);
+    const show = shows.get(key) ?? { ids: write.ids, seasons: new Map<number, any[]>() };
+    const episodes = show.seasons.get(write.season) ?? [];
+    if (!episodes.some((e) => e.number === write.episode)) episodes.push({ number: write.episode, ...at });
+    show.seasons.set(write.season, episodes);
+    shows.set(key, show);
+  }
+  return {
+    ...(movies.length ? { movies } : {}),
+    ...(shows.size ? {
+      shows: [...shows.values()].map((show) => ({
+        ids: show.ids,
+        seasons: [...show.seasons.entries()].sort((a, b) => a[0] - b[0]).map(([number, episodes]) => ({ number, episodes: episodes.sort((a, b) => a.number - b.number) })),
+      })),
+    } : {}),
+  };
+}

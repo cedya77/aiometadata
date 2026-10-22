@@ -591,12 +591,14 @@ export async function dashboardSyncNow(userUUID: string, key: string, full: bool
   const before = Number((await database.getTrackerSync(key).catch(() => null))?.version) || 0;
   const started = Date.now();
   const version = await syncMirror(source.service, source.credential, source.scoped, { full });
+  forgetDrift(userUUID);
   return { ms: Date.now() - started, changed: version !== before };
 }
 
 export async function dashboardOutbox(userUUID: string, action: 'retry' | 'drop', ids: number[]): Promise<number | null> {
   const config = await database.getUserConfig(userUUID).catch(() => null);
   if (!config) return null;
+  forgetDrift(userUUID);
   if (action === 'retry') {
     const hurried = await database.hurryTrackerOutbox(userUUID, ids);
     require('../trackerOutbox').wakeTrackerOutbox();
@@ -613,8 +615,179 @@ export async function dashboardOutbox(userUUID: string, action: 'retry' | 'drop'
     } catch {}
     const job = summariseJob(row.op, payload, row.item_key);
     await noteActivity({ sourceKey: sourceKeyFor(row.service, credential), service: row.service, kind: 'dropped', userUUID, profile: row.profile ?? '', op: row.op, video: job.video, detail: { verb: job.verb, count: job.count, reason: 'Dropped from the dashboard' } });
+    await require('../trackerOutbox').unlayer(row, scopeConfigToProfile(config, userUUID, row.profile || null));
   }
   return dropped.length;
+}
+
+const drifts = new LRUCache<string, any>({ max: 200, ttl: envInt('JELLYFIN_TRACKER_DRIFT_CACHE_SECONDS', 60, 0) * 1000 || 1 });
+
+function forgetDrift(userUUID: string): void {
+  for (const key of [...drifts.keys()]) if (key.startsWith(`${userUUID}|`)) drifts.delete(key);
+}
+
+async function driftOf(userUUID: string, key: string, source: SyncSource): Promise<any> {
+  const { driftFor } = require('./trackerDrift');
+  return driftFor(userUUID, { service: source.service, credential: source.credential, keys: source.keys, scoped: source.scoped });
+}
+
+export async function dashboardDrift(userUUID: string, profile: string | null): Promise<any | null> {
+  const config = await database.getUserConfig(userUUID).catch(() => null);
+  if (!config) return null;
+  const memoKey = `${userUUID}|${profile ?? '*'}`;
+  const held = drifts.get(memoKey);
+  if (held) return held;
+  const { driftWindowDays, spellingFor } = require('./trackerDrift');
+  const sources = syncSources(config, userUUID, profile);
+  const lanes = await mapWithConcurrency([...sources.entries()], 2, async ([key, source]) => {
+    try {
+      const drift = await driftOf(userUUID, key, source);
+      const items = async (viewings: any[]) => {
+        const groups = new Map<string, any[]>();
+        for (const v of viewings) {
+          const id = `${v.profile}|${v.metaId}`;
+          if (!groups.has(id)) groups.set(id, []);
+          groups.get(id)!.push(v);
+        }
+        const out = await mapWithConcurrency([...groups.entries()], envInt('JELLYFIN_DASHBOARD_DESCRIBE_CONCURRENCY', 8, 1), async ([id, list]) => {
+          list.sort((a: any, b: any) => (a.season ?? 0) - (b.season ?? 0) || (a.episode ?? 0) - (b.episode ?? 0) || a.at - b.at);
+          const spelling = spellingFor(source.service, list[list.length - 1].ids);
+          const named = await withDeadline(describe(userUUID, spelling).catch(() => null));
+          return {
+            id,
+            kind: list[0].kind,
+            title: named && named.title !== spelling ? named.title : null,
+            open: list[0].kind === 'movie'
+              ? { id: list[0].ids.find((id: string) => id.startsWith('tt')) ?? list[0].metaId, type: 'movie' }
+              : { id: named?.seriesId ?? list[0].metaId, type: 'series' },
+            imageUrl: named?.backdropUrl ?? named?.imageUrl ?? named?.posterUrl ?? null,
+            views: list.map((v: any) => ({ at: v.at, season: v.season, episode: v.episode })),
+            lastAt: Math.max(...list.map((v: any) => v.at)),
+          };
+        });
+        return out.sort((a, b) => b.lastAt - a.lastAt);
+      };
+      return { key, behind: await items(drift.behind), ahead: await items(drift.ahead), unread: drift.unread, readAt: drift.readAt, error: null };
+    } catch (error: any) {
+      return { key, behind: [], ahead: [], unread: 0, readAt: null, error: String(error?.message || error).slice(0, 200) };
+    }
+  });
+  const out = { checkedAt: Date.now(), days: driftWindowDays(), lanes };
+  drifts.set(memoKey, out);
+  return out;
+}
+
+export async function dashboardDriftAction(userUUID: string, key: string, action: 'push' | 'pull', items: string[] | null): Promise<number | null> {
+  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const source = config ? syncSources(config, userUUID).get(key) : null;
+  if (!source) return null;
+  const { pushDrift, pullDrift } = require('./trackerDrift');
+  if (action === 'push') await require('./trackerMirror').syncMirror(source.service, source.credential, source.scoped);
+  const drift = await driftOf(userUUID, key, source);
+  const wanted = (v: any) => !items || items.includes(`${v.profile}|${v.metaId}`);
+  const driftSource = { service: source.service, credential: source.credential, keys: source.keys, scoped: source.scoped };
+  const done = action === 'push'
+    ? await pushDrift(userUUID, config, driftSource, drift.behind.filter(wanted))
+    : await pullDrift(userUUID, driftSource, drift.ahead.filter(wanted));
+  forgetDrift(userUUID);
+  if (action === 'pull') {
+    forgetMemos(userUUID);
+    require('./resume').invalidateResume(userUUID);
+  }
+  return done;
+}
+
+function copySide(source: SyncSource, key: string): any {
+  return { service: source.service, credential: source.credential, key, keys: source.keys, scoped: source.scoped };
+}
+
+async function copyPair(userUUID: string, profile: string | null, fromKey: string, toKey: string): Promise<{ from: SyncSource; to: SyncSource } | null> {
+  const config = await database.getUserConfig(userUUID).catch(() => null);
+  if (!config || fromKey === toKey) return null;
+  const sources = syncSources(config, userUUID, profile);
+  const from = sources.get(fromKey);
+  const to = sources.get(toKey);
+  const { COPY_SOURCES } = require('./trackerCopy');
+  return from && to && COPY_SOURCES.has(from.service) ? { from, to } : null;
+}
+
+async function named(userUUID: string, videos: string[]): Promise<Record<string, { title: string | null; imageUrl: string | null; posterUrl: string | null }>> {
+  const out: Record<string, { title: string | null; imageUrl: string | null; posterUrl: string | null }> = {};
+  await mapWithConcurrency([...new Set(videos)].slice(0, 120), envInt('JELLYFIN_DASHBOARD_DESCRIBE_CONCURRENCY', 8, 1), async (video: string) => {
+    const n = await withDeadline(describe(userUUID, video).catch(() => null));
+    out[video] = { title: n && n.title !== video ? n.title : null, imageUrl: n?.backdropUrl ?? n?.imageUrl ?? null, posterUrl: n?.posterUrl ?? null };
+  });
+  return out;
+}
+
+export async function dashboardCopyPreview(userUUID: string, profile: string | null, fromKey: string, toKey: string, since: number): Promise<any | null> {
+  const pair = await copyPair(userUUID, profile, fromKey, toKey);
+  if (!pair) return null;
+  const { planCopy } = require('./trackerCopy');
+  const { spellingFor } = require('./trackerDrift');
+  const plan = await planCopy(userUUID, copySide(pair.from, fromKey), copySide(pair.to, toKey), since);
+  const titles = new Map<string, { id: string; kind: string; episodes: Set<string>; lastAt: number; video: string }>();
+  let films = 0;
+  let episodes = 0;
+  let undated = 0;
+  for (const item of plan.items) {
+    if (item.kind === 'movie') films += 1;
+    else episodes += 1;
+    if (!item.at) undated += 1;
+    const held = titles.get(item.metaId) ?? { id: item.metaId, kind: item.kind, episodes: new Set<string>(), lastAt: 0, video: spellingFor(pair.to.service, item.ids) };
+    held.episodes.add(`${item.season}:${item.episode}`);
+    if ((item.at ?? 0) > held.lastAt) {
+      held.lastAt = item.at ?? 0;
+      held.video = spellingFor(pair.to.service, item.ids);
+    }
+    titles.set(item.metaId, held);
+  }
+  const list = [...titles.values()].sort((a, b) => b.lastAt - a.lastAt).map((t) => ({ id: t.id, kind: t.kind, count: t.kind === 'movie' ? 1 : t.episodes.size, lastAt: t.lastAt || null, video: t.video }));
+  return {
+    from: fromKey,
+    to: toKey,
+    since,
+    checkedAt: plan.checkedAt,
+    totals: { films, episodes, titles: list.length, excluded: plan.excluded, undated },
+    titles: list,
+    named: await named(userUUID, list.slice(0, 60).map((t) => t.video)),
+  };
+}
+
+export async function dashboardCopyDescribe(userUUID: string, videos: string[]): Promise<any> {
+  return named(userUUID, videos);
+}
+
+export async function dashboardCopyStart(userUUID: string, profile: string | null, fromKey: string, toKey: string, since: number, titles: string[] | null): Promise<number | null> {
+  const pair = await copyPair(userUUID, profile, fromKey, toKey);
+  if (!pair) return null;
+  const { startCopy } = require('./trackerCopy');
+  return startCopy(userUUID, [...pair.to.keys][0] ?? '', copySide(pair.from, fromKey), copySide(pair.to, toKey), since, titles);
+}
+
+export async function dashboardCopyJobs(userUUID: string): Promise<any[]> {
+  const rows: any[] = await database.listCopyJobs(userUUID, 10).catch(() => []);
+  return rows.map((row) => ({
+    id: Number(row.id),
+    from: String(row.from_key),
+    to: String(row.to_key),
+    fromService: String(row.from_service),
+    toService: String(row.to_service),
+    status: String(row.status),
+    total: Number(row.total) || 0,
+    done: Number(row.cursor) || 0,
+    sent: Number(row.sent) || 0,
+    failed: Number(row.failed) || 0,
+    skipped: Number(row.skipped) || 0,
+    nextAt: Number(row.next_at) || null,
+    lastError: row.last_error ? String(row.last_error) : null,
+    createdAt: Number(row.created_at),
+    finishedAt: row.finished_at ? Number(row.finished_at) : null,
+  }));
+}
+
+export async function dashboardCopyControl(userUUID: string, id: number, action: 'pause' | 'resume' | 'stop'): Promise<boolean> {
+  return require('./trackerCopy').controlCopy(userUUID, id, action);
 }
 
 /** One configuration: its profiles with counts, and the sessions, positions and recent plays of one profile or all. */
@@ -1409,7 +1582,6 @@ function forgetMemos(userUUID: string): void {
   for (const key of [...droppedMemo.keys()]) if (key.startsWith(`${userUUID}:`)) droppedMemo.delete(key);
 }
 
-/** Moves one viewing of a film or episode to another date; with `from` null, dates an undated one. */
 export async function dashboardWatchDate(userUUID: string, profile: string | null, itemId: string, from: number | null, to: number): Promise<boolean | null> {
   const { runInViewerScope } = require('./viewer');
   return runInViewerScope(false, async () => {

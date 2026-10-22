@@ -406,6 +406,16 @@ export async function deliverWatchDate(service: WatchTrackingService, p: { type:
   if (parsedId) await require('./subtitleHandler').redateHistory(parsedId, config, service, p);
 }
 
+export async function deliverCatchUp(service: WatchTrackingService, p: { type: string; id: string; at: number }, config: any, userUUID: string): Promise<void> {
+  if (service === 'anilist' || service === 'mal') {
+    const report: PlaybackReport = { id: null, event: 'played', at: p.at, metaId: null, videoId: p.id, positionMs: null, durationMs: null, played: true, season: null, episode: null, ids: {} };
+    await advanceAnimeLists(p.type, p.id, report, config, userUUID, service);
+    return;
+  }
+  const parsedId = trackedMediaId(p);
+  if (parsedId) await require('./subtitleHandler').creditHistory(parsedId, config, service, p.at);
+}
+
 export async function deliverClearResume(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {
   const { parseMediaId, clearResumePoint } = require('./subtitleHandler');
   const parsedId = parseMediaId(p.id);

@@ -490,17 +490,18 @@ async function creditWatch(parsedId: ParsedMediaId, config: any): Promise<void> 
 }
 
 /** The history half of a credited watch, for one service. */
-async function creditHistory(parsedId: ParsedMediaId, config: any, only: TrackedService): Promise<void> {
+async function creditHistory(parsedId: ParsedMediaId, config: any, only: TrackedService, at?: number): Promise<void> {
   const mediaType = parsedId.type === 'movie' ? 'movie' : 'series';
-  if (only === 'publicmetadb') await publicMetaDbHistory(parsedId, config, mediaType, 'watched');
-  else await eachHistoryService(parsedId, config, mediaType, 'addToHistory', 'Crediting a watch', only);
+  if (only === 'publicmetadb') {
+    await publicMetaDbHistory(parsedId, config, mediaType, 'watched', at ? new Date(at).toISOString() : undefined);
+  } else {
+    await eachHistoryService(parsedId, config, mediaType, 'addToHistory', 'Crediting a watch', only, at);
+  }
 }
 
 export interface WatchDateChange {
-  /** The viewing's date as the tracker holds it, and the date it should hold, in ms. */
   from: number;
   to: number;
-  /** The episode's latest viewing once moved, for Simkl, which keeps one date per episode. */
   latest?: number | null;
 }
 
@@ -526,10 +527,6 @@ function nearestPlay<T>(plays: T[], at: number, dateOf: (play: T) => unknown, wi
   return best;
 }
 
-/**
- * Moves one viewing to another date on one tracker. A tracker that never got the viewing
- * is left alone, and each step reads what the tracker holds first, so a retry repeats nothing.
- */
 async function redateHistory(parsedId: ParsedMediaId, config: any, only: TrackedService, change: WatchDateChange): Promise<void> {
   const mediaType = parsedId.type === 'movie' ? 'movie' : 'series';
   if (!shouldTrackServiceMediaType(config, only, mediaType)) return;
@@ -584,11 +581,13 @@ async function redatePublicMetaDb(
     .map((row) => { try { return JSON.parse(row.data); } catch { return null; } })
     .filter(isTitle);
   if (!nearestPlay(plays, change.from, (play) => play.watched_at, within)) {
-    // Newest first, so the read stops once a page is older than the viewing.
-    const { envInt } = require('../utils/envNumber');
     plays = [];
-    for (let page = 1; page <= envInt('JELLYFIN_WATCHED_MAX_PAGES', 50, 1); page += 1) {
+    const read = new Set<string>();
+    for (let page = 1; ; page += 1) {
       const result = await fetchWatched(apiKey, page, 500);
+      const first = String(result.items[0]?.id ?? '');
+      if (first && read.has(first)) break;
+      read.add(first);
       plays.push(...result.items.filter(isTitle));
       const oldest = playTime(result.items[result.items.length - 1]?.watched_at);
       if (page >= result.totalPages || !result.items.length || (oldest !== null && oldest < change.from - within)) break;
@@ -621,13 +620,11 @@ async function redateMdblist(
   const placed = nearestPlay(plays, change.to, (play: any) => play.watched_at, SAME_PLAY_MS);
   const old = nearestPlay(plays.filter((play: any) => play !== placed), change.from, (play: any) => play.watched_at, within);
   if (!old) {
-    // MDBList records a play a while after it is sent, so a viewing this recent may not be there yet.
     if (!placed && Date.now() - change.from < 15 * 60 * 1000) {
       require('../utils/trackerCalls').noteTrackerCall('https://api.mdblist.com/sync/history', 429, 'play not recorded yet', null, Date.now() + 60_000);
     }
     return;
   }
-  // Added before the old one goes, so the title never reads as unwatched in between.
   if (!placed && !(await mdblist.addToHistory(ids, apiKey, season, episode, undefined, new Date(change.to).toISOString()))) return;
   await mdblist.removePlays([old.play_id], apiKey);
 }
@@ -640,7 +637,6 @@ async function redateSimkl(
   episode: number | undefined,
   change: WatchDateChange
 ): Promise<void> {
-  // A movie's date only changes by removing it, which wipes its rating.
   if (mediaType === 'movie' || season == null || episode == null || change.latest == null) return;
   const tokenId = config.apiKeys?.simklTokenId;
   const token = tokenId ? (await simklUtils.getSimklToken(tokenId))?.access_token : null;
@@ -649,7 +645,6 @@ async function redateSimkl(
   if (held === undefined) return;
   const heldAt = playTime(held);
   if (heldAt !== null && Math.abs(heldAt - change.latest) < SAME_PLAY_MS) return;
-  // Sending a date for a watched episode changes nothing, so it is unmarked first.
   if (held !== null && !(await simklUtils.removeFromHistory(ids, token, season, episode))) return;
   await simklUtils.addToHistory(ids, token, season, episode, undefined, new Date(change.latest).toISOString());
 }
@@ -659,14 +654,24 @@ async function publicMetaDbHistory(
   parsedId: ParsedMediaId,
   config: any,
   mediaType: 'movie' | 'series',
-  action: 'watched' | 'unwatch'
+  action: 'watched' | 'unwatch',
+  watchedAt?: string
 ): Promise<void> {
   if (!shouldTrackServiceMediaType(config, 'publicmetadb', mediaType)) return;
   try {
-    await checkinPublicMetaDB(parsedId, config, { action });
+    await checkinPublicMetaDB(parsedId, config, { action, ...(watchedAt ? { watchedAt } : {}) });
   } catch (error: any) {
     logger.error(`[PublicMetaDB] ${action} failed: ${error.message}`);
   }
+}
+
+async function historyTarget(parsedId: ParsedMediaId, config: any, service: TrackedService): Promise<{ ids: Record<string, any>; season?: number; episode?: number; fallback?: { ids: Record<string, any>; season: number; episode: number } | null } | null> {
+  if (parsedId.type === 'movie') {
+    const ids = normalizeIdsForMovie(parsedId);
+    return ids ? { ids: await withTmdbId(ids, 'movie') } : null;
+  }
+  const resolution = await resolveSeriesIds(parsedId, config, service === 'simkl');
+  return resolution ? { ids: await withTmdbId(resolution.ids, 'series'), season: resolution.season, episode: resolution.episode, fallback: resolution.fallbackData ?? null } : null;
 }
 
 async function eachHistoryService(
@@ -675,8 +680,10 @@ async function eachHistoryService(
   mediaType: 'movie' | 'series',
   method: 'addToHistory' | 'removeFromHistory' | 'clearPlayback',
   what: string,
-  only?: TrackedService
+  only?: TrackedService,
+  at?: number
 ): Promise<void> {
+  const watchedAt = at && method === 'addToHistory' ? new Date(at).toISOString() : undefined;
   for (const service of ['simkl', 'mdblist'] as const) {
     if (only && only !== service) continue;
     if (!shouldTrackServiceMediaType(config, service, mediaType)) {
@@ -704,12 +711,12 @@ async function eachHistoryService(
 
       if (parsedId.type === 'movie') {
         const ids = normalizeIdsForMovie(parsedId);
-        if (ids) await utils[method](await withTmdbId(ids, 'movie'), credential);
+        if (ids) await utils[method](await withTmdbId(ids, 'movie'), credential, undefined, undefined, undefined, watchedAt);
       } else {
         const resolution = await resolveSeriesIds(parsedId, config, service === 'simkl');
         if (resolution) {
           const ids = await withTmdbId(resolution.ids, 'series');
-          await utils[method](ids, credential, resolution.season, resolution.episode);
+          await utils[method](ids, credential, resolution.season, resolution.episode, undefined, watchedAt);
         } else {
           logger.debug(`[${service}] ${what} skipped: no ids for ${parsedId.provider}:${parsedId.id}`);
         }
@@ -956,7 +963,7 @@ async function checkinSimkl(
 async function checkinPublicMetaDB(
   parsedId: ParsedMediaId,
   config: any,
-  options: { action?: 'watched' | 'stop' | 'unwatch'; played?: boolean; positionMs?: number; runtimeMs?: number } = {}
+  options: { action?: 'watched' | 'stop' | 'unwatch'; played?: boolean; positionMs?: number; runtimeMs?: number; watchedAt?: string | null } = {}
 ): Promise<void> {
   try {
     const { checkinMovie, checkinEpisode } = require('../utils/publicmetadbUtils');
@@ -1008,6 +1015,7 @@ export {
   creditWatch,
   creditHistory,
   redateHistory,
+  historyTarget,
   markEpisodes,
   resolveSeriesIds,
   shouldTrackMdblistWatch,
@@ -1024,6 +1032,7 @@ module.exports = {
   creditWatch,
   creditHistory,
   redateHistory,
+  historyTarget,
   markEpisodes,
   resolveSeriesIds,
   shouldTrackMdblistWatch,

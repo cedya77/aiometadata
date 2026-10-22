@@ -718,10 +718,6 @@ export async function recordUnplayed(req: any, body: any): Promise<void> {
   await markEach(req, body, 'unplayed');
 }
 
-/**
- * Moves one viewing of a film or episode to another date, or dates one recorded without a
- * date, here and on the trackers holding it. False when there was no such viewing.
- */
 export async function recordWatchDate(req: any, itemId: string, from: number | null, to: number): Promise<boolean> {
   const userUUID = req.params?.userUUID;
   if (!userUUID) return false;
@@ -746,7 +742,6 @@ export async function recordWatchDate(req: any, itemId: string, from: number | n
   announce(userUUID, config, profile, session).catch((error: any) =>
     logger.debug(`User data push failed for ${session.videoId}: ${error?.message || error}`)
   );
-  // An undated watch came without a date from the tracker too, so there is no play there to move.
   if (from === null || !tellsTrackers(config)) return true;
   const { enqueueTrackerWrites, hasCredential } = require('../trackerOutbox');
   const latest = session.descriptor.k === 'episode' && latestAfter !== latestBefore ? latestAfter : null;

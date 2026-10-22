@@ -4,14 +4,12 @@ import type { DashboardTab, JellyfinTitlePerson, JellyfinTitleRef } from '@/hook
 export type DashboardPage = { kind: 'title'; ref: JellyfinTitleRef } | { kind: 'person'; person: JellyfinTitlePerson };
 
 export interface DashboardRoute {
-  /** Null on the bare dashboard path: the first tab on desktop, the section menu on a phone. */
   tab: DashboardTab | null;
   config: string | null;
   profile: string | null;
   page: DashboardPage | null;
 }
 
-/** A route plus the pages under its top one, which stay open behind it. */
 export interface DashboardLocation extends DashboardRoute {
   stack: DashboardPage[];
 }
@@ -19,7 +17,6 @@ export interface DashboardLocation extends DashboardRoute {
 const BASE = '/dashboard';
 const TABS: readonly DashboardTab[] = ['overview', 'analytics', 'content', 'performance', 'system', 'operations', 'users', 'jellyfin', 'logs', 'settings'];
 const NAVIGATE_EVENT = 'aiom:dashboard-navigate';
-// The main user's profile key is empty; profiles added later have generated ids.
 const MAIN_PROFILE = 'main';
 
 interface HistoryEntry {
@@ -56,7 +53,6 @@ export function parseDashboardUrl(pathname: string, search: string): DashboardRo
   return { tab, config: parts[1], profile: profile === MAIN_PROFILE ? '' : profile, page };
 }
 
-/** The path a route lives at; the name only adds a readable slug, which parsing ignores. */
 export function dashboardUrl(route: DashboardRoute, name?: string): string {
   if (!route.tab) return BASE;
   let path = `${BASE}/${route.tab}`;
@@ -90,7 +86,6 @@ function subscribe(onChange: () => void): () => void {
   };
 }
 
-// Without the slug, so naming a page in place leaves every reader as it was.
 function snapshot(): string {
   return `${dashboardUrl(parseDashboardUrl(window.location.pathname, window.location.search))} ${entryOf(window.history.state)?.key ?? ''}`;
 }
@@ -116,7 +111,6 @@ export function navigateDashboard(route: DashboardRoute, options: { replace?: bo
   window.dispatchEvent(new Event(NAVIGATE_EVENT));
 }
 
-/** Gives the page on top a readable slug once its name is known, and its lasting id, in place. */
 export function nameDashboardPage(name: string, page?: DashboardPage): void {
   const route = parseDashboardUrl(window.location.pathname, window.location.search);
   if (!route.page) return;
@@ -126,7 +120,6 @@ export function nameDashboardPage(name: string, page?: DashboardPage): void {
   window.dispatchEvent(new Event(NAVIGATE_EVENT));
 }
 
-/** A page opened from a link gets its configuration under it, so Back and Close land there. */
 export function settleDashboardEntry(): void {
   if (entryOf(window.history.state)) return;
   const route = parseDashboardUrl(window.location.pathname, window.location.search);

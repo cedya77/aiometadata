@@ -172,7 +172,6 @@ export function sessionInfo(
     DeviceId: client.deviceId,
     ApplicationVersion: client.version,
     IsActive: true,
-    // As on Jellyfin, an open socket is what makes a client controllable.
     SupportsMediaControl: remote ? true : false,
     SupportsRemoteControl: remote ? true : false,
     HasCustomDeviceName: false,

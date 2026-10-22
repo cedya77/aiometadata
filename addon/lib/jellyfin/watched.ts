@@ -874,9 +874,19 @@ async function storeSnapshot(userUUID: string, config: any, service: MirroredSer
     }
   }
 
+  return snapshotAt(service, credential, config, source, version);
+}
+
+export async function indexedSnapshot(service: MirroredService, credential: string, config: any): Promise<WatchedSnapshot> {
+  const { mirrorVersion, sourceKeyFor } = require('./trackerMirror');
+  const version = await mirrorVersion(service, credential);
+  return version ? snapshotAt(service, credential, config, sourceKeyFor(service, credential), version) : EMPTY;
+}
+
+function snapshotAt(service: MirroredService, credential: string, config: any, source: string, version: number): Promise<WatchedSnapshot> {
   const key = `store:${source}:v${version}:f${INDEX_FORMAT}`;
   const memo = summaries.get(key);
-  if (memo) return memo;
+  if (memo) return Promise.resolve(memo);
   const prior = indexBuilds.get(source) ?? Promise.resolve();
   const work = prior.catch(() => undefined).then(async () => {
     const again = summaries.get(key);
@@ -1403,7 +1413,10 @@ export async function invalidateWatched(config: any): Promise<void> {
 
   const credential = credentialFor(config, service);
   if (!credential) return;
+  await forgetTrackerReads(service, credential);
+}
 
+export async function forgetTrackerReads(service: string, credential: string): Promise<void> {
   // What this server just changed must show on the next read, not after a refresh.
   const prefix = `${sourceHash(service, credential)}:`;
   for (const key of [...served.keys()]) {

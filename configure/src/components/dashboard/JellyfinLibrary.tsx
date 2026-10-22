@@ -5,6 +5,7 @@ import { ArrowRight, Bookmark, ChevronDown, Film, LayoutGrid, Layers, Loader2, S
 import { Skeleton } from "@/components/ui/skeleton";
 import { sizedArt } from "./art";
 import { useOpenTitle } from "./jellyfinUtils";
+import { Ambient } from "./JellyfinShared";
 import { JELLYFIN_LIBRARY_PAGE, useJellyfinLibrary, useJellyfinUndrop, type DashboardTab, type JellyfinLibraryKind, type JellyfinLibraryRow, type JellyfinLibraryTab } from "@/hooks/useDashboardQueries";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
@@ -66,22 +67,6 @@ function Poster({ row, className, label = true, width = 342 }: { row: JellyfinLi
   );
 }
 
-const Ambient = memo(({ src }: { src: string | null }) => {
-  const [layers, setLayers] = useState<string[]>([]);
-  const [shown, setShown] = useState<string | null>(null);
-  if (src !== shown) {
-    setShown(src);
-    if (src) setLayers((previous) => [...previous.filter((layer) => layer !== src), src].slice(-2));
-  }
-  return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-      {layers.map((layer) => <img key={layer} src={sizedArt(layer, 342) ?? layer} alt="" className="image-in absolute inset-0 size-full scale-110 object-cover opacity-45 blur-2xl saturate-150" />)}
-      <div className="absolute inset-0 bg-gradient-to-r from-background via-background/75 to-background/40" />
-      <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/60" />
-    </div>
-  );
-});
-Ambient.displayName = "Ambient";
 
 function Stars({ value }: { value: number }) {
   const out = Math.max(0, Math.min(10, value));

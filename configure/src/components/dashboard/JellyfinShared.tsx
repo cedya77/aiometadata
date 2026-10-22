@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { memo, useEffect, useRef, useState } from "react";
 import { sizedArt } from "./art";
 import { ChevronDown } from "lucide-react";
 import { duration } from "./jellyfinUtils";
@@ -72,3 +72,20 @@ export function Shelf({ title, count, action, folded = false, onFold, children }
     </section>
   );
 }
+
+export const Ambient = memo(({ src }: { src: string | null }) => {
+  const [layers, setLayers] = useState<string[]>([]);
+  const [shown, setShown] = useState<string | null>(null);
+  if (src !== shown) {
+    setShown(src);
+    if (src) setLayers((previous) => [...previous.filter((layer) => layer !== src), src].slice(-2));
+  }
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      {layers.map((layer) => <img key={layer} src={sizedArt(layer, 342) ?? layer} alt="" className="image-in absolute inset-0 size-full scale-110 object-cover opacity-45 blur-2xl saturate-150" />)}
+      <div className="absolute inset-0 bg-gradient-to-r from-background via-background/75 to-background/40" />
+      <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/60" />
+    </div>
+  );
+});
+Ambient.displayName = "Ambient";

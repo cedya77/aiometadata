@@ -8572,6 +8572,114 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/outbox", requireDashboardAdmi
   }
 });
 
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const drift = await require('./lib/jellyfin/dashboard').dashboardDrift(String(req.params.userUUID), profile);
+    if (!drift) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(drift);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to compare the trackers' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/drift", requireDashboardAdmin, async (req, res) => {
+  try {
+    const key = typeof req.body?.key === 'string' ? req.body.key : '';
+    const action = req.body?.action === 'push' || req.body?.action === 'pull' ? req.body.action : null;
+    const items = Array.isArray(req.body?.items) ? req.body.items.filter((item) => typeof item === 'string').slice(0, 500) : null;
+    if (!key || !action) {
+      res.status(400).json({ error: 'Name the tracker account and push or pull' });
+      return;
+    }
+    const count = await require('./lib/jellyfin/dashboard').dashboardDriftAction(String(req.params.userUUID), key, action, items);
+    if (count === null) {
+      res.status(404).json({ error: 'No such tracker account on this configuration' });
+      return;
+    }
+    res.json({ count });
+  } catch (error: any) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(502).json({ error: `The tracker could not be read first: ${String(error?.trackerSaid ?? error?.message ?? 'no answer').slice(0, 200)}` });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/preview", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    const from = typeof req.body?.from === 'string' ? req.body.from : '';
+    const to = typeof req.body?.to === 'string' ? req.body.to : '';
+    const since = Number(req.body?.since) > 0 ? Number(req.body.since) : 0;
+    const preview = await require('./lib/jellyfin/dashboard').dashboardCopyPreview(String(req.params.userUUID), profile, from, to, since);
+    if (!preview) {
+      res.status(404).json({ error: 'Pick two different trackers on this configuration; MDBList, Simkl or PublicMetaDB can be copied from' });
+      return;
+    }
+    res.json(preview);
+  } catch (error: any) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(502).json({ error: `The trackers could not be compared: ${String(error?.trackerSaid ?? error?.message ?? 'no answer').slice(0, 200)}` });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/describe", requireDashboardAdmin, async (req, res) => {
+  try {
+    const videos = Array.isArray(req.body?.videos) ? req.body.videos.filter((v) => typeof v === 'string').slice(0, 120) : [];
+    res.json(await require('./lib/jellyfin/dashboard').dashboardCopyDescribe(String(req.params.userUUID), videos));
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to name the titles' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/copy", requireDashboardAdmin, async (req, res) => {
+  try {
+    res.json({ jobs: await require('./lib/jellyfin/dashboard').dashboardCopyJobs(String(req.params.userUUID)) });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the copies' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    const from = typeof req.body?.from === 'string' ? req.body.from : '';
+    const to = typeof req.body?.to === 'string' ? req.body.to : '';
+    const since = Number(req.body?.since) > 0 ? Number(req.body.since) : 0;
+    const titles = Array.isArray(req.body?.titles) ? req.body.titles.filter((t) => typeof t === 'string').slice(0, 5000) : null;
+    const id = await require('./lib/jellyfin/dashboard').dashboardCopyStart(String(req.params.userUUID), profile, from, to, since, titles);
+    if (id === null) {
+      res.status(404).json({ error: 'Pick two different trackers on this configuration' });
+      return;
+    }
+    res.json({ id });
+  } catch (error: any) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(502).json({ error: `The copy could not start: ${String(error?.trackerSaid ?? error?.message ?? 'no answer').slice(0, 200)}` });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/:id", requireDashboardAdmin, async (req, res) => {
+  try {
+    const action = ['pause', 'resume', 'stop'].includes(req.body?.action) ? req.body.action : null;
+    const id = Number(req.params.id);
+    if (!action || !Number.isInteger(id)) {
+      res.status(400).json({ error: 'Name pause, resume or stop' });
+      return;
+    }
+    const ok = await require('./lib/jellyfin/dashboard').dashboardCopyControl(String(req.params.userUUID), id, action);
+    res.status(ok ? 200 : 409).json({ ok });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to change the copy' });
+  }
+});
+
 addon.get("/api/dashboard/jellyfin/:userUUID/devices", requireDashboardAdmin, async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;

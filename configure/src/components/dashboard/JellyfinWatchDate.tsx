@@ -13,10 +13,8 @@ export interface WatchDateTarget {
   heading: string;
   sub: string | null;
   still: string | null;
-  /** The viewing being moved, or null for a watch that was never dated. */
   from: number | null;
   releasedAt: number | null;
-  /** The title's other viewings, marked on the calendar. */
   others: number[];
 }
 
@@ -32,7 +30,6 @@ const sameDay = (a: number, b: number) => startOfDay(a) === startOfDay(b);
 const withTime = (day: number, hours: number, minutes: number) => { const d = new Date(day); d.setHours(hours, minutes, 0, 0); return d.getTime(); };
 const timeOf = (at: number) => { const d = new Date(at); return { hours: d.getHours(), minutes: d.getMinutes() }; };
 
-/** A release stored as a bare date means that calendar day wherever the viewer is. */
 function releaseDay(at: number): number {
   if (at % DAY !== 0) return startOfDay(at);
   const d = new Date(at);
@@ -174,7 +171,6 @@ export default function WatchDateSheet({ target, anchor, trackers, onSave, onClo
     if (anchor.bottom + 8 + height + 8 <= window.innerHeight) setPlace({ left: fit(anchor.left), top: anchor.bottom + 8 });
     else if (anchor.top - height - 8 >= 8) setPlace({ left: fit(anchor.left), top: anchor.top - height - 8 });
     else {
-      // No room above or below: beside the trigger, so it stays in view.
       const top = Math.max(8, Math.min((anchor.top + anchor.bottom) / 2 - height / 2, window.innerHeight - height - 8));
       const right = anchor.right + 12;
       setPlace({ left: right + WIDTH + 8 <= window.innerWidth ? right : fit(anchor.left - WIDTH - 12), top });

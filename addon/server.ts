@@ -297,6 +297,7 @@ async function startServer(): Promise<void> {
   });
 
   require('./lib/trackerOutbox').startTrackerOutbox();
+  require('./lib/jellyfin/trackerCopy').startTrackerCopy();
 
   // The sync spells tracker rows through the id mappers, so it waits for them.
   if (require('./lib/settingsService').getSetting('JELLYFIN_API_ENABLED')) {

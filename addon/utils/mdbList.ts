@@ -1,4 +1,4 @@
-import { historyPayload, type EpisodeRef } from './historyPayload';
+import { historyBatchPayload, historyPayload, type EpisodeRef, type HistoryWrite } from './historyPayload';
 import { httpGet, httpPost } from "./httpClient.js";
 import { resolveAllIds } from "../lib/id-resolver.js";
 const buildInfo = require('../lib/buildInfo');
@@ -1387,6 +1387,20 @@ async function historySync(
   }
 }
 
+async function addHistoryBatch(writes: HistoryWrite[], apiKey: string): Promise<{ notFound: number }> {
+  const response: any = await makeRateLimitedRequest(
+    () => httpPost(`https://api.mdblist.com/sync/watched?apikey=${apiKey}`, historyBatchPayload(writes), {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 60000,
+      dispatcher: mdblistDispatcher,
+    }),
+    apiKey,
+    `MDBList /sync/watched batch of ${writes.length}`
+  );
+  const missed = response?.data?.not_found;
+  return { notFound: ['movies', 'shows', 'seasons', 'episodes'].reduce((n, key) => n + (Array.isArray(missed?.[key]) ? missed[key].length : 0), 0) };
+}
+
 async function addToHistory(
   idInput: Record<string, string | number>,
   apiKey: string,
@@ -1405,7 +1419,6 @@ export interface MdblistPlay {
   episode_num?: number;
 }
 
-/** Every recorded play of a movie or of a show's episodes, newest first, or null when the lookup failed. */
 async function historyPlays(kind: 'movie' | 'show', tmdbId: number, apiKey: string): Promise<MdblistPlay[] | null> {
   try {
     const response: any = await makeRateLimitedRequest(
@@ -1420,7 +1433,6 @@ async function historyPlays(kind: 'movie' | 'show', tmdbId: number, apiKey: stri
   }
 }
 
-/** Removes single plays, leaving the title's other plays and its watched state. */
 async function removePlays(playIds: number[], apiKey: string): Promise<boolean> {
   try {
     await makeRateLimitedRequest(
@@ -1737,6 +1749,7 @@ export {
   checkinMovie,
   checkinEpisode,
   addToHistory,
+  addHistoryBatch,
   removeFromHistory,
   historyPlays,
   removePlays,

@@ -17,7 +17,7 @@ import type { WatchTrackingService } from './watchTracking';
 const logger = consola.withTag('TrackerOutbox');
 const database: any = require('./database');
 
-export type OutboxOp = 'scrobble' | 'credit' | 'unwatch' | 'redate' | 'clearResume' | 'anime' | 'episodes' | 'dropped' | 'watchlist' | 'rate';
+export type OutboxOp = 'scrobble' | 'credit' | 'unwatch' | 'redate' | 'catchUp' | 'clearResume' | 'anime' | 'episodes' | 'dropped' | 'watchlist' | 'rate';
 
 export interface OutboxJob {
   service: WatchTrackingService;
@@ -38,6 +38,7 @@ const executors: Record<OutboxOp, Executor> = {
   credit: (service, p, config) => require('./playbackHandler').deliverCredit(service, p, config),
   unwatch: (service, p, config) => require('./playbackHandler').deliverUnwatch(service, p, config),
   redate: (service, p, config) => require('./playbackHandler').deliverWatchDate(service, p, config),
+  catchUp: (service, p, config, userUUID) => require('./playbackHandler').deliverCatchUp(service, p, config, userUUID),
   clearResume: (service, p, config) => require('./playbackHandler').deliverClearResume(service, p, config),
   anime: (service, p, config, userUUID) => require('./playbackHandler').deliverAnime(service, p, config, userUUID),
   episodes: (service, p, config) => require('./subtitleHandler').markEpisodes(p.videos, config, p.method, p.scope, service),
@@ -47,7 +48,7 @@ const executors: Record<OutboxOp, Executor> = {
 };
 
 // Writes that change what the trackers report as watched, rather than only where playback stands.
-const CHANGES_WATCHED = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'redate', 'episodes', 'dropped', 'anime']);
+const CHANGES_WATCHED = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'redate', 'catchUp', 'episodes', 'dropped', 'anime']);
 const CHANGES_RESUME = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'clearResume', 'episodes']);
 const CHANGES_UPCOMING = new Set<OutboxOp>(['watchlist']);
 
@@ -105,7 +106,7 @@ export async function pendingWatches(service: WatchTrackingService, credential: 
     } catch {
       continue;
     }
-    if (row.op === 'credit') note(p.id, true, row.created_at);
+    if (row.op === 'credit' || row.op === 'catchUp') note(p.id, true, row.created_at);
     else if (row.op === 'unwatch') note(p.id, false, row.created_at);
     else if (row.op === 'scrobble' && p.report?.event === 'stop' && p.report?.played === true) note(p.id, true, row.created_at);
     else if (row.op === 'episodes') for (const video of p.videos ?? []) note(video, p.method === 'addToHistory', row.created_at);
@@ -330,7 +331,6 @@ async function deliver(row: any): Promise<void> {
 
   if (outcome.kind === 'done') {
     await database.deleteTrackerOutbox(row.id);
-    // No calls means the tracker had no use for the write, so nothing was sent.
     if (calls.length) noteDelivery(row, config, payload, 'sent', { status: calls[calls.length - 1]?.status ?? null, attempts: row.attempts + 1 });
     if (row.attempts > 0) logger.info(`Sent ${label} after ${row.attempts + 1} attempts`);
     settle(row.user_uuid, config, [row.op]);
@@ -344,6 +344,7 @@ async function deliver(row: any): Promise<void> {
       logger.debug(`Nothing to change for ${label}: ${outcome.reason}`);
     } else {
       noteDelivery(row, config, payload, 'failed', { status: outcome.status ?? null, reason: outcome.reason, attempts: row.attempts + 1 });
+      await unlayer(row, config);
       logger.warn(`Gave up on ${label}: ${outcome.reason}`);
     }
     return;
@@ -354,12 +355,21 @@ async function deliver(row: any): Promise<void> {
   if (nextAt >= row.expires_at) {
     await database.deleteTrackerOutbox(row.id);
     noteDelivery(row, config, payload, 'failed', { reason: outcome.reason, attempts });
+    await unlayer(row, config);
     logger.warn(`Gave up on ${label} after ${attempts} attempts: ${outcome.reason}`);
     return;
   }
   await database.retryTrackerOutbox(row.id, attempts, nextAt, outcome.reason);
   noteDelivery(row, config, payload, 'retry', { reason: outcome.reason, attempts, nextAt });
   logger.debug(`Will retry ${label} at ${new Date(nextAt).toISOString()}: ${outcome.reason}`);
+}
+
+export async function unlayer(row: { op: string; service: string }, config: any): Promise<void> {
+  if (!CHANGES_WATCHED.has(row.op as OutboxOp)) return;
+  const credential = credentialOf(config, row.service as WatchTrackingService);
+  if (!credential) return;
+  const { sourceKeyFor } = require('./jellyfin/trackerMirror');
+  await database.bumpTrackerSyncVersion(sourceKeyFor(row.service, credential)).catch(() => undefined);
 }
 
 function noteDelivery(row: any, config: any, payload: any, kind: 'sent' | 'retry' | 'failed', detail: Record<string, unknown>): void {

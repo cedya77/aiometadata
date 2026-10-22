@@ -68,7 +68,6 @@ function readFailure(calls: Array<{ status: number; body?: string }>, error: any
     const data = failed.body ? JSON.parse(failed.body) : null;
     said = data?.errors?.[0]?.message ?? data?.error_description ?? data?.message ?? (typeof data?.error === 'string' ? data.error : null);
   } catch {
-    // Bodies are kept short, so a long one is cut before it parses.
     said = failed.body?.match(/"(?:message|error_description|error)"\s*:\s*"([^"]+)"/)?.[1] ?? (failed.body ? failed.body.slice(0, 160) : null);
   }
   return `${failed.status}${said ? `: ${said}` : ''}`.slice(0, 300);
@@ -112,6 +111,7 @@ async function runSync(service: MirrorService, key: string, credential: string, 
     logger.debug(`${service} mirror ${key} ${outcome.full ? 'imported in full' : 'updated'} to version ${version} in ${Date.now() - started}ms`);
   }
   require('../trackerActivity').noteRead(key, service, { changed: Boolean(outcome.changed), full: Boolean(outcome.full), ms: Date.now() - started });
+  void require('./trackerDrift').recoverFailed(key, service).catch((error: any) => logger.debug(`Could not resend the writes ${service} missed: ${error?.message || error}`));
   return version;
 }
 

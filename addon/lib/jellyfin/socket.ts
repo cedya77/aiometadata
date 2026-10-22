@@ -172,7 +172,6 @@ export interface LiveDevice extends DeviceCapabilities {
 
 const localCapabilities = new Map<string, DeviceCapabilities>();
 
-/** Kept while the device's socket stays open, so a client that never opens one is forgotten. */
 export async function saveCapabilities(userUUID: string, profile: string, deviceId: string, capabilities: DeviceCapabilities): Promise<void> {
   const key = `${userUUID}:${profile}:${deviceId}`;
   if (!redis) return void localCapabilities.set(key, capabilities);
@@ -193,7 +192,6 @@ export async function liveDevices(userUUID: string, profile: string): Promise<Li
         if (time > fresh && !seen.has(deviceId)) seen.set(deviceId, time);
       }
     } catch {
-      /* the local sockets still answer */
     }
   }
   const ids = [...seen.keys()];

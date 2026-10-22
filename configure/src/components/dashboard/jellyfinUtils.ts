@@ -159,7 +159,6 @@ export function titleRefOf(row: { seriesId: string | null; videoId: string }): J
   return row.seriesId ? { id: row.seriesId, type: "series" } : { id: row.videoId.split(":").slice(0, row.videoId.startsWith("tt") ? 1 : 2).join(":"), type: "movie" };
 }
 
-/** Where a sheet opened from an element lines up with it. */
 export function anchorOf(element: Element): { left: number; right: number; top: number; bottom: number } {
   const box = element.getBoundingClientRect();
   return { left: box.left, right: box.right, top: box.top, bottom: box.bottom };

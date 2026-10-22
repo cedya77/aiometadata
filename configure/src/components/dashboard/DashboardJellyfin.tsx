@@ -19,6 +19,7 @@ import {
   type JellyfinTitleRef,
 } from "@/hooks/useDashboardQueries";
 import { ActivityMap, Hero } from "./JellyfinHero";
+import { TRACKER_NAMES } from "./trackerNames";
 import JellyfinSync from "./JellyfinSync";
 import { MoreFooter, PlayTable, PlayedByDay, ProgressCard, Row } from "./JellyfinPlays";
 import { Sentinel, Shelf, Stat } from "./JellyfinShared";
@@ -26,7 +27,6 @@ import { Shows } from "./JellyfinShows";
 import { when, useFolded, useRemembered, activityOf, usePagedPlays, OpenTitleContext, titleRefOf, recall, remember, SELECTED_KEY, profileKey } from "./jellyfinUtils";
 import { navigateDashboard, useDashboardRoute, type DashboardLocation, type DashboardPage } from "@/lib/dashboardRoute";
 
-const TRACKER_LABELS: Record<string, string> = { mdblist: "MDBList", simkl: "Simkl", anilist: "AniList", mal: "MyAnimeList", publicmetadb: "PublicMetaDB" };
 
 type View = "cards" | "table";
 function ShelfSkeleton() {
@@ -121,7 +121,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
     </>
   );
 
-  const trackers = data.sync.filter((row) => row.profiles.includes(historyName)).map((row) => TRACKER_LABELS[row.service] ?? row.service);
+  const trackers = data.sync.filter((row) => row.profiles.includes(historyName)).map((row) => TRACKER_NAMES[row.service] ?? row.service);
   return (
     <OpenTitleContext.Provider value={openTitle}>
     <div className="border-t border-white/[0.06]">
@@ -135,7 +135,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
         </div>
       ) : (
       <div className={`divide-y divide-white/[0.06] border-t border-white/[0.06] transition-opacity ${isFetching && !isLoading ? "opacity-60" : "opacity-100"}`}>
-        <JellyfinSync key={`sync:${profile ?? ""}`} userUUID={userUUID} profile={profile} rows={data.sync} activeTab={activeTab} />
+        <JellyfinSync key={`sync:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} watched={(profile === null ? data.profiles : data.profiles.filter((p) => p.key === profile)).reduce((sum, p) => sum + p.movies + p.episodes, 0)} rows={data.sync} activeTab={activeTab} />
         <Shelf
           title="Continue watching"
           count={progress.more ? data.totals?.progress ?? progress.rows.length : progress.rows.length}

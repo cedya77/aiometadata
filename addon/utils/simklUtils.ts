@@ -1,5 +1,5 @@
 import { httpGet, httpPost, httpRequest } from "./httpClient.js";
-import { historyPayload, type EpisodeRef } from "./historyPayload";
+import { historyBatchPayload, historyPayload, type EpisodeRef, type HistoryWrite } from "./historyPayload";
 import { noteTrackerCall } from "./trackerCalls";
 import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart, cacheWrapGlobal, classifyResultAllowEmpty } from "../lib/getCache.js";
@@ -879,6 +879,21 @@ function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
   return Object.keys(ids).length > 0 ? ids : null;
 }
 
+export async function addHistoryBatch(writes: HistoryWrite[], accessToken: string): Promise<{ notFound: number; missed: Array<Record<string, any>> }> {
+  const response: any = await makeAuthenticatedSimklRequest(
+    `${SIMKL_BASE_URL}/sync/history`, accessToken, `Simkl history batch of ${writes.length}`, 'POST', historyBatchPayload(writes), 60000
+  );
+  if (response.status < 200 || response.status >= 300) {
+    const error: any = new Error(`Simkl answered ${response.status}`);
+    error.response = { status: response.status, data: response.data };
+    throw error;
+  }
+  const missed = response?.data?.not_found;
+  const items = ['movies', 'shows', 'anime', 'episodes'].flatMap((key) => (Array.isArray(missed?.[key]) ? missed[key] : []));
+  const episodes = items.reduce((n, item: any) => n + (Array.isArray(item?.seasons) ? item.seasons.reduce((m: number, s: any) => m + (Array.isArray(s?.episodes) ? s.episodes.length : 0), 0) : 1), 0);
+  return { notFound: episodes, missed: items.map((item: any) => item?.ids ?? {}) };
+}
+
 export async function addToHistory(
   idInput: Record<string, string | number>,
   accessToken: string,
@@ -905,10 +920,6 @@ export async function addToHistory(
   }
 }
 
-/**
- * When the user last watched an episode: null when they have not, undefined when Simkl
- * could not say.
- */
 export async function episodeWatchedAt(
   idInput: Record<string, string | number>,
   accessToken: string,

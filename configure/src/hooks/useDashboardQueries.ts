@@ -1785,7 +1785,6 @@ export interface JellyfinTitle {
   id: string;
   metaId: string;
   type: 'movie' | 'series';
-  /** Whether the title opens again from its metaId and type alone. */
   linkable?: boolean;
   title: string;
   year: string | null;
@@ -2005,8 +2004,97 @@ export function useJellyfinSync(userUUID: string, profile: string | null, open: 
   );
 }
 
+export interface JellyfinDriftItem {
+  id: string;
+  kind: 'movie' | 'episode';
+  title: string | null;
+  imageUrl: string | null;
+  open: { id: string; type: 'movie' | 'series' };
+  views: Array<{ at: number; season: number | null; episode: number | null }>;
+  lastAt: number;
+}
+
+export interface JellyfinDriftLane {
+  key: string;
+  behind: JellyfinDriftItem[];
+  ahead: JellyfinDriftItem[];
+  unread: number;
+  readAt: number | null;
+  error: string | null;
+}
+
+export interface JellyfinDrift {
+  checkedAt: number;
+  days: number;
+  lanes: JellyfinDriftLane[];
+}
+
+export function useJellyfinSyncDrift(userUUID: string, profile: string | null, open: boolean, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<JellyfinDrift>(
+    ['dashboard', 'jellyfin', 'sync', 'drift', userUUID, profile],
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/drift${params.size ? `?${params}` : ''}`,
+    { ...options, enabledWhen: open }
+  );
+}
+
+export interface JellyfinCopyTitle {
+  id: string;
+  kind: 'movie' | 'episode';
+  count: number;
+  lastAt: number | null;
+  video: string;
+}
+
+export interface JellyfinCopyNamed {
+  title: string | null;
+  imageUrl: string | null;
+  posterUrl: string | null;
+}
+
+export interface JellyfinCopyPreview {
+  from: string;
+  to: string;
+  since: number;
+  checkedAt: number;
+  totals: { films: number; episodes: number; titles: number; excluded: number; undated: number };
+  titles: JellyfinCopyTitle[];
+  named: Record<string, JellyfinCopyNamed>;
+}
+
+export interface JellyfinCopyJob {
+  id: number;
+  from: string;
+  to: string;
+  fromService: string;
+  toService: string;
+  status: 'running' | 'paused' | 'done' | 'stopped' | 'failed';
+  total: number;
+  done: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  nextAt: number | null;
+  lastError: string | null;
+  createdAt: number;
+  finishedAt: number | null;
+}
+
+export function useJellyfinCopyJobs(userUUID: string, open: boolean, options: DashboardQueryOptions = {}) {
+  return useJellyfinQuery<{ jobs: JellyfinCopyJob[] }>(
+    ['dashboard', 'jellyfin', 'sync', 'copy', userUUID],
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/copy`,
+    { ...options, enabledWhen: open }
+  );
+}
+
 export function useJellyfinSyncActions() {
   const getHeaders = useApiHeaders();
+  return useMemo(() => syncActions(getHeaders), [getHeaders]);
+}
+
+function syncActions(getHeaders: () => Record<string, string>) {
   const post = async <T,>(userUUID: string, path: string, body: unknown): Promise<T> => {
     const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/${path}`, {
       method: 'POST',
@@ -2020,6 +2108,11 @@ export function useJellyfinSyncActions() {
   return {
     run: (userUUID: string, key: string, full = false) => post<{ ms: number; changed: boolean }>(userUUID, 'run', { key, full }),
     outbox: (userUUID: string, action: 'retry' | 'drop', ids: number[]) => post<{ count: number }>(userUUID, 'outbox', { action, ids }),
+    drift: (userUUID: string, key: string, action: 'push' | 'pull', items: string[] | null) => post<{ count: number }>(userUUID, 'drift', { key, action, items }),
+    copyPreview: (userUUID: string, body: { profile: string | null; from: string; to: string; since: number }) => post<JellyfinCopyPreview>(userUUID, 'copy/preview', body),
+    copyDescribe: (userUUID: string, videos: string[]) => post<Record<string, JellyfinCopyNamed>>(userUUID, 'copy/describe', { videos }),
+    copyStart: (userUUID: string, body: { profile: string | null; from: string; to: string; since: number; titles: string[] | null }) => post<{ id: number }>(userUUID, 'copy', body),
+    copyControl: (userUUID: string, id: number, action: 'pause' | 'resume' | 'stop') => post<{ ok: boolean }>(userUUID, `copy/${id}`, { action }),
   };
 }
 

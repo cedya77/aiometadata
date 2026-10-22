@@ -462,6 +462,28 @@ class Database {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_activity_source ON tracker_activity(source_key, at)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_activity_user ON tracker_activity(user_uuid, at)`,
+      `CREATE TABLE IF NOT EXISTS tracker_copy_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_uuid TEXT NOT NULL,
+        profile TEXT NOT NULL DEFAULT '',
+        from_key TEXT NOT NULL,
+        from_service TEXT NOT NULL,
+        to_key TEXT NOT NULL,
+        to_service TEXT NOT NULL,
+        status TEXT NOT NULL,
+        items TEXT NOT NULL,
+        cursor INTEGER NOT NULL DEFAULT 0,
+        total INTEGER NOT NULL DEFAULT 0,
+        sent INTEGER NOT NULL DEFAULT 0,
+        skipped INTEGER NOT NULL DEFAULT 0,
+        failed INTEGER NOT NULL DEFAULT 0,
+        next_at INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        finished_at INTEGER
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_copy_jobs_user ON tracker_copy_jobs(user_uuid, created_at)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_watch_index (
         source_key TEXT NOT NULL,
         video_id TEXT NOT NULL,
@@ -715,6 +737,28 @@ class Database {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_activity_source ON tracker_activity(source_key, at)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_activity_user ON tracker_activity(user_uuid, at)`,
+      `CREATE TABLE IF NOT EXISTS tracker_copy_jobs (
+        id BIGSERIAL PRIMARY KEY,
+        user_uuid VARCHAR(64) NOT NULL,
+        profile TEXT NOT NULL DEFAULT '',
+        from_key VARCHAR(64) NOT NULL,
+        from_service TEXT NOT NULL,
+        to_key VARCHAR(64) NOT NULL,
+        to_service TEXT NOT NULL,
+        status VARCHAR(16) NOT NULL,
+        items TEXT NOT NULL,
+        cursor INTEGER NOT NULL DEFAULT 0,
+        total INTEGER NOT NULL DEFAULT 0,
+        sent INTEGER NOT NULL DEFAULT 0,
+        skipped INTEGER NOT NULL DEFAULT 0,
+        failed INTEGER NOT NULL DEFAULT 0,
+        next_at BIGINT NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        finished_at BIGINT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_copy_jobs_user ON tracker_copy_jobs(user_uuid, created_at)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_watch_index (
         source_key VARCHAR(64) NOT NULL,
         video_id TEXT NOT NULL,
@@ -1514,10 +1558,6 @@ class Database {
     await this.runQuery(query, [userUUID, profile, videoId]);
   }
 
-  /**
-   * Moves the viewing nearest `from` to `to` under each spelling, or with `from` null dates
-   * a watch recorded without one, and the play state's date follows the latest viewing.
-   */
   async redateWatch(userUUID: string, profile: string, videoIds: string[], from: number | null, to: number, withinMs: number): Promise<{ moved: number; latestBefore: number | null; latestAfter: number | null }> {
     const sqlite = this.type === 'sqlite';
     const ids = [...new Set(videoIds)];
@@ -1558,7 +1598,6 @@ class Database {
       for (const id of ids) {
         const latest = latestOf(after.filter((row) => row.video_id === id));
         if (latest === null) continue;
-        // A rewatch under way keeps its own date until it finishes.
         await this.runQuery(
           sqlite
             ? 'UPDATE jellyfin_playstate SET last_played_at = ?, updated_at = ? WHERE user_uuid = ? AND profile = ? AND video_id = ? AND played = 1 AND position_ms = 0'
@@ -1605,11 +1644,18 @@ class Database {
     return (await this.allQuery(query, params)) || [];
   }
 
-  async listWatchesSince(userUUID: string, since: number): Promise<Array<{ profile: string; video_id: string; watched_at: number }>> {
+  async listWatchesByOrigin(userUUID: string, origins: string[]): Promise<Array<{ profile: string; video_id: string; watched_at: number; origin: string | null }>> {
+    const sqlite = this.type === 'sqlite';
+    const marks = origins.map((_, i) => (sqlite ? '?' : `$${i + 2}`)).join(', ');
+    const rows = await this.allQuery(`SELECT profile, video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = ${sqlite ? '?' : '$1'} AND origin IN (${marks})`, [userUUID, ...origins]);
+    return (rows || []).map((row: any) => ({ profile: String(row.profile ?? ''), video_id: String(row.video_id), watched_at: Number(row.watched_at), origin: row.origin ?? null }));
+  }
+
+  async listWatchesSince(userUUID: string, since: number): Promise<Array<{ profile: string; video_id: string; watched_at: number; origin: string | null }>> {
     const query = this.type === 'sqlite'
-      ? 'SELECT profile, video_id, watched_at FROM jellyfin_watches WHERE user_uuid = ? AND watched_at >= ?'
-      : 'SELECT profile, video_id, watched_at FROM jellyfin_watches WHERE user_uuid = $1 AND watched_at >= $2';
-    return ((await this.allQuery(query, [userUUID, since])) || []).map((row: any) => ({ profile: String(row.profile ?? ''), video_id: String(row.video_id), watched_at: Number(row.watched_at) }));
+      ? 'SELECT profile, video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = ? AND watched_at >= ?'
+      : 'SELECT profile, video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = $1 AND watched_at >= $2';
+    return ((await this.allQuery(query, [userUUID, since])) || []).map((row: any) => ({ profile: String(row.profile ?? ''), video_id: String(row.video_id), watched_at: Number(row.watched_at), origin: row.origin ?? null }));
   }
 
   async listWatchesForConfiguration(userUUID: string): Promise<any[]> {
@@ -1936,6 +1982,54 @@ class Database {
     return (await this.allQuery(query, params)) || [];
   }
 
+  async createCopyJob(job: { userUUID: string; profile: string; fromKey: string; fromService: string; toKey: string; toService: string; items: unknown[] }): Promise<number> {
+    const now = Date.now();
+    const params = [job.userUUID, job.profile, job.fromKey, job.fromService, job.toKey, job.toService, 'running', JSON.stringify(job.items), job.items.length, now, now];
+    if (this.type === 'sqlite') {
+      const result = await this.runQuery(
+        'INSERT INTO tracker_copy_jobs (user_uuid, profile, from_key, from_service, to_key, to_service, status, items, total, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        params
+      );
+      return Number(result?.lastID);
+    }
+    const row = await this.getQuery(
+      'INSERT INTO tracker_copy_jobs (user_uuid, profile, from_key, from_service, to_key, to_service, status, items, total, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id',
+      params
+    );
+    return Number(row?.id);
+  }
+
+  async getCopyJob(id: number): Promise<any | null> {
+    const row = await this.getQuery(`SELECT * FROM tracker_copy_jobs WHERE id = ${this.type === 'sqlite' ? '?' : '$1'}`, [id]);
+    return row ? { ...row, items: JSON.parse(row.items || '[]') } : null;
+  }
+
+  async listCopyJobs(userUUID: string, limit = 10): Promise<any[]> {
+    const sqlite = this.type === 'sqlite';
+    return (await this.allQuery(
+      `SELECT id, user_uuid, profile, from_key, from_service, to_key, to_service, status, cursor, total, sent, skipped, failed, next_at, last_error, created_at, updated_at, finished_at
+       FROM tracker_copy_jobs WHERE user_uuid = ${sqlite ? '?' : '$1'} ORDER BY created_at DESC LIMIT ${sqlite ? '?' : '$2'}`,
+      [userUUID, limit]
+    )) || [];
+  }
+
+  async dueCopyJobs(now: number): Promise<number[]> {
+    const rows = await this.allQuery(`SELECT id FROM tracker_copy_jobs WHERE status = 'running' AND next_at <= ${this.type === 'sqlite' ? '?' : '$1'} ORDER BY next_at`, [now]);
+    return (rows || []).map((row: any) => Number(row.id));
+  }
+
+  async updateCopyJob(id: number, patch: Partial<{ status: string; cursor: number; sent: number; skipped: number; failed: number; nextAt: number; lastError: string | null; finishedAt: number | null }>): Promise<void> {
+    const columns: Record<string, string> = { status: 'status', cursor: 'cursor', sent: 'sent', skipped: 'skipped', failed: 'failed', nextAt: 'next_at', lastError: 'last_error', finishedAt: 'finished_at' };
+    const entries = Object.entries(patch).filter(([key]) => columns[key]);
+    const sqlite = this.type === 'sqlite';
+    const sets = entries.map(([key], i) => `${columns[key]} = ${sqlite ? '?' : `$${i + 1}`}`);
+    sets.push(`updated_at = ${sqlite ? '?' : `$${entries.length + 1}`}`);
+    await this.runQuery(
+      `UPDATE tracker_copy_jobs SET ${sets.join(', ')} WHERE id = ${sqlite ? '?' : `$${entries.length + 2}`}`,
+      [...entries.map(([, value]) => value), Date.now(), id]
+    );
+  }
+
   async pruneTrackerActivity(before: number): Promise<void> {
     await this.runQuery(`DELETE FROM tracker_activity WHERE at < ${this.type === 'sqlite' ? '?' : '$1'}`, [before]);
   }
@@ -1986,6 +2080,15 @@ class Database {
       (marks) => `SELECT video_id, kind, at FROM jellyfin_watch_index WHERE source_key = ${this.type === 'sqlite' ? '?' : '$1'} AND video_id IN (${marks})`,
       sourceKey,
       videoIds
+    );
+    return rows.map((row: any) => ({ ...row, at: Number(row.at) }));
+  }
+
+  async watchIndexSince(sourceKey: string, since: number): Promise<Array<{ video_id: string; kind: string; meta_id: string; at: number }>> {
+    const sqlite = this.type === 'sqlite';
+    const rows = await this.allQuery(
+      `SELECT video_id, kind, meta_id, at FROM jellyfin_watch_index WHERE source_key = ${sqlite ? '?' : '$1'} AND listed = 1 AND at >= ${sqlite ? '?' : '$2'}`,
+      [sourceKey, since]
     );
     return rows.map((row: any) => ({ ...row, at: Number(row.at) }));
   }
@@ -2103,6 +2206,13 @@ class Database {
          ON CONFLICT (source_key) DO UPDATE SET service = EXCLUDED.service, watermark = EXCLUDED.watermark, version = EXCLUDED.version,
            synced_at = EXCLUDED.synced_at, full_at = EXCLUDED.full_at, updated_at = EXCLUDED.updated_at`;
     await this.runQuery(query, [sourceKey, service, state.watermark, state.version, state.syncedAt, state.fullAt, Date.now()]);
+  }
+
+  async bumpTrackerSyncVersion(sourceKey: string): Promise<void> {
+    const query = this.type === 'sqlite'
+      ? 'UPDATE jellyfin_tracker_sync SET version = version + 1, updated_at = ? WHERE source_key = ? AND version > 0'
+      : 'UPDATE jellyfin_tracker_sync SET version = version + 1, updated_at = $1 WHERE source_key = $2 AND version > 0';
+    await this.runQuery(query, [Date.now(), sourceKey]);
   }
 
   async listTrackerMirror(sourceKey: string): Promise<Array<{ item_key: string; group_key: string; sub_key: string; data: string }>> {

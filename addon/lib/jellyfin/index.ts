@@ -350,7 +350,6 @@ let searchReader: {
   run: (userUUID: string, config: any, catalog: { id: string; type: string }, term: string) => Promise<any[]>;
 } | null = null;
 
-/** The searches a profile's config offers, as its clients see them, and one of them run. */
 export async function searchCatalogs(userUUID: string, config: any): Promise<Array<{ id: string; type: string; name: string }>> {
   return searchReader ? searchReader.catalogs(userUUID, config) : [];
 }
@@ -3750,7 +3749,6 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   registerStubs(router);
   router.get(['/Items/:itemId', '/Users/:userId/Items/:itemId'], singleItemHandler);
 
-  // Query names arrive in either case, as ASP.NET binds them.
   const param = (source: any, name: string): any => {
     if (!source || typeof source !== 'object') return undefined;
     const key = Object.keys(source).find((k) => k.toLowerCase() === name.toLowerCase());
