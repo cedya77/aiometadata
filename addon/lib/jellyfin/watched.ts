@@ -473,16 +473,15 @@ export async function fetchMdblistUpNext(apiKey: string): Promise<any[]> {
 
 export async function fetchMdblistDropped(apiKey: string): Promise<{ shows: any[]; unread: boolean }> {
   const { makeRateLimitedMDBListRequest } = require('../../utils/mdbList');
+  const { readToEnd } = require('../../utils/readToEnd');
   const pageSize = envInt('JELLYFIN_WATCHED_PAGE_SIZE', 1000, 1);
-  const maxPages = envInt('JELLYFIN_WATCHED_MAX_PAGES', 50, 1);
   const shows: any[] = [];
   try {
-    for (let offset = 0; offset < maxPages * pageSize; offset += pageSize) {
-      const response = await makeRateLimitedMDBListRequest(`https://api.mdblist.com/sync/dropped?limit=${pageSize}&offset=${offset}&apikey=${apiKey}`, apiKey, 'MDBList dropped');
-      const page = Array.isArray(response?.data?.shows) ? response.data.shows : [];
-      shows.push(...page);
-      if (page.length < pageSize) break;
-    }
+    shows.push(...await readToEnd('MDBList dropped', async (page: number) => {
+      const response = await makeRateLimitedMDBListRequest(`https://api.mdblist.com/sync/dropped?limit=${pageSize}&offset=${page * pageSize}&apikey=${apiKey}`, apiKey, 'MDBList dropped');
+      const items = Array.isArray(response?.data?.shows) ? response.data.shows : [];
+      return { items, more: items.length >= pageSize };
+    }));
     return { shows, unread: false };
   } catch (error: any) {
     logger.warn(`MDBList dropped shows failed: ${error?.message || error}`);
@@ -493,12 +492,11 @@ export async function fetchMdblistDropped(apiKey: string): Promise<{ shows: any[
 /** Every page of a user's MDBList watched history, optionally only what changed since a time. */
 export async function fetchMdblistWatched(apiKey: string, mediatype: 'episode' | 'movie' | 'show', since?: string): Promise<any[]> {
   const { makeRateLimitedMDBListRequest } = require('../../utils/mdbList');
+  const { readToEnd } = require('../../utils/readToEnd');
   const pageSize = envInt('JELLYFIN_WATCHED_PAGE_SIZE', 1000, 1);
-  const maxPages = envInt('JELLYFIN_WATCHED_MAX_PAGES', 50, 1);
-  const collected: any[] = [];
   let cursor = '';
 
-  for (let page = 0; page < maxPages; page += 1) {
+  return readToEnd(`MDBList watched ${mediatype}`, async (page: number) => {
     const url =
       `https://api.mdblist.com/sync/watched?mediatype=${mediatype}` +
       `&limit=${pageSize}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}` +
@@ -509,14 +507,14 @@ export async function fetchMdblistWatched(apiKey: string, mediatype: 'episode' |
     const response = await makeRateLimitedMDBListRequest(url, apiKey, `MDBList watched ${mediatype} page ${page + 1}`);
     const body = response?.data ?? {};
     const batch = body[`${mediatype}s`];
-    if (!Array.isArray(batch) || !batch.length) break;
-
-    collected.push(...batch);
     cursor = body?.pagination?.next_cursor ?? '';
-    if (!cursor) break;
-  }
-
-  return collected;
+    return { items: Array.isArray(batch) ? batch : [], more: Boolean(cursor) };
+  }, (item: any) => {
+    const ids = (item?.movie ?? item?.show ?? item?.episode?.show)?.ids;
+    const id = ids?.mdblist ?? ids?.imdb ?? ids?.tmdb;
+    if (!id) return JSON.stringify(item);
+    return item?.episode ? `${id}:${item.episode.season}:${item.episode.number}` : String(id);
+  });
 }
 
 export async function assembleMdblist(data: MdblistData, config: any): Promise<RawSnapshot> {
@@ -1028,14 +1026,13 @@ export interface PmdbData {
 
 export async function fetchPmdbDropped(apiKey: string): Promise<{ items: any[]; unread: boolean }> {
   const { fetchDropped } = require('../../utils/publicmetadbUtils');
-  const maxPages = envInt('JELLYFIN_WATCHED_MAX_PAGES', 50, 1);
+  const { readToEnd } = require('../../utils/readToEnd');
   const items: any[] = [];
   try {
-    for (let page = 1; page <= maxPages; page += 1) {
-      const result = await fetchDropped(apiKey, page, 100);
-      items.push(...result.items);
-      if (page >= result.totalPages || !result.items.length) break;
-    }
+    items.push(...await readToEnd('PublicMetaDB dropped', async (page: number) => {
+      const result = await fetchDropped(apiKey, page + 1, 100);
+      return { items: result.items, more: page + 1 < result.totalPages };
+    }));
     return { items, unread: false };
   } catch (error: any) {
     logger.warn(`PublicMetaDB dropped shows failed: ${error?.message || error}`);

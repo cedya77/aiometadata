@@ -195,7 +195,18 @@ async function syncSimkl(key: string, tokenId: string, config: any, watermark: a
 // --- MDBList ------------------------------------------------------------------------
 
 const MDBLIST_WATCH_FIELDS = ['watched_at', 'season_watched_at', 'episode_watched_at', 'journal_at'];
-const MDBLIST_MIRROR_FORMAT = 3;
+const MDBLIST_MIRROR_FORMAT = 4;
+const MDBLIST_OLD_LIMIT = 50_000;
+const PMDB_OLD_LIMIT = 25_000;
+
+async function heldByKind(key: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  for (const row of await database.listTrackerMirrorKeys(key)) {
+    const kind = String(row.item_key).split(':')[0];
+    out.set(kind, (out.get(kind) ?? 0) + 1);
+  }
+  return out;
+}
 
 function mdblistMovieRow(entry: any): MirrorRow | null {
   const id = entry?.movie?.ids?.mdblist;
@@ -254,10 +265,34 @@ async function mdblistFull(key: string, apiKey: string, activities: any): Promis
   return { changed: true, watermark: { ...activities, ...(await mdblistUpNextMark(apiKey)), format: MDBLIST_MIRROR_FORMAT }, full: true };
 }
 
+async function mdblistCutShort(key: string, apiKey: string, watermark: any): Promise<'whole' | 'read' | 'later'> {
+  if (Number(watermark.healAfter) > Date.now()) return 'later';
+  const held = await heldByKind(key);
+  const kinds = ['movie', 'ep', 'showinfo'];
+  if (!kinds.some((kind) => (held.get(kind) ?? 0) >= MDBLIST_OLD_LIMIT)) return 'whole';
+  const pages = kinds.reduce((sum, kind) => sum + Math.ceil((held.get(kind) ?? 0) / 1000) + 1, 5);
+  const { remaining, limit } = require('../../utils/mdbList').mdblistCallsLeft(apiKey);
+  return remaining === null || remaining - pages >= Math.max(50, (limit ?? 0) / 5) ? 'read' : 'later';
+}
+
 async function syncMdblist(key: string, apiKey: string, watermark: any): Promise<SyncOutcome> {
   const activities = await mdblistActivities(apiKey);
   if (!activities?.server_time) throw new Error('MDBList activities could not be read');
-  if (!watermark?.server_time || watermark.format !== MDBLIST_MIRROR_FORMAT) return mdblistFull(key, apiKey, activities);
+  if (watermark?.server_time && watermark.format === 3) {
+    const verdict = await mdblistCutShort(key, apiKey, watermark);
+    if (verdict === 'read') {
+      try {
+        return await mdblistFull(key, apiKey, activities);
+      } catch (error: any) {
+        logger.warn(`MDBList full read for ${key} stopped, trying again after its quota resets: ${error?.message || error}`);
+      }
+    }
+    watermark = verdict === 'whole'
+      ? { ...watermark, format: MDBLIST_MIRROR_FORMAT }
+      : { ...watermark, healAfter: Number(watermark.healAfter) > Date.now() ? watermark.healAfter : require('../../utils/mdbList').mdblistCallsLeft(apiKey).resetAt };
+  }
+  if (!watermark?.server_time || (watermark.format !== MDBLIST_MIRROR_FORMAT && watermark.format !== 3)) return mdblistFull(key, apiKey, activities);
+  const kept = { format: watermark.format, healAfter: watermark.healAfter };
 
   const moved = (field: string) => (activities?.[field] ?? '') !== (watermark?.[field] ?? '');
   const watched = MDBLIST_WATCH_FIELDS.some(moved);
@@ -267,7 +302,7 @@ async function syncMdblist(key: string, apiKey: string, watermark: any): Promise
     const { fetchMdblistUpNext } = require('./watched');
     const upNext = await fetchMdblistUpNext(apiKey);
     if (upNext.length) await database.upsertTrackerMirror(key, [{ key: 'upnext', data: upNext }]);
-    return { changed: upNext.length > 0, watermark: { ...watermark, ...(await mdblistUpNextMark(apiKey)), format: MDBLIST_MIRROR_FORMAT }, full: false };
+    return { changed: upNext.length > 0, watermark: { ...watermark, ...(await mdblistUpNextMark(apiKey)) }, full: false };
   }
 
   const { makeRateLimitedMDBListRequest } = require('../../utils/mdbList');
@@ -278,7 +313,8 @@ async function syncMdblist(key: string, apiKey: string, watermark: any): Promise
     const removals: any[] = [];
     let backdated = false;
     let cursor = '';
-    for (let page = 0; page < envInt('JELLYFIN_WATCHED_MAX_PAGES', 50, 1); page += 1) {
+    const read = new Set<string>();
+    for (;;) {
       const query = cursor
         ? `cursor=${encodeURIComponent(cursor)}`
         : `since=${encodeURIComponent(watermark.server_time)}`;
@@ -292,6 +328,11 @@ async function syncMdblist(key: string, apiKey: string, watermark: any): Promise
       }
       cursor = body?.pagination?.next_cursor ?? '';
       if (!cursor) break;
+      if (read.has(cursor)) {
+        logger.warn(`MDBList journal for ${key} repeated a page; reading it in full instead`);
+        return mdblistFull(key, apiKey, activities);
+      }
+      read.add(cursor);
     }
     if (backdated) return mdblistFull(key, apiKey, activities);
 
@@ -321,7 +362,7 @@ async function syncMdblist(key: string, apiKey: string, watermark: any): Promise
   const upNextMark = watched || dropped
     ? await mdblistUpNextMark(apiKey)
     : { upnext_at: watermark?.upnext_at ?? 0, upnext_next: watermark?.upnext_next ?? null };
-  return { changed: true, watermark: { ...activities, ...upNextMark, format: MDBLIST_MIRROR_FORMAT }, full: false };
+  return { changed: true, watermark: { ...activities, ...upNextMark, ...kept }, full: false };
 }
 
 // --- PublicMetaDB -------------------------------------------------------------------
@@ -367,13 +408,12 @@ function pmdbPlayRow(row: any): MirrorRow | null {
 
 async function pmdbAllPlays(key: string, apiKey: string): Promise<void> {
   const { fetchWatched } = require('../../utils/publicmetadbUtils');
-  const rows: MirrorRow[] = [];
-  for (let page = 1; page <= envInt('JELLYFIN_WATCHED_MAX_PAGES', 50, 1); page += 1) {
-    const result = await fetchWatched(apiKey, page, 500);
-    rows.push(...(result.items.map(pmdbPlayRow).filter(Boolean) as MirrorRow[]));
-    if (page >= result.totalPages || !result.items.length) break;
-  }
-  await replaceMirror(key, rows, (itemKey) => itemKey.startsWith('play:'));
+  const { readToEnd } = require('../../utils/readToEnd');
+  const plays = await readToEnd('PublicMetaDB plays', async (page: number) => {
+    const result = await fetchWatched(apiKey, page + 1, 500);
+    return { items: result.items, more: page + 1 < result.totalPages };
+  }, (play: any) => String(play?.id));
+  await replaceMirror(key, plays.map(pmdbPlayRow).filter(Boolean) as MirrorRow[], (itemKey) => itemKey.startsWith('play:'));
 }
 
 async function syncPmdb(key: string, apiKey: string, watermark: any): Promise<SyncOutcome> {
@@ -384,7 +424,21 @@ async function syncPmdb(key: string, apiKey: string, watermark: any): Promise<Sy
   if (!watermark?.head) {
     await pmdbAllPlays(key, apiKey);
     await database.upsertTrackerMirror(key, [{ key: 'dropped', data: await fetchPmdbDropped(apiKey) }]);
-    return { changed: true, watermark: { head: headValue }, full: true };
+    return { changed: true, watermark: { head: headValue, whole: true }, full: true };
+  }
+  if (!watermark.whole && !(Number(watermark.healAfter) > Date.now())) {
+    const plays = (await heldByKind(key)).get('play') ?? 0;
+    if (plays >= PMDB_OLD_LIMIT && plays !== head.total) {
+      try {
+        await pmdbAllPlays(key, apiKey);
+        return { changed: true, watermark: { head: headValue, whole: true }, full: true };
+      } catch (error: any) {
+        logger.warn(`PublicMetaDB full read for ${key} stopped, trying again later: ${error?.message || error}`);
+        watermark = { ...watermark, healAfter: Date.now() + 6 * 60 * 60 * 1000 };
+      }
+    } else {
+      watermark = { ...watermark, whole: true };
+    }
   }
   if (headValue === watermark.head) return { changed: false, watermark, full: false };
 
@@ -394,15 +448,17 @@ async function syncPmdb(key: string, apiKey: string, watermark: any): Promise<Sy
     const { fetchWatched } = require('../../utils/publicmetadbUtils');
     const fresh: MirrorRow[] = [];
     let reachedKnown = false;
-    for (let page = 1; page <= envInt('JELLYFIN_WATCHED_MAX_PAGES', 50, 1) && !reachedKnown; page += 1) {
+    const taken = new Set<string>();
+    for (let page = 1; !reachedKnown; page += 1) {
       const result = await fetchWatched(apiKey, page, 100);
       const rows = result.items.map(pmdbPlayRow).filter(Boolean) as MirrorRow[];
       const held = await database.hasTrackerMirrorKeys(key, rows.map((row) => row.key));
       for (const row of rows) {
-        if (held.has(row.key)) {
+        if (held.has(row.key) || taken.has(row.key)) {
           reachedKnown = true;
           break;
         }
+        taken.add(row.key);
         fresh.push(row);
       }
       if (page >= result.totalPages || !result.items.length) break;
@@ -419,7 +475,7 @@ async function syncPmdb(key: string, apiKey: string, watermark: any): Promise<Sy
   if (head.droppedTotal !== before.droppedTotal) {
     await database.upsertTrackerMirror(key, [{ key: 'dropped', data: await fetchPmdbDropped(apiKey) }]);
   }
-  return { changed: true, watermark: { head: headValue }, full };
+  return { changed: true, watermark: { head: headValue, whole: true }, full };
 }
 
 // --- AniList and MyAnimeList --------------------------------------------------------

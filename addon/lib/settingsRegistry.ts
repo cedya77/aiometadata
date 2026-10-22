@@ -997,16 +997,6 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 0,
   },
   {
-    key: 'JELLYFIN_WATCHED_MAX_PAGES',
-    envVar: 'JELLYFIN_WATCHED_MAX_PAGES',
-    label: 'Jellyfin Watched History Pages (MDBList)',
-    description: 'How many pages of 1000 watched films or episodes are read from MDBList when the watched snapshot is rebuilt. Reading stops early once the history ends.',
-    category: 'Features',
-    type: 'number',
-    default: 50,
-    min: 1,
-  },
-  {
     key: 'PMDB_ACTIVITIES_TTL',
     envVar: 'PMDB_ACTIVITIES_TTL',
     label: 'PublicMetaDB History Check (seconds)',

@@ -154,6 +154,16 @@ function getRateLimitState(apiKey: string = 'global'): RateLimitState {
   return rateLimitStates.get(apiKey)!;
 }
 
+function mdblistCallsLeft(apiKey: string): { remaining: number | null; limit: number | null; resetAt: number } {
+  const state = getRateLimitState(apiKey);
+  const current = Boolean(state.lastReset && Date.now() < state.lastReset * 1000);
+  return {
+    remaining: current && state.lastRemaining !== undefined ? state.lastRemaining : null,
+    limit: state.lastLimit ?? null,
+    resetAt: current ? state.lastReset! * 1000 : Date.now() + 6 * 60 * 60 * 1000,
+  };
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -1715,6 +1725,7 @@ export {
   fetchMDBListGenres,
   convertGenreToSlug,
   makeRateLimitedMDBListRequest,
+  mdblistCallsLeft,
   makeRateLimitedMDBListPost,
   testMdblistKey,
   fetchMDBListUpNext,
