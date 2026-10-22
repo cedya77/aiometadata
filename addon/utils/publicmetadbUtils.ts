@@ -543,6 +543,19 @@ async function createEpisodeRating(apiKey: string, tmdbId: number, season: numbe
   return data?.item?.id ? String(data.item.id) : null;
 }
 
+async function ratingsOf(apiKey: string, path: string): Promise<any[]> {
+  const data = await makeRequest(path, apiKey);
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
+async function fetchTitleRatings(apiKey: string, tmdbId: number, mediaType: 'movie' | 'tv'): Promise<any[]> {
+  return ratingsOf(apiKey, `/api/external/ratings?tmdb_id=${tmdbId}&media_type=${mediaType}&label=Overall`);
+}
+
+async function fetchEpisodeRatings(apiKey: string, tmdbId: number, season: number, episode: number): Promise<any[]> {
+  return ratingsOf(apiKey, `/api/external/episode-ratings?tmdb_id=${tmdbId}&media_type=tv&season=${season}&episode=${episode}&label=overall`);
+}
+
 async function deleteEpisodeRating(apiKey: string, id: string): Promise<void> {
   await makeRequest(`/api/external/episode-ratings/${encodeURIComponent(id)}`, apiKey, 'DELETE');
 }
@@ -724,6 +737,8 @@ export {
   deleteRating,
   createEpisodeRating,
   deleteEpisodeRating,
+  fetchTitleRatings,
+  fetchEpisodeRatings,
   fetchLists,
   fetchListItems,
   fetchPublicListByLink,

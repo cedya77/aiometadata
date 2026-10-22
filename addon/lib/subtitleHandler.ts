@@ -27,6 +27,7 @@ interface ResolvedSeriesIds {
   fallbackData?: any;
   season: number;
   episode: number;
+  episodeIds?: Record<string, number>;
 }
 
 function parseMediaId(id: any): ParsedMediaId | null {
@@ -299,6 +300,12 @@ function normalizeIdsForMovie(parsedId: ParsedMediaId): Record<string, any> | nu
   }
 }
 
+async function byTvdbEpisode(tvdbId: number, season: number, episode: number, config: any): Promise<ResolvedSeriesIds> {
+  const listed = await require('./tvdb').getSeriesEpisodes(String(tvdbId), 'en-US', 'default', config).catch(() => null);
+  const found = (listed?.episodes ?? []).find((entry: any) => Number(entry?.seasonNumber) === season && Number(entry?.number) === episode);
+  return { ids: { tvdb: tvdbId }, season, episode, ...(found?.id ? { episodeIds: { tvdb: Number(found.id) } } : {}) };
+}
+
 async function resolveSeriesIds(parsedId: ParsedMediaId, config: any = {}, isSimkl: boolean = false): Promise<ResolvedSeriesIds | null> {
   switch (parsedId.provider) {
     case 'imdb': {
@@ -321,6 +328,9 @@ async function resolveSeriesIds(parsedId: ParsedMediaId, config: any = {}, isSim
                 const resolved = await resolveTmdbEpisodeFromKitsu(
                   anilistMapping.kitsu_id, anidbInfo.anidbEpisode, config
                 );
+                if (resolved?.isFranchiseFallback && (Number(resolved.seasonNumber) !== (parsedId.season || 1) || Number(resolved.episodeNumber) !== Number(parsedId.episode))) {
+                  return byTvdbEpisode(Number(animeMapping.tvdb_id), parsedId.season || 1, Number(parsedId.episode), config);
+                }
                 if (resolved) {
                   logger.debug(
                     `[Watch Tracking] Resolved anime IMDB ${parsedId.id} → TVDB ${animeMapping.tvdb_id} → AniDB ${anidbInfo.anidbId} → AniList ${anidbMapping.anilist_id} → Kitsu ${anilistMapping.kitsu_id} → TMDB ${resolved.tmdbId} S${resolved.seasonNumber}E${resolved.episodeNumber}`
@@ -376,6 +386,15 @@ async function resolveSeriesIds(parsedId: ParsedMediaId, config: any = {}, isSim
           parseInt(String(parsedId.episode), 10),
           config
         );
+
+        if (resolved?.isFranchiseFallback) {
+          const anidbId = idMapper.getMappingByKitsuId(parseInt(parsedId.id, 10))?.anidb_id;
+          const tvdbInfo = anidbId ? resolveTvdbEpisodeFromAnidbEpisode(anidbId, 1, parseInt(String(parsedId.episode), 10)) : null;
+          if (tvdbInfo && (Number(tvdbInfo.tvdbSeason) !== Number(resolved.seasonNumber) || Number(tvdbInfo.tvdbEpisode) !== Number(resolved.episodeNumber))) {
+            logger.debug(`[Watch Tracking] Kitsu ${parsedId.id} counted as TMDB S${resolved.seasonNumber}E${resolved.episodeNumber} but sits at TVDB S${tvdbInfo.tvdbSeason}E${tvdbInfo.tvdbEpisode}`);
+            return byTvdbEpisode(Number(tvdbInfo.tvdbId), Number(tvdbInfo.tvdbSeason), Number(tvdbInfo.tvdbEpisode), config);
+          }
+        }
 
         if (!resolved) {
           logger.debug(`[Watch Tracking] Could not resolve Kitsu → TMDB for Kitsu series ${parsedId.id}`);
@@ -665,13 +684,13 @@ async function publicMetaDbHistory(
   }
 }
 
-async function historyTarget(parsedId: ParsedMediaId, config: any, service: TrackedService): Promise<{ ids: Record<string, any>; season?: number; episode?: number; fallback?: { ids: Record<string, any>; season: number; episode: number } | null } | null> {
+async function historyTarget(parsedId: ParsedMediaId, config: any, service: TrackedService): Promise<{ ids: Record<string, any>; season?: number; episode?: number; episodeIds?: Record<string, number>; fallback?: { ids: Record<string, any>; season: number; episode: number } | null } | null> {
   if (parsedId.type === 'movie') {
     const ids = normalizeIdsForMovie(parsedId);
     return ids ? { ids: await withTmdbId(ids, 'movie') } : null;
   }
   const resolution = await resolveSeriesIds(parsedId, config, service === 'simkl');
-  return resolution ? { ids: await withTmdbId(resolution.ids, 'series'), season: resolution.season, episode: resolution.episode, fallback: resolution.fallbackData ?? null } : null;
+  return resolution ? { ids: await withTmdbId(resolution.ids, 'series'), season: resolution.season, episode: resolution.episode, ...(resolution.episodeIds ? { episodeIds: resolution.episodeIds } : {}), fallback: resolution.fallbackData ?? null } : null;
 }
 
 async function eachHistoryService(
@@ -716,7 +735,8 @@ async function eachHistoryService(
         const resolution = await resolveSeriesIds(parsedId, config, service === 'simkl');
         if (resolution) {
           const ids = await withTmdbId(resolution.ids, 'series');
-          await utils[method](ids, credential, resolution.season, resolution.episode, undefined, watchedAt);
+          const byId = resolution.episodeIds ? [{ season: resolution.season, episode: resolution.episode, ids: resolution.episodeIds }] : undefined;
+          await utils[method](ids, credential, resolution.season, resolution.episode, byId, watchedAt);
         } else {
           logger.debug(`[${service}] ${what} skipped: no ids for ${parsedId.provider}:${parsedId.id}`);
         }
@@ -756,14 +776,14 @@ async function markEpisodes(
       }
       if (!credential) continue;
 
-      const groups = new Map<string, { ids: Record<string, any>; episodes: Array<{ season: number; episode: number }> }>();
+      const groups = new Map<string, { ids: Record<string, any>; episodes: Array<{ season: number; episode: number; ids?: Record<string, number> }> }>();
       for (const id of parsed) {
         const resolution = await resolveSeriesIds(id, config, service === 'simkl');
         if (!resolution) continue;
         const ids = await withTmdbId(resolution.ids, 'series');
         const key = JSON.stringify(ids);
         const group = groups.get(key) ?? { ids, episodes: [] };
-        group.episodes.push({ season: resolution.season, episode: resolution.episode });
+        group.episodes.push({ season: resolution.season, episode: resolution.episode, ...(resolution.episodeIds ? { ids: resolution.episodeIds } : {}) });
         groups.set(key, group);
       }
       for (const group of groups.values()) {

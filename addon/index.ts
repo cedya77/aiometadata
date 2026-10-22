@@ -8614,9 +8614,10 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/preview", requireDashboa
     const from = typeof req.body?.from === 'string' ? req.body.from : '';
     const to = typeof req.body?.to === 'string' ? req.body.to : '';
     const since = Number(req.body?.since) > 0 ? Number(req.body.since) : 0;
-    const preview = await require('./lib/jellyfin/dashboard').dashboardCopyPreview(String(req.params.userUUID), profile, from, to, since);
+    const what = ['ratings', 'watchlist', 'dropped'].includes(req.body?.what) ? req.body.what : 'watches';
+    const preview = await require('./lib/jellyfin/dashboard').dashboardCopyPreview(String(req.params.userUUID), profile, from, to, since, what, req.body?.retry === true);
     if (!preview) {
-      res.status(404).json({ error: 'Pick two different trackers on this configuration; MDBList, Simkl or PublicMetaDB can be copied from' });
+      res.status(404).json({ error: 'Pick two different trackers on this configuration that can copy this' });
       return;
     }
     res.json(preview);
@@ -8652,7 +8653,8 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy", requireDashboardAdmin,
     const to = typeof req.body?.to === 'string' ? req.body.to : '';
     const since = Number(req.body?.since) > 0 ? Number(req.body.since) : 0;
     const titles = Array.isArray(req.body?.titles) ? req.body.titles.filter((t) => typeof t === 'string').slice(0, 5000) : null;
-    const id = await require('./lib/jellyfin/dashboard').dashboardCopyStart(String(req.params.userUUID), profile, from, to, since, titles);
+    const what = ['ratings', 'watchlist', 'dropped'].includes(req.body?.what) ? req.body.what : 'watches';
+    const id = await require('./lib/jellyfin/dashboard').dashboardCopyStart(String(req.params.userUUID), profile, from, to, since, titles, what, req.body?.retry === true);
     if (id === null) {
       res.status(404).json({ error: 'Pick two different trackers on this configuration' });
       return;

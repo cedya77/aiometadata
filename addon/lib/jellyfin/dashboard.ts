@@ -701,14 +701,17 @@ function copySide(source: SyncSource, key: string): any {
   return { service: source.service, credential: source.credential, key, keys: source.keys, scoped: source.scoped };
 }
 
-async function copyPair(userUUID: string, profile: string | null, fromKey: string, toKey: string): Promise<{ from: SyncSource; to: SyncSource } | null> {
+async function copyPair(userUUID: string, profile: string | null, fromKey: string, toKey: string, what: string): Promise<{ from: SyncSource; to: SyncSource } | null> {
   const config = await database.getUserConfig(userUUID).catch(() => null);
   if (!config || fromKey === toKey) return null;
   const sources = syncSources(config, userUUID, profile);
   const from = sources.get(fromKey);
   const to = sources.get(toKey);
+  if (!from || !to) return null;
   const { COPY_SOURCES } = require('./trackerCopy');
-  return from && to && COPY_SOURCES.has(from.service) ? { from, to } : null;
+  const { MARK_SOURCES, MARK_TARGETS } = require('./trackerMarks');
+  if (what === 'watches') return COPY_SOURCES.has(from.service) ? { from, to } : null;
+  return MARK_SOURCES[what]?.has(from.service) && MARK_TARGETS[what]?.has(to.service) ? { from, to } : null;
 }
 
 async function named(userUUID: string, videos: string[]): Promise<Record<string, { title: string | null; imageUrl: string | null; posterUrl: string | null }>> {
@@ -720,12 +723,31 @@ async function named(userUUID: string, videos: string[]): Promise<Record<string,
   return out;
 }
 
-export async function dashboardCopyPreview(userUUID: string, profile: string | null, fromKey: string, toKey: string, since: number): Promise<any | null> {
-  const pair = await copyPair(userUUID, profile, fromKey, toKey);
+async function markCopyPreview(userUUID: string, what: string, pair: { from: SyncSource; to: SyncSource }, fromKey: string, toKey: string, since: number, retry: boolean): Promise<any> {
+  const { planMarkCopy } = require('./trackerCopy');
+  const { markVideo } = require('./trackerMarks');
+  const plan = await planMarkCopy(userUUID, what, copySide(pair.from, fromKey), copySide(pair.to, toKey), since, false, retry);
+  const count = (kind: string) => plan.items.filter((item: any) => item.kind === kind).length;
+  const list = plan.items.map((item: any) => ({ id: item.metaId, kind: item.kind, count: 1, lastAt: item.at, video: markVideo(item), rating: item.rating, season: item.season, episode: item.episode }));
+  return {
+    from: fromKey,
+    to: toKey,
+    since,
+    what,
+    checkedAt: plan.checkedAt,
+    totals: { films: count('movie'), shows: count('series'), seasons: count('season'), episodes: count('episode'), titles: list.length, excluded: plan.excluded, undated: plan.items.filter((item: any) => !item.at).length, reasons: plan.reasons },
+    titles: list,
+    named: await named(userUUID, list.slice(0, 60).map((t: any) => t.video)),
+  };
+}
+
+export async function dashboardCopyPreview(userUUID: string, profile: string | null, fromKey: string, toKey: string, since: number, what = 'watches', retry = false): Promise<any | null> {
+  const pair = await copyPair(userUUID, profile, fromKey, toKey, what);
   if (!pair) return null;
+  if (what !== 'watches') return markCopyPreview(userUUID, what, pair, fromKey, toKey, since, retry);
   const { planCopy } = require('./trackerCopy');
   const { spellingFor } = require('./trackerDrift');
-  const plan = await planCopy(userUUID, copySide(pair.from, fromKey), copySide(pair.to, toKey), since);
+  const plan = await planCopy(userUUID, copySide(pair.from, fromKey), copySide(pair.to, toKey), since, false, retry);
   const titles = new Map<string, { id: string; kind: string; episodes: Set<string>; lastAt: number; video: string }>();
   let films = 0;
   let episodes = 0;
@@ -747,8 +769,9 @@ export async function dashboardCopyPreview(userUUID: string, profile: string | n
     from: fromKey,
     to: toKey,
     since,
+    what,
     checkedAt: plan.checkedAt,
-    totals: { films, episodes, titles: list.length, excluded: plan.excluded, undated },
+    totals: { films, episodes, titles: list.length, excluded: plan.excluded, undated, blocked: plan.blocked },
     titles: list,
     named: await named(userUUID, list.slice(0, 60).map((t) => t.video)),
   };
@@ -758,11 +781,11 @@ export async function dashboardCopyDescribe(userUUID: string, videos: string[]):
   return named(userUUID, videos);
 }
 
-export async function dashboardCopyStart(userUUID: string, profile: string | null, fromKey: string, toKey: string, since: number, titles: string[] | null): Promise<number | null> {
-  const pair = await copyPair(userUUID, profile, fromKey, toKey);
+export async function dashboardCopyStart(userUUID: string, profile: string | null, fromKey: string, toKey: string, since: number, titles: string[] | null, what = 'watches', retry = false): Promise<number | null> {
+  const pair = await copyPair(userUUID, profile, fromKey, toKey, what);
   if (!pair) return null;
   const { startCopy } = require('./trackerCopy');
-  return startCopy(userUUID, [...pair.to.keys][0] ?? '', copySide(pair.from, fromKey), copySide(pair.to, toKey), since, titles);
+  return startCopy(userUUID, [...pair.to.keys][0] ?? '', copySide(pair.from, fromKey), copySide(pair.to, toKey), since, titles, what, retry);
 }
 
 export async function dashboardCopyJobs(userUUID: string): Promise<any[]> {
@@ -773,6 +796,7 @@ export async function dashboardCopyJobs(userUUID: string): Promise<any[]> {
     to: String(row.to_key),
     fromService: String(row.from_service),
     toService: String(row.to_service),
+    what: String(row.what ?? 'watches'),
     status: String(row.status),
     total: Number(row.total) || 0,
     done: Number(row.cursor) || 0,

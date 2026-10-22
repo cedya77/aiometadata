@@ -470,6 +470,7 @@ class Database {
         from_service TEXT NOT NULL,
         to_key TEXT NOT NULL,
         to_service TEXT NOT NULL,
+        what TEXT NOT NULL DEFAULT 'watches',
         status TEXT NOT NULL,
         items TEXT NOT NULL,
         cursor INTEGER NOT NULL DEFAULT 0,
@@ -745,6 +746,7 @@ class Database {
         from_service TEXT NOT NULL,
         to_key VARCHAR(64) NOT NULL,
         to_service TEXT NOT NULL,
+        what VARCHAR(16) NOT NULL DEFAULT 'watches',
         status VARCHAR(16) NOT NULL,
         items TEXT NOT NULL,
         cursor INTEGER NOT NULL DEFAULT 0,
@@ -1982,18 +1984,18 @@ class Database {
     return (await this.allQuery(query, params)) || [];
   }
 
-  async createCopyJob(job: { userUUID: string; profile: string; fromKey: string; fromService: string; toKey: string; toService: string; items: unknown[] }): Promise<number> {
+  async createCopyJob(job: { userUUID: string; profile: string; fromKey: string; fromService: string; toKey: string; toService: string; what: string; items: unknown[] }): Promise<number> {
     const now = Date.now();
-    const params = [job.userUUID, job.profile, job.fromKey, job.fromService, job.toKey, job.toService, 'running', JSON.stringify(job.items), job.items.length, now, now];
+    const params = [job.userUUID, job.profile, job.fromKey, job.fromService, job.toKey, job.toService, job.what, 'running', JSON.stringify(job.items), job.items.length, now, now];
     if (this.type === 'sqlite') {
       const result = await this.runQuery(
-        'INSERT INTO tracker_copy_jobs (user_uuid, profile, from_key, from_service, to_key, to_service, status, items, total, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO tracker_copy_jobs (user_uuid, profile, from_key, from_service, to_key, to_service, what, status, items, total, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         params
       );
       return Number(result?.lastID);
     }
     const row = await this.getQuery(
-      'INSERT INTO tracker_copy_jobs (user_uuid, profile, from_key, from_service, to_key, to_service, status, items, total, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id',
+      'INSERT INTO tracker_copy_jobs (user_uuid, profile, from_key, from_service, to_key, to_service, what, status, items, total, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id',
       params
     );
     return Number(row?.id);
@@ -2004,10 +2006,25 @@ class Database {
     return row ? { ...row, items: JSON.parse(row.items || '[]') } : null;
   }
 
+  async copiedBefore(userUUID: string, fromKey: string, toKey: string, what: string, limit = 20): Promise<any[]> {
+    const sqlite = this.type === 'sqlite';
+    const rows = (await this.allQuery(
+      `SELECT items, cursor FROM tracker_copy_jobs WHERE user_uuid = ${sqlite ? '?' : '$1'} AND from_key = ${sqlite ? '?' : '$2'} AND to_key = ${sqlite ? '?' : '$3'} AND what = ${sqlite ? '?' : '$4'} AND status IN ('done', 'stopped', 'failed') ORDER BY created_at DESC LIMIT ${sqlite ? '?' : '$5'}`,
+      [userUUID, fromKey, toKey, what, limit]
+    )) || [];
+    return rows.flatMap((row: any) => {
+      try {
+        return (JSON.parse(row.items || '[]') as any[]).slice(0, Number(row.cursor) || 0);
+      } catch {
+        return [];
+      }
+    });
+  }
+
   async listCopyJobs(userUUID: string, limit = 10): Promise<any[]> {
     const sqlite = this.type === 'sqlite';
     return (await this.allQuery(
-      `SELECT id, user_uuid, profile, from_key, from_service, to_key, to_service, status, cursor, total, sent, skipped, failed, next_at, last_error, created_at, updated_at, finished_at
+      `SELECT id, user_uuid, profile, from_key, from_service, to_key, to_service, what, status, cursor, total, sent, skipped, failed, next_at, last_error, created_at, updated_at, finished_at
        FROM tracker_copy_jobs WHERE user_uuid = ${sqlite ? '?' : '$1'} ORDER BY created_at DESC LIMIT ${sqlite ? '?' : '$2'}`,
       [userUUID, limit]
     )) || [];
@@ -2358,6 +2375,13 @@ class Database {
         await this.runQuery(query, [userUUID, profile, metaId]);
       }
     }
+  }
+
+  async listRemoteRatings(userUUID: string, limit: number): Promise<any[]> {
+    const query = this.type === 'sqlite'
+      ? "SELECT meta_id, meta_type, pmdb_id FROM jellyfin_ratings WHERE user_uuid = ? AND pmdb_id IS NOT NULL AND meta_id LIKE 'tmdb:%' ORDER BY updated_at DESC LIMIT ?"
+      : "SELECT meta_id, meta_type, pmdb_id FROM jellyfin_ratings WHERE user_uuid = $1 AND pmdb_id IS NOT NULL AND meta_id LIKE 'tmdb:%' ORDER BY updated_at DESC LIMIT $2";
+    return (await this.allQuery(query, [userUUID, limit])) || [];
   }
 
   async setRatingRemoteId(userUUID: string, profile: string, metaIds: string[], pmdbId: string): Promise<number> {
