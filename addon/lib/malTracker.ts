@@ -440,6 +440,13 @@ async function resolveMalId(parsedId: ParsedMediaId): Promise<{ malId: number; e
   try {
     switch (provider) {
       case 'imdb': {
+        // A film is its own entry, never an episode of the series TVDB files it under.
+        if (parsedId.type === 'movie') {
+          const film = idMapper.filmMappingFor({ imdbId: id });
+          if (film?.mal_id) return { malId: film.mal_id, episode: 1 };
+          logger.debug(`[MAL Tracker] No anime film mapped to IMDB ${id}`);
+          return null;
+        }
         const mapping = idMapper.getMappingByImdbId(id);
         if (!mapping) {
           logger.debug(`[MAL Tracker] No mapping found for IMDB ${id}`);

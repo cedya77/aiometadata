@@ -608,6 +608,14 @@ async function resolveAniListId(parsedId) {
 
     switch (provider) {
       case 'imdb': {
+        // A film is its own entry, never an episode of the series TVDB files it under.
+        if (parsedId.type === 'movie') {
+          const film = idMapper.filmMappingFor({ imdbId: id });
+          const anilistId = film?.anilist_id ?? (film?.mal_id ? idMapper.getMappingByMalId(film.mal_id)?.anilist_id : null);
+          if (anilistId) return { anilistId, episode: 1 };
+          logger.debug(`[AniList Tracker] No anime film mapped to IMDB ${id}`);
+          return null;
+        }
         // Handle IMDB IDs: Get TVDB ID from mapping, then use resolveAnidbEpisodeFromTvdbEpisode
         mapping = idMapper.getMappingByImdbId(id);
         if (!mapping) {
