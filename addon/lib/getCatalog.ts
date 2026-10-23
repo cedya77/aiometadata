@@ -2551,7 +2551,13 @@ async function resolveAniListItemsToMetas(
   // create new items with property mal_id and type, plus additional AniList fields
   const newItems = items.map(item => {
     const media = item.media;
-    const itemType = getStremioTypeFromFormat(media.format) || type;
+    // A SPECIAL can be a TV entry; do not read its TMDB number as an unrelated movie.
+    const knownMapping = String(media.format || '').toUpperCase() === 'SPECIAL'
+      ? require('./id-mapper').getMappingByMalId(media.idMal)
+      : null;
+    const itemType = knownMapping?.themoviedb_type === 'tv'
+      ? 'series'
+      : getStremioTypeFromFormat(media.format) || type;
     
     // Format dates from AniList structure
     const airedFrom = media.startDate?.year 
