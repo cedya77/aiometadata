@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.7.1](https://github.com/cedya77/aiometadata/compare/v3.7.0...v3.7.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **anime:** send a Kitsu entry whose TMDB id no longer exists by its TVDB episode ([e0642be](https://github.com/cedya77/aiometadata/commit/e0642bee132e3fac9974d506b60e9cd4a17c2b55))
+* **anime:** send a Kitsu special to its own episode on MDBList ([0417cfc](https://github.com/cedya77/aiometadata/commit/0417cfc7475e14b7cfbfe1923f3ccb0ceb5c8c35))
+* **ids:** look up a show again when TMDB no longer has its cached id ([33c0388](https://github.com/cedya77/aiometadata/commit/33c0388e2ca79f5a93712188e2489305ca3348c8))
+* **mdblist:** remove a title's plays from history when it is unwatched ([8129ed2](https://github.com/cedya77/aiometadata/commit/8129ed2c3616b6e8c12abd3a79cd3d45e8925bdc))
+* **trackers:** read a tracker's whole history, however long ([6a3dbd1](https://github.com/cedya77/aiometadata/commit/6a3dbd154380379363c47cd068363b3e5bbb0a59))
+* **trackers:** send a TVDB-numbered episode to MDBList and PublicMetaDB at its TMDB episode ([cc530dc](https://github.com/cedya77/aiometadata/commit/cc530dc58c2c964e66feba955e90e46eb502be40))
+* **trackers:** send an anime film's watch to its own MyAnimeList and AniList entry ([1d00c6d](https://github.com/cedya77/aiometadata/commit/1d00c6d8e40697e76c31dfc1e139658bdabd8fef))
+
 ## [3.7.0](https://github.com/cedya77/aiometadata/compare/v3.6.1...v3.7.0) (2026-10-21)
 
 
