@@ -269,6 +269,21 @@ async function getExternalIdsFromImdb(imdbId: string, type: string): Promise<{ t
 }
 
 
+async function cachedTmdbGone(type: string, mapping: any, config: any): Promise<boolean> {
+  if (!mapping?.tmdb_id || (type !== 'movie' && type !== 'series')) return false;
+  const { envInt } = require('../utils/envNumber');
+  const age = Date.now() - Date.parse(mapping.updated_at ?? '');
+  if (Number.isFinite(age) && age < envInt('ID_CACHE_RECHECK_DAYS', 7, 1) * 24 * 60 * 60 * 1000) return false;
+  try {
+    const found = type === 'movie' ? await moviedb.movieInfo({ id: mapping.tmdb_id }, config) : await moviedb.tvInfo({ id: mapping.tmdb_id }, config);
+    if (!found) return true;
+    await redisIdCache.saveIdMapping(type, mapping.tmdb_id, mapping.tvdb_id, mapping.imdb_id, mapping.tvmaze_id);
+  } catch (error: any) {
+    logger.debug(`Could not recheck TMDB ${mapping.tmdb_id}: ${error?.message || error}`);
+  }
+  return false;
+}
+
 async function resolveAllIds(stremioId: string, type: string, config: any, prefetchedIds: Record<string, any> = {}, targetProviders: string[] = []): Promise<AllIds | null> {
   const startTime = Date.now();
   performanceStats.totalResolutions++;
@@ -346,7 +361,11 @@ async function resolveAllIds(stremioId: string, type: string, config: any, prefe
     }
 
 
-    const cachedMapping = await redisIdCache.getCachedIdMapping(type, allIds.tmdbId, allIds.tvdbId, allIds.imdbId, allIds.tvmazeId);
+    let cachedMapping = await redisIdCache.getCachedIdMapping(type, allIds.tmdbId, allIds.tvdbId, allIds.imdbId, allIds.tvmazeId);
+    if (cachedMapping && !allIds.tmdbId && await cachedTmdbGone(type, cachedMapping, config)) {
+      await redisIdCache.forgetIdMapping(type, cachedMapping);
+      cachedMapping = null;
+    }
     if (cachedMapping) {
       logger.debug(` Found cached mapping for ${stremioId}`);
       allIds.tmdbId = allIds.tmdbId || cachedMapping.tmdb_id;

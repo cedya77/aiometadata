@@ -487,6 +487,18 @@ async function bringHome(userUUID: string, job: any, items: CopyItem[], config: 
   await pullDrift(userUUID, { service: job.from_service, credential: fromCredential, keys: new Set([job.profile]), scoped: config }, missing.map((item) => ({ profile: job.profile, at: item.at!, ids: item.ids, kind: item.kind, metaId: item.metaId, season: item.season, episode: item.episode })));
 }
 
+async function bringRatingsHome(userUUID: string, profile: string, items: MarkItem[]): Promise<void> {
+  for (const item of items) {
+    if ((item.kind !== 'movie' && item.kind !== 'series') || item.later || !item.rating) continue;
+    const { imdb, tvdb, tmdb, kitsu, mal } = item.ids;
+    const keys = [imdb, tvdb && item.kind === 'series' ? `tvdb:${tvdb}` : null, tmdb ? `tmdb:${tmdb}` : null, kitsu ? `kitsu:${kitsu}` : null, mal ? `mal:${mal}` : null].filter(Boolean) as string[];
+    if (!keys.length) continue;
+    const held: any[] = await database.listRatings(userUUID, profile, keys).catch(() => []);
+    if (held.length) continue;
+    await database.setRating(userUUID, profile, keys, Math.min(10, Math.max(1, Math.round(item.rating))), item.kind === 'movie' ? 'movie' : 'series');
+  }
+}
+
 async function step(id: number): Promise<void> {
   const job = await database.getCopyJob(id);
   if (!job || job.status !== 'running') return;
@@ -506,6 +518,7 @@ async function step(id: number): Promise<void> {
   }
   let outcome: Outcome;
   try {
+    if (what === 'ratings') await bringRatingsHome(job.user_uuid, job.profile, items);
     if (what !== 'watches') outcome = await writeMarks(what, items, { service: job.to_service, credential, scoped: config }, job.user_uuid);
     else {
       await bringHome(job.user_uuid, job, items, config);

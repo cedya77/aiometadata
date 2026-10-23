@@ -24,6 +24,8 @@ const REASONS: Record<string, string> = {
   "no id": "have no id it knows",
   "not a show": "are films, and only shows can be dropped",
   refused: "were sent before and it didn't take them",
+  "not on list": "aren't on its list, and it only scores titles already there",
+  "finished there": "are completed there, so they aren't marked dropped",
 };
 const nounOf = (what: JellyfinCopyWhat, n: number) => plural(n, NOUNS[what][0], NOUNS[what][1]);
 
@@ -329,7 +331,7 @@ export default function JellyfinCopy({ userUUID, profile, lanes, activeTab, init
             )}
             <div className="space-y-1 text-xs leading-relaxed text-muted-foreground">
               {what === "watches" && <p>Each watch keeps the date {fromName} has, and anything not yet in your history comes in too. Nothing is removed from {toName}, and what it already has is skipped, so copying again is safe.</p>}
-              {what === "ratings" && <p>Each rating keeps the date {fromName} has. Titles {toName} has already rated keep their own rating, so copying again is safe.{toLane?.service === "simkl" ? " Simkl rates in whole numbers, so half points are rounded." : ""}</p>}
+              {what === "ratings" && <p>Each rating keeps the date {fromName} has. Titles {toName} has already rated keep their own rating, so copying again is safe, and films and shows not rated here yet are rated here too.{toLane?.service === "simkl" || toLane?.service === "mal" ? ` ${toName} rates in whole numbers, so half points are rounded.` : ""}</p>}
               {what === "watchlist" && <p>Titles already on {toName}{toLane?.service === "simkl" ? " or anywhere in your Simkl library" : ""} are skipped, and nothing is removed from it, so copying again is safe.</p>}
               {what === "dropped" && <p>Shows {toName} already has as dropped are skipped. Your watch history on {toName} stays as it is.</p>}
               {marks && preview.totals.excluded > 0 && Object.entries(preview.totals.reasons ?? {}).map(([reason, n]) => <p key={reason}>{plural(n, "title")} {REASONS[reason] ?? reason}, so {n === 1 ? "it stays" : "they stay"} out.</p>)}

@@ -10,9 +10,9 @@ export const MARK_SOURCES: Record<Mark, Set<string>> = {
   dropped: new Set(['simkl', 'mdblist', 'publicmetadb']),
 };
 export const MARK_TARGETS: Record<Mark, Set<string>> = {
-  ratings: new Set(['simkl', 'mdblist', 'publicmetadb']),
+  ratings: new Set(['simkl', 'mdblist', 'publicmetadb', 'anilist', 'mal']),
   watchlist: new Set(['simkl', 'mdblist', 'publicmetadb', 'anilist', 'mal']),
-  dropped: new Set(['simkl', 'mdblist', 'publicmetadb']),
+  dropped: new Set(['simkl', 'mdblist', 'publicmetadb', 'anilist', 'mal']),
 };
 
 export interface MarkItem {
@@ -184,6 +184,17 @@ export async function readMarks(what: Mark, side: MarkSide): Promise<MarkItem[]>
   return out.filter((entry): entry is MarkItem => Boolean(entry));
 }
 
+async function animeListOn(side: MarkSide): Promise<Map<string, any>> {
+  const { mirrorRows } = require('./trackerMirror');
+  const out = new Map<string, any>();
+  for (const { key, data } of (await mirrorRows(side.service, side.credential)) as Array<{ key: string; data: any }>) {
+    if (!key.startsWith('entry:')) continue;
+    if (data?.anilist) out.set(`anilist:${data.anilist}`, data);
+    if (data?.mal) out.set(`mal:${data.mal}`, data);
+  }
+  return out;
+}
+
 async function heldOn(what: Mark, side: MarkSide): Promise<Set<string>> {
   const keys = new Set<string>();
   const add = (entries: MarkItem[]) => entries.forEach((entry) => markKeys(entry).forEach((key) => keys.add(key)));
@@ -193,11 +204,8 @@ async function heldOn(what: Mark, side: MarkSide): Promise<Set<string>> {
       if (entry) add([entry]);
     }
   } else if (side.service === 'anilist' || side.service === 'mal') {
-    const { mirrorRows } = require('./trackerMirror');
-    for (const { key, data } of (await mirrorRows(side.service, side.credential)) as Array<{ key: string; data: any }>) {
-      if (!key.startsWith('entry:')) continue;
-      if (data?.anilist) keys.add(`anilist:${data.anilist}`);
-      if (data?.mal) keys.add(`mal:${data.mal}`);
+    for (const [key, data] of await animeListOn(side)) {
+      if (what === 'watchlist' || (what === 'ratings' && data?.score > 0) || (what === 'dropped' && data?.status === 'dropped')) keys.add(key);
     }
   } else if (side.service !== 'publicmetadb' || what !== 'ratings') {
     add(await readMarks(what, side));
@@ -231,11 +239,18 @@ function withAnimeIds(entry: MarkItem): MarkItem {
   return { ...entry, ids, anime: true };
 }
 
-function eligible(what: Mark, to: string, entry: MarkItem, config: any, library: Set<string> | null): string | null {
+function eligible(what: Mark, to: string, entry: MarkItem, config: any, library: Set<string> | null, animeOn: Map<string, any> | null): string | null {
   const { shouldTrackServiceMediaType } = require('../watchTracking');
   if (!shouldTrackServiceMediaType(config, to, entry.kind === 'movie' ? 'movie' : 'series')) return 'turned off';
   if (what === 'dropped' && entry.kind !== 'series') return 'not a show';
-  if (to === 'anilist' || to === 'mal') return entry.ids[to] ? null : 'not anime';
+  if (to === 'anilist' || to === 'mal') {
+    if (!entry.ids[to]) return 'not anime';
+    const listed = animeOn?.get(`${to}:${entry.ids[to]}`);
+    if (what === 'ratings' && (entry.kind === 'season' || entry.kind === 'episode')) return 'not rated there';
+    if (what === 'ratings' && !listed) return 'not on list';
+    if (what === 'dropped' && listed?.status === 'completed') return 'finished there';
+    return null;
+  }
   if (what === 'ratings' && entry.later && to !== 'simkl') return 'one season';
   if (to === 'simkl') {
     if (what === 'ratings' && (entry.kind === 'season' || entry.kind === 'episode')) return 'not rated there';
@@ -253,6 +268,7 @@ export async function planMarks(what: Mark, from: MarkSide, to: MarkSide, since:
   const source = (await readMarks(what, from)).filter((entry) => !since || (entry.at ?? 0) >= since);
   const held = await heldOn(what, to);
   const library = to.service === 'simkl' && what === 'ratings' ? await simklLibrary(to) : null;
+  const animeOn = to.service === 'anilist' || to.service === 'mal' ? await animeListOn(to) : null;
   const reasons: Record<string, number> = {};
   const taken = new Set<string>();
   const items: MarkItem[] = [];
@@ -261,7 +277,7 @@ export async function planMarks(what: Mark, from: MarkSide, to: MarkSide, since:
     const entry = to.service === 'anilist' || to.service === 'mal' ? withAnimeIds(raw) : raw;
     const keys = markKeys(entry);
     if (keys.some((key) => held.has(key) || taken.has(key))) continue;
-    const why = eligible(what, to.service, entry, to.scoped, library);
+    const why = eligible(what, to.service, entry, to.scoped, library, animeOn);
     if (why) {
       reasons[why] = (reasons[why] ?? 0) + 1;
       continue;
@@ -409,12 +425,18 @@ async function writeOne(what: Mark, service: string, entry: MarkItem, side: Mark
     const anilist = require('../anilistTracker');
     const token = await anilist.getValidAccessToken(userUUID, ownTokenId(side.scoped, 'anilist'));
     if (!token) throw new Error('AniList token unavailable');
-    return (await anilist.setPlanning(entry.ids.anilist, true, token)) ? 'sent' : 'failed';
+    const done = what === 'ratings' ? await anilist.setScore(entry.ids.anilist, Math.round((entry.rating ?? 0) * 10), token)
+      : what === 'dropped' ? await anilist.setDropped(entry.ids.anilist, token)
+        : await anilist.setPlanning(entry.ids.anilist, true, token);
+    return done ? 'sent' : 'failed';
   }
   const mal = require('../malTracker');
   const token = await mal.getValidAccessToken(userUUID, ownTokenId(side.scoped, 'mal'));
   if (!token) throw new Error('MyAnimeList token unavailable');
-  return (await mal.setPlanToWatch(Number(entry.ids.mal), true, token)) ? 'sent' : 'failed';
+  const done = what === 'ratings' ? await mal.setScore(Number(entry.ids.mal), Math.round(entry.rating ?? 0), token)
+    : what === 'dropped' ? await mal.setDropped(Number(entry.ids.mal), token)
+      : await mal.setPlanToWatch(Number(entry.ids.mal), true, token);
+  return done ? 'sent' : 'failed';
 }
 
 export function markBatchSize(what: Mark, service: string): number {

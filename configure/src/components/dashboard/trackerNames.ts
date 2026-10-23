@@ -4,8 +4,8 @@ export const ANIME_ONLY = new Set(["anilist", "mal"]);
 export const COPY_FROM = new Set(["simkl", "mdblist", "publicmetadb"]);
 export const COPY_ROUTES: Record<string, { from: Set<string>; to: Set<string> | null }> = {
   watches: { from: COPY_FROM, to: null },
-  ratings: { from: new Set(["simkl", "mdblist"]), to: new Set(["simkl", "mdblist", "publicmetadb"]) },
+  ratings: { from: new Set(["simkl", "mdblist"]), to: new Set(["simkl", "mdblist", "publicmetadb", "anilist", "mal"]) },
   watchlist: { from: COPY_FROM, to: new Set(["simkl", "mdblist", "publicmetadb", "anilist", "mal"]) },
-  dropped: { from: COPY_FROM, to: COPY_FROM },
+  dropped: { from: COPY_FROM, to: new Set(["simkl", "mdblist", "publicmetadb", "anilist", "mal"]) },
 };
 export const nameOf = (service: string) => TRACKER_NAMES[service] ?? service;

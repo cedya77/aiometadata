@@ -162,6 +162,21 @@ class RedisIdCache {
     }
   }
 
+  async forgetIdMapping(contentType: string, mapping: IdMapping): Promise<void> {
+    if (!this.redis) return;
+    const keyInfo = this._getKeys(contentType, mapping.tmdb_id, mapping.tvdb_id as any, mapping.imdb_id, mapping.tvmaze_id as any);
+    if (!keyInfo) return;
+    try {
+      const pointerKeys = [...keyInfo.pointerKeys, ...this._legacyPointerKeys(mapping.imdb_id, mapping.tvmaze_id as any)];
+      const targets = pointerKeys.length ? await this.redis.mget(...pointerKeys) : [];
+      const ours = pointerKeys.filter((_, index) => targets[index] === keyInfo.canonicalKey);
+      await this.redis.del(keyInfo.canonicalKey, ...ours);
+      logger.info(`[Redis ID Cache] Dropped ${keyInfo.canonicalKey}: TMDB no longer has it`);
+    } catch (error: any) {
+      logger.error(`[Redis ID Cache] Error dropping ${keyInfo.canonicalKey}:`, error.message);
+    }
+  }
+
   async _scanKeys(pattern: string): Promise<string[]> {
     const foundKeys: string[] = [];
     let cursor = '0';

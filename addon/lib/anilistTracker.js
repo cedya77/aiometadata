@@ -524,7 +524,7 @@ async function fetchAnimeList(accessToken) {
   const data = await anilistRequest(
     `query ($userId: Int) {
       MediaListCollection(userId: $userId, type: ANIME) {
-        lists { entries { mediaId status progress updatedAt media { idMal format episodes status nextAiringEpisode { episode airingAt } } } }
+        lists { entries { mediaId status progress score(format: POINT_10_DECIMAL) updatedAt media { idMal format episodes status nextAiringEpisode { episode airingAt } } } }
       }
     }`,
     { userId },
@@ -540,6 +540,7 @@ async function fetchAnimeList(accessToken) {
         ...(media.idMal ? { mal: Number(media.idMal) } : {}),
         status: ANILIST_STATUSES[entry.status] || 'planning',
         progress: Number(entry.progress) || 0,
+        ...(Number(entry.score) > 0 ? { score: Number(entry.score) } : {}),
         episodes: Number(media.episodes) || null,
         movie: media.format === 'MOVIE',
         updatedAt: (Number(entry.updatedAt) || 0) * 1000,
@@ -572,6 +573,15 @@ async function setPlanning(anilistId, listed, accessToken) {
     logger.error(`[AniList Tracker] Watchlist ${listed ? 'add' : 'remove'} failed for AniList ID ${anilistId}: ${error.message}`);
     return false;
   }
+}
+
+async function setDropped(anilistId, accessToken) {
+  await anilistRequest(
+    'mutation ($mediaId: Int) { SaveMediaListEntry(mediaId: $mediaId, status: DROPPED) { id } }',
+    { mediaId: parseInt(anilistId, 10) },
+    accessToken
+  );
+  return true;
 }
 
 /** The score, on AniList's own 0 to 100 whatever format the user shows, on a title already on the list; 0 clears it. */
@@ -962,6 +972,7 @@ module.exports = {
   updateProgress,
   fetchPlanningIds,
   setPlanning,
+  setDropped,
   setScore,
   anilistIdForMal,
   resolveAniListId,

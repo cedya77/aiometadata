@@ -1057,6 +1057,33 @@ function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
 /**
  * Wrapper for proxy endpoints - makes a rate-limited GET request to MDBList
  */
+async function fetchTvdbMap(tmdbId: number, apiKey: string): Promise<{ episodes: any[] }> {
+  const { envInt } = require('./envNumber');
+  const { classifyResultAllowEmpty } = require('../lib/getCache');
+  return cacheWrapGlobal(`mdblist:tvdb-map:${tmdbId}`, async () => {
+    try {
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(`https://api.mdblist.com/shows/${tmdbId}/tvdb-map?apikey=${apiKey}`, { dispatcher: mdblistDispatcher }),
+        apiKey,
+        `MDBList tvdb-map ${tmdbId}`
+      );
+      return { episodes: Array.isArray(response?.data?.episodes) ? response.data.episodes : [] };
+    } catch (error: any) {
+      if (error?.response?.status === 404) return { episodes: [] };
+      throw error;
+    }
+  }, envInt('MDBLIST_TVDB_MAP_TTL', 7 * 24 * 60 * 60, 60), { upstream: true, resultClassifier: classifyResultAllowEmpty });
+}
+
+async function tmdbEpisodeFromTvdb(tmdbId: number, season: number, episode: number, apiKey: string): Promise<{ season: number; episode: number } | null> {
+  const { episodes } = await fetchTvdbMap(tmdbId, apiKey);
+  if (!episodes.length || episodes.some((entry: any) => Number(entry?.season) >= 1900)) return null;
+  const hit = episodes.find((entry: any) => Number(entry?.season) === season && Number(entry?.episode) === episode);
+  return hit && Number.isFinite(Number(hit.tmdb_season)) && Number.isFinite(Number(hit.tmdb_episode))
+    ? { season: Number(hit.tmdb_season), episode: Number(hit.tmdb_episode) }
+    : null;
+}
+
 async function makeRateLimitedMDBListRequest(url: string, apiKey: string, context: string = 'MDBList Proxy'): Promise<any> {
   return await makeRateLimitedRequest(
     () => httpGet(url, { dispatcher: mdblistDispatcher }),
@@ -1458,7 +1485,14 @@ async function removeFromHistory(
   episode?: number,
   episodes?: EpisodeRef[]
 ): Promise<boolean> {
-  return historySync('watched/remove', idInput, apiKey, season, episode, episodes);
+  const removed = await historySync('watched/remove', idInput, apiKey, season, episode, episodes);
+  const tmdbId = Number(idInput.tmdb);
+  if (!tmdbId) return removed;
+  const refs: EpisodeRef[] = episodes?.length ? episodes : season != null && episode != null ? [{ season, episode }] : [];
+  const plays = await historyPlays(refs.length ? 'show' : 'movie', tmdbId, apiKey);
+  const left = (plays ?? []).filter((play) => !refs.length || refs.some((ref) => !ref.ids && play.season_num === ref.season && play.episode_num === ref.episode));
+  if (left.length) await removePlays(left.map((play) => play.play_id), apiKey);
+  return removed;
 }
 
 // A resume point is held separately from watched status, so clearing a watch
@@ -1737,6 +1771,7 @@ export {
   fetchMDBListGenres,
   convertGenreToSlug,
   makeRateLimitedMDBListRequest,
+  tmdbEpisodeFromTvdb,
   mdblistCallsLeft,
   makeRateLimitedMDBListPost,
   testMdblistKey,
