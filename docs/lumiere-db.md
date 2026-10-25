@@ -35,7 +35,7 @@ services:
       ETL_REBUILD_WINDOW: ""
       TZ: "UTC"
       CACHE_MAX_BYTES: "256MB"
-      SUGGEST_ENABLED: "true"
+      SUGGEST_ENABLED: "false"
     volumes:
       - ${DOCKER_DATA_DIR}/lumiere-db:/data
     profiles:
