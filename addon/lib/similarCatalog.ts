@@ -11,7 +11,7 @@ export const SIMILAR_CATALOG_ID = 'aiom.similar';
 const ID_PREFIXES = ['mal:', 'kitsu:', 'anilist:', 'anidb:', 'tt', 'tmdb:', 'tvdb:', 'tvmaze:'];
 
 export function similarCatalogs(config: any): any[] {
-  if (config?.catalogModeOnly) return [];
+  if (config?.catalogModeOnly || config?.collectionCatalogs === false) return [];
   return (['movie', 'series'] as const).map((type) => ({
     id: SIMILAR_CATALOG_ID,
     type,

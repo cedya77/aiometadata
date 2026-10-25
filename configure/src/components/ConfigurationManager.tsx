@@ -375,8 +375,8 @@ export function ConfigurationManager() {
 
             <SettingRow
               htmlFor="collection-catalogs"
-              label="Collections as Catalogs"
-              description="Adds the collections you build to the manifest, for apps that show collections, such as AIOStreams. Apps that don't list them among their catalogs, for example under Discover. Jellyfin shows them as box sets either way."
+              label="Collections and More Like This as Catalogs"
+              description="Adds the collections you build, and a More Like This catalog of a title's similar titles, to the manifest for apps that use them, such as AIOStreams. Apps that don't list them among their catalogs, for example under Discover. Jellyfin shows collections as box sets and fills its own More Like This either way."
               control={
                 <Switch
                   id="collection-catalogs"
@@ -392,7 +392,7 @@ export function ConfigurationManager() {
               }
               note={config.catalogModeOnly ? (
                 <Callout variant="info">
-                  Catalog Mode Only already leaves collections out.
+                  Catalog Mode Only already leaves both out.
                 </Callout>
               ) : null}
             />
