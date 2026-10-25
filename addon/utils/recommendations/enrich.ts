@@ -122,14 +122,24 @@ async function fromMdblist(rows: WatchedRow[], config: any): Promise<FactMap> {
 /** Audience size and score. The instance already holds IMDb's ratings file; one
  *  MDBList batch per type supplies the imdb ids to look them up by. */
 export async function attachRatings(items: any[], config: any): Promise<void> {
-  const withIds = items.filter(item => item?.tmdbId);
-  if (!withIds.length) return;
+  const { getImdbRating }: any = require('../../lib/imdbRatings');
+  const rate = async (item: any) => {
+    const rating = await getImdbRating(item.imdbId).catch(() => null);
+    if (!rating) return;
+    item.votes = rating.votes;
+    item.score = rating.rating;
+    item.votesFrom = 'imdb';
+  };
+  await Promise.all(items.filter(item => item?.imdbId).map(rate));
 
+  const withIds = items.filter(item => item?.tmdbId && !item.imdbId);
   const apiKey = config?.apiKeys?.mdblist;
-  if (!apiKey) return;
+  if (!withIds.length || !apiKey) {
+    logger.debug(`Ratings: ${items.filter(item => item.votesFrom === 'imdb').length} of ${items.length} from IMDb, the rest from TMDB`);
+    return;
+  }
 
   const { fetchMDBListBatchMediaInfo }: any = require('../mdbList');
-  const { getImdbRating }: any = require('../../lib/imdbRatings');
 
   for (const mediaType of ['movie', 'show'] as const) {
     const group = withIds.filter(item => (mediaType === 'movie' ? item.kind === 'movie' : item.kind !== 'movie'));
@@ -150,11 +160,7 @@ export async function attachRatings(items: any[], config: any): Promise<void> {
         const imdbId = imdbByTmdb.get(Number(item.tmdbId));
         if (!imdbId) return;
         item.imdbId = imdbId;
-        const rating = await getImdbRating(imdbId).catch(() => null);
-        if (!rating) return;
-        item.votes = rating.votes;
-        item.score = rating.rating;
-        item.votesFrom = 'imdb';
+        await rate(item);
       }));
     } catch (error: any) {
       logger.debug(`Could not read ratings for ${mediaType}s, keeping TMDB counts: ${error.message}`);

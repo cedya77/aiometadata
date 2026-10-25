@@ -1129,7 +1129,7 @@ async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise
       }
       if (userCatalog.id.startsWith('recommendations.')) {
         // Needs a history to read and a model to read it with.
-        const hasHistory = !!(config.apiKeys?.simklTokenId || config.apiKeys?.mdblist);
+        const hasHistory = require('../utils/recommendations/history').canReadHistory(config);
         const hasModel = !!(config.apiKeys?.gemini || config.apiKeys?.openrouter
           || process.env.GEMINI_API_KEY || process.env.BUILT_IN_GEMINI_API_KEY || process.env.OPENROUTER_API_KEY);
         return hasHistory && hasModel;

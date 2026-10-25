@@ -311,7 +311,7 @@ const catalogLengths = new LRUCache<string, number>({
 
 function lengthKeyFor(userUUID: string, catalog: CatalogRef, extras: Record<string, string>, tags: string[], keepKey = ''): string {
   const owner = viewerAccountOwner();
-  const viewer = catalog.id.startsWith(SERVER_WATCHLIST_PREFIX) ? viewerProfile() : '';
+  const viewer = catalog.id.startsWith(SERVER_WATCHLIST_PREFIX) || catalog.id.startsWith('recommendations.') ? viewerProfile() : '';
   return `${userUUID}|${catalog.type}|${catalog.id}|${extras.genre ?? ''}|${extras.search ?? ''}|${tags.join(',')}|${keepKey}${owner ? `|@${owner}` : ''}${viewer ? `|#${viewer}` : ''}`;
 }
 

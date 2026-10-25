@@ -49,17 +49,29 @@ function profileFailure(config: any, rows: any[]): string {
     : 'The model returned no usable profile';
 }
 
+/** An empty row is almost always a reply spent on thinking before any title was written. */
+function picksFailure(config: any): string {
+  const { reasoningEffort }: any = require('./provider');
+  const effort = reasoningEffort(config);
+  if (effort === 'none') return 'The model returned no usable picks';
+  return effort === 'minimal'
+    ? 'The model returned no usable picks. It may have spent the reply thinking, so try turning thinking off.'
+    : `The model returned no usable picks. Thinking takes a share of the reply at ${effort}, so try a lower level.`;
+}
+
 /** One catalog end to end, reporting progress: profile, picks, and a pass of art
  *  fetching so the first open is a cache read. */
-export function startJob(config: any, userUUID: string, catalogId: string): Job {
-  const existing = jobs.get(keyOf(userUUID, catalogId));
-  if (existing && isRunning(userUUID, catalogId)) return existing;
+export function startJob(config: any, userUUID: string, catalogId: string, force = false): Job {
+  const { viewerKey }: any = require('./history');
+  const viewer = viewerKey(config, userUUID);
+  const existing = jobs.get(keyOf(viewer, catalogId));
+  if (existing && isRunning(viewer, catalogId)) return existing;
 
   const entry = RECOMMENDATION_CATALOGS.find(candidate => candidate.id === catalogId);
   if (!entry) throw new Error(`Unknown recommendation catalog: ${catalogId}`);
 
   const job: Job = { kind: entry.kind, catalogId, stage: 'queued', picks: 0, startedAt: Date.now() };
-  jobs.set(keyOf(userUUID, catalogId), job);
+  jobs.set(keyOf(viewer, catalogId), job);
 
   void (async () => {
     try {
@@ -74,8 +86,13 @@ export function startJob(config: any, userUUID: string, catalogId: string): Job 
 
       const { recommend }: any = require('./rank');
       job.stage = 'choosing';
-      const picks = await recommend(config, userUUID, profile, entry.kind);
+      const { runWithSourceRefetch }: any = require('../../lib/cacheSourceRefetch');
+      const picks = force
+        ? await runWithSourceRefetch(() => recommend(config, userUUID, profile, entry.kind))
+        : await recommend(config, userUUID, profile, entry.kind);
       job.picks = picks.length;
+      if (!picks.length) throw new Error(picksFailure(config));
+      if (force) await require('./refresh').bumpRowStamp(viewer);
 
       // Warms the meta caches the row will read, so the first open is not the
       // first time every poster and rating is fetched.

@@ -3239,6 +3239,9 @@ addon.get("/api/recommendations/status", async (req: any, res: any) => {
   try {
     const userUUID = String(req.query.userUUID || '').trim();
     if (!userUUID) return res.status(400).json({ error: "userUUID is required" });
+    if (!(await resolveConfigAccess(req, userUUID, req.get('x-config-password')))) {
+      return res.status(401).json({ error: "Invalid UUID or password" });
+    }
 
     const storedConfig = await loadConfigFromDatabase(userUUID);
     if (!storedConfig) return res.status(404).json({ error: "User configuration not found" });
@@ -3256,30 +3259,35 @@ addon.get("/api/recommendations/status", async (req: any, res: any) => {
       } catch { /* a malformed override falls back to what is saved */ }
     }
 
-    const { collectWatchedRows, isWatched, resolveSources }: any = require('./utils/recommendations/history');
+    const { collectWatchedRows, isWatched, resolveSources, trackerAvailability, runAsProfile }: any = require('./utils/recommendations/history');
     const { summarise }: any = require('./utils/recommendations/rows');
     const { resolveProvider }: any = require('./utils/recommendations/provider');
-
-    const sources = resolveSources(config);
-    const rows = (await collectWatchedRows(config, userUUID)).filter(isWatched);
-    const chosen = resolveProvider(config);
-
     const { profileCacheKey }: any = require('./utils/recommendations/profile');
-    const redis = require('./lib/redisClient').default || require('./lib/redisClient');
-    const profileKey = `global:e2:${profileCacheKey(config, userUUID)}`;
-    let profile: any = null;
-    try {
-      const raw = await redis.get(profileKey);
-      if (raw) profile = JSON.parse(raw);
-    } catch { /* a missing profile is the normal state before the first build */ }
+    const { readGlobalCache }: any = require('./lib/getCache');
 
-    return res.json({
-      sources: sources.choice,
-      connected: { simkl: sources.simkl, mdblist: sources.mdblist },
-      provider: chosen ? { provider: chosen.provider, model: chosen.model } : null,
-      counts: summarise(rows, require('./utils/recommendations/rows').tuningFrom(config)),
-      profile: profile ? { summary: profile.summary, builtAt: profile.builtAt, builtFrom: profile.builtFrom } : null,
+    const { listProfiles }: any = require('./lib/jellyfin/profiles');
+    const profiles = listProfiles(config, userUUID)
+      .filter((entry: any) => entry.id && !entry.sharesHistory)
+      .map((entry: any) => {
+        const keys = (config.jellyfinUsers || []).find((user: any) => user?.id === entry.id)?.accounts?.apiKeys || {};
+        return { id: entry.id, name: entry.name, avatar: entry.avatar, linked: [keys.simklTokenId && 'Simkl', keys.mdblist && 'MDBList'].filter(Boolean) };
+      });
+
+    const report = await runAsProfile(config, userUUID, String(req.query.profile || ''), async (viewerConfig: any) => {
+      const sources = resolveSources(viewerConfig);
+      const rows = (await collectWatchedRows(viewerConfig, userUUID)).filter(isWatched);
+      const chosen = resolveProvider(viewerConfig);
+      const profile: any = await readGlobalCache(profileCacheKey(viewerConfig, userUUID));
+      return {
+        sources: sources.choice,
+        connected: { simkl: sources.simkl, mdblist: sources.mdblist, local: sources.local },
+        available: trackerAvailability(viewerConfig),
+        provider: chosen ? { provider: chosen.provider, model: chosen.model } : null,
+        counts: summarise(rows, require('./utils/recommendations/rows').tuningFrom(viewerConfig)),
+        profile: profile ? { summary: profile.summary, builtAt: profile.builtAt, builtFrom: profile.builtFrom } : null,
+      };
     });
+    return res.json({ ...report, profiles });
   } catch (error: any) {
     consola.withTag('Recommendations').warn(`Status failed: ${error.message}`);
     return res.status(500).json({ error: "Could not read recommendation status" });
@@ -3295,6 +3303,9 @@ addon.post("/api/recommendations/generate", async (req: any, res: any) => {
     if (!userUUID || !catalogId) {
       return res.status(400).json({ error: "userUUID and catalogId are required" });
     }
+    if (!(await resolveConfigAccess(req, userUUID, req.body?.password))) {
+      return res.status(401).json({ error: "Invalid UUID or password" });
+    }
 
     const storedConfig = await loadConfigFromDatabase(userUUID);
     if (!storedConfig) return res.status(404).json({ error: "User configuration not found" });
@@ -3307,7 +3318,8 @@ addon.post("/api/recommendations/generate", async (req: any, res: any) => {
     }
 
     const { startJob }: any = require('./utils/recommendations/jobs');
-    const job = startJob(config, userUUID, catalogId);
+    const { runAsProfile }: any = require('./utils/recommendations/history');
+    const job = runAsProfile(config, userUUID, String(req.body?.profile || ''), (viewerConfig: any) => startJob(viewerConfig, userUUID, catalogId, req.body?.force === true));
     return res.json({ job });
   } catch (error: any) {
     return res.status(400).json({ error: error.message });
@@ -3319,7 +3331,8 @@ addon.get("/api/recommendations/jobs", (req: any, res: any) => {
   if (!userUUID) return res.status(400).json({ error: "userUUID is required" });
   const { listJobs, pruneJobs }: any = require('./utils/recommendations/jobs');
   pruneJobs();
-  return res.json({ jobs: listJobs(userUUID) });
+  const profile = String(req.query.profile || '').trim();
+  return res.json({ jobs: listJobs(profile ? `${userUUID}#${profile}` : userUUID) });
 });
 
 // --- Trakt Proxy Endpoints ---

@@ -46,7 +46,7 @@ export function standingOf(row: WatchedRow, total?: number, tuning: Tuning = DEF
   // An explicit "completed" from a source that tracks states is taken at its
   // word; one that says it about everything is not.
   const episodes = row.totalEpisodes || total;
-  const unfinished = row.source === 'mdblist'
+  const unfinished = (row.source === 'mdblist' || row.source === 'local')
     && !!episodes && !!row.watchedEpisodes && row.watchedEpisodes < episodes;
   if (unfinished) return stale ? 'stalled' : 'watching';
 

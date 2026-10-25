@@ -2361,6 +2361,21 @@ class Database {
     return (await this.allQuery(query, [userUUID, profile, limit])) || [];
   }
 
+  async listPlayedForProfile(userUUID: string, profile: string): Promise<any[]> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT video_id, played, position_ms, runtime_ms, play_count, last_played_at, updated_at, origin FROM jellyfin_playstate WHERE user_uuid = ? AND profile = ? AND (played = 1 OR position_ms > 0)'
+      : 'SELECT video_id, played, position_ms, runtime_ms, play_count, last_played_at, updated_at, origin FROM jellyfin_playstate WHERE user_uuid = $1 AND profile = $2 AND (played = 1 OR position_ms > 0)';
+    return (await this.allQuery(query, [userUUID, profile])) || [];
+  }
+
+  async playstateVersion(userUUID: string, profile: string): Promise<string> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT COUNT(*) AS n, MAX(COALESCE(last_played_at, updated_at)) AS at FROM jellyfin_playstate WHERE user_uuid = ? AND profile = ? AND played = 1'
+      : 'SELECT COUNT(*) AS n, MAX(COALESCE(last_played_at, updated_at)) AS at FROM jellyfin_playstate WHERE user_uuid = $1 AND profile = $2 AND played = 1';
+    const row = await this.getQuery(query, [userUUID, profile]);
+    return `${Number(row?.n) || 0}-${Number(row?.at) || 0}`;
+  }
+
   async setRating(userUUID: string, profile: string, metaIds: string[], rating: number | null, metaType: string | null = null): Promise<void> {
     for (const metaId of metaIds) {
       if (rating !== null) {

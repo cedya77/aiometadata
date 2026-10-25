@@ -74,7 +74,7 @@ export function arrange(picks: any[], config: any, catalogId?: string): any[] {
     ? picks.filter(pick => !Number.isFinite(pick?.votes) || pick.votes >= floor)
     : picks.slice();
 
-  if (order === 'suggested') return kept;
+  if (order === 'suggested') return kept.sort((a, b) => (Number(b?.fit) || 0) - (Number(a?.fit) || 0));
 
   const votes = (pick: any) => (Number.isFinite(pick?.votes) ? pick.votes : 0);
   const score = (pick: any) => (Number.isFinite(pick?.score) ? pick.score : 0);
@@ -115,11 +115,14 @@ export async function getRecommendationCatalog(
     // disagree, since each request races the clock separately.
     const picks = await recommend(config, userUUID, profile, kindFor(id));
     const { markSeen }: any = require('./refresh');
-    void markSeen(userUUID);
+    const { watchedIndex, titleKeys, viewerKey }: any = require('./history');
+    void markSeen(viewerKey(config, userUUID));
+    const known = await watchedIndex(config, userUUID).catch(() => null);
+    const unseen = known ? picks.filter((pick: any) => !titleKeys(pick).some((key: string) => known.keys.has(key))) : picks;
 
     // Ordered here rather than when the row is written, so changing the setting
     // rearranges what already exists instead of paying a model to write it again.
-    const ordered = arrange(picks, config, id);
+    const ordered = arrange(unseen, config, id);
 
     // The whole selection is generated at once, but clients page through it at
     // the manifest's page size. Serving only the first page silently discarded

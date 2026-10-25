@@ -132,13 +132,13 @@ const asList = (value: any, cap: number): string[] => (Array.isArray(value) ? va
 /** Built in one place: the status panel looks the profile up by the same key. */
 export function profileCacheKey(config: any, userUUID: string): string {
   const { resolveProvider, reasoningEffort }: any = require('./provider');
-  const { resolveSources }: any = require('./history');
+  const { resolveSources, viewerKey }: any = require('./history');
   const chosen = resolveProvider(config);
   const sources = resolveSources(config).choice;
   // Bumped when the prompt changes shape, so an improvement is not hidden behind
   // a week of cached profiles written by the previous one.
   const tuning = tuningFrom(config);
-  return `recommendations:profile:v2:${userUUID}:${sources}:`
+  return `recommendations:profile:v2:${viewerKey(config, userUUID)}:${sources}:`
     + `${chosen?.provider || 'none'}:${chosen?.model || 'none'}:${reasoningEffort(config)}:`
     + `${tuning.stalledWeight}:${tuning.staleDays}`;
 }
