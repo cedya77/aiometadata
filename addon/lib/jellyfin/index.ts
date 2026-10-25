@@ -3851,22 +3851,44 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     return value !== undefined && value !== '' && Number.isFinite(n) ? n : undefined;
   };
 
+  const controlledScopes = async (req: any, userUUID: string): Promise<Array<{ key: string; profile: Profile; config: any }>> => {
+    const stored = await database.getUserConfig(userUUID);
+    const config = await loadConfig(req);
+    const own = { key: profileKey(config), profile: sessionProfile(req, stored), config };
+    if (req.jellyfin?.profileId || !stored) return [own];
+    const scopes = [own];
+    const keys = new Set([own.key]);
+    for (const entry of listProfiles(stored, userUUID)) {
+      if (!entry.id) continue;
+      const scoped = scopeConfigToProfile({ ...stored }, userUUID, entry.id);
+      scoped.userUUID = userUUID;
+      const key = profileKey(scoped);
+      if (keys.has(key)) continue;
+      keys.add(key);
+      scopes.push({ key, profile: profileById(stored, userUUID, entry.id), config: scoped });
+    }
+    return scopes;
+  };
+
   router.get('/Sessions', async (req: any, res: any) => {
     const userUUID = req.params.userUUID;
     const serverId = serverIdFor(userUUID);
-    const config = await database.getUserConfig(userUUID);
-    const profile = sessionProfile(req, config);
     const own = clientInfo(req);
-    const scoped = await loadConfig(req);
-    const devices = await liveDevices(userUUID, profileKey(scoped));
-    const sessions = devices.map((device) => sessionInfo(profile.userId, serverId, profile.name, device, device));
-    if (!param(req.query, 'ControllableByUserId') && !devices.some((device) => device.deviceId === own.deviceId)) {
-      sessions.unshift(sessionInfo(profile.userId, serverId, profile.name, own));
+    const scopes = await controlledScopes(req, userUUID);
+    const sessions: any[] = [];
+    let ownListed = false;
+    for (const [index, scope] of scopes.entries()) {
+      const devices = await liveDevices(userUUID, scope.key);
+      if (index === 0) ownListed = devices.some((device) => device.deviceId === own.deviceId);
+      const listed = devices.map((device) => sessionInfo(scope.profile.userId, serverId, scope.profile.name, device, device));
+      if (scope.config) await withNowPlaying(userUUID, scope.config, serverId, listed);
+      sessions.push(...listed);
+    }
+    if (!param(req.query, 'ControllableByUserId') && !ownListed) {
+      sessions.unshift(sessionInfo(scopes[0].profile.userId, serverId, scopes[0].profile.name, own));
     }
     const deviceId = param(req.query, 'DeviceId');
-    const answered = deviceId ? sessions.filter((session) => session.DeviceId === String(deviceId)) : sessions;
-    if (scoped) await withNowPlaying(userUUID, scoped, serverId, answered);
-    res.json(answered);
+    res.json(deviceId ? sessions.filter((session) => session.DeviceId === String(deviceId)) : sessions);
   });
 
   router.post(['/Sessions/Capabilities', '/Sessions/Capabilities/Full'], async (req: any, res: any) => {
@@ -3890,15 +3912,16 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
   const toSession = async (req: any, res: any, MessageType: string, data: (controllingUserId: string) => any) => {
     const userUUID = req.params.userUUID;
-    const config = await loadConfig(req);
-    const profile = sessionProfile(req, await database.getUserConfig(userUUID));
-    const key = profileKey(config);
-    const device = (await liveDevices(userUUID, key)).find((d) => `${profile.userId}-${d.deviceId}` === req.params.sessionId);
-    if (!device || !(await sendToDevice(userUUID, key, device.deviceId, MessageType, data(profile.userId)))) {
-      res.status(404).json({ error: 'No such session' });
-      return;
+    const scopes = await controlledScopes(req, userUUID);
+    const controller = scopes[0].profile.userId;
+    for (const scope of scopes) {
+      const device = (await liveDevices(userUUID, scope.key)).find((d) => `${scope.profile.userId}-${d.deviceId}` === req.params.sessionId);
+      if (device && (await sendToDevice(userUUID, scope.key, device.deviceId, MessageType, data(controller)))) {
+        res.status(204).end();
+        return;
+      }
     }
-    res.status(204).end();
+    res.status(404).json({ error: 'No such session' });
   };
 
   router.post('/Sessions/:sessionId/Playing', (req: any, res: any) =>
