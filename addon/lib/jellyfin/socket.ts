@@ -133,6 +133,10 @@ function pingMs(): number {
   return envInt('JELLYFIN_SOCKET_PING_MS', 30000, 1000);
 }
 
+function detailsMs(): number {
+  return envInt('JELLYFIN_DEVICE_DETAILS_DAYS', 7, 1) * 24 * 60 * 60 * 1000;
+}
+
 function maxFrameBytes(): number {
   const value = Number(require('../settingsService').getSetting('JELLYFIN_SOCKET_MAX_MESSAGE_KB'));
   return (Number.isFinite(value) && value >= 1 ? Math.floor(value) : 64) * 1024;
@@ -146,7 +150,7 @@ function markListening(scope: string, deviceId: string | null): void {
     .multi()
     .hset(`${DEVICES}${scope}`, deviceId, String(Date.now()))
     .pexpire(`${DEVICES}${scope}`, ttl)
-    .pexpire(`${CAPABILITIES}${scope}:${deviceId}`, ttl)
+    .pexpire(`${CAPABILITIES}${scope}:${deviceId}`, detailsMs())
     .exec()
     .catch(() => undefined);
 }
@@ -180,7 +184,7 @@ const localCapabilities = new Map<string, DeviceCapabilities>();
 export async function saveCapabilities(userUUID: string, profile: string, deviceId: string, capabilities: DeviceCapabilities): Promise<void> {
   const key = `${userUUID}:${profile}:${deviceId}`;
   if (!redis) return void localCapabilities.set(key, capabilities);
-  await redis.set(`${CAPABILITIES}${key}`, JSON.stringify(capabilities), 'PX', pingMs() * 3).catch(() => undefined);
+  await redis.set(`${CAPABILITIES}${key}`, JSON.stringify(capabilities), 'PX', detailsMs()).catch(() => undefined);
 }
 
 export async function liveDevices(userUUID: string, profile: string): Promise<LiveDevice[]> {

@@ -2063,6 +2063,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1000,
   },
   {
+    key: 'JELLYFIN_DEVICE_DETAILS_DAYS',
+    envVar: 'JELLYFIN_DEVICE_DETAILS_DAYS',
+    label: 'Device Details Kept (days)',
+    description: 'How long a client\'s name and remote control abilities are kept after it last connected, so it is named and controllable again as soon as it reconnects after a restart.',
+    category: 'Features',
+    type: 'number',
+    default: 7,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_DROP_HOLD',
     envVar: 'JELLYFIN_DROP_HOLD',
     label: 'Drop Hold (seconds)',
