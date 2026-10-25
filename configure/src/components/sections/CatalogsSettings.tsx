@@ -2775,8 +2775,6 @@ const MergedCatalogCard = ({
     const trimmedName = newName.trim();
     const trimmedType = newType.trim();
     if (!trimmedName || !trimmedType) {
-      setNewName(catalog.name);
-      setNewType(catalog.displayType || catalog.type);
       setShowEditDialog(false);
       return;
     }
@@ -2784,11 +2782,13 @@ const MergedCatalogCard = ({
     setShowEditDialog(false);
   };
 
-  const handleEditCancel = () => {
+  const openEditDialog = () => {
     setNewName(catalog.name);
     setNewType(catalog.displayType || catalog.type);
-    setShowEditDialog(false);
+    setShowEditDialog(true);
   };
+
+  const handleEditCancel = () => setShowEditDialog(false);
 
   const handleMoveToTop = () => {
     setConfig(prev => {
@@ -2885,7 +2885,7 @@ const MergedCatalogCard = ({
               <div className="flex items-center gap-1 min-w-0">
                 <p className={`font-medium line-clamp-2 min-w-0 flex-1 md:flex-none transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
                 <button
-                  onClick={() => setShowEditDialog(true)}
+                  onClick={openEditDialog}
                   className="text-muted-foreground hover:text-foreground shrink-0"
                 >
                   <Pencil size={14} />
@@ -3246,9 +3246,6 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
     const trimmedType = newType.trim();
 
     if (trimmedName === '' || trimmedType === '') {
-      // Revert to original values if either field is empty
-      setNewName(catalog.name);
-      setNewType(catalog.displayType || catalog.type);
       setShowEditDialog(false);
       return;
     }
@@ -3280,11 +3277,13 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
     setShowEditDialog(false);
   };
 
-  const handleEditCancel = () => {
+  const openEditDialog = () => {
     setNewName(catalog.name);
     setNewType(catalog.displayType || catalog.type);
-    setShowEditDialog(false);
+    setShowEditDialog(true);
   };
+
+  const handleEditCancel = () => setShowEditDialog(false);
 
   const wouldDisbandMerge = (): string | null => {
     const targetKey = `${catalog.id}-${catalog.type}`;
@@ -3486,7 +3485,7 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
             })()}
             <p className={`font-medium line-clamp-2 min-w-0 flex-1 md:flex-none transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
             <button
-              onClick={() => setShowEditDialog(true)}
+              onClick={openEditDialog}
               className="text-muted-foreground hover:text-foreground shrink-0"
             >
               <Pencil size={14} />
@@ -3538,7 +3537,7 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
                     <Settings className="h-4 w-4 mr-2 text-muted-foreground" />
                     Settings
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowEditDialog(true)}>
+                  <DropdownMenuItem onClick={openEditDialog}>
                     <Pencil className="h-4 w-4 mr-2 text-muted-foreground" />
                     Rename
                   </DropdownMenuItem>

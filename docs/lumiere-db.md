@@ -5,6 +5,7 @@ LumiereDB is a self-hosted API built on IMDb's datasets. It downloads the data a
 - **LumiereDB Search**: a movie and series search provider. It understands typos (`interstelar`), run-together words (`spiderman`), sequel numerals (`gladiator 2`), a trailing year (`dune 2021`) and acronyms of very popular titles (`tdk`, `lotr`). Results keep LumiereDB's ranking.
 - **LumiereDB People Search**: type a full name and get the movies or series that person is known for.
 - **LumiereDB Popular** and **LumiereDB Trending**: catalogs for movies and series, filterable by LumiereDB's genres. Popular goes 500 titles deep and Trending 100. Both leave out thinly voted and poorly rated titles.
+- **Jellyfin Search Suggestions**: suggests titles as you type through `/Search/Hints` in Jellyfin clients (requires `SUGGEST_ENABLED: "true"` on LumiereDB).
 
 LumiereDB only returns IMDb ids. AIOMetadata builds every result with your usual metadata providers, so posters, art, ratings and your filters work as everywhere else.
 
@@ -34,6 +35,7 @@ services:
       ETL_REBUILD_WINDOW: ""
       TZ: "UTC"
       CACHE_MAX_BYTES: "256MB"
+      SUGGEST_ENABLED: "false"
     volumes:
       - ${DOCKER_DATA_DIR}/lumiere-db:/data
     profiles:
@@ -98,6 +100,7 @@ All of these can be set in `.env` or changed from the dashboard.
 | `LUMIERE_SEARCH_TIMEOUT_MS` | `5000` | How long to wait for LumiereDB before giving up on a search or list. |
 | `LUMIERE_SEARCH_TTL_SECONDS` | `86400` | How long a query's LumiereDB results are cached, shared by every user. `0` turns caching off. |
 | `LUMIERE_SEARCH_RESULT_LIMIT` | `12` | How many search results to build (1–50). Each one costs a TMDB lookup. |
+| `LUMIERE_SUGGEST_TIMEOUT_MS` | `1500` | How long a Jellyfin client's search suggestions wait for LumiereDB before showing none, in milliseconds. |
 | `LUMIERE_PEOPLE_PAGE_SIZE` | `20` | How many of a person's titles each people-search page builds (1–50). Each one costs a TMDB lookup. |
 
 The genre list for Popular and Trending is cached for 30 days. The catalogs follow each catalog's own cache lifetime.
@@ -112,6 +115,7 @@ Set these in the LumiereDB service's `environment` block in Compose.
 | `TZ` | `UTC` | Time zone the rebuild window is read in. |
 | `ETL_POLL_INTERVAL` | `1h` | How often to check IMDb for updated datasets. Accepts durations such as `6h` or `24h`. |
 | `CACHE_MAX_BYTES` | `256MB` | RAM allocated to LumiereDB's result cache. Lower it on hosts with limited memory. |
+| `SUGGEST_ENABLED` | `false` | Enable the `/search/suggest` endpoint used for Jellyfin live search suggestions. Uses extra memory for the in-memory prefix trie. |
 
 `ETL_REBUILD_WINDOW` limits when routine index rebuilds can start after IMDb's data changes. Rebuilding uses CPU and memory, so a quiet-hours window can help on a shared host. For example:
 

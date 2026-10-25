@@ -11,6 +11,7 @@ import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
 import { fetchResume, parseResumeItems, fetchListItems, parseListItems, fetchPickItems, parsePickItems, publicMetaDBListType, publicMetaDBListId, WATCHLIST_CATALOG_ID } from "../utils/publicmetadbUtils.js";
 import { mapWithLimit } from "../utils/concurrency.js";
 const anilist = require('./anilist');
+const idMapper = require('./id-mapper');
 import { createHash } from 'crypto';
 import { accountOwner, ownTokenId, servesCatalog, viewerConfigFor } from './accounts';
 import * as jikan from "./mal.js"
@@ -37,7 +38,7 @@ const database = require('./database.js');
 import redis from './redisClient.js';
 
 const logger = consola.withTag('Catalog');
-import { cacheWrapMetaSmart } from './getCache.js';
+import { cacheWrapMetaSmart, readCatalogItemsPage } from './getCache.js';
 // @ts-ignore
 import { anilistListAccess, getAnilistAccessToken } from '../utils/anilistUtils';
 import { anilistRequiresAuth } from '../utils/anilistAccess';
@@ -1948,7 +1949,9 @@ async function getExternalAddonCatalog(type: string, catalogId: string, genre: s
 
       for (let i = 0; i < items.length; i += batchSize) {
         const chunk = items.slice(i, i + batchSize);
-        let metas = await parseStremThruItems(chunk, type, genre, language, config, includeVideos, { upstreamArt: userCatalog.metadata?.useUpstreamArt === true });
+        const upstreamArt = userCatalog.metadata?.useUpstreamArt === true;
+        const parse = () => parseStremThruItems(chunk, type, genre, language, config, includeVideos, { upstreamArt });
+        let metas = includeVideos ? await parse() : await readCatalogItemsPage(config, chunk, `${language}:${upstreamArt ? 'upstreamArt' : 'art'}`, parse);
         metas = await applyCatalogFilters(metas, { type, config, catalogConfig: userCatalog, cleanId: catalogId });
         for (const meta of metas) {
           const id = meta?.id;
@@ -2533,11 +2536,17 @@ async function resolveAniListItemsToMetas(
       .trim();
   };
 
-  const getStremioTypeFromFormat = (format: string | null | undefined): string => {
+  const getStremioTypeFromFormat = (format: string | null | undefined, malId: number | null | undefined): string => {
     if (!format) return 'series';
-    
+
     const formatUpper = format.toUpperCase();
-    
+
+    // A special mapped to a TMDB show is a series, unless Trakt lists it as a film.
+    if (formatUpper === 'SPECIAL' && malId && !idMapper.getTraktAnimeMovieByMalId(malId)
+      && idMapper.getMappingByMalId(malId)?.themoviedb_type === 'tv') {
+      return 'series';
+    }
+
     // Movie formats: MOVIE, SPECIAL, ONE_SHOT
     if (formatUpper === 'MOVIE' || formatUpper === 'SPECIAL' || formatUpper === 'ONE_SHOT') {
       return 'movie';
@@ -2551,7 +2560,7 @@ async function resolveAniListItemsToMetas(
   // create new items with property mal_id and type, plus additional AniList fields
   const newItems = items.map(item => {
     const media = item.media;
-    const itemType = getStremioTypeFromFormat(media.format) || type;
+    const itemType = getStremioTypeFromFormat(media.format, media.idMal) || type;
     
     // Format dates from AniList structure
     const airedFrom = media.startDate?.year 

@@ -1,4 +1,6 @@
 import { createHash } from 'crypto';
+import { LRUCache } from 'lru-cache';
+import { envInt } from '../../utils/envNumber';
 
 const PACKED = 0xa1;
 const HASHED = 0xb2;
@@ -292,10 +294,17 @@ export function unpackJellyfinId(raw: string): Descriptor | null {
   return tryUnpack(id);
 }
 
+const hashedIds = new LRUCache<string, string>({ max: envInt('JELLYFIN_ID_CACHE_MAX', 100000, 1) });
+
 export function hashJellyfinId(d: Descriptor): string {
-  const hash = createHash('md5').update(canonicalDescriptor(d)).digest();
+  const canonical = canonicalDescriptor(d);
+  const held = hashedIds.get(canonical);
+  if (held) return held;
+  const hash = createHash('md5').update(canonical).digest();
   hash[0] = HASHED;
-  return hash.toString('hex');
+  const id = hash.toString('hex');
+  hashedIds.set(canonical, id);
+  return id;
 }
 
 export function isHashedJellyfinId(id: string): boolean {

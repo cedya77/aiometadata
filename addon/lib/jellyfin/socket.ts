@@ -133,6 +133,11 @@ function pingMs(): number {
   return envInt('JELLYFIN_SOCKET_PING_MS', 30000, 1000);
 }
 
+function maxFrameBytes(): number {
+  const value = Number(require('../settingsService').getSetting('JELLYFIN_SOCKET_MAX_MESSAGE_KB'));
+  return (Number.isFinite(value) && value >= 1 ? Math.floor(value) : 64) * 1024;
+}
+
 function markListening(scope: string, deviceId: string | null): void {
   const ttl = pingMs() * 3;
   redis?.set(`${LISTENING}${scope}`, '1', 'PX', ttl).catch(() => undefined);
@@ -341,13 +346,21 @@ export function attachJellyfinSocket(server: any): void {
     markListening(scope, deviceId);
 
     send('ForceKeepAlive', 60);
+    let heardAt = Date.now();
     const timer = setInterval(() => {
+      if (Date.now() - heardAt > pingMs() * 3) {
+        socket.destroy();
+        return;
+      }
       send('KeepAlive');
+      if (!socket.destroyed) socket.write(Buffer.from([0x89, 0x00]));
       markListening(scope, deviceId);
     }, pingMs());
 
+    const maxPending = maxFrameBytes();
     let pending = Buffer.alloc(0);
     socket.on('data', (chunk: Buffer) => {
+      heardAt = Date.now();
       pending = Buffer.concat([pending, chunk]);
 
       for (;;) {
@@ -373,6 +386,7 @@ export function attachJellyfinSocket(server: any): void {
           // A client is free to send anything; nothing here depends on it.
         }
       }
+      if (pending.length > maxPending) socket.destroy();
     });
 
     let released = false;

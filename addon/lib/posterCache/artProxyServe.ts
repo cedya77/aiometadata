@@ -1,3 +1,4 @@
+import { pipeline } from 'node:stream/promises';
 import { resolveProxyPolicy, type ImageClass, type UpstreamCacheMeta } from './config.js';
 import { recordRevalidated, recordServe } from './handler.js';
 import { applyProxyResponseHeaders, etagMatches } from './proxyResponse.js';
@@ -58,13 +59,30 @@ export interface PassThroughOptions {
   imageClass: ImageClass;
   url: string;
   bypassed: boolean;
-  open: (validators: ClientValidators | undefined) => Promise<{ status: number; headers: Record<string, any>; data: any }>;
+  open: (validators: ClientValidators | undefined, signal?: AbortSignal) => Promise<{ status: number; headers: Record<string, any>; data: any }>;
 }
 
 export async function servePassThrough(req: any, res: any, opts: PassThroughOptions): Promise<void> {
   const { imageClass, url, bypassed, open } = opts;
   const validators = bypassed ? undefined : clientValidators(req);
-  const upstream = await open(validators);
+  const controller = new AbortController();
+  const leave = () => {
+    if (!res.writableFinished) controller.abort();
+  };
+  res.once('close', leave);
+  let upstream: Awaited<ReturnType<PassThroughOptions['open']>>;
+  try {
+    upstream = await open(validators, controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    throw error;
+  } finally {
+    res.off('close', leave);
+  }
+  if (res.destroyed || res.writableEnded) {
+    upstream.data?.destroy?.();
+    return;
+  }
 
   const policy = resolveProxyPolicy(url);
 
@@ -88,7 +106,7 @@ export async function servePassThrough(req: any, res: any, opts: PassThroughOpti
     upstreamHeaders: upstream.headers,
     policy,
   });
-  upstream.data.pipe(res);
+  await pipeline(upstream.data, res).catch(() => undefined);
 }
 
 export interface ArtStreamOptions {
@@ -100,8 +118,8 @@ export interface ArtStreamOptions {
 export function openArtStream(opts: ArtStreamOptions): PassThroughOptions['open'] {
   const { url, allowPrivateHost, minContentLength } = opts;
 
-  return async (validators) => {
-    const { response } = await openImageStream(url, { allowPrivateHost, validators });
+  return async (validators, signal) => {
+    const { response } = await openImageStream(url, { allowPrivateHost, validators, signal });
     
     if (minContentLength !== undefined && response.status !== 304) {
       const declared = Number.parseInt(response.headers['content-length'] || '', 10);

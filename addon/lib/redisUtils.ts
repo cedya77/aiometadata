@@ -1,6 +1,7 @@
 const redis: any = require('./redisClient');
 const consola: any = require('consola');
 const logger: any = consola.withTag('Redis-Utils');
+const { forgetAllHeld }: any = require('./metaMemory');
 
 interface DeleteKeysByPatternOptions {
   scanCount?: number;
@@ -15,6 +16,7 @@ async function deleteKeysByPattern(pattern: string, options: DeleteKeysByPattern
   const filter = options.filter || null;
   let cursor = '0';
   let totalDeleted = 0;
+  forgetAllHeld();
 
   do {
     const res = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', scanCount);
@@ -34,6 +36,7 @@ async function deleteKeysByPattern(pattern: string, options: DeleteKeysByPattern
     }
   } while (cursor !== '0');
 
+  forgetAllHeld();
   return totalDeleted;
 }
 

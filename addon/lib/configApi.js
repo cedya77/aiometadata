@@ -1205,6 +1205,12 @@ class ConfigApi {
     return JSON.parse(JSON.stringify(await this.loadSharedConfig(userUUID)));
   }
 
+  async loadRouteConfig(userUUID) {
+    const shared = await this.loadSharedConfig(userUUID);
+    if (!shared) return shared;
+    return Array.isArray(shared.catalogs) ? { ...shared, catalogs: shared.catalogs.map((catalog) => ({ ...catalog })) } : { ...shared };
+  }
+
   buildApiKeyValidationSummary(details) {
     const summary = {
       totalCount: 0,
@@ -1617,5 +1623,6 @@ module.exports = {
   isTrusted: configApi.isTrusted.bind(configApi),
   loadConfigFromDatabase: configApi.loadConfigFromDatabase.bind(configApi),
   loadSharedConfig: configApi.loadSharedConfig.bind(configApi),
+  loadRouteConfig: configApi.loadRouteConfig.bind(configApi),
   testApiKeys: configApi.testApiKeys.bind(configApi)
 };

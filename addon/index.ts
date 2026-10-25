@@ -38,7 +38,7 @@ const { supportsMdblistScoreFilters } = require("./utils/mdbList");
 
 const configApi = require('./lib/configApi');
 const database = require('./lib/database');
-const { loadConfigFromDatabase } = require('./lib/configApi');
+const { loadConfigFromDatabase, loadRouteConfig } = require('./lib/configApi');
 const { getTrending } = require("./lib/getTrending");
 const { resolveProxyRatingPosterUrl, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
 const { extractIdsFromMeta, extractCanonicalIdFromDynamicUpNextId } = require("./utils/metaIds");
@@ -2629,7 +2629,8 @@ addon.get("/api/tmdb/collections/resolve", async (req, res) => {
 });
 
 // AI-powered catalog creation
-const aiCatalogRateLimit = new Map();
+const { LRUCache: AiRateCache } = require('lru-cache');
+const aiCatalogRateLimit = new AiRateCache({ max: 10000, ttl: 60000 });
 addon.post("/api/ai/create-catalog", async (req, res) => {
   try {
     const { userUUID, password, query, provider, generationMode, model: requestedModel, geminiKey: clientGeminiKey, openrouterKey: clientOpenrouterKey } = req.body;
@@ -4762,6 +4763,7 @@ addon.delete("/api/cache/clear/:key", requireDashboardAdmin, async (req, res) =>
     } else {
       // Clear specific key
       const result = await redis.del(key);
+      require('./lib/metaMemory').forgetAllHeld();
       consola.info(`[Cache] Cleared cache key: ${key} (result: ${result})`);
       res.json({
         success: true,
@@ -4916,7 +4918,7 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
 // --- Catalog Route under /stremio/:userUUID prefix ---
 const catalogRoute = async function (req, res) {
   const { userUUID, type, id, extra } = req.params;
-  const storedConfig = await loadConfigFromDatabase(userUUID);
+  const storedConfig = await loadRouteConfig(userUUID);
   
   if (!storedConfig) {
     return res.status(404).send({ error: "User configuration not found" });
@@ -5710,7 +5712,7 @@ const metaRoute = async function (req, res) {
   }
   
   // Load config from database
-  const config = await loadConfigFromDatabase(userUUID);
+  const config = await loadRouteConfig(userUUID);
   if (!config) {
     return res.status(404).send({ error: "User configuration not found" });
   }
@@ -6461,8 +6463,8 @@ const handlePosterProxy = async function (req, res) {
       imageClass: 'poster',
       url: posterUrl,
       bypassed,
-      open: async (validators) => {
-        const imageResponse = await openUpstream(validators);
+      open: async (validators, signal) => {
+        const imageResponse = await openUpstream(validators, signal);
         if (bypassed && posterCacheConfig.isBuiltinPosterCacheEnabled()) {
           require('./lib/posterCache/handler.js').recordServe('poster', 'BYPASS', 0, req.method, posterUrl);
         }
@@ -6517,8 +6519,8 @@ function streamArtWithFallback(assetName) {
         imageClass: assetName,
         url: customUrl,
         bypassed,
-        open: async (validators) => {
-          const imageResponse = await openUpstream(validators);
+        open: async (validators, signal) => {
+          const imageResponse = await openUpstream(validators, signal);
           if (bypassed && posterCacheConfig.isBuiltinPosterCacheEnabled()) {
             require('./lib/posterCache/handler.js').recordServe(assetName, 'BYPASS', 0, req.method, customUrl);
           }

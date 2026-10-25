@@ -195,6 +195,7 @@ export async function loadConfig(req: any): Promise<any> {
   if (!stored) return null;
 
   // The cached copy is every reader's, so a request changes only its own top level.
+  require('./items').noteArtScope(serverIdFor(req.jellyfin.userUUID), stored);
   const config = scopeConfigToProfile({ ...stored }, req.jellyfin.userUUID, req.jellyfin.profileId ?? null);
   config.userUUID = req.jellyfin.userUUID;
   req.jellyfin.config = config;

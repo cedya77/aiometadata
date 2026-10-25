@@ -41,6 +41,7 @@ function getImageWarmDetail() {
 }
 
 const { getCacheHealth, getMemoryStats: getCacheMemoryStats } = require('./getCache');
+const { forgetAllHeld } = require('./metaMemory');
 
 /** System keys that must survive any cache clear. */
 const { EPOCH_STATE_KEY } = require('./epochCleanup');
@@ -2163,6 +2164,7 @@ class DashboardAPI {
           const batch = expiringKeysBatch.slice(i, i + deleteBatchSize);
           await this.cache.del(...batch);
           deletedCount += batch.length;
+          forgetAllHeld();
         }
       }
     } while (cursor !== '0');
@@ -2315,6 +2317,7 @@ class DashboardAPI {
               const batch = deletable.slice(i, i + 100);
               await this.cache.del(...batch);
               deletedCount += batch.length;
+              forgetAllHeld();
             }
           } else {
             deletedCount += deletable.length;
@@ -2383,6 +2386,7 @@ class DashboardAPI {
     const pattern = `*:${escapeRedisGlob(trimmed)}`;
     let cursor = '0';
     let deleted = 0;
+    if (!dryRun) forgetAllHeld();
 
     do {
       const reply = await this.cache.scan(cursor, 'MATCH', pattern, 'COUNT', 1000);
@@ -2402,6 +2406,7 @@ class DashboardAPI {
       }
     } while (cursor !== '0');
 
+    if (!dryRun) forgetAllHeld();
     return deleted;
   }
 
@@ -2412,6 +2417,7 @@ class DashboardAPI {
       }
 
       let deletedCount = 0;
+      forgetAllHeld();
       let cursor = '0';
       
       switch (type) {
@@ -2479,6 +2485,7 @@ class DashboardAPI {
         message = `Cleared ${deletedCount.toLocaleString()} ${type} cache entries`;
       }
 
+      forgetAllHeld();
       return { success: true, message, keyCount: finalKeyCount, deletedCount };
     } catch (error) {
       logger.error("Error clearing cache:", error);

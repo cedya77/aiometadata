@@ -378,6 +378,7 @@ export async function fetchStreams(
     }
     const response = await fetch(url, { headers, signal: controller.signal });
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       logger.debug(`Streams ${type}/${id} returned ${response.status}`);
       return { streams: [], failure: describeStatus(response.status) };
     }

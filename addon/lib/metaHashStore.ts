@@ -2,6 +2,7 @@ import consola from 'consola';
 
 const redis: any = require('./redisClient');
 const { encodeCachePayload }: any = require('./cacheCodec');
+const { forgetHeld }: any = require('./metaMemory');
 
 const logger = consola.withTag('Meta-Hash');
 
@@ -133,7 +134,9 @@ export async function writeMetaHashReplace({ key, entries, ttl, hdelFields = [] 
   if (hdelFields.length > 0) tx.hdel(key, ...hdelFields);
   tx.hsetex(key, 'EX', seconds, 'FIELDS', entries.length, ...fieldValues);
   queueKeyExpiry(tx, key, seconds);
-  return (await execOrWarn(tx, key)) !== null;
+  const results = await execOrWarn(tx, key);
+  forgetHeld(key);
+  return results !== null;
 }
 
 /**
@@ -160,6 +163,7 @@ export async function writeMetaHashFill({ key, entries, ttl, basicTtl }: { key: 
   entries.forEach((entry, index) => tx.hsetex(key, 'FNX', 'EX', cap, 'FIELDS', 1, entry.field, values[index]));
   queueKeyExpiry(tx, key, cap);
   const results = await execOrWarn(tx, key);
+  forgetHeld(key);
   if (!results) return 0;
   return results.slice(0, entries.length).filter(([, written]: any) => written === 1).length;
 }

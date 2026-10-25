@@ -22,8 +22,8 @@ export interface RouteReply {
 
 /**
  * Runs a registered handler on a request built from `url`, with no socket, no
- * middleware and no queue. The reply goes through JSON, as it would over HTTP,
- * so the caller holds a copy it may change, never an object the handler cached.
+ * middleware and no queue. The reply is the object the handler built for this
+ * call, which the caller reads and does not change.
  */
 export async function invokeRoute(
   name: string,
@@ -90,9 +90,7 @@ export async function invokeRoute(
 
   try {
     const reply = await Promise.race([replied, late]);
-    const body = typeof reply.body === 'string'
-      ? safeParse(reply.body)
-      : reply.body === null || reply.body === undefined ? null : JSON.parse(JSON.stringify(reply.body));
+    const body = typeof reply.body === 'string' ? safeParse(reply.body) : reply.body ?? null;
     return { status: reply.status, body };
   } finally {
     clearTimeout(timer);

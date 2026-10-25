@@ -42,7 +42,7 @@ async function encodeCachePayload(
   return Buffer.concat([HEADER, compressed]);
 }
 
-async function decodeCachePayload(payload: Buffer | string | null | undefined): Promise<any> {
+async function decodeCacheText(payload: Buffer | string | null | undefined): Promise<string | null> {
   if (payload === null || payload === undefined) return null;
 
   const buffer = Buffer.isBuffer(payload)
@@ -50,17 +50,23 @@ async function decodeCachePayload(payload: Buffer | string | null | undefined): 
     : Buffer.from(String(payload), 'utf8');
 
   if (!hasCompressionHeader(buffer)) {
-    return JSON.parse(buffer.toString('utf8'));
+    return buffer.toString('utf8');
   }
 
   const decompressed = await uncompress(buffer.subarray(HEADER.length));
-  return JSON.parse(decompressed.toString('utf8'));
+  return decompressed.toString('utf8');
+}
+
+async function decodeCachePayload(payload: Buffer | string | null | undefined): Promise<any> {
+  const text = await decodeCacheText(payload);
+  return text === null ? null : JSON.parse(text);
 }
 
 export {
   DEFAULT_MIN_BYTES,
   HEADER,
   decodeCachePayload,
+  decodeCacheText,
   encodeCachePayload,
   hasCompressionHeader,
 };

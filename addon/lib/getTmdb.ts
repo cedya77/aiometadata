@@ -207,6 +207,7 @@ async function makeTmdbRequest(endpoint: string, apiKey: string, params: Record<
 
       // Handle 429 specifically with backoff
       if (response.status === 429) {
+          await response.body?.cancel().catch(() => undefined);
           const retryAfterHeader = response.headers.get('retry-after');
           const retryAfter = parseInt(retryAfterHeader || '5', 10);
           const waitTime = retryAfter * 1000 + 50; // Add buffer
@@ -223,6 +224,7 @@ async function makeTmdbRequest(endpoint: string, apiKey: string, params: Record<
         if (NON_RETRYABLE_CODES.has(response.status)) {
              // Special handling for 404 - return null/empty instead of throwing if expected
              if (response.status === 404) {
+                 await response.body?.cancel().catch(() => undefined);
                  consola.warn(`[TMDB] Resource not found for ${endpoint}`);
                  return null;
              }

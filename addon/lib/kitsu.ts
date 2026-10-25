@@ -481,7 +481,10 @@ async function fetchRelationshipList(url?: string, attributeKey: 'name' | 'title
   try {
     // This one had no timeout at all, so a slow Kitsu held the request open.
     const res = await fetch(url, { signal: AbortSignal.timeout(kitsuTimeoutMs()) })
-    if (!res.ok) return []
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined)
+      return []
+    }
     const json = await res.json()
     return ((json as any).data || [])
       .map((i: any) => i.attributes?.[attributeKey])

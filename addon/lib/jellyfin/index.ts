@@ -1,4 +1,5 @@
 import express from 'express';
+import { pipeline } from 'stream/promises';
 import { LRUCache } from 'lru-cache';
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
@@ -50,7 +51,7 @@ import { allBoxSets, boxSetGenres, boxSetMembers, boxSetsDeep, boxSetsFor, boxSe
 import { entryItemType, setWatchlisted, watchlistEntries, watchlistItems } from './watchlist';
 import { applyRatings, applyWatchedState, finishedSeries, ownNextUpRows, seriesCountsAmong, upcomingFollowed, watchedAmong, watchedHistory, watchedSnapshot, type NextUpRow, type UpcomingRow } from './watched';
 import { cachedArtwork } from './artwork';
-import { SIZED_WIDTH, resizeToWidth, widthStep } from '../posterCache/resize';
+import { ImageQueueFull, SIZED_WIDTH, imageQueueFull, inImageSlot, shrinkToWidth, widthStep } from '../posterCache/resize';
 import { IMAGE_CSP } from '../posterCache/proxyResponse';
 import { registerStubs } from './stubs';
 import { decodeCursor, exportRow, findUser, historyPage, historyUsers, isEpisodeVideo, itemIdForVideo, userByKey, videoIdsOf } from './history';
@@ -450,34 +451,30 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   // A media source's Id stays bare, as a real server sends it: a client reads it up to the first dash.
   const ID_FIELD = /^(Id|ItemId|ParentId|SeriesId|SeasonId|UserId|ServerId|AlbumId|ChannelId|ParentLogoItemId|ParentBackdropItemId|ParentThumbItemId|ParentPrimaryImageItemId|Key|DisplayPreferencesId|PlaylistItemId)$/;
   const BARE_GUID = /^[0-9a-f]{32}$/i;
-  const dashIds = (value: any, source = false): any => {
-    if (Array.isArray(value)) return value.map((v) => dashIds(v, source));
-    if (!value || typeof value !== 'object') return value;
-    const out: any = {};
-    for (const [k, v] of Object.entries(value)) {
-      if (typeof v === 'string' && BARE_GUID.test(v) && !(source && k === 'Id') && (ID_FIELD.test(k) || k.endsWith('Ids'))) out[k] = dashedGuid(v);
-      else if (Array.isArray(v) && k.endsWith('Ids')) out[k] = v.map((x) => (typeof x === 'string' && BARE_GUID.test(x) ? dashedGuid(x) : x));
-      else out[k] = dashIds(v, k === 'MediaSources');
-    }
-    return out;
-  };
   // Apple TV has no browser to open a web link, so its trailers open in the YouTube app.
   const APPLE_TV = /tvos|apple ?tv/i;
-  const appTrailers = (value: any): any => {
-    if (Array.isArray(value)) return value.map(appTrailers);
-    if (!value || typeof value !== 'object') return value;
-    const out: any = {};
-    for (const [k, v] of Object.entries(value)) {
-      out[k] = k === 'RemoteTrailers' && Array.isArray(v)
-        ? v.map((t: any) => (typeof t?.Url === 'string' ? { ...t, Url: t.Url.replace(/^https?:\/\/(www\.)?youtube\.com\//i, 'youtube://www.youtube.com/') } : t))
-        : appTrailers(v);
-    }
-    return out;
+  const youtubeApp = (trailer: any): any =>
+    typeof trailer?.Url === 'string' ? { ...trailer, Url: trailer.Url.replace(/^https?:\/\/(www\.)?youtube\.com\//i, 'youtube://www.youtube.com/') } : trailer;
+  const jsonReplacer = (appleTv: boolean) => {
+    const sources = new WeakSet<object>();
+    return function (this: any, key: string, value: any): any {
+      if (typeof value === 'string') {
+        return BARE_GUID.test(value) && (ID_FIELD.test(key) || key.endsWith('Ids')) && !(key === 'Id' && sources.has(this)) ? dashedGuid(value) : value;
+      }
+      if (!value || typeof value !== 'object') return value;
+      if (key === 'MediaSources') {
+        for (const source of Array.isArray(value) ? value : [value]) if (source && typeof source === 'object') sources.add(source);
+        return value;
+      }
+      if (!Array.isArray(value)) return value;
+      if (key.endsWith('Ids')) return value.map((x) => (typeof x === 'string' && BARE_GUID.test(x) ? dashedGuid(x) : x));
+      if (appleTv && key === 'RemoteTrailers') return value.map(youtubeApp);
+      return value;
+    };
   };
 
   const seenClients = new Set<string>();
   router.use((req: any, res: any, next: any) => {
-    const json = res.json.bind(res);
     const info = clientInfo(req);
     const label = `${info.client} | ${info.device}`;
     if (!seenClients.has(label) && info.client !== 'Unknown') {
@@ -490,7 +487,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       logger.debug(`${req.method} ${String(req.originalUrl || '').split('?')[0]} ${res.statusCode} ${Date.now() - started}ms from ${from}`);
     });
     const appleTv = APPLE_TV.test(info.client) || APPLE_TV.test(info.device);
-    res.json = (body: any) => json(dashIds(appleTv ? appTrailers(body) : body));
+    res.json = (body: any) => {
+      if (!res.get('Content-Type')) res.set('Content-Type', 'application/json');
+      return res.send(JSON.stringify(body, jsonReplacer(appleTv)));
+    };
     next();
   });
 
@@ -2172,7 +2172,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     return (found ?? []).map((title: any) => {
       const item = metaToBaseItem({ id: title.imdbId, type: title.kind, name: title.title, releaseInfo: title.year ? String(title.year) : undefined }, title.kind, serverId, null);
       const poster = `https://images.metahub.space/poster/medium/${title.imdbId}/img`;
-      rememberArt(serverId, poster);
+      rememberArt(poster);
       item.ImageTags = { ...item.ImageTags, Primary: imageTag(poster) };
       return item;
     });
@@ -2300,6 +2300,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   const imagesFor = async (req: any, itemId: string): Promise<any | undefined> => {
     const userUUID = req.params.userUUID;
     const scope = serverIdFor(userUUID);
+    await loadConfig(req).catch(() => null);
 
     const known = await recallImages(scope, itemId);
     if (known) return known;
@@ -2389,7 +2390,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       : undefined;
     const named = tag ? artTag(tag) : '';
     if (named && (!url || imageTag(url) !== named)) {
-      url = (await recallArt(serverIdFor(req.params.userUUID), named)) ?? url;
+      url = (await recallArt(named)) ?? url;
     }
 
     if (!url) {
@@ -2401,12 +2402,17 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const descriptor = await decodeJellyfinId(String(req.params.itemId));
     const collectionArt = descriptor?.k === 'collection' || descriptor?.k === 'boxset';
 
+    const relaying = relaysImages(req);
     const cached = throughPosterCache(url, collectionArt ? 'collection' : descriptor?.k === 'episode' && kind === 'primary' ? 'thumb' : kind);
     if (cached) {
       const local = builtinPosterCachePath(cached);
       if (local) {
         const step = hasRenditions(url) ? null : widthStep(maxWidth);
         await serveFromPosterCache(req, res, local, cached, step);
+        return;
+      }
+      if (relaying) {
+        await relayImage(req, res, cached);
         return;
       }
       res.set('Cache-Control', 'public, max-age=86400');
@@ -2416,20 +2422,16 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     // An episode still is 16:9; shaping it to 2:3 blurs and enlarges it for
     // nothing. Only the sources that publish landscape posters are reshaped.
     const poster = kind === 'primary' && !collectionArt && descriptor?.k !== 'episode';
-    const reshapes = poster && shapesPoster(url);
-
-    if (!reshapes && redirectsImages()) {
-      res.set('Cache-Control', 'public, max-age=86400');
-      res.redirect(302, url);
+    if (poster && shapesPoster(url)) {
+      await shapedPoster(req, res, url, maxWidth, relaying);
       return;
     }
-    // A poster is held in memory either way: a shelf shows the same one on many
-    // items, and reshaping is not what makes fetching it again expensive.
-    if (poster) {
-      await streamPoster(res, url, maxWidth, reshapes);
+    if (relaying) {
+      await relayImage(req, res, url);
       return;
     }
-    await streamImage(res, url);
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.redirect(302, url);
   });
 
   const TMDB_ORIGINAL = 'https://image.tmdb.org/t/p/original/';
@@ -2509,35 +2511,111 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       });
     });
 
-  type ShapedOutput = { body: Buffer; contentType: string };
-
-  const redirectsImages = (): boolean =>
-    /^(1|true|yes|on)$/i.test(String(require('../settingsService').getSetting('JELLYFIN_IMAGE_REDIRECT') || ''));
-
-  /** Sending more than the client asked for is bytes and a decode it throws away. */
-  const narrowed = async (image: ShapedOutput, maxWidth: number): Promise<ShapedOutput> => {
-    const step = widthStep(maxWidth);
-    return step ? resizeToWidth(image.body, image.contentType, step) : image;
+  const relaysImages = (req: any): boolean => {
+    const { getSetting } = require('../settingsService');
+    const mode = String(getSetting('JELLYFIN_IMAGE_DELIVERY') || 'auto').trim().toLowerCase();
+    if (mode === 'relay') return true;
+    if (mode === 'redirect') return false;
+    const names = String(getSetting('JELLYFIN_IMAGE_RELAY_CLIENTS') || '')
+      .split(',')
+      .map((name) => name.trim().toLowerCase())
+      .filter(Boolean);
+    if (!names.length) return false;
+    const seen = `${clientInfo(req).client} ${req.get('user-agent') || ''}`.toLowerCase();
+    return names.some((name) => seen.includes(name));
   };
 
-  // Without a cache the bytes pass through here anyway, so a poster is shaped on the way out.
-  const streamPoster = async (res: any, url: string, maxWidth: number, reshape: boolean): Promise<void> => {
+  const imageSetting = (key: string, fallback: number, min: number): number => {
+    const value = Number(require('../settingsService').getSetting(key));
+    return Number.isFinite(value) && value >= min ? Math.floor(value) : fallback;
+  };
+
+  let liveRelays = 0;
+
+  const relayImage = async (req: any, res: any, url: string): Promise<void> => {
+    if (liveRelays >= imageSetting('JELLYFIN_IMAGE_RELAY_CONCURRENCY', 32, 1)) {
+      res.redirect(302, url);
+      return;
+    }
+    liveRelays++;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), imageSetting('JELLYFIN_IMAGE_RELAY_TIMEOUT_MS', 15000, 1000));
+    const abandon = () => controller.abort();
+    res.once('close', abandon);
     try {
-      const image = await cachedArtwork(`${url}|${widthStep(maxWidth) ?? 0}|${reshape ? 'shaped' : 'source'}`, async () => {
+      const { openImageStream } = require('../posterCache/upstream');
+      const { getMaxObjectBytes } = require('../posterCache/config');
+      const etag = req.get('if-none-match');
+      const upstream = await openImageStream(url, { signal: controller.signal, ...(etag ? { validators: { etag } } : {}) });
+      if (upstream.notModified) {
+        res.status(304).end();
+        return;
+      }
+      const stream = upstream.response.data;
+      const headers = upstream.response.headers;
+      if (Number(headers['content-length'] || 0) > getMaxObjectBytes()) {
+        stream.destroy();
+        res.redirect(302, url);
+        return;
+      }
+      res.set('Content-Type', upstream.contentType);
+      if (headers['etag']) res.set('ETag', headers['etag']);
+      if (headers['last-modified']) res.set('Last-Modified', headers['last-modified']);
+      res.set('Content-Security-Policy', IMAGE_CSP);
+      res.set('Cache-Control', 'public, max-age=86400');
+      if (req.method === 'HEAD') {
+        stream.destroy();
+        res.end();
+        return;
+      }
+      await pipeline(stream, res).catch(() => undefined);
+    } catch (error: any) {
+      logger.debug(`Image relay failed for ${url}: ${error?.message || error}`);
+      if (!res.headersSent) res.redirect(302, url);
+    } finally {
+      clearTimeout(timer);
+      res.off('close', abandon);
+      liveRelays--;
+    }
+  };
+
+  const shapedPoster = async (req: any, res: any, url: string, maxWidth: number, relaying: boolean): Promise<void> => {
+    try {
+      const image = await cachedArtwork(`${url}|${widthStep(maxWidth) ?? 0}|shaped`, async () => {
+        if (imageQueueFull()) throw new ImageQueueFull();
         const { openImageStream } = require('../posterCache/upstream');
+        const { getMaxObjectBytes } = require('../posterCache/config');
         const { shapePoster } = require('../posterCache/shape');
         const upstream = await openImageStream(url);
         if (upstream.notModified) throw new Error('not modified');
+        const limit = getMaxObjectBytes();
         const chunks: Buffer[] = [];
-        for await (const chunk of upstream.response.data) chunks.push(Buffer.from(chunk));
-        const source: ShapedOutput = { body: Buffer.concat(chunks), contentType: upstream.contentType };
-        return narrowed(reshape ? await shapePoster(source.body, source.contentType) : source, maxWidth);
+        let bytes = 0;
+        for await (const chunk of upstream.response.data) {
+          bytes += chunk.length;
+          if (bytes > limit) {
+            upstream.response.data.destroy();
+            throw new Error(`larger than ${limit} bytes`);
+          }
+          chunks.push(Buffer.from(chunk));
+        }
+        const source = Buffer.concat(chunks);
+        return inImageSlot(async () => {
+          const shaped = await shapePoster(source, upstream.contentType);
+          const step = widthStep(maxWidth);
+          return step ? shrinkToWidth(shaped.body, shaped.contentType, step) : shaped;
+        });
       });
       res.set('Content-Type', image.contentType);
       res.set('Content-Security-Policy', IMAGE_CSP);
       res.set('Cache-Control', 'public, max-age=86400');
       res.end(image.body);
     } catch (error: any) {
+      if (error instanceof ImageQueueFull) {
+        if (relaying) await relayImage(req, res, url);
+        else res.redirect(302, url);
+        return;
+      }
       logger.debug(`Image stream failed for ${url}: ${error?.message || error}`);
       res.status(404).end();
     }
@@ -2554,25 +2632,6 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     if (!prefix) return null;
     const imageClass = kind === 'collection' ? 'collection' : kind === 'backdrop' ? 'background' : kind === 'logo' ? 'logo' : kind === 'thumb' ? 'landscape' : 'poster';
     return posterCache.buildCachedUrl(prefix, imageClass, url);
-  };
-
-  const streamImage = async (res: any, url: string): Promise<void> => {
-    try {
-      const { openImageStream } = require('../posterCache/upstream');
-      const upstream = await openImageStream(url);
-      if (upstream.notModified) {
-        res.status(404).end();
-        return;
-      }
-      res.set('Content-Type', upstream.contentType);
-      res.set('Content-Security-Policy', IMAGE_CSP);
-      res.set('Cache-Control', 'public, max-age=86400');
-      upstream.response.data.on('error', () => res.end());
-      upstream.response.data.pipe(res);
-    } catch (error: any) {
-      logger.debug(`Image stream failed for ${url}: ${error?.message || error}`);
-      res.status(404).end();
-    }
   };
 
   // A bare array, not a list. Some clients build their whole view from this and

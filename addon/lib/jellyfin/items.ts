@@ -31,17 +31,56 @@ const imageCache = new LRUCache<string, ItemImages>({
 });
 
 /**
- * Scoped per server id, which is derived from the configuration: art depends on
- * a user's providers and language, so two configurations must not read each
+ * Scoped by the configuration's settings: art depends on a user's providers,
+ * language and keys, so two configurations that differ must not read each
  * other's. Held in Redis as well as in process, because a client keeps its item
  * ids across a restart and asks for their art before anything has rebuilt them.
  */
 function imageKey(scope: string, itemId: string): string {
-  return `${scope}|${normaliseJellyfinId(itemId)}`;
+  return `${artScope(scope)}|${normaliseJellyfinId(itemId)}`;
 }
 
-const imageHash = (scope: string): string => `jf:img:${scope}`;
-const artHash = (scope: string): string => `jf:img:tag:${scope}`;
+const ART_SCOPE_SKIPPED = new Set([
+  'userUUID',
+  'addonIdentifier',
+  'sessionId',
+  'configHash',
+  'lastModified',
+  'configVersion',
+  'catalogSetupComplete',
+  'jellyfinUsers',
+  'jellyfinUserName',
+  'jellyfinUserAvatar',
+  'jellyfinUserPin',
+  'jellyfinAppPassword',
+  'playbackReporting',
+]);
+const ART_SCOPE_SKIPPED_KEYS = new Set(['malTokenId', 'anilistTokenId', 'simklTokenId', 'traktTokenId', 'movieLensCredId', 'trakt', 'simkl']);
+const artSignatures = new WeakMap<object, string>();
+const artScopes = new LRUCache<string, string>({ max: envInt('JELLYFIN_IMAGE_CACHE_MAX', 20000, 1) });
+
+function artSignature(config: any): string {
+  const held = artSignatures.get(config);
+  if (held) return held;
+  const view: Record<string, any> = {};
+  for (const [field, value] of Object.entries(config)) {
+    if (ART_SCOPE_SKIPPED.has(field) || field.startsWith('_') || field.endsWith('WatchTracking')) continue;
+    view[field] = field === 'apiKeys' && value && typeof value === 'object'
+      ? Object.fromEntries(Object.entries(value).filter(([name]) => !ART_SCOPE_SKIPPED_KEYS.has(name)))
+      : value;
+  }
+  const signature = `art-${createHash('sha256').update(JSON.stringify(view)).digest('hex').slice(0, 32)}`;
+  artSignatures.set(config, signature);
+  return signature;
+}
+
+export function noteArtScope(serverId: string, config: any): void {
+  if (serverId && config && typeof config === 'object') artScopes.set(serverId, artSignature(config));
+}
+
+const artScope = (serverId: string): string => artScopes.get(serverId) ?? serverId;
+const imageHash = (scope: string): string => `jf:img:${artScope(scope)}`;
+const artHash = (tag: string): string => `jf:img:tag:all:${tag.slice(0, 2)}`;
 
 const artByTag = new LRUCache<string, string>({
   max: envInt('JELLYFIN_IMAGE_CACHE_MAX', 20000, 1) * 2,
@@ -78,24 +117,19 @@ export async function flushRememberedImages(): Promise<void> {
   pendingImages.clear();
 
   const ttl = imageTtl();
-  await Promise.all(
-    batches.map(async ([hash, fields]) => {
-      const flat: string[] = [];
-      for (const [field, value] of fields) flat.push(field, value);
-      try {
-        // One hash per scope rather than a key per item: a key each grew to six
-        // figures on a busy instance and slowed every scan of the keyspace.
-        await redis
-          .multi()
-          .hsetex(hash, 'EX', ttl, 'FIELDS', fields.size, ...flat)
-          .expire(hash, ttl, 'NX')
-          .expire(hash, ttl, 'GT')
-          .exec();
-      } catch {
-        // Art is a cache; a lost write is read from the meta again.
-      }
-    })
-  );
+  // One hash per scope rather than a key per item: a key each grew to six
+  // figures on a busy instance and slowed every scan of the keyspace.
+  const tx = redis.multi();
+  for (const [hash, fields] of batches) {
+    const flat: string[] = [];
+    for (const [field, value] of fields) flat.push(field, value);
+    tx.hsetex(hash, 'EX', ttl, 'FIELDS', fields.size, ...flat).expire(hash, ttl, 'NX').expire(hash, ttl, 'GT');
+  }
+  try {
+    await tx.exec();
+  } catch {
+    // Art is a cache; a lost write is read from the meta again.
+  }
 }
 
 function queueImageWrite(hash: string, field: string, value: string): void {
@@ -108,40 +142,39 @@ function queueImageWrite(hash: string, field: string, value: string): void {
   scheduleImageFlush();
 }
 
-export function rememberArt(scope: string, url: string | undefined): void {
+export function rememberArt(url: string | undefined): void {
   if (!url) return;
   const tag = imageTag(url);
-  const key = `${scope}|${tag}`;
-  if (artByTag.get(key) === url) return;
-  artByTag.set(key, url);
-  if (redis) queueImageWrite(artHash(scope), tag, url);
+  if (artByTag.get(tag) === url) return;
+  artByTag.set(tag, url);
+  if (redis) queueImageWrite(artHash(tag), tag, url);
 }
 
 export function rememberImages(scope: string, itemId: string, images: ItemImages): void {
   if (!images.primary && !images.backdrop && !images.logo && !images.thumb) return;
 
-  rememberArt(scope, images.primary);
-  rememberArt(scope, images.backdrop);
-  rememberArt(scope, images.logo);
-  rememberArt(scope, images.thumb);
-
   const key = imageKey(scope, itemId);
   const held = imageCache.get(key);
   if (held && held.primary === images.primary && held.backdrop === images.backdrop && held.logo === images.logo && held.thumb === images.thumb) return;
+
+  rememberArt(images.primary);
+  rememberArt(images.backdrop);
+  rememberArt(images.logo);
+  rememberArt(images.thumb);
+
   imageCache.set(key, images);
 
   if (redis) queueImageWrite(imageHash(scope), imageField(itemId), JSON.stringify(images));
 }
 
-export async function recallArt(scope: string, tag: string): Promise<string | undefined> {
-  const key = `${scope}|${tag}`;
-  const local = artByTag.get(key);
+export async function recallArt(tag: string): Promise<string | undefined> {
+  const local = artByTag.get(tag);
   if (local) return local;
   if (!redis) return undefined;
   try {
-    const stored = await redis.hget(artHash(scope), tag);
+    const stored = await redis.hget(artHash(tag), tag);
     if (!stored) return undefined;
-    artByTag.set(key, stored);
+    artByTag.set(tag, stored);
     return stored;
   } catch {
     return undefined;

@@ -300,6 +300,7 @@ export async function fetchAddonSubtitles(base: string, type: string, videoId: s
   try {
     const response = await fetch(url, { headers: { accept: 'application/json', 'user-agent': userAgent }, signal: controller.signal });
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       logger.debug(`Subtitles ${type}/${videoId} returned ${response.status}`);
       return [];
     }
@@ -371,7 +372,10 @@ async function fetchSubtitle(url: string): Promise<{ response: Response; done: (
     // Timed from its turn, not from the wait for one.
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const done = () => clearTimeout(timer);
+    const done = () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
     const response = await inHostTurn(url, () => {
       timer = setTimeout(() => controller.abort(), envInt('JELLYFIN_SUBTITLE_FETCH_TIMEOUT_MS', 15000, 1000));
       return fetch(url, { signal: controller.signal, redirect: 'follow' });

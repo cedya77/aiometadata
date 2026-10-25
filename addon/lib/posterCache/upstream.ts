@@ -111,6 +111,7 @@ export interface ConditionalValidators {
 
 export interface FetchOptions extends ResolveOptions {
   validators?: ConditionalValidators;
+  signal?: AbortSignal;
 }
 
 export { parseUpstreamCacheMeta } from './config.js';
@@ -433,6 +434,20 @@ function releaseSocketWith(response: any): void {
   });
 }
 
+function guardBody(response: any): void {
+  const socket = response.request?.socket;
+  const body = response.data;
+  if (!body || typeof socket?.setTimeout !== 'function') return;
+  const stalled = () => {
+    const error = new UpstreamRejected('Upstream stopped sending the image', 504);
+    body.destroy(error);
+    response.request?.destroy?.(error);
+  };
+  socket.setTimeout(getUpstreamTimeoutMs());
+  socket.on('timeout', stalled);
+  body.once('close', () => socket.off('timeout', stalled));
+}
+
 export async function openImageStream(rawUrl: string, opts: FetchOptions = {}): Promise<UpstreamStream> {
   let current = rawUrl;
 
@@ -449,13 +464,15 @@ export async function openImageStream(rawUrl: string, opts: FetchOptions = {}): 
       maxRedirects: 0,
       httpAgent,
       httpsAgent,
-      maxContentLength: Infinity,
+      signal: opts.signal,
+      maxContentLength: -1,
       maxBodyLength: Infinity,
       decompress: true,
       validateStatus: (status: number) => (status >= 200 && status < 300) || (status >= 300 && status < 400),
       headers,
     });
     releaseSocketWith(response);
+    guardBody(response);
 
     // Before the redirect branch: a 304 sits in the 3xx range but carries no
     // Location, and would otherwise be rejected as a broken redirect.
@@ -520,7 +537,12 @@ export async function fetchImage(rawUrl: string, opts: FetchOptions = {}): Promi
   const declared = Number.parseInt(response.headers['content-length'] || '', 10);
   if (Number.isFinite(declared) && declared > maxBytes) {
     const oversize = new OversizeImage(response.data, contentType, declared, upstream);
-    const finish = () => release();
+    let released = false;
+    const finish = () => {
+      if (released) return;
+      released = true;
+      release();
+    };
     response.data.once('close', finish);
     response.data.once('error', finish);
     throw oversize;
