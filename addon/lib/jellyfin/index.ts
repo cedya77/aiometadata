@@ -1209,16 +1209,20 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     // Clients build search rows here, one call per section: /Search/Hints is
     // a single flat list with no way to express them.
     if (searchTerm) {
-      const found = await searchAcross(
+      const kinds = includeItemTypes ? String(includeItemTypes).split(',').map((t) => t.trim()).filter(Boolean) : [];
+      const titleKinds = kinds.filter((kind) => kind !== 'Person');
+      const people = kinds.includes('Person') ? await peopleMatching(config, serverId, String(searchTerm)) : [];
+      const titles = kinds.length && !titleKinds.length ? [] : await searchAcross(
         userUUID,
         config,
         serverId,
         String(searchTerm),
         startIndex + limit,
-        includeItemTypes
+        kinds.length ? titleKinds.join(',') : includeItemTypes
       );
+      const found = [...people, ...titles];
       const page = found.slice(startIndex, startIndex + limit);
-      await applyWatchedState(page, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config, {
+      await applyWatchedState(page.filter((item: any) => item.Type !== 'Person'), await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config, {
         indexWaitMs: envInt('JELLYFIN_SEARCH_INDEX_WAIT_MS', 3000, 0),
       });
       res.json(itemList(page, found.length, startIndex));
@@ -1995,6 +1999,13 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     };
   };
 
+  const peopleMatching = async (config: any, serverId: string, term: string): Promise<any[]> => {
+    const person = await personByName(config, term).catch(() => null);
+    if (!person) return [];
+    const id = encodeJellyfinId({ k: 'person', n: person.name, s: person.source, x: person.id });
+    return [personItem(id, serverId, person.name, person)];
+  };
+
   const personItems = async (
     userUUID: string,
     config: any,
@@ -2093,13 +2104,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       res.json(itemList([], 0, 0));
       return;
     }
-    const person = await personByName(config, term).catch(() => null);
-    if (!person) {
-      res.json(itemList([], 0, 0));
-      return;
-    }
-    const id = encodeJellyfinId({ k: 'person', n: person.name, s: person.source, x: person.id });
-    res.json(itemList([personItem(id, serverIdFor(req.params.userUUID), person.name, person)], 1, 0));
+    const people = await peopleMatching(config, serverIdFor(req.params.userUUID), term);
+    res.json(itemList(people, people.length, 0));
   });
 
   const toHint = (item: any) => ({
