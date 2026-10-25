@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TagChip } from '@/components/TagChip';
-import { getSourceBadgeLabel, getSourceBadgeStyle } from '@/lib/sourceBadges';
+import { getSourceBadgeLabel, getSourceDotStyle } from '@/lib/sourceBadges';
 import { catalogKey, type ManifestCatalog } from '@/lib/collectionBuilder/manifestSources';
 import type { TagOption } from './shared';
 
@@ -197,7 +197,7 @@ export function CatalogPicker({
               onChange={event => setQuery(event.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search catalogs"
-              className="pl-9"
+              className="h-10 bg-background/60 pl-9 focus-visible:ring-1 focus-visible:ring-ring/40 focus-visible:ring-offset-0"
             />
           </div>
 
@@ -209,10 +209,10 @@ export function CatalogPicker({
                   type="button"
                   aria-pressed={typeFilter === type}
                   onClick={() => setTypeFilter(prev => (prev === type ? null : type))}
-                  className={`rounded-full border px-2 py-0.5 text-xs transition-colors ${
+                  className={`h-7 rounded-full border px-3 text-xs font-medium capitalize transition-colors ${
                     typeFilter === type
-                      ? 'bg-primary/15 text-foreground'
-                      : 'bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06]'
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-muted-foreground/30 text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   {type}
@@ -258,8 +258,8 @@ export function CatalogPicker({
           <div
             ref={setScrollEl}
             onMouseMove={() => { pointerActive.current = true; }}
-            className="mt-1 overflow-y-auto"
-            style={filtered.length === 0 ? undefined : { height: Math.min(320, filtered.length * 40) }}
+            className="mt-1.5 overflow-y-auto rounded-xl border border-border/70 bg-background/60 p-1 [scrollbar-color:hsl(var(--muted))_transparent] [scrollbar-width:thin]"
+            style={filtered.length === 0 ? undefined : { height: Math.min(320, filtered.length * 40) + 10 }}
           >
             {filtered.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
@@ -293,13 +293,15 @@ export function CatalogPicker({
                         aria-pressed={multiple && !isAdded ? isSelected : undefined}
                         onClick={() => toggle(catalog)}
                         onMouseEnter={() => { if (pointerActive.current) setActiveIndex(virtualRow.index); }}
-                        className={`flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 text-left text-sm transition-colors @2xl:h-9 @2xl:min-h-0 ${
+                        className={`flex min-h-[44px] w-full items-center gap-2.5 rounded-lg px-3 text-left text-sm transition-colors focus-visible:outline-none @2xl:h-9 @2xl:min-h-0 ${
                           isAdded
                             ? 'cursor-default opacity-45'
                             : isSelected
-                              ? 'bg-primary/15'
-                              : 'hover:bg-white/[0.04] active:bg-white/[0.06]'
-                        } ${isActive && !isAdded ? 'ring-1 ring-primary/40' : ''}`}
+                              ? 'bg-primary/10'
+                              : isActive
+                                ? 'bg-muted/70'
+                                : 'hover:bg-muted/40'
+                        }`}
                       >
                         {multiple && (
                           isAdded ? (
@@ -316,33 +318,29 @@ export function CatalogPicker({
                             </span>
                           )
                         )}
-                        <span className="min-w-0 flex-1 truncate">{catalog.name}</span>
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${getSourceDotStyle(catalog.source)}`} aria-hidden="true" />
+                        <span className={`min-w-0 flex-1 truncate ${isActive && !isAdded ? 'text-foreground' : 'text-foreground/90'}`}>{catalog.name}</span>
                         {isAdded && (
                           <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">added</span>
                         )}
                         {catalog.pendingSave && (
                           <Badge
                             variant="outline"
-                            className="shrink-0 border-sky-400/20 bg-sky-500/15 text-xs text-sky-200"
+                            className="shrink-0 rounded-md border-sky-400/25 bg-transparent px-1.5 py-0 text-[11px] font-medium text-sky-300/90"
                             title="In your config but not saved yet, so it is not in the manifest"
                           >
                             unsaved
                           </Badge>
                         )}
                         {catalog.genreRequired && (
-                          <Badge variant="outline" className="shrink-0 border-amber-400/20 bg-amber-500/15 text-xs text-amber-200">
+                          <Badge variant="outline" className="shrink-0 rounded-md border-amber-400/25 bg-transparent px-1.5 py-0 text-[11px] font-medium text-amber-300/90">
                             genre
                           </Badge>
                         )}
-                        <Badge
-                          variant="outline"
-                          className={`shrink-0 text-xs font-semibold ${getSourceBadgeStyle(catalog.source)}`}
-                        >
+                        <span className="shrink-0 text-xs text-muted-foreground">
                           {getSourceBadgeLabel(catalog.source)}
-                        </Badge>
-                        <Badge variant="outline" className="hidden shrink-0 text-xs sm:inline-flex">
-                          {catalog.type}
-                        </Badge>
+                          <span className="hidden capitalize sm:inline"> · {catalog.type}</span>
+                        </span>
                       </button>
                     </div>
                   );

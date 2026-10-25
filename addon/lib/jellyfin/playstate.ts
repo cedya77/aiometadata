@@ -21,28 +21,54 @@ export function forgetUserSettings(userUUID: string): void {
   for (const key of playedThresholds.keys()) if (key.startsWith(`${userUUID}:`)) playedThresholds.delete(key);
 }
 
-/** The share of a title played that counts as watched: the user's own setting, else the server's. */
-async function watchedAtPercent(req: any): Promise<number> {
-  const fallback = envInt('JELLYFIN_PLAYED_THRESHOLD', 80, 1);
-  const userUUID = req?.params?.userUUID;
-  if (!userUUID) return fallback;
-  const key = `${userUUID}:${req.jellyfin?.profileId ?? ''}`;
+const USER_CONFIGURATION_ID = 'user-configuration';
+
+export function serverPlayedThreshold(): number {
+  return envInt('JELLYFIN_PLAYED_THRESHOLD', 80, 1);
+}
+
+export function validPlayedThreshold(value: unknown): number | null {
+  const percent = typeof value === 'number' || typeof value === 'string' ? Number(value) : NaN;
+  return Number.isFinite(percent) && percent >= 50 && percent <= 100 ? percent : null;
+}
+
+export async function storedPlayedThreshold(userUUID: string, profileId: string | null): Promise<number | null> {
+  const key = `${userUUID}:${profileId ?? ''}`;
   let held = playedThresholds.get(key);
   if (!held) {
     try {
       const database = require('../database');
       const { profileById } = require('./profiles');
       const config = await database.getUserConfig(userUUID);
-      const profile = profileById(config, userUUID, req.jellyfin?.profileId ?? null);
-      const stored = await database.getPreferences(userUUID, profile?.id ?? '', 'user-configuration', '');
-      const value = Number(stored?.PlayedThresholdPercent);
-      held = { percent: Number.isFinite(value) && value >= 50 && value <= 100 ? value : null };
+      const profile = profileById(config, userUUID, profileId);
+      const stored = await database.getPreferences(userUUID, profile?.id ?? '', USER_CONFIGURATION_ID, '');
+      held = { percent: validPlayedThreshold(stored?.PlayedThresholdPercent) };
     } catch {
       held = { percent: null };
     }
     playedThresholds.set(key, held);
   }
-  return held.percent ?? fallback;
+  return held.percent;
+}
+
+export async function playedThresholdFor(userUUID: string, profileId: string | null): Promise<number> {
+  return (await storedPlayedThreshold(userUUID, profileId)) ?? serverPlayedThreshold();
+}
+
+export async function savePlayedThreshold(userUUID: string, profileId: string | null, percent: number | null): Promise<void> {
+  const database = require('../database');
+  const stored = (await database.getPreferences(userUUID, profileId ?? '', USER_CONFIGURATION_ID, '')) || {};
+  const next = { ...stored };
+  if (percent === null) delete next.PlayedThresholdPercent;
+  else next.PlayedThresholdPercent = percent;
+  await database.savePreferences(userUUID, profileId ?? '', USER_CONFIGURATION_ID, '', next);
+  forgetUserSettings(userUUID);
+}
+
+/** The share of a title played that counts as watched: the user's own setting, else the server's. */
+async function watchedAtPercent(req: any): Promise<number> {
+  const userUUID = req?.params?.userUUID;
+  return userUUID ? playedThresholdFor(userUUID, req.jellyfin?.profileId ?? null) : serverPlayedThreshold();
 }
 
 interface SessionPosition {

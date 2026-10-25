@@ -938,7 +938,7 @@ async function clearMdblistResumePoint(
 async function checkinSimkl(
   parsedId: ParsedMediaId,
   config: any,
-  options: { action?: 'checkin' | 'start' | 'pause' | 'stop'; progress?: number } = {}
+  options: { action?: 'checkin' | 'start' | 'pause' | 'stop'; progress?: number; minProgress?: number } = {}
 ): Promise<void> {
   try {
     const { checkinSeries, checkinMovie, getSimklToken } = require('../utils/simklUtils');

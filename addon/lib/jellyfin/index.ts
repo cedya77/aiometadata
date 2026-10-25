@@ -41,6 +41,7 @@ import { isAnimeTitle, showIdentity } from './canonicalIds';
 import { keepsAnimeOnly, sourceFor } from './trackerSource';
 import { refreshSeriesIndex, seriesIndex, warmSeriesIndex } from './episodeIndex';
 import { authorizeQuickConnect, claimQuickConnect, initiateQuickConnect, quickConnectResult, readQuickConnect } from './quickConnect';
+import { playbackAllowed, viewingTimeZone } from './viewingHours';
 import { avatarTag, keepsUnderProfileCap, listProfiles, profileById, profileByName, profileByUserId, profileKey, profileTags, scopeConfigToProfile, type Profile } from './profiles';
 import { malEpisodeFor, segmentId, segmentsFor, type SegmentType } from './segments';
 import { hasCreditDate, personByName, personCredits, resolvePerson, similarTitles } from './people';
@@ -285,6 +286,7 @@ async function playedPick(req: any, userUUID: string, config: any, type: string,
 function userFor(profile: Profile, serverId: string, configuration?: any): any {
   const user = userDto(profile.userId, serverId, profile.name, avatarTag(profile));
   if (configuration && typeof configuration === 'object') user.Configuration = { ...user.Configuration, ...configuration };
+  if (profile.downloads === false) user.Policy = { ...user.Policy, EnableContentDownloading: false };
   return user;
 }
 
@@ -1789,11 +1791,22 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     return (await decodeJellyfinId(value))?.k === 'marker' ? undefined : value;
   };
 
+  const outsideViewingHours = async (req: any): Promise<boolean> => {
+    const config = await loadConfig(req);
+    if (!config) return false;
+    return !playbackAllowed(sessionProfile(req, config).viewingHours, viewingTimeZone(config));
+  };
+
   const playbackHandler = async (req: any, res: any) => {
     const { itemId, descriptor } = await unwrapMarker(String(req.params.itemId));
 
     if (!descriptor || (descriptor.k !== 'movie' && descriptor.k !== 'episode')) {
       res.status(404).json({ MediaSources: [], PlaySessionId: '', ErrorCode: 'NotAllowed' });
+      return;
+    }
+
+    if (await outsideViewingHours(req)) {
+      res.json({ MediaSources: [], PlaySessionId: randomUUID(), ErrorCode: 'NotAllowed' });
       return;
     }
 
@@ -1882,6 +1895,18 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const { itemId, descriptor } = await unwrapMarker(String(req.params.itemId));
     if (!descriptor || (descriptor.k !== 'movie' && descriptor.k !== 'episode')) {
       res.status(404).json({ Message: 'Item not found' });
+      return;
+    }
+
+    if (/\/Download$/i.test(String(req.path))) {
+      const config = await loadConfig(req);
+      if (config && sessionProfile(req, config).downloads === false) {
+        res.status(403).json({ Message: 'Downloads are turned off for this user' });
+        return;
+      }
+    }
+    if (await outsideViewingHours(req)) {
+      res.status(403).json({ Message: 'Outside this user\'s viewing hours' });
       return;
     }
 
@@ -4145,6 +4170,57 @@ export function register(addon: any, options: { loginRateLimit?: any; enabled?: 
     }
 
     res.json({ approved: true, device: request.deviceName, app: request.appName, profile: profile.name });
+  });
+
+  addon.post('/api/jellyfin/:userUUID/played-thresholds', gate, approveRateLimit, async (req: any, res: any) => {
+    const userUUID = String(req.params.userUUID);
+    const password = req.body?.password;
+
+    const accountId = req.session?.accountId;
+    const owns = Boolean(accountId) && (await database.ownsConfig(accountId, userUUID));
+    const verified = !owns && password ? await database.verifyUserAndGetConfig(userUUID, String(password)) : null;
+    if (!owns && !verified) {
+      res.status(401).json({ error: 'Sign in or enter the configuration password to read the watched points' });
+      return;
+    }
+
+    const config = verified ?? (await database.getUserConfig(userUUID).catch(() => null));
+    const { serverPlayedThreshold, storedPlayedThreshold } = require('./playstate');
+    const profiles = await Promise.all(listProfiles(config, userUUID).map(async (profile) => ({
+      profile: profile.id,
+      percent: await storedPlayedThreshold(userUUID, profile.id),
+    })));
+    res.json({ serverDefault: serverPlayedThreshold(), profiles });
+  });
+
+  addon.post('/api/jellyfin/:userUUID/played-threshold', gate, approveRateLimit, async (req: any, res: any) => {
+    const userUUID = String(req.params.userUUID);
+    const password = req.body?.password;
+
+    const accountId = req.session?.accountId;
+    const owns = Boolean(accountId) && (await database.ownsConfig(accountId, userUUID));
+    const verified = !owns && password ? await database.verifyUserAndGetConfig(userUUID, String(password)) : null;
+    if (!owns && !verified) {
+      res.status(401).json({ error: 'Sign in or enter the configuration password to change the watched point' });
+      return;
+    }
+
+    const { savePlayedThreshold, validPlayedThreshold } = require('./playstate');
+    const requested = req.body?.percent ?? null;
+    const percent = requested === null ? null : validPlayedThreshold(requested);
+    if (requested !== null && percent === null) {
+      res.status(400).json({ error: 'The watched point is a percentage from 50 to 100' });
+      return;
+    }
+    const config = verified ?? (await database.getUserConfig(userUUID).catch(() => null));
+    const wanted = typeof req.body?.profile === 'string' && req.body.profile ? req.body.profile : null;
+    const profile = profileById(config, userUUID, wanted);
+    if (wanted && profile.id !== wanted) {
+      res.status(404).json({ error: 'Save the configuration first, so this user exists on the server' });
+      return;
+    }
+    await savePlayedThreshold(userUUID, profile.id, percent);
+    res.json({ profile: profile.id, percent });
   });
 
   addon.post('/api/jellyfin/:userUUID/forget-imported', gate, approveRateLimit, async (req: any, res: any) => {

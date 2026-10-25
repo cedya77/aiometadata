@@ -87,6 +87,13 @@ export function useCatalogTags() {
     }));
   }, [setConfig]);
 
+  const setTagRules = useCallback((name: string, patch: Partial<Pick<TagDef, 'viewingHours' | 'allowDownloads' | 'hideKeywords' | 'hideWords' | 'hideGenres'>>) => {
+    setConfig(prev => ({
+      ...prev,
+      tags: (prev.tags ?? []).map(t => (sameTag(t.name, name) ? { ...t, ...patch } : t)),
+    }));
+  }, [setConfig]);
+
   const deleteTag = useCallback((name: string) => {
     setConfig(prev => ({
       ...prev,
@@ -154,6 +161,7 @@ export function useCatalogTags() {
     renameTag,
     recolorTag,
     setTagFilters,
+    setTagRules,
     deleteTag,
     addTagToCatalogs,
     removeTagFromCatalogs,

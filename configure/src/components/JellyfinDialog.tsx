@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useConfig } from "@/contexts/ConfigContext";
 import { useSave } from "@/contexts/SaveContext";
 import { Button } from "@/components/ui/button";
@@ -154,13 +154,81 @@ interface UserRowProps {
   /** The main user's choice, which a user left on "Same as you" follows. */
   mainSkipSource: SkipSource;
   showHandoff?: boolean;
+  watchedPoint?: WatchedPoint;
   onChange: (patch: Partial<JellyfinUser>) => void;
   onRemove?: () => void;
   onForget?: () => void;
   children?: ReactNode;
 }
 
-function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptions, watchlistOptions, hasPmdb, mainSkipSource, showHandoff, onChange, onRemove, onForget, children }: UserRowProps) {
+interface WatchedPoint {
+  value: number | null | undefined;
+  serverDefault: number;
+  onChange: (percent: number | null) => void;
+}
+
+function WatchedPointPicker({ name, point }: { name: string; point: WatchedPoint }) {
+  const saved = point.value !== undefined;
+  const [draft, setDraft] = useState<number | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const shown = draft ?? point.value ?? point.serverDefault;
+  const following = draft === null && point.value == null;
+
+  const slide = (percent: number) => {
+    setDraft(percent);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      setDraft(null);
+      if (percent !== point.value) point.onChange(percent);
+    }, 600);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor={`watched-${name}`} className="text-xs font-medium">Watched at</Label>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          <span className="font-medium text-foreground">{shown}%</span>
+          {following ? ' (server default)' : null}
+        </span>
+      </div>
+      <input
+        id={`watched-${name}`}
+        type="range"
+        min={50}
+        max={100}
+        step={1}
+        value={shown}
+        disabled={!saved}
+        aria-label={`Watched point of ${name}`}
+        onChange={(e) => slide(Number(e.target.value))}
+        className="w-full accent-primary disabled:opacity-50"
+      />
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>50%</span>
+        {saved && !following ? (
+          <button
+            type="button"
+            className="text-primary underline-offset-2 hover:underline"
+            onClick={() => { if (timer.current) clearTimeout(timer.current); setDraft(null); point.onChange(null); }}
+          >
+            Use server default ({point.serverDefault}%)
+          </button>
+        ) : null}
+        <span>100%</span>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        {saved
+          ? 'Played this far, a title counts as watched; stopping earlier keeps it in Continue Watching. Simkl gets the same point. Saves on its own.'
+          : 'Save the configuration first, then set when a title counts as watched for this user.'}
+      </p>
+    </div>
+  );
+}
+
+function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptions, watchlistOptions, hasPmdb, mainSkipSource, showHandoff, watchedPoint, onChange, onRemove, onForget, children }: UserRowProps) {
   const chosen = user?.tags ?? [];
   const toggleTag = (tag: string) =>
     onChange({ tags: chosen.includes(tag) ? chosen.filter((t) => t !== tag) : [...chosen, tag] });
@@ -311,6 +379,7 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptio
             onChange={(skipSource) => onChange({ skipSource })}
           />
         </div>
+        {watchedPoint ? <WatchedPointPicker name={name} point={watchedPoint} /> : null}
       </div>
       {showHandoff ? <HandoffNamesInput names={user?.handoffNames} onChange={(handoffNames) => onChange({ handoffNames })} /> : null}
       {children}
@@ -507,6 +576,52 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
   const catalogCountFor = (chosen: string[]) => {
     const wanted = new Set(chosen.map((t) => t.toLowerCase()));
     return (config.catalogs ?? []).filter((c) => c.enabled && (c.tags ?? []).some((t) => wanted.has(t.toLowerCase()))).length;
+  };
+
+  const [watchedPoints, setWatchedPoints] = useState<{ serverDefault: number; byProfile: Record<string, number | null> } | null>(null);
+  useEffect(() => {
+    if (!open || isSaving) return;
+    let cancelled = false;
+    fetch(`/api/jellyfin/${encodeURIComponent(userUUID)}/played-thresholds`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: auth.password || undefined }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data || !Array.isArray(data.profiles)) return;
+        setWatchedPoints({
+          serverDefault: Number(data.serverDefault) || 80,
+          byProfile: Object.fromEntries(data.profiles.map((p: { profile: string | null; percent: number | null }) => [p.profile ?? '', p.percent ?? null])),
+        });
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [open, isSaving, userUUID, auth.password]);
+
+  const watchedPointFor = (profile: string, name: string): WatchedPoint | undefined => {
+    if (!watchedPoints) return undefined;
+    return {
+      value: profile in watchedPoints.byProfile ? watchedPoints.byProfile[profile] : undefined,
+      serverDefault: watchedPoints.serverDefault,
+      onChange: async (percent) => {
+        const previous = watchedPoints.byProfile[profile];
+        setWatchedPoints((prev) => (prev ? { ...prev, byProfile: { ...prev.byProfile, [profile]: percent } } : prev));
+        try {
+          const response = await fetch(`/api/jellyfin/${encodeURIComponent(userUUID)}/played-threshold`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: auth.password || undefined, profile: profile || undefined, percent }),
+          });
+          const result = await response.json().catch(() => null);
+          if (!response.ok) throw new Error(result?.error || 'Could not save the watched point');
+          toast.success(`${name}: ${percent === null ? `server default (${watchedPoints.serverDefault}%)` : `watched at ${percent}%`}`);
+        } catch (e) {
+          setWatchedPoints((prev) => (prev ? { ...prev, byProfile: { ...prev.byProfile, [profile]: previous } } : prev));
+          toast.error(e instanceof Error ? e.message : 'Could not save the watched point');
+        }
+      },
+    };
   };
 
   const [newUserName, setNewUserName] = useState('');
@@ -907,6 +1022,7 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
               hasPmdb={Boolean(config.apiKeys?.publicmetadb)}
               mainSkipSource={config.jellyfinSkipSource ?? 'auto'}
               showHandoff={config.playbackReporting === true}
+              watchedPoint={watchedPointFor('', mainName)}
               onForget={() => setForgetFor({ profile: null, name: mainName })}
               onChange={(patch) => setConfig(prev => ({
                 ...prev,
@@ -935,6 +1051,7 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
                   hasPmdb={Boolean(config.apiKeys?.publicmetadb)}
                   mainSkipSource={config.jellyfinSkipSource ?? 'auto'}
                   showHandoff={config.playbackReporting === true}
+                  watchedPoint={watchedPointFor(user.id, user.name)}
                   onChange={(patch) => updateUser(user.id, patch)}
                   onRemove={() => { void removeUser(user); }}
                   onForget={() => setForgetFor({ profile: user.id, name: user.name })}

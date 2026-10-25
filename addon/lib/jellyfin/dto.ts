@@ -112,7 +112,7 @@ export function userPolicy(): any {
     ForceRemoteSourceTranscoding: false,
     EnableContentDeletion: false,
     EnableContentDeletionFromFolders: [],
-    EnableContentDownloading: false,
+    EnableContentDownloading: true,
     EnableSyncTranscoding: false,
     EnableMediaConversion: false,
     EnabledDevices: [],

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Check, Trash2, Pencil, X, ShieldCheck } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Ban, ChevronDown, Clock, DownloadCloud, ShieldCheck } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -17,62 +17,67 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useCatalogTags } from '@/hooks/useCatalogTags';
-import { TAG_COLORS, TAG_COLOR_KEYS } from '@/lib/tagColors';
-import { TagChip } from '@/components/TagChip';
-import { MAX_TAG_NAME_LENGTH, type TagColorKey } from '@/contexts/config';
-import { TagLimitPicker } from '@/components/TagLimitPicker';
+import { TAG_COLORS } from '@/lib/tagColors';
+import { useConfig } from '@/contexts/ConfigContext';
+import { TagRulesPanel } from '@/components/TagRulesPanel';
+import type { TagDef } from '@/contexts/config';
+import { hiddenCount } from '@/lib/tagRules';
 
 interface TagManagerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+function ruleChips(tag: TagDef): Array<{ icon: 'rating' | 'hidden' | 'hours' | 'downloads'; label: string }> {
+  const hidden = hiddenCount(tag);
+  return [
+    ...(tag.ageRating && tag.ageRating !== 'None' ? [{ icon: 'rating' as const, label: `${tag.ageRating}${tag.allowUnratedContent === false ? ', rated only' : ''}` }] : []),
+    ...(hidden ? [{ icon: 'hidden' as const, label: `${hidden} hidden` }] : []),
+    ...(tag.viewingHours ? [{ icon: 'hours' as const, label: `${tag.viewingHours.start}-${tag.viewingHours.end}` }] : []),
+    ...(tag.allowDownloads === false ? [{ icon: 'downloads' as const, label: 'No downloads' }] : []),
+  ];
+}
+
+const CHIP_ICONS = { rating: ShieldCheck, hidden: Ban, hours: Clock, downloads: DownloadCloud };
+
 export function TagManagerDialog({ open, onOpenChange }: TagManagerDialogProps) {
-  const { tags, tagCounts, renameTag, recolorTag, setTagFilters, deleteTag } = useCatalogTags();
-  const [limitFor, setLimitFor] = useState<string | null>(null);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
+  const { tags, tagCounts, renameTag, recolorTag, setTagFilters, setTagRules, deleteTag } = useCatalogTags();
+  const { config } = useConfig();
+  const [openTag, setOpenTag] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const [draftName, setDraftName] = useState('');
 
-  const startEdit = (name: string) => {
-    setEditing(name);
-    setColorPickerFor(name);
-    setDraftName(name);
-  };
-
-  const commitEdit = (name: string) => {
-    const nextName = draftName.trim();
-    if (nextName && nextName.length <= MAX_TAG_NAME_LENGTH && nextName !== name) renameTag(name, nextName);
-    setEditing(null);
-  };
+  const profilesByTag = useMemo(() => {
+    const out = new Map<string, string[]>();
+    const add = (name: string, held: string[] | undefined) => {
+      for (const tag of held ?? []) {
+        const key = tag.toLowerCase();
+        out.set(key, [...(out.get(key) ?? []), name]);
+      }
+    };
+    add(config.jellyfinUserName || config.addonName || 'You', config.jellyfinUserTags);
+    for (const user of config.jellyfinUsers ?? []) add(user.name, user.tags);
+    return out;
+  }, [config.jellyfinUserName, config.addonName, config.jellyfinUserTags, config.jellyfinUsers]);
 
   const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) {
-      setEditing(null);
-      setColorPickerFor(null);
-      setPendingDelete(null);
-    }
+    if (!nextOpen) setPendingDelete(null);
     onOpenChange(nextOpen);
   };
 
   const handleConfirmDelete = () => {
     if (!pendingDelete) return;
     deleteTag(pendingDelete);
+    if (openTag === pendingDelete) setOpenTag(null);
     setPendingDelete(null);
-    if (editing === pendingDelete) setEditing(null);
-    if (colorPickerFor === pendingDelete) setColorPickerFor(null);
   };
 
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <div className="flex items-center gap-2">
               <DialogTitle>Manage tags</DialogTitle>
@@ -83,8 +88,7 @@ export function TagManagerDialog({ open, onOpenChange }: TagManagerDialogProps) 
               )}
             </div>
             <DialogDescription>
-              Rename, recolor, or delete tags, and give one a content rating it installs with.
-              Changes apply to every catalog.
+              A tag picks the catalogs a profile sees. Add rules and it becomes a kids or guest profile.
             </DialogDescription>
           </DialogHeader>
 
@@ -96,133 +100,61 @@ export function TagManagerDialog({ open, onOpenChange }: TagManagerDialogProps) 
               </p>
             </div>
           ) : (
-            <div className="max-h-[60vh] overflow-y-auto rounded-xl border divide-y">
+            <div className="max-h-[65vh] space-y-2 overflow-y-auto pr-1">
               {tags.map((t) => {
                 const count = tagCounts[t.name] || 0;
-                const showColors = colorPickerFor === t.name || editing === t.name;
-                const hasLimit = !!t.ageRating && t.ageRating !== 'None';
-                const showLimit = limitFor === t.name;
-
+                const profiles = profilesByTag.get(t.name.toLowerCase()) ?? [];
+                const chips = ruleChips(t);
+                const isOpen = openTag === t.name;
                 return (
-                  <div key={t.name} className="p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1 space-y-2">
-                        {editing === t.name ? (
-                          <>
-                            <Input
-                              value={draftName}
-                              autoFocus
-                              onChange={(e) => setDraftName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') commitEdit(t.name);
-                                if (e.key === 'Escape') setEditing(null);
-                              }}
-                              maxLength={MAX_TAG_NAME_LENGTH}
-                              className="h-9"
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              {draftName.length}/{MAX_TAG_NAME_LENGTH} characters
-                            </p>
-                          </>
-                        ) : (
-                          <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <TagChip name={t.name} color={t.color} />
-                            <span className="text-xs text-muted-foreground">
-                              {count} {count === 1 ? 'catalog' : 'catalogs'}
+                  <div key={t.name} className={cn('overflow-hidden rounded-xl border transition-colors', isOpen ? 'bg-muted/20' : 'bg-card')}>
+                    <button
+                      type="button"
+                      onClick={() => setOpenTag(isOpen ? null : t.name)}
+                      aria-expanded={isOpen}
+                      className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    >
+                      <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', TAG_COLORS[t.color].tint)}>
+                        <span className={cn('h-3 w-3 rounded-full', TAG_COLORS[t.color].swatch)} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[15px] font-semibold">{t.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {count} {count === 1 ? 'catalog' : 'catalogs'}{profiles.length ? ` · ${profiles.join(', ')}` : ''}
+                        </span>
+                      </span>
+                      <span className="hidden flex-wrap justify-end gap-1.5 sm:flex">
+                        {chips.length ? chips.map((chip) => {
+                          const Icon = CHIP_ICONS[chip.icon];
+                          return (
+                            <span key={chip.icon} className="inline-flex items-center gap-1.5 rounded-full border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-foreground/90">
+                              <Icon className="h-3 w-3" />
+                              {chip.label}
                             </span>
-                          </div>
-                        )}
-
-                        <div className="flex flex-wrap items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setColorPickerFor(showColors ? null : t.name)}
-                            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                            aria-expanded={showColors}
-                          >
-                            <span className={cn('h-3 w-3 rounded-full', TAG_COLORS[t.color].swatch)} />
-                            Color
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setLimitFor(showLimit ? null : t.name)}
-                            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                            aria-expanded={showLimit}
-                          >
-                            <ShieldCheck className="h-3 w-3" />
-                            {hasLimit ? `Rated ${t.ageRating} and lower` : 'Content rating'}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="flex shrink-0 items-center gap-1">
-                        {editing === t.name ? (
-                          <>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8"
-                              onClick={() => commitEdit(t.name)}
-                              disabled={!draftName.trim() || draftName.trim().length > MAX_TAG_NAME_LENGTH}
-                              aria-label={`Save ${t.name}`}
-                            >
-                              <Check className="h-4 w-4" />
-                            </Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditing(null)} aria-label={`Cancel renaming ${t.name}`}>
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => startEdit(t.name)} aria-label={`Rename ${t.name}`}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              onClick={() => setPendingDelete(t.name)}
-                              aria-label={`Delete ${t.name}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {showColors && (
-                      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-muted/30 p-2">
-                        {TAG_COLOR_KEYS.map((key: TagColorKey) => (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => recolorTag(t.name, key)}
-                            aria-label={`Set ${t.name} color ${key}`}
-                            className={cn(
-                              'h-5 w-5 rounded-full border transition-transform',
-                              TAG_COLORS[key].swatch,
-                              t.color === key
-                                ? 'ring-2 ring-offset-2 ring-offset-background ring-foreground scale-110'
-                                : 'border-transparent hover:scale-110',
-                            )}
-                          />
-                        ))}
-                      </div>
-                    )}
-
-                    {showLimit && (
-                      <div className="mt-3">
-                        <TagLimitPicker
-                          id={t.name}
-                          value={{ ageRating: t.ageRating, allowUnratedContent: t.allowUnratedContent }}
-                          onChange={(patch) => setTagFilters(t.name, patch)}
-                        />
-                      </div>
+                          );
+                        }) : <span className="text-[11px] text-muted-foreground">No rules</span>}
+                      </span>
+                      <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', isOpen && 'rotate-180')} />
+                    </button>
+                    {isOpen && (
+                      <TagRulesPanel
+                        tag={t}
+                        timezone={config.timezone || 'UTC'}
+                        profiles={profiles}
+                        onRename={(name) => {
+                          renameTag(t.name, name);
+                          setOpenTag(name);
+                        }}
+                        onRecolor={(color) => recolorTag(t.name, color)}
+                        onFilters={(patch) => setTagFilters(t.name, patch)}
+                        onRules={(patch) => setTagRules(t.name, patch)}
+                        onDelete={() => setPendingDelete(t.name)}
+                      />
                     )}
                   </div>
                 );
               })}
+              <p className="pt-1 text-xs text-muted-foreground">A profile with several tags gets the strictest of their rules.</p>
             </div>
           )}
         </DialogContent>

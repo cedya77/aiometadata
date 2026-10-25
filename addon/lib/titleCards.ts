@@ -91,3 +91,38 @@ export async function titleCards(config: any, userUUID: string, rows: any[]): Pr
     return titleCard(scoped, row, kind).catch(() => row);
   });
 }
+
+async function profilePoster(config: any, row: any, kind: Kind, ids: Record<string, any>): Promise<string | null> {
+  const { resolveArtworkForProfile } = require('./getMeta');
+  const art = await resolveArtworkForProfile({
+    type: kind,
+    ids: { imdbId: ids.imdb, tmdbId: ids.tmdb, tvdbId: ids.tvdb },
+    metaProvider: row._artSource,
+    providerArt: { poster: row.poster, background: null, logo: null, landscape: null, originalLanguage: row._originalLanguage },
+    wanted: ['poster'],
+  }, config);
+  return art.poster;
+}
+
+export async function creditCards(config: any, rows: any[]): Promise<any[]> {
+  const { canonicalIds } = require('./jellyfin/canonicalIds');
+  const { applyMetaArt } = require('./metaArt');
+  return mapWithConcurrency(rows, envInt('TITLE_CARD_CONCURRENCY', 8, 1), async (row: any) => {
+    const kind: Kind = row.type === 'movie' ? 'movie' : 'series';
+    try {
+      const ids = await canonicalIds({ imdb: row._imdbId, tmdb: row._tmdbId, tvdb: row._tvdbId }, kind, config);
+      const card = {
+        ...row,
+        id: ids.imdb || row.id,
+        ...(ids.imdb ? { _imdbId: ids.imdb } : {}),
+        ...(ids.tmdb ? { _tmdbId: String(ids.tmdb) } : {}),
+        ...(ids.tvdb ? { _tvdbId: String(ids.tvdb) } : {}),
+      };
+      applyMetaArt(card, config, kind, '');
+      if (card.poster === row.poster) card.poster = (await profilePoster(config, row, kind, ids)) || row.poster;
+      return card;
+    } catch {
+      return row;
+    }
+  });
+}

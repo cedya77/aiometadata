@@ -6,10 +6,16 @@ import { Input } from '@/components/ui/input';
 import { useConfig } from '@/contexts/ConfigContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { AGE_RATING_OPTIONS as ageRatingOptions } from '@/lib/ageRatings';
+import { useState } from 'react';
+import { Tag } from 'lucide-react';
+import { TagManagerDialog } from '@/components/TagManagerDialog';
+import { hiddenCount } from '@/lib/tagRules';
 
 
 export function FiltersSettings() {
   const { config, setConfig } = useConfig();
+  const [tagsOpen, setTagsOpen] = useState(false);
+  const tagsHiding = (config.tags ?? []).map((tag) => ({ name: tag.name, count: hiddenCount(tag) })).filter((tag) => tag.count > 0);
   const hasAgeRatingCap = !!config.ageRating && config.ageRating !== 'None';
 
   const handleAgeRatingChange = (value: string) => {
@@ -313,8 +319,34 @@ export function FiltersSettings() {
           <div className="text-sm text-muted-foreground bg-muted p-3 rounded">
             <strong>Tip:</strong> All filters work together — content matching any of them will be hidden from catalogs and search results.
           </div>
+
+          {(config.tags?.length ?? 0) > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/70 bg-background/60 px-3 py-2.5 text-sm">
+              <Tag className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 text-muted-foreground">
+                {tagsHiding.length ? (
+                  <>
+                    Tags hide more on top:{' '}
+                    {tagsHiding.map((tag, i) => (
+                      <span key={tag.name}>
+                        {i > 0 ? ', ' : ''}
+                        <span className="font-semibold text-foreground">{tag.name}</span> {tag.count}
+                      </span>
+                    ))}
+                    .
+                  </>
+                ) : (
+                  'A tag can hide more for its own profiles, such as Kids.'
+                )}
+              </span>
+              <button type="button" onClick={() => setTagsOpen(true)} className="text-sm font-semibold text-foreground underline-offset-4 hover:underline">
+                Manage tags
+              </button>
+            </div>
+          )}
         </CardContent>
       </Card>
+      <TagManagerDialog open={tagsOpen} onOpenChange={setTagsOpen} />
     </div>
   );
 }

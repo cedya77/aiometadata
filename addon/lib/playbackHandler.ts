@@ -323,7 +323,11 @@ export async function handlePlaybackReport(
     undropOnWatch(userUUID, config, [report.metaId]);
   }
 
-  if (writesTrackersFor(config)) await enqueueTrackerWrites(userUUID, config, planReport(type, id, report, progress, config));
+  if (writesTrackersFor(config)) {
+    const { playedThresholdFor } = require('./jellyfin/playstate');
+    const watchedAt = await playedThresholdFor(userUUID, config?.jellyfinProfileId ?? null);
+    await enqueueTrackerWrites(userUUID, config, planReport(type, id, report, progress, config, watchedAt));
+  }
 
   return { status: 204 };
 }
@@ -333,7 +337,7 @@ export async function handlePlaybackReport(
  * failed. A tracker that holds plays rather than a flag would otherwise count a
  * watch twice because the resume clear after it failed.
  */
-function planReport(type: string, id: string, report: PlaybackReport, progress: number | null, config: any): OutboxJob[] {
+function planReport(type: string, id: string, report: PlaybackReport, progress: number | null, config: any, watchedAt: number): OutboxJob[] {
   const { parseMediaId } = require('./subtitleHandler');
   const { shouldTrackServiceMediaType, normalizeWatchTrackingMediaType } = require('./watchTracking');
   const parsedId = parseMediaId(id);
@@ -342,7 +346,7 @@ function planReport(type: string, id: string, report: PlaybackReport, progress: 
 
   const intent = intentOf(report);
   const item = String(report.metaId || id);
-  const payload = { type, id, report, progress };
+  const payload = { type, id, report, progress, watchedAt };
   // A mark-watched on an item nobody played goes to history, not the scrobble lifecycle.
   const credited = intent === 'watched' && report.event !== 'stop';
   // A watch only hides a tracker's paused session; it has to be deleted or an unwatch revives it.
@@ -375,10 +379,10 @@ function planReport(type: string, id: string, report: PlaybackReport, progress: 
   return jobs;
 }
 
-type ReportPayload = { type: string; id: string; report: PlaybackReport; progress: number | null; through?: string };
+type ReportPayload = { type: string; id: string; report: PlaybackReport; progress: number | null; through?: string; watchedAt?: number };
 
 export async function deliverScrobble(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {
-  if (service === 'simkl') await scrobbleSimkl(p.type, p.id, p.report, p.progress, config);
+  if (service === 'simkl') await scrobbleSimkl(p.type, p.id, p.report, p.progress, config, p.watchedAt);
   else if (service === 'mdblist') await scrobbleMdblist(p.type, p.id, p.report, p.progress, config);
   else if (service === 'publicmetadb') await reportPublicMetaDB(p.type, p.id, p.report, config);
 }
@@ -587,7 +591,8 @@ async function scrobbleSimkl(
   id: string,
   report: PlaybackReport,
   progress: number | null,
-  config: any
+  config: any,
+  watchedAt?: number
 ): Promise<void> {
   const intent = intentOf(report);
   if (intent === 'none' || intent === 'unwatched') return;
@@ -609,5 +614,6 @@ async function scrobbleSimkl(
   await checkinSimkl(parsedId, config, {
     action: intent === 'watching' ? 'start' : intent === 'paused' ? 'pause' : 'stop',
     progress: watchedProgressFor(report, progress),
+    minProgress: watchedAt,
   });
 }

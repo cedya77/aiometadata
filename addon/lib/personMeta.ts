@@ -18,6 +18,8 @@ export async function personMeta(config: any, id: string): Promise<any | null> {
 
   const credits: any[] = (await personCredits(config, person)).filter((meta: any) => meta._personTypes?.length);
   if (person.source === 'tmdb') credits.sort((a, b) => (b._votes || 0) - (a._votes || 0));
+  const { creditCards } = require('./titleCards');
+  const cards: any[] = await creditCards(config, credits);
 
   return {
     id,
@@ -33,6 +35,6 @@ export async function personMeta(config: any, id: string): Promise<any | null> {
       [person.source]: String(person.id),
       ...(person.imdbId ? { imdb: person.imdbId } : {}),
     },
-    credits: credits.map((meta) => Object.fromEntries(CREDIT_FIELDS.filter((field) => meta[field]).map((field) => [field, meta[field]]))),
+    credits: cards.map((meta) => Object.fromEntries(CREDIT_FIELDS.filter((field) => meta[field]).map((field) => [field, meta[field]]))),
   };
 }

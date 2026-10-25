@@ -18,6 +18,30 @@ export const sourceBadgeStyles: Record<string, string> = {
   lumiere: "bg-rose-800/80 text-rose-200 border-rose-600/50 hover:bg-rose-800",
 };
 
+export const sourceDotStyles: Record<string, string> = {
+  tmdb: 'bg-blue-400',
+  tvdb: 'bg-green-400',
+  mal: 'bg-indigo-400',
+  tvmaze: 'bg-orange-400',
+  mdblist: 'bg-yellow-400',
+  stremthru: 'bg-purple-400',
+  custom: 'bg-pink-400',
+  trakt: 'bg-red-400',
+  anilist: 'bg-cyan-400',
+  flixpatrol: 'bg-emerald-400',
+  merged: 'bg-violet-400',
+  streaming: 'bg-sky-400',
+  letterboxd: 'bg-lime-400',
+  simkl: 'bg-teal-400',
+  movielens: 'bg-amber-400',
+  publicmetadb: 'bg-fuchsia-400',
+  lumiere: 'bg-rose-400',
+};
+
+export function getSourceDotStyle(source?: string): string {
+  return sourceDotStyles[source || 'custom'] || 'bg-slate-400';
+}
+
 export const sourceBadgeLabels: Record<string, string> = {
   flixpatrol: 'TOP 10',
   publicmetadb: 'PMDB',

@@ -13,6 +13,11 @@ export interface TagDef {
   ageRating?: string;
   /** Only meaningful alongside ageRating. Absent means unrated titles show. */
   allowUnratedContent?: boolean;
+  viewingHours?: { start: string; end: string };
+  allowDownloads?: boolean;
+  hideKeywords?: string[];
+  hideWords?: string[];
+  hideGenres?: string[];
 }
 
 export type CardService = 'simkl' | 'mdblist' | 'publicmetadb' | 'anilist' | 'mal';
