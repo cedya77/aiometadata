@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.8.0](https://github.com/cedya77/aiometadata/compare/v3.7.0...v3.8.0) (2026-10-25)
+
+
+### Features
+
+* **catalog:** let the collections switch hide the More Like This catalog too ([aa1b8c4](https://github.com/cedya77/aiometadata/commit/aa1b8c467ffe284b2cbfdbfe92cf85e867660d9b))
+* **collections:** restyle the catalog picker ([54f815f](https://github.com/cedya77/aiometadata/commit/54f815fa932961117f9256c7940bd9489fb8a411))
+* **jellyfin:** find people in a search that asks for them among items ([5b39f08](https://github.com/cedya77/aiometadata/commit/5b39f08da46e43153a9cab630161e6a51495a7b8))
+* **jellyfin:** give tags viewing hours and a downloads switch ([fd08ab1](https://github.com/cedya77/aiometadata/commit/fd08ab104190a43204d71485de3f7c9a11d56b56))
+* **jellyfin:** set each user's watched point from the configuration page ([8da0542](https://github.com/cedya77/aiometadata/commit/8da05428be72441b38c65ea50ba1c4d6bd96d894))
+* **publicmetadb:** picks rows for each Jellyfin profile's own account ([063ec87](https://github.com/cedya77/aiometadata/commit/063ec87c6eae2ceec479a2a6b755c6708e647449))
+* **recommendations:** match picks through LumiereDB when it is configured ([8d6f54d](https://github.com/cedya77/aiometadata/commit/8d6f54dc60fcdc60b655b12a805edff36757776e))
+* **recommendations:** order "As suggested" by the model's fit score ([8d6f54d](https://github.com/cedya77/aiometadata/commit/8d6f54dc60fcdc60b655b12a805edff36757776e))
+* **recommendations:** rows for each Jellyfin profile, read from the play history ([8d6f54d](https://github.com/cedya77/aiometadata/commit/8d6f54dc60fcdc60b655b12a805edff36757776e))
+* **tags:** hide titles per tag by TMDB keyword, word or genre ([c3fab27](https://github.com/cedya77/aiometadata/commit/c3fab277dbba8bacc421b46ce363224fb9ca1ef9))
+
+
+### Bug Fixes
+
+* **anilist:** list a special mapped to a TMDB show as a series ([#844](https://github.com/cedya77/aiometadata/issues/844)) ([e22ad44](https://github.com/cedya77/aiometadata/commit/e22ad44085dd56aa822708eb4826fe76b354aa1c))
+* **anime:** send a Kitsu entry whose TMDB id no longer exists by its TVDB episode ([e0642be](https://github.com/cedya77/aiometadata/commit/e0642bee132e3fac9974d506b60e9cd4a17c2b55))
+* **anime:** send a Kitsu special to its own episode on MDBList ([0417cfc](https://github.com/cedya77/aiometadata/commit/0417cfc7475e14b7cfbfe1923f3ccb0ceb5c8c35))
+* close silent Jellyfin connections and release unread error responses ([d8261ae](https://github.com/cedya77/aiometadata/commit/d8261ae371987d3610067fb97cdf919f828089bc))
+* **configure:** show a catalog's current name when its rename dialog opens ([#843](https://github.com/cedya77/aiometadata/issues/843)) ([4b5e9e4](https://github.com/cedya77/aiometadata/commit/4b5e9e4eaa9bb111cb118f7ff8b94bc6b81da363))
+* **ids:** look up a show again when TMDB no longer has its cached id ([33c0388](https://github.com/cedya77/aiometadata/commit/33c0388e2ca79f5a93712188e2489305ca3348c8))
+* **jellyfin:** allow downloads in the user policy ([5b74464](https://github.com/cedya77/aiometadata/commit/5b74464f623640f6f0a189a75ac270e5a7a602cb))
+* **jellyfin:** list a show once in Next Up when one play is saved under several ids ([1392d09](https://github.com/cedya77/aiometadata/commit/1392d097dc764b49e96d02d6eeafc498491a78ce))
+* **jellyfin:** send artwork straight to clients and cap what passes through ([5b3b5f9](https://github.com/cedya77/aiometadata/commit/5b3b5f9f23b26520635a94c7a48253f97bb28618))
+* **jellyfin:** stop counting a deleted configuration as active ([16e64a5](https://github.com/cedya77/aiometadata/commit/16e64a52b56fba7029b9e5ebac4631feb422cda9))
+* **mdblist:** remove a title's plays from history when it is unwatched ([8129ed2](https://github.com/cedya77/aiometadata/commit/8129ed2c3616b6e8c12abd3a79cd3d45e8925bdc))
+* **meta:** show person credits with the user's own posters ([c7d63a5](https://github.com/cedya77/aiometadata/commit/c7d63a53ff75b55aeb48073667da98adbd65dec7))
+* **poster-cache:** close an image download when its client leaves or the image stalls ([f0f430b](https://github.com/cedya77/aiometadata/commit/f0f430b660b49d5ba7fb0f7b92d7ed0c1a122a45))
+* **recommendations:** cache each account's row under its own key ([#847](https://github.com/cedya77/aiometadata/issues/847)) ([753d24e](https://github.com/cedya77/aiometadata/commit/753d24e26b62dc123ca55431d4756158233424b5))
+* **recommendations:** judge series from the play history by episodes watched ([8d6f54d](https://github.com/cedya77/aiometadata/commit/8d6f54dc60fcdc60b655b12a805edff36757776e))
+* **recommendations:** keep every pick that survives the checks ([8d6f54d](https://github.com/cedya77/aiometadata/commit/8d6f54dc60fcdc60b655b12a805edff36757776e))
+* **recommendations:** keep rows for setups without a tracker, and refresh profile rows ahead of expiry ([8d6f54d](https://github.com/cedya77/aiometadata/commit/8d6f54dc60fcdc60b655b12a805edff36757776e))
+* **recommendations:** keep the newest watch date when histories are merged ([8d6f54d](https://github.com/cedya77/aiometadata/commit/8d6f54dc60fcdc60b655b12a805edff36757776e))
+* **recommendations:** leave out everything already watched ([8d6f54d](https://github.com/cedya77/aiometadata/commit/8d6f54dc60fcdc60b655b12a805edff36757776e))
+* **recommendations:** name only released titles when there is no live search ([8d6f54d](https://github.com/cedya77/aiometadata/commit/8d6f54dc60fcdc60b655b12a805edff36757776e))
+* **recommendations:** rebuild writes a new row and the clients see it ([8d6f54d](https://github.com/cedya77/aiometadata/commit/8d6f54dc60fcdc60b655b12a805edff36757776e))
+* **recommendations:** show the taste profile in the dialog ([8d6f54d](https://github.com/cedya77/aiometadata/commit/8d6f54dc60fcdc60b655b12a805edff36757776e))
+* **recommendations:** the panel checks the configuration's password or signed-in account ([8d6f54d](https://github.com/cedya77/aiometadata/commit/8d6f54dc60fcdc60b655b12a805edff36757776e))
+* **trackers:** read a tracker's whole history, however long ([6a3dbd1](https://github.com/cedya77/aiometadata/commit/6a3dbd154380379363c47cd068363b3e5bbb0a59))
+* **trackers:** send a TVDB-numbered episode to MDBList and PublicMetaDB at its TMDB episode ([cc530dc](https://github.com/cedya77/aiometadata/commit/cc530dc58c2c964e66feba955e90e46eb502be40))
+* **trackers:** send an anime film's watch to its own MyAnimeList and AniList entry ([1d00c6d](https://github.com/cedya77/aiometadata/commit/1d00c6d8e40697e76c31dfc1e139658bdabd8fef))
+
+
+### Performance Improvements
+
+* **catalog:** fill addon catalog rows once for every configuration with the same metadata settings ([65da5a0](https://github.com/cedya77/aiometadata/commit/65da5a0d3f19226e0ec681486af4dcb25c65bdeb))
+* **jellyfin:** build responses with less hashing and copying ([65da5a0](https://github.com/cedya77/aiometadata/commit/65da5a0d3f19226e0ec681486af4dcb25c65bdeb))
+* **jellyfin:** share remembered artwork between configurations with the same settings ([65da5a0](https://github.com/cedya77/aiometadata/commit/65da5a0d3f19226e0ec681486af4dcb25c65bdeb))
+* **jellyfin:** stop copying every catalog reply and configuration on in-process reads ([65da5a0](https://github.com/cedya77/aiometadata/commit/65da5a0d3f19226e0ec681486af4dcb25c65bdeb))
+* **meta:** build a title once when many people open it before it is cached ([65da5a0](https://github.com/cedya77/aiometadata/commit/65da5a0d3f19226e0ec681486af4dcb25c65bdeb))
+* **meta:** keep metadata read from Redis in memory, shared by matching configurations ([65da5a0](https://github.com/cedya77/aiometadata/commit/65da5a0d3f19226e0ec681486af4dcb25c65bdeb))
+
 ## [3.7.0](https://github.com/cedya77/aiometadata/compare/v3.6.1...v3.7.0) (2026-10-21)
 
 
