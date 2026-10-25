@@ -4,6 +4,8 @@ export interface LumiereResult {
   imdbId: string;
   title: string;
   year: number | null;
+  originalTitle?: string;
+  akas?: string[];
 }
 
 // LumiereDB caps queries at 120 runes and limit at 50, and answers anything past either with a 400.
@@ -39,6 +41,8 @@ export async function fetchLumiereSearch(
       imdbId: item.tconst,
       title: item.primaryTitle || '',
       year: typeof item.startYear === 'number' ? item.startYear : null,
+      ...(typeof item.originalTitle === 'string' && item.originalTitle ? { originalTitle: item.originalTitle } : {}),
+      ...(Array.isArray(item.akaTitles) ? { akas: item.akaTitles.filter((aka: any) => typeof aka === 'string' && aka) } : {}),
     }));
 }
 

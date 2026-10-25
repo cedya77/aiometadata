@@ -316,6 +316,10 @@ function closestYear<T>(entries: T[], yearOf: (entry: T) => number, year?: numbe
     ?? entries.find((entry) => yearOf(entry) && Math.abs(yearOf(entry) - year) <= 1);
 }
 
+function comparable(title: string): string {
+  return title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
 async function matchOnLumiere(pick: Suggestion, config: any): Promise<any | null> {
   const { lumiereApiBase }: any = require('../lumiereLists');
   const base = lumiereApiBase();
@@ -327,10 +331,15 @@ async function matchOnLumiere(pick: Suggestion, config: any): Promise<any | null
   const timeoutMs = parseInt(getSetting('LUMIERE_SEARCH_TIMEOUT_MS'), 10) || 5000;
   const ttl = parseInt(getSetting('LUMIERE_SEARCH_TTL_SECONDS'), 10);
   const search = () => fetchLumiereSearch(base, type, pick.title, 10, timeoutMs);
-  const results: Array<{ imdbId: string; year: number | null }> = ttl > 0
-    ? await cacheWrapGlobal(`recommendations:lumiere:${type}:${pick.title.toLowerCase().trim()}`, search, ttl)
-    : await search();
-  const match = closestYear(results || [], (entry) => entry.year || 0, pick.year);
+  const results: Array<{ imdbId: string; year: number | null; title?: string; originalTitle?: string; akas?: string[] }> = (ttl > 0
+    ? await cacheWrapGlobal(`recommendations:lumiere:v2:${type}:${pick.title.toLowerCase().trim()}`, search, ttl)
+    : await search()) || [];
+  const wanted = comparable(pick.title);
+  const yearOf = (entry: (typeof results)[number]) => entry.year || 0;
+  const named = results.filter((entry) => [entry.title, entry.originalTitle, ...(entry.akas ?? [])].some((title) => title && comparable(title) === wanted));
+  const match = closestYear(named, yearOf, pick.year)
+    ?? named.find((entry) => (entry.akas ?? []).some((title) => comparable(title) === wanted))
+    ?? closestYear(results, yearOf, pick.year);
   if (!match) return null;
 
   const { find }: any = require('../../lib/getTmdb');
