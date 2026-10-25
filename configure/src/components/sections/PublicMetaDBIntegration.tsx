@@ -81,7 +81,7 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
       ...prev,
       apiKeys: { ...prev.apiKeys, publicmetadb: '' },
       publicmetadbWatchTracking: false,
-      catalogs: prev.catalogs.filter(c => !c.id.startsWith('publicmetadb.')),
+      catalogs: prev.catalogs.filter(c => !c.id.startsWith('publicmetadb.') || c.metadata?.accountOwner),
     }));
     setTempKey("");
     setIsValid(false);

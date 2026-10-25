@@ -13,15 +13,17 @@ import { CARD_SERVICES, CARD_SERVICE_ORDER, cardAccount, missingWatchlistSlots, 
 import { ApiKeyConnect } from "@/components/accounts/ApiKeyConnect";
 import { OAuthTokenConnect } from "@/components/accounts/OAuthTokenConnect";
 import { SimklConnect } from "@/components/accounts/SimklConnect";
+import { ProfilePicks } from "@/components/jellyfin/ProfilePicks";
 
 interface UserAccountsProps {
   user: JellyfinUser;
   catalogs: CatalogConfig[];
   onChange: (next: JellyfinUser) => void;
   onAddCatalogs: (entries: CatalogConfig[]) => void;
+  onRemoveCatalogs: (ids: string[]) => void;
 }
 
-export function UserAccounts({ user, catalogs, onChange, onAddCatalogs }: UserAccountsProps) {
+export function UserAccounts({ user, catalogs, onChange, onAddCatalogs, onRemoveCatalogs }: UserAccountsProps) {
   const { auth, config } = useConfig();
   const [open, setOpen] = useState<CardService | null>(null);
   const [busy, setBusy] = useState<CardService | null>(null);
@@ -63,6 +65,9 @@ export function UserAccounts({ user, catalogs, onChange, onAddCatalogs }: UserAc
       }
     }
     onChange(withAccount(user, service, undefined));
+    if (service === 'publicmetadb') {
+      onRemoveCatalogs(catalogs.filter((c) => c.metadata?.accountOwner === user.id).map((c) => c.id));
+    }
   };
 
   const selected = open;
@@ -166,6 +171,9 @@ export function UserAccounts({ user, catalogs, onChange, onAddCatalogs }: UserAc
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onAddCatalogs(missing)}>
                   <Plus className="mr-1 h-3 w-3" /> Add {selectedInfo.label} watchlist to the catalogs
                 </Button>
+              ) : null}
+              {selected === 'publicmetadb' ? (
+                <ProfilePicks user={user} catalogs={catalogs} onAddCatalogs={onAddCatalogs} onRemoveCatalogs={onRemoveCatalogs} />
               ) : null}
             </>
           )}

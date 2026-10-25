@@ -12,7 +12,7 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
   const database: any = require('../database');
   const { parseStremioId } = require('./ids');
   const { envInt } = require('../../utils/envNumber');
-  const { videoIdAliases } = require('./aliases');
+  const { videoIdAliases, groupBySpelling } = require('./aliases');
 
   const since = Date.now() - envInt('JELLYFIN_NEXTUP_OWN_DAYS', 120, 1) * 24 * 60 * 60 * 1000;
   const shows = envInt('JELLYFIN_NEXTUP_OWN_LIMIT', 300, 1);
@@ -21,7 +21,9 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
 
   const rows: NextUpRow[] = [];
   const seen = new Set<string>();
+  const handled = new Set<string>();
   let after: { at: number; videoId: string } | null = null;
+  let carry: any[] = [];
   for (let scanned = 0; rows.length < shows && scanned < scanCap; scanned += batch) {
     let records: any[];
     try {
@@ -31,11 +33,22 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
     }
     const last = records[records.length - 1];
     if (last) after = { at: Number(last.last_played_at), videoId: String(last.video_id) };
+    const groupOf = new Map<string, any[]>();
+    for (const group of (await groupBySpelling([...carry, ...records])) as any[][]) {
+      for (const row of group) groupOf.set(String(row.video_id), group);
+    }
+    carry = last ? records.filter((row) => Number(row.last_played_at) === Number(last.last_played_at)) : [];
     for (const r of records) {
       if (rows.length >= shows) break;
       const parsed = parseStremioId(String(r.video_id));
-      if (!parsed || parsed.episode === null || parsed.episode === undefined || seen.has(parsed.base)) continue;
-      seen.add(parsed.base);
+      if (!parsed || parsed.episode === null || parsed.episode === undefined) continue;
+      const group = groupOf.get(String(r.video_id)) ?? [r];
+      if (seen.has(parsed.base) || group.some((row: any) => handled.has(String(row.video_id)))) continue;
+      for (const row of group) {
+        handled.add(String(row.video_id));
+        const base = parseStremioId(String(row.video_id))?.base;
+        if (base) seen.add(base);
+      }
       for (const alias of await videoIdAliases(String(r.video_id))) {
         const base = parseStremioId(alias)?.base;
         if (base) seen.add(base);
@@ -360,7 +373,7 @@ export interface AnimeListEntry {
 
 export async function assembleAnimeList(entries: AnimeListEntry[]): Promise<RawSnapshot> {
   const idMapper: any = require('../id-mapper');
-  const { videoIdAliases } = require('./aliases');
+  const { videoIdAliases, groupBySpelling } = require('./aliases');
   const snapshot: Collecting = {
     episodes: new Set(),
     movies: new Set(),
@@ -1336,7 +1349,7 @@ async function clearUnmarked(userUUID: string, profile: string, config: any, bef
 
   const database: any = require('../database');
   const { parseStremioId } = require('./ids');
-  const { videoIdAliases } = require('./aliases');
+  const { videoIdAliases, groupBySpelling } = require('./aliases');
   let cleared = 0;
   for (const id of gone) {
     const parsed = parseStremioId(id);
@@ -1610,7 +1623,7 @@ export async function applyWatchedState(
   ];
   const watched = await watchedAmong(snapshot, direct);
   const aliasesOf = new Map<string, string[]>();
-  const { videoIdAliases } = require('./aliases');
+  const { videoIdAliases, groupBySpelling } = require('./aliases');
   for (const videoId of new Set(showEpisodes)) {
     if (!watched.has(videoId) && !ownPlayed.has(videoId)) aliasesOf.set(videoId, await videoIdAliases(videoId));
   }

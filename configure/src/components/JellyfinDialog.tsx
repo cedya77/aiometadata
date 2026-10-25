@@ -646,8 +646,14 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
         }
       }
     }
-    setConfig(prev => ({ ...prev, jellyfinUsers: (prev.jellyfinUsers ?? []).filter(u => u.id !== user.id) }));
+    setConfig(prev => ({
+      ...prev,
+      jellyfinUsers: (prev.jellyfinUsers ?? []).filter(u => u.id !== user.id),
+      catalogs: prev.catalogs.filter((c) => c.metadata?.accountOwner !== user.id),
+    }));
   };
+  const removeCatalogs = (ids: string[]) =>
+    setConfig(prev => ({ ...prev, catalogs: prev.catalogs.filter((c) => !ids.includes(c.id)) }));
   const addCatalogs = (entries: CatalogConfig[]) =>
     setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, ...entries.filter((e) => !prev.catalogs.some((c) => c.id === e.id && c.type === e.type))] }));
   const nameClash = handoffNameClash(mainName, config.jellyfinUserHandoffNames, users);
@@ -1057,7 +1063,7 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
                   onForget={() => setForgetFor({ profile: user.id, name: user.name })}
                 >
                   {user.trackers !== true ? (
-                    <UserAccounts user={user} catalogs={config.catalogs ?? []} onChange={(next) => updateUser(user.id, next)} onAddCatalogs={addCatalogs} />
+                    <UserAccounts user={user} catalogs={config.catalogs ?? []} onChange={(next) => updateUser(user.id, next)} onAddCatalogs={addCatalogs} onRemoveCatalogs={removeCatalogs} />
                   ) : null}
                 </UserRow>
               );

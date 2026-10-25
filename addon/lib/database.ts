@@ -1200,6 +1200,7 @@ class Database {
     await this.runQuery(query, [userUUID]);
     await this.unlinkConfigFromAllAccounts(userUUID);
     await require('./configCache').del(userUUID).catch(() => undefined);
+    await require('./jellyfin/context').forgetSeen([userUUID]).catch(() => undefined);
   }
 
   async deleteUser(userUUID: string): Promise<boolean> {
@@ -1215,6 +1216,7 @@ class Database {
         : 'DELETE FROM trusted_uuids WHERE user_uuid = $1';
       await this.runQuery(deleteTrustedQuery, [userUUID]);
       await require('./jellyfin/tokens').revokeUserTokens(userUUID).catch(() => undefined);
+      await require('./jellyfin/context').forgetSeen([userUUID]).catch(() => undefined);
 
       const deleteAliasQuery = this.type === 'sqlite'
         ? 'DELETE FROM user_aliases WHERE user_uuid = ?'
@@ -1392,10 +1394,10 @@ class Database {
     limit: number,
     profile = '',
     after: { at: number; videoId: string } | null = null
-  ): Promise<Array<{ video_id: string; last_played_at: number; updated_at: number }>> {
+  ): Promise<Array<{ video_id: string; last_played_at: number; updated_at: number; origin: string | null }>> {
     const p = this.type === 'sqlite' ? () => '?' : ((n = 0) => () => `$${++n}`)();
     const params: any[] = [userUUID, profile, since];
-    let query = `SELECT video_id, last_played_at, updated_at FROM jellyfin_playstate WHERE user_uuid = ${p()} AND profile = ${p()} AND played = 1 AND last_played_at >= ${p()} AND video_id LIKE '%:%:%'`;
+    let query = `SELECT video_id, last_played_at, updated_at, origin FROM jellyfin_playstate WHERE user_uuid = ${p()} AND profile = ${p()} AND played = 1 AND last_played_at >= ${p()} AND video_id LIKE '%:%:%'`;
     if (after) {
       query += ` AND (last_played_at < ${p()} OR (last_played_at = ${p()} AND video_id > ${p()}))`;
       params.push(after.at, after.at, after.videoId);
@@ -2813,8 +2815,12 @@ class Database {
       const query = this.type === 'sqlite'
         ? 'DELETE FROM user_configs WHERE updated_at < ?'
         : 'DELETE FROM user_configs WHERE updated_at < $1';
+      const doomed = await this.allQuery(this.type === 'sqlite'
+        ? 'SELECT user_uuid FROM user_configs WHERE updated_at < ?'
+        : 'SELECT user_uuid FROM user_configs WHERE updated_at < $1', [cutoffDateStr]);
 
       const result = await this.runQuery(query, [cutoffDateStr]);
+      await require('./jellyfin/context').forgetSeen((doomed || []).map((row: any) => String(row.user_uuid))).catch(() => undefined);
 
       await this.runAliasCleanup(
         'DELETE FROM user_aliases WHERE user_uuid NOT IN (SELECT user_uuid FROM user_configs)'

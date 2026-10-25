@@ -3593,6 +3593,11 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
                 Watchlist
               </Badge>
             )}
+            {catalog.metadata?.accountOwner && (
+              <Badge variant="outline" className={`text-xs shrink-0 ${catalog.enabled ? '' : 'opacity-50'}`}>
+                For {(config.jellyfinUsers ?? []).find((user) => user.id === catalog.metadata?.accountOwner)?.name ?? 'a removed profile'}
+              </Badge>
+            )}
             {catalog.source === 'anilist' && anilistRequiresAuth && !config.apiKeys?.anilistTokenId && (
               <Badge
                 variant="outline"

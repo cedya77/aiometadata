@@ -966,7 +966,7 @@ class ComprehensiveCatalogWarmer {
             const skipIds = new Set(['trakt.upnext', 'mdblist.upnext', 'publicmetadb.upnext', 'simkl.upnext', 'simkl.upnext.anime']);
             const { isRecommendationCatalog } = require('../utils/recommendations/catalog');
             const enabledCatalogs = allCatalogs.filter(c =>
-              c.source !== 'merged' && !skipIds.has(c.id) && !isRecommendationCatalog(c.id) && !c.id.startsWith('aiom.watchlist.') &&
+              c.source !== 'merged' && !skipIds.has(c.id) && !isRecommendationCatalog(c.id) && !c.id.startsWith('aiom.watchlist.') && !c.metadata?.accountOwner &&
               c.cacheTTL !== 0 && (jikan.isJikanEnabled() || !jikan.isJikanCatalogId(c.id)) &&
               (c.enabled || mergedChildIds.has(`${c.id}:${c.type}`))
             );

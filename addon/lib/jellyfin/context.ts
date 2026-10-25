@@ -57,6 +57,14 @@ export async function seenConfigurationsSince(since: number): Promise<string[] |
   }
 }
 
+export async function forgetSeen(userUUIDs: string[]): Promise<void> {
+  for (const userUUID of userUUIDs) seenRecently.delete(userUUID);
+  if (!redis) return;
+  for (let at = 0; at < userUUIDs.length; at += 500) {
+    await redis.hdel(SEEN_KEY, ...userUUIDs.slice(at, at + 500)).catch(() => undefined);
+  }
+}
+
 export async function seenRecentlyBy(userUUID: string): Promise<boolean> {
   if (seenRecently.has(userUUID)) return true;
   if (!redis) return false;

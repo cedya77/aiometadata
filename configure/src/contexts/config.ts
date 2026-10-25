@@ -176,6 +176,7 @@ export interface CatalogConfig {
     pickMinVotes?: number;
     /** Only offered to a Jellyfin card that holds the account backing this catalog. */
     accountsOnly?: boolean;
+    accountOwner?: string;
   };
 }
 

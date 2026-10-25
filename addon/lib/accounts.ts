@@ -67,9 +67,15 @@ const SLOTS: Array<[AccountService, RegExp]> = [
   ['publicmetadb', /^publicmetadb\.(upnext|watchlist)$/],
 ];
 
+export function rowOwner(catalog: { metadata?: any } | null | undefined): string {
+  const owner = catalog?.metadata?.accountOwner;
+  return typeof owner === 'string' ? owner : '';
+}
+
 /** The service a catalog belongs to as "this account's own list"; null for public and named lists. */
 export function slotServiceOf(catalog: { id?: string; metadata?: any } | null | undefined): AccountService | null {
   const id = String(catalog?.id ?? '').replace(/_(movie|series|anime|all)$/, '');
+  if (id.startsWith('publicmetadb.pick.')) return rowOwner(catalog) ? 'publicmetadb' : null;
   if (id.startsWith('publicmetadb.list.') && catalog?.metadata?.listType === 'watchlist') return 'publicmetadb';
   if (id.startsWith('anilist.') && catalog?.metadata?.isCustomList) return null;
   for (const [service, pattern] of SLOTS) if (pattern.test(id)) return service;
@@ -77,6 +83,9 @@ export function slotServiceOf(catalog: { id?: string; metadata?: any } | null | 
 }
 
 export function servesCatalog(config: any, catalog: any): boolean {
+  const owner = rowOwner(catalog);
+  if (owner) return config?.jellyfinAccountOwner === owner && Boolean(credentialOf(config, 'publicmetadb'));
+  if (String(catalog?.id ?? '').startsWith('publicmetadb.pick.') && config?.jellyfinAccounts) return false;
   const service = slotServiceOf(catalog);
   if (!service) return true;
   const holder = Boolean(config?.jellyfinAccounts);
