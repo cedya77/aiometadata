@@ -270,7 +270,7 @@ type Outcome = { kind: 'done' } | { kind: 'retry'; at?: number; reason: string }
 /** Judged by the last answer: a lookup that failed before a fallback that worked is not a failure. */
 function judge(calls: TrackerCall[], error: any): Outcome {
   const last = calls[calls.length - 1];
-  if (!last) return error ? { kind: 'drop', reason: String(error?.message || error) } : { kind: 'done' };
+  if (!last) return error ? { kind: 'drop', reason: String(error?.message || error), ...(Number.isFinite(error?.status) ? { status: error.status } : {}) } : { kind: 'done' };
   const { status, body } = last;
   if ((status >= 200 && status < 300) || status === 409) return { kind: 'done' };
   // Simkl's write lock clears once the write holding it finishes.

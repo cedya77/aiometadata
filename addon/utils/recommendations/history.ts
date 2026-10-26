@@ -21,6 +21,26 @@ export function isWatched(row: WatchedRow): boolean {
   return row.status !== 'plantowatch';
 }
 
+/** Only Simkl files anime apart. MDBList and plays under IMDb or TMDB ids say film or series, so the anime list decides. */
+export function isAnimeRow(row: { kind: string; imdbId?: string; tmdbId?: number }): boolean {
+  if (row.kind === 'anime') return true;
+  const idMapper: any = require('../../lib/id-mapper');
+  try {
+    if (row.imdbId && idMapper.getMappingByImdbId(row.imdbId)) return true;
+    if (!row.tmdbId) return false;
+    return row.kind === 'movie'
+      ? !!idMapper.filmMappingFor({ tmdbId: row.tmdbId })
+      : idMapper.getSeriesMappingsByTmdbId(row.tmdbId).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** The row a title belongs in: anime wherever it was filed, otherwise its own kind. */
+export function rowKind(row: WatchedRow): WatchedKind {
+  return isAnimeRow(row) ? 'anime' : row.kind;
+}
+
 /** One watched title, flattened across services. Shallow on purpose: everything
  *  here arrives with the history payload. */
 export interface WatchedRow {
@@ -29,6 +49,8 @@ export interface WatchedRow {
   imdbId?: string;
   /** Carried by both sources, and what genres and credits are looked up with. */
   tmdbId?: number;
+  /** Which TMDB id space tmdbId is in. Films and television are numbered separately; unset when the source does not say. */
+  tmdbType?: 'movie' | 'tv';
   title: string;
   year?: number;
   kind: WatchedKind;
@@ -71,11 +93,18 @@ function rowFromSimkl(entry: any, kind: WatchedKind, status: string): WatchedRow
   const ids = media?.ids || {};
   const imdbId = typeof ids.imdb === 'string' && ids.imdb ? ids.imdb : undefined;
   const fallback = ids.simkl ?? ids.tmdb ?? ids.mal ?? title;
+  const animeType = String(entry?.anime_type ?? media?.anime_type ?? '');
+  const tmdbType = kind === 'movie' ? 'movie'
+    : kind === 'series' ? 'tv'
+    : animeType === 'movie' ? 'movie'
+    : animeType && animeType !== 'ona' ? 'tv'
+    : undefined;
 
   return {
     key: imdbId || `simkl:${fallback}`,
     imdbId,
     tmdbId: toTmdbId(ids.tmdb),
+    tmdbType,
     title,
     year: toYear(media?.year),
     kind,
@@ -91,6 +120,8 @@ function rowFromSimkl(entry: any, kind: WatchedKind, status: string): WatchedRow
 
 async function collectSimklRows(config: any, tokenId: string): Promise<WatchedRow[]> {
   const { getSimklToken, fetchSimklWatchlistItems }: any = require('../simklUtils');
+  const { trackerConfig }: any = require('../../lib/accounts');
+  const reader = trackerConfig(config, 'simkl');
   const token = await getSimklToken(tokenId);
   const accessToken = token?.access_token;
   if (!accessToken) return [];
@@ -118,7 +149,7 @@ async function collectSimklRows(config: any, tokenId: string): Promise<WatchedRo
   const batches = await Promise.all(wanted.map(async ([type, kind, status]) => {
     try {
       // Every status comes from the one watch mirror, so this is one sync, not a call per list.
-      const { items } = await fetchSimklWatchlistItems(accessToken, type, status, undefined, config);
+      const { items } = await fetchSimklWatchlistItems(accessToken, type, status, undefined, reader);
       return (items || []).map((entry: any) => rowFromSimkl(entry, kind, status)).filter(Boolean) as WatchedRow[];
     } catch (error: any) {
       logger.debug(`Simkl ${type}/${status} unavailable: ${error.message}`);
@@ -168,6 +199,7 @@ async function collectMdblistRows(config: any, apiKey: string): Promise<WatchedR
       key: imdbId || `mdblist:${movie?.ids?.tmdb ?? title}`,
       imdbId,
       tmdbId: toTmdbId(movie?.ids?.tmdb),
+      tmdbType: 'movie',
       title,
       year: toYear(movie?.year),
       kind: 'movie',
@@ -192,6 +224,7 @@ async function collectMdblistRows(config: any, apiKey: string): Promise<WatchedR
         key,
         imdbId,
         tmdbId: toTmdbId(show?.ids?.tmdb),
+        tmdbType: 'tv',
         title,
         year: toYear(show?.year),
         kind: 'series',
@@ -244,6 +277,12 @@ export function trackerAvailability(config: any): { simkl: boolean; mdblist: boo
   return { simkl: !!keys.simkl, mdblist: !!keys.mdblist };
 }
 
+/** A profile that keeps its own history; one that shares the main user's is read as the main user. */
+export function hasOwnHistory(config: any, userUUID: string, profileId: string): boolean {
+  const { listProfiles }: any = require('../../lib/jellyfin/profiles');
+  return listProfiles(config, userUUID).some((profile: any) => profile.id === profileId && !profile.sharesHistory);
+}
+
 export function runAsProfile<T>(config: any, userUUID: string, profileId: string | null | undefined, fn: (viewerConfig: any) => T): T {
   const { runInViewerScope, noteProfile }: any = require('../../lib/jellyfin/viewer');
   const { listProfiles, profileKey, scopeConfigToProfile }: any = require('../../lib/jellyfin/profiles');
@@ -257,10 +296,14 @@ export function runAsProfile<T>(config: any, userUUID: string, profileId: string
   });
 }
 
-export function canReadHistory(config: any): boolean {
-  if (config?.apiKeys?.simklTokenId || config?.apiKeys?.mdblist) return true;
+export async function canReadHistory(config: any, userUUID: string): Promise<boolean> {
+  const hasTracker = (keys: any) => !!(keys?.simklTokenId || keys?.mdblist);
+  if (hasTracker(config?.apiKeys)) return true;
+  if ((Array.isArray(config?.jellyfinUsers) ? config.jellyfinUsers : []).some((user: any) => hasTracker(user?.accounts?.apiKeys))) return true;
   const { getSetting }: any = require('../../lib/settingsService');
-  return String(getSetting('JELLYFIN_API_ENABLED') || '').trim().toLowerCase() === 'true';
+  if (!userUUID || String(getSetting('JELLYFIN_API_ENABLED') || '').trim().toLowerCase() !== 'true') return false;
+  const database: any = require('../../lib/database');
+  return database.hasPlays(userUUID).catch(() => false);
 }
 
 type Sources = { simkl: boolean; mdblist: boolean; local: boolean; choice: HistorySource | 'all' };
@@ -313,7 +356,7 @@ export async function collectWatchedRows(config: any, userUUID?: string, options
 
   const { cacheWrapGlobal }: any = require('../../lib/getCache');
   return cacheWrapGlobal(
-    `recommendations:history:v2:${viewerKey(config, userUUID)}:${sources.choice}${fingerprint ? `:${fingerprint}` : ''}`,
+    `recommendations:history:v4:${viewerKey(config, userUUID)}:${sources.choice}${fingerprint ? `:${fingerprint}` : ''}`,
     () => readWatchedRows(config, userUUID, everything),
     fingerprint ? HISTORY_TTL : UNWATCHED_TTL,
     { sourceList: true }
@@ -328,28 +371,51 @@ async function readWatchedRows(config: any, userUUID?: string, everything = fals
     sources.simkl ? collectSimklRows(config, keys.simkl!).catch(() => [] as WatchedRow[]) : Promise.resolve([] as WatchedRow[]),
     sources.mdblist ? collectMdblistRows(config, keys.mdblist!).catch(() => [] as WatchedRow[]) : Promise.resolve([] as WatchedRow[]),
     sources.local && userUUID
-      ? collectLocalRows(config, userUUID, viewerOf(config, userUUID).profile, everything ? Infinity : undefined).catch(() => [] as WatchedRow[])
+      ? collectLocalRows(config, userUUID, viewerOf(config, userUUID).profile).catch(() => [] as WatchedRow[])
       : Promise.resolve([] as WatchedRow[]),
   ]);
 
+  // Keyed by imdb id where there is one, so a title without one is matched on an
+  // id both rows are sure of: TMDB numbers films and television separately, so a
+  // TMDB id counts only with its id space. Two different imdb ids never merge.
+  // Titles are left out: Simkl spells anime in romaji.
   const merged = new Map<string, WatchedRow>();
+  const holder = new Map<string, string>();
+  const identities = (row: WatchedRow) => [
+    row.imdbId ? `imdb:${row.imdbId}` : '',
+    row.tmdbId && row.tmdbType ? `${row.tmdbType}:${row.tmdbId}` : '',
+  ].filter(Boolean);
+  const agrees = (held: WatchedRow, row: WatchedRow) => !held.imdbId || !row.imdbId || held.imdbId === row.imdbId;
+  const tmdbOf = (first: WatchedRow, second: WatchedRow) => {
+    const tmdbId = first.tmdbId ?? second.tmdbId;
+    const tmdbType = (first.tmdbId === tmdbId ? first.tmdbType : undefined) ?? (second.tmdbId === tmdbId ? second.tmdbType : undefined);
+    return { tmdbId, tmdbType };
+  };
   for (const row of [...local, ...mdblist, ...simkl]) {
-    const existing = merged.get(row.key);
-    if (!existing) { merged.set(row.key, row); continue; }
-    if (!isWatched(row) && isWatched(existing)) {
-      merged.set(row.key, { ...existing, imdbId: existing.imdbId ?? row.imdbId, tmdbId: existing.tmdbId ?? row.tmdbId });
-      continue;
+    const at = [row.key, ...identities(row).map(key => holder.get(key))]
+      .find((key): key is string => !!key && merged.has(key) && agrees(merged.get(key)!, row)) ?? row.key;
+    const existing = merged.get(at);
+    let next: WatchedRow;
+    if (!existing) {
+      next = row;
+    } else if (!isWatched(row) && isWatched(existing)) {
+      next = { ...existing, imdbId: existing.imdbId ?? row.imdbId, ...tmdbOf(existing, row) };
+    } else {
+      const newest = isWatched(existing) && String(existing.watchedAt || '') > String(row.watchedAt || '') ? existing.watchedAt : row.watchedAt;
+      next = {
+        ...existing,
+        ...row,
+        key: at,
+        watchedAt: newest,
+        rating: row.rating ?? existing.rating,
+        imdbId: row.imdbId ?? existing.imdbId,
+        ...tmdbOf(row, existing),
+        watchedEpisodes: row.watchedEpisodes ?? existing.watchedEpisodes,
+        totalEpisodes: row.totalEpisodes ?? existing.totalEpisodes,
+      };
     }
-    const newest = isWatched(existing) && String(existing.watchedAt || '') > String(row.watchedAt || '') ? existing.watchedAt : row.watchedAt;
-    merged.set(row.key, {
-      ...existing,
-      ...row,
-      watchedAt: newest,
-      rating: row.rating ?? existing.rating,
-      tmdbId: row.tmdbId ?? existing.tmdbId,
-      watchedEpisodes: row.watchedEpisodes ?? existing.watchedEpisodes,
-      totalEpisodes: row.totalEpisodes ?? existing.totalEpisodes,
-    });
+    merged.set(at, next);
+    for (const key of identities(next)) if (!holder.has(key)) holder.set(key, at);
   }
 
   const rows = [...merged.values()];
@@ -357,9 +423,11 @@ async function readWatchedRows(config: any, userUUID?: string, everything = fals
   return rows;
 }
 
-export function titleKeys(entry: { kind: string; tmdbId?: number; imdbId?: string; title?: string; year?: number }): string[] {
+export function titleKeys(entry: { kind: string; tmdbId?: number; tmdbType?: 'movie' | 'tv'; imdbId?: string; title?: string; year?: number }): string[] {
   const keys: string[] = [];
-  if (entry.tmdbId) {
+  if (entry.tmdbId && entry.tmdbType) {
+    keys.push(`${entry.tmdbType}:${entry.tmdbId}`);
+  } else if (entry.tmdbId) {
     if (entry.kind !== 'series') keys.push(`movie:${entry.tmdbId}`);
     if (entry.kind !== 'movie') keys.push(`tv:${entry.tmdbId}`);
   }
@@ -368,11 +436,16 @@ export function titleKeys(entry: { kind: string; tmdbId?: number; imdbId?: strin
   return keys;
 }
 
+/** Rows are capped for the prompt; the keys cover every play, so the filter does not depend on a title being named. */
 export async function watchedIndex(config: any, userUUID: string): Promise<{ rows: WatchedRow[]; keys: Set<string> }> {
-  const rows = await collectWatchedRows(config, userUUID, { everything: true });
-  const keys = new Set<string>();
+  const { localWatchedKeys }: any = require('./localHistory');
+  const [rows, local] = await Promise.all([
+    collectWatchedRows(config, userUUID, { everything: true }),
+    localWatchedKeys(config, userUUID, viewerOf(config, userUUID).profile).catch(() => [] as string[]),
+  ]);
+  const keys = new Set<string>(local);
   for (const row of rows) for (const key of titleKeys(row)) keys.add(key);
   return { rows, keys };
 }
 
-module.exports = { collectWatchedRows, isWatched, resolveSources, viewerKey, viewerOf, trackerAvailability, runAsProfile, canReadHistory, titleKeys, watchedIndex };
+module.exports = { collectWatchedRows, isWatched, isAnimeRow, rowKind, resolveSources, viewerKey, viewerOf, trackerAvailability, hasOwnHistory, runAsProfile, canReadHistory, titleKeys, watchedIndex };

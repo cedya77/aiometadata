@@ -1,6 +1,6 @@
 import consola from 'consola';
 import type { TasteProfile } from './profile';
-import { collectWatchedRows, titleKeys, watchedIndex, type WatchedRow } from './history';
+import { collectWatchedRows, rowKind, titleKeys, watchedIndex, type WatchedRow } from './history';
 import { envInt } from '../envNumber';
 
 const logger = consola.withTag('Recommendations');
@@ -123,7 +123,7 @@ function describeProfile(profile: TasteProfile): string {
  *  own history, not fixed here, and the year is stated: it has no clock. */
 export function eraBrief(rows: WatchedRow[], kind: RecommendKind, want: number, live = true): string {
   const now = new Date().getFullYear();
-  const relevant = kind === 'all' ? rows : rows.filter(row => row.kind === kind);
+  const relevant = kind === 'all' ? rows : rows.filter(row => rowKind(row) === kind);
   const years = relevant.map(row => row.year).filter((year): year is number => !!year).sort((a, b) => a - b);
 
   if (years.length < 10) return `It is currently ${now}.`;
@@ -442,10 +442,12 @@ export async function recommend(
     const watched = await collectWatchedRows(config, userUUID);
     const known = await watchedIndex(config, userUUID);
     // Only the most recent slice: the exclusion list is a prompt cost, and the
-    // resolved results are filtered against the full set afterwards anyway.
-    const exclude = known.rows
-      .filter(row => kind === 'all' || row.kind === kind)
-      .sort((a, b) => String(b.watchedAt || '').localeCompare(String(a.watchedAt || '')))
+    // resolved results are filtered against the full set afterwards anyway. The
+    // row's own kind goes first, then the rest, so the list is never empty.
+    const recentFirst = (a: WatchedRow, b: WatchedRow) => String(b.watchedAt || '').localeCompare(String(a.watchedAt || ''));
+    const own = known.rows.filter(row => kind === 'all' || rowKind(row) === kind);
+    const others = kind === 'all' ? [] : known.rows.filter(row => rowKind(row) !== kind);
+    const exclude = [...own.sort(recentFirst), ...others.sort(recentFirst)]
       .slice(0, envInt('RECOMMENDATION_EXCLUDE_MAX', 400, 0))
       .map(row => (row.year ? `${row.title} (${row.year})` : row.title));
 
@@ -536,7 +538,14 @@ export async function recommend(
 
   // Rewriting this before it expires is the shared refresh-ahead's job, one
   // layer up: a page rebuild re-runs this build with the source cache bypassed.
-  return cacheWrapGlobal(key, build, ttl, { sourceList: true });
+  let built = false;
+  const picks = await cacheWrapGlobal(key, async () => {
+    const result = await build();
+    built = true;
+    return result;
+  }, ttl, { sourceList: true });
+  if (built) await require('./refresh').bumpRowStamp(require('./history').viewerKey(config, userUUID));
+  return picks;
 }
 
 module.exports = { recommend, parsePicks, eraBrief, picksKey };

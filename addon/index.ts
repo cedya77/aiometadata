@@ -3318,17 +3318,28 @@ addon.post("/api/recommendations/generate", async (req: any, res: any) => {
     }
 
     const { startJob }: any = require('./utils/recommendations/jobs');
-    const { runAsProfile }: any = require('./utils/recommendations/history');
-    const job = runAsProfile(config, userUUID, String(req.body?.profile || ''), (viewerConfig: any) => startJob(viewerConfig, userUUID, catalogId, req.body?.force === true));
+    const { hasOwnHistory, runAsProfile }: any = require('./utils/recommendations/history');
+    const profileId = String(req.body?.profile || '');
+    if (profileId && !hasOwnHistory(config, userUUID, profileId)) {
+      return res.status(404).json({ error: "This profile no longer has a history of its own" });
+    }
+    const job = runAsProfile(config, userUUID, profileId, (viewerConfig: any) => startJob(viewerConfig, userUUID, catalogId, req.body?.force === true));
     return res.json({ job });
   } catch (error: any) {
     return res.status(400).json({ error: error.message });
   }
 });
 
-addon.get("/api/recommendations/jobs", (req: any, res: any) => {
+addon.get("/api/recommendations/jobs", async (req: any, res: any) => {
   const userUUID = String(req.query.userUUID || '').trim();
   if (!userUUID) return res.status(400).json({ error: "userUUID is required" });
+  try {
+    if (!(await resolveConfigAccess(req, userUUID, req.get('x-config-password')))) {
+      return res.status(401).json({ error: "Invalid UUID or password" });
+    }
+  } catch {
+    return res.status(500).json({ error: "Could not read recommendation jobs" });
+  }
   const { listJobs, pruneJobs }: any = require('./utils/recommendations/jobs');
   pruneJobs();
   const profile = String(req.query.profile || '').trim();
@@ -4862,7 +4873,7 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
         if (unknownTags.length > 0) {
             consola.warn(`[Manifest] User ${userUUID} asked for ${unknownTags.join(', ')}, which no catalog is tagged with`);
         }
-        const manifest = await getManifest(config, { tags });
+        const manifest = await getManifest(config, { tags, userUUID });
             if (!manifest) {
                 res.setHeader('Access-Control-Allow-Origin', '*');
                 res.setHeader('Access-Control-Allow-Headers', '*');
@@ -7055,7 +7066,7 @@ addon.get("/api/debug/catalogs/:userUUID", requireDashboardAdmin, async function
         enabled: c.enabled,
         showInHome: c.showInHome
       })),
-      manifest: await getManifest(config)
+      manifest: await getManifest(config, { userUUID })
     });
   } catch (error) {
     consola.error(`[Debug] Error for user ${userUUID}:`, error);

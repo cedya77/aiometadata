@@ -64,7 +64,7 @@ export async function getCatalogs(userUUID: string, config: any): Promise<Catalo
   if (cached) return cached;
 
   try {
-    const manifest = await getManifest(config, { tags });
+    const manifest = await getManifest(config, { tags, userUUID });
     // Builder collections are served here as box sets already, not as their AIOStreams catalogs.
     const catalogs: CatalogRef[] = (Array.isArray(manifest?.catalogs) ? manifest.catalogs : [])
       .filter((c: CatalogRef) => !isCollectionCatalogId(c.id));

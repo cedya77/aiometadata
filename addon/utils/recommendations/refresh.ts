@@ -40,11 +40,10 @@ export async function bumpRowStamp(viewer: string): Promise<void> {
   }
 }
 
-function usable(config: any): boolean {
-  const hasHistory = require('./history').canReadHistory(config);
+async function usable(config: any, userUUID: string): Promise<boolean> {
   const hasModel = !!(config?.apiKeys?.gemini || config?.apiKeys?.openrouter
     || process.env.GEMINI_API_KEY || process.env.BUILT_IN_GEMINI_API_KEY || process.env.OPENROUTER_API_KEY);
-  return hasHistory && hasModel;
+  return hasModel && require('./history').canReadHistory(config, userUUID);
 }
 
 export async function sweepRecommendations(): Promise<{ checked: number; refreshed: number }> {
@@ -58,7 +57,7 @@ export async function sweepRecommendations(): Promise<{ checked: number; refresh
     const { RECOMMENDATION_CATALOGS, isRecommendationCatalog }: any = require('./catalog');
     const { picksKey, recommend }: any = require('./rank');
     const { getTasteProfile }: any = require('./profile');
-    const { runAsProfile }: any = require('./history');
+    const { hasOwnHistory, runAsProfile }: any = require('./history');
     const leadMs = envInt('RECOMMENDATION_REFRESH_LEAD', 3600, 60) * 1000;
 
     const seen: string[] = [];
@@ -79,11 +78,16 @@ export async function sweepRecommendations(): Promise<{ checked: number; refresh
         continue;
       }
       if (!config) continue;
+      // Deleted, or now reading the main user's history: refreshing it would refresh the main user's rows.
+      if (profileId && !hasOwnHistory(config, userId, profileId)) {
+        await redis.del(seenKey(viewer)).catch(() => undefined);
+        continue;
+      }
       const user = { id: userId };
       const wanted = (config?.catalogs || [])
         .filter((catalog: any) => catalog?.enabled && isRecommendationCatalog(catalog.id))
         .map((catalog: any) => catalog.id);
-      if (!wanted.length || !usable(config)) continue;
+      if (!wanted.length || !(await usable(config, user.id))) continue;
 
       await runAsProfile(config, user.id, profileId || null, async (viewerConfig: any) => {
         let profile: any = null;

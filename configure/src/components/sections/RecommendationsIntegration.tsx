@@ -185,14 +185,19 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
   }, [isOpen, hasModel, configId, anyRunning, draftKey, viewerKey, auth.password]);
 
   // Polled only while something is running, and stopped as soon as nothing is.
+  const polled = JSON.stringify([...new Set(Object.entries(jobs)
+    .filter(([, job]) => job.stage !== 'done' && job.stage !== 'error')
+    .map(([key]) => key.split('|')[0]))].sort());
   useEffect(() => {
-    if (!isOpen || !configId || !anyRunning) return;
+    const keys: string[] = JSON.parse(polled);
+    if (!isOpen || !configId || !keys.length) return;
     let cancelled = false;
-    const keys = [...new Set(Object.keys(jobs).map(key => key.split('|')[0]))];
     const tick = () => {
       for (const key of keys) {
         fetch(`/api/recommendations/jobs?userUUID=${encodeURIComponent(configId)}`
-          + (key ? `&profile=${encodeURIComponent(key)}` : ''))
+          + (key ? `&profile=${encodeURIComponent(key)}` : ''), {
+          headers: auth.password ? { 'x-config-password': auth.password } : undefined,
+        })
           .then(response => (response.ok ? response.json() : null))
           .then(payload => {
             if (cancelled || !payload?.jobs) return;
@@ -214,8 +219,7 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
     const timer = setInterval(tick, 1500);
     tick();
     return () => { cancelled = true; clearInterval(timer); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, configId, anyRunning]);
+  }, [isOpen, configId, polled, auth.password]);
 
   // A build carries the settings it was started with, so changing them retires
   // its result without throwing away a run that is still going.
@@ -251,6 +255,10 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
   const generate = (id: string, force: boolean) => {
     if (!configId) return;
     const key = `${viewerKey}|${id}`;
+    const fail = (error: string) => setJobs(existing => ({
+      ...existing,
+      [key]: { catalogId: id, stage: 'error', picks: 0, error, stamp: draftKey },
+    }));
     setJobs(existing => ({ ...existing, [key]: { catalogId: id, stage: 'queued', picks: 0, stamp: draftKey } }));
     fetch('/api/recommendations/generate', {
       method: 'POST',
@@ -263,12 +271,12 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
         force,
         ...(viewerKey ? { profile: viewerKey } : {}),
       }),
-    }).catch(() => {
-      setJobs(existing => ({
-        ...existing,
-        [key]: { catalogId: id, stage: 'error', picks: 0, error: 'Could not start', stamp: draftKey },
-      }));
-    });
+    }).then(async response => {
+      if (response.ok) return;
+      if (response.status === 401) return fail('Enter this configuration\'s password, or sign in, to build rows');
+      const payload = await response.json().catch(() => null);
+      fail(payload?.error || 'Could not start');
+    }).catch(() => fail('Could not start'));
   };
 
   const readyToAdd = OFFERED.filter(({ id }) => (current[id]?.stage === 'done' || mainJobs[id]?.stage === 'done') && !added.has(id));

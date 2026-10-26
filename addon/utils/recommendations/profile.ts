@@ -138,7 +138,8 @@ export function profileCacheKey(config: any, userUUID: string): string {
   // Bumped when the prompt changes shape, so an improvement is not hidden behind
   // a week of cached profiles written by the previous one.
   const tuning = tuningFrom(config);
-  return `recommendations:profile:v2:${viewerKey(config, userUUID)}:${sources}:`
+  const viewer = viewerKey(config, userUUID);
+  return `recommendations:profile:${viewer.includes('#') ? 'v3' : 'v2'}:${viewer}:${sources}:`
     + `${chosen?.provider || 'none'}:${chosen?.model || 'none'}:${reasoningEffort(config)}:`
     + `${tuning.stalledWeight}:${tuning.staleDays}`;
 }

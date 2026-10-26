@@ -911,7 +911,7 @@ async function lumiereGenreOptions(): Promise<Record<'movie' | 'series', string[
   }
 }
 
-async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise<any> {
+async function getManifest(config: any, opts: { tags?: string[]; userUUID?: string } = {}): Promise<any> {
   const startTime = Date.now();
   logger.start('Starting manifest generation...');
 
@@ -1113,6 +1113,9 @@ async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise
     }
   }
 
+  const readsHistory = userCatalogs.some((c: any) => c.id?.startsWith('recommendations.'))
+    && await require('../utils/recommendations/history').canReadHistory(config, opts.userUUID ?? config.userUUID ?? '');
+
   const pass1UserCatalogs = [...enabledCatalogs, ...absorbedSourceCatalogs].filter((userCatalog: any) => {
       if (userCatalog.id.startsWith('merged.')) {
         return false; // handled in pass 2 (needs source manifest entries to be built first)
@@ -1129,7 +1132,7 @@ async function getManifest(config: any, opts: { tags?: string[] } = {}): Promise
       }
       if (userCatalog.id.startsWith('recommendations.')) {
         // Needs a history to read and a model to read it with.
-        const hasHistory = require('../utils/recommendations/history').canReadHistory(config);
+        const hasHistory = readsHistory;
         const hasModel = !!(config.apiKeys?.gemini || config.apiKeys?.openrouter
           || process.env.GEMINI_API_KEY || process.env.BUILT_IN_GEMINI_API_KEY || process.env.OPENROUTER_API_KEY);
         return hasHistory && hasModel;

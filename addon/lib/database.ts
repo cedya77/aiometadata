@@ -2370,6 +2370,13 @@ class Database {
     return (await this.allQuery(query, [userUUID, profile])) || [];
   }
 
+  async hasPlays(userUUID: string): Promise<boolean> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT 1 AS found FROM jellyfin_playstate WHERE user_uuid = ? AND played = 1 LIMIT 1'
+      : 'SELECT 1 AS found FROM jellyfin_playstate WHERE user_uuid = $1 AND played = 1 LIMIT 1';
+    return !!(await this.getQuery(query, [userUUID]));
+  }
+
   async playstateVersion(userUUID: string, profile: string): Promise<string> {
     const query = this.type === 'sqlite'
       ? 'SELECT COUNT(*) AS n, MAX(COALESCE(last_played_at, updated_at)) AS at FROM jellyfin_playstate WHERE user_uuid = ? AND profile = ? AND played = 1'

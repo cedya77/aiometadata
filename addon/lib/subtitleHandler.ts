@@ -720,6 +720,7 @@ async function eachHistoryService(
   at?: number
 ): Promise<void> {
   const watchedAt = at && method === 'addToHistory' ? new Date(at).toISOString() : undefined;
+  let unresolved: TrackedService | null = null;
   for (const service of ['simkl', 'mdblist'] as const) {
     if (only && only !== service) continue;
     if (!shouldTrackServiceMediaType(config, service, mediaType)) {
@@ -748,6 +749,7 @@ async function eachHistoryService(
       if (parsedId.type === 'movie') {
         const ids = normalizeIdsForMovie(parsedId);
         if (ids) await utils[method](await withTmdbId(ids, 'movie'), credential, undefined, undefined, undefined, watchedAt);
+        else unresolved = service;
       } else {
         const resolution = await resolveSeriesIds(parsedId, config, service === 'simkl');
         if (resolution) {
@@ -756,12 +758,18 @@ async function eachHistoryService(
           await utils[method](ids, credential, resolution.season, resolution.episode, byId, watchedAt);
         } else {
           logger.debug(`[${service}] ${what} skipped: no ids for ${parsedId.provider}:${parsedId.id}`);
+          unresolved = service;
         }
       }
     } catch (error: any) {
       logger.error(`[${service}] ${what} failed: ${error.message}`);
     }
   }
+  if (only && unresolved && method !== 'clearPlayback') throw noIdsFor(unresolved, parsedId);
+}
+
+function noIdsFor(service: TrackedService, parsedId: ParsedMediaId): Error {
+  return Object.assign(new Error(`no ${service} ids for ${parsedId.provider}:${parsedId.id}`), { status: 422 });
 }
 
 // Each video resolves on its own (an anime episode pivots per episode); one history call per show ids.
@@ -775,6 +783,7 @@ async function markEpisodes(
   const parsed = videoIds.map(parseMediaId).filter((p): p is ParsedMediaId => !!p && p.type === 'series');
   if (!parsed.length) return;
 
+  let unresolved: TrackedService | null = null;
   for (const service of ['simkl', 'mdblist'] as const) {
     if (only && only !== service) continue;
     if (!shouldTrackServiceMediaType(config, service, 'series')) continue;
@@ -803,6 +812,7 @@ async function markEpisodes(
         group.episodes.push({ season: resolution.season, episode: resolution.episode, ...(resolution.episodeIds ? { ids: resolution.episodeIds } : {}) });
         groups.set(key, group);
       }
+      if (!groups.size) unresolved = service;
       for (const group of groups.values()) {
         await utils[method](group.ids, credential, undefined, undefined, group.episodes);
       }
@@ -810,6 +820,7 @@ async function markEpisodes(
       logger.error(`[${service}] Marking ${parsed.length} episode(s) failed: ${error.message}`);
     }
   }
+  if (only && unresolved) throw noIdsFor(unresolved, parsed[0]);
 
   if (only && only !== 'publicmetadb') return;
   if (!shouldTrackServiceMediaType(config, 'publicmetadb', 'series')) return;
