@@ -420,6 +420,43 @@ export async function deliverCatchUp(service: WatchTrackingService, p: { type: s
   if (parsedId) await require('./subtitleHandler').creditHistory(parsedId, config, service, p.at);
 }
 
+export async function deliverCatchUps(service: WatchTrackingService, p: { items?: any[] }, config: any, userUUID: string): Promise<void> {
+  const items = Array.isArray(p.items) ? p.items : [];
+  const credential = service === 'mdblist' ? config.apiKeys?.mdblist : service === 'simkl' ? config.apiKeys?.simklTokenId : null;
+  if (!items.length || !credential) return;
+  const { writeMdblist, writeSimkl } = require('./jellyfin/trackerCopy');
+  const { noteTrackerCall } = require('../utils/trackerCalls');
+  const outcome = service === 'mdblist' ? await writeMdblist(items, credential, config) : await writeSimkl(items, credential, config);
+  const name = service === 'mdblist' ? 'MDBList' : 'Simkl';
+  const url = service === 'mdblist' ? 'https://api.mdblist.com/sync/watched' : 'https://api.simkl.com/sync/history';
+  if (outcome.wait) {
+    noteTrackerCall(url, 429, outcome.error ?? 'waiting for the allowance', null, Date.now() + outcome.wait);
+    return;
+  }
+  if (!outcome.sent && outcome.failed) {
+    noteTrackerCall(url, 404, `none of ${items.length} found on ${name}`);
+    return;
+  }
+  const lost = new Set<number>(outcome.lost ?? []);
+  if (!lost.size) return;
+  const missed = items.filter((_, i) => lost.has(i));
+  p.items = items.filter((_, i) => !lost.has(i));
+  const { sourceKeyFor } = require('./jellyfin/trackerMirror');
+  const { noteActivity } = require('./trackerActivity');
+  const { accountOwner, credentialOf } = require('./accounts');
+  const videos = missed.map((entry: any) => entry?.ids?.[0]).filter(Boolean);
+  await noteActivity({
+    sourceKey: sourceKeyFor(service, credentialOf(config, service)),
+    service,
+    kind: 'failed',
+    userUUID,
+    profile: accountOwner(config),
+    op: 'catchUps',
+    video: videos[0] ?? null,
+    detail: { verb: videos.length === 1 ? 'Sent a missed watch' : `Sent ${videos.length} missed watches`, count: videos.length, videos, status: 404, reason: `not found on ${name}` },
+  });
+}
+
 export async function deliverClearResume(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {
   const { parseMediaId, clearResumePoint } = require('./subtitleHandler');
   const parsedId = parseMediaId(p.id);

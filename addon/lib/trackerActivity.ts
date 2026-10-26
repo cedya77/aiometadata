@@ -20,6 +20,7 @@ export interface JobSummary {
   verb: string;
   video: string | null;
   count: number;
+  videos?: string[];
 }
 
 const videoOf = (value: any): string | null => (typeof value === 'string' ? value : value?.videoId ? String(value.videoId) : null);
@@ -40,6 +41,10 @@ export function summariseJob(op: string, payload: any, item: string | null = nul
     case 'unwatch': return one('Marked unwatched');
     case 'redate': return one('Moved the watch date');
     case 'catchUp': return one('Sent a missed watch');
+    case 'catchUps': {
+      const videos = (Array.isArray(p.items) ? p.items : []).map((entry: any) => entry?.ids?.[0]).filter(Boolean) as string[];
+      return { verb: videos.length === 1 ? 'Sent a missed watch' : `Sent ${videos.length} missed watches`, video: videos[0] ?? item, count: videos.length, videos };
+    }
     case 'clearResume': return one('Cleared the resume point');
     case 'anime': return one('Moved anime progress');
     case 'episodes': {

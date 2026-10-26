@@ -1415,7 +1415,7 @@ async function historySync(
   }
 }
 
-async function addHistoryBatch(writes: HistoryWrite[], apiKey: string): Promise<{ notFound: number }> {
+async function addHistoryBatch(writes: HistoryWrite[], apiKey: string): Promise<{ notFound: number; missed: any }> {
   const response: any = await makeRateLimitedRequest(
     () => httpPost(`https://api.mdblist.com/sync/watched?apikey=${apiKey}`, historyBatchPayload(writes), {
       headers: { 'Content-Type': 'application/json' },
@@ -1426,7 +1426,7 @@ async function addHistoryBatch(writes: HistoryWrite[], apiKey: string): Promise<
     `MDBList /sync/watched batch of ${writes.length}`
   );
   const missed = response?.data?.not_found;
-  return { notFound: ['movies', 'shows', 'seasons', 'episodes'].reduce((n, key) => n + (Array.isArray(missed?.[key]) ? missed[key].length : 0), 0) };
+  return { notFound: ['movies', 'shows', 'seasons', 'episodes'].reduce((n, key) => n + (Array.isArray(missed?.[key]) ? missed[key].length : 0), 0), missed: missed ?? {} };
 }
 
 async function addToHistory(

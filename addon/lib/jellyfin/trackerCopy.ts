@@ -341,7 +341,17 @@ export async function controlCopy(userUUID: string, id: number, action: 'pause' 
   return true;
 }
 
-type Outcome = { done: number; sent: number; failed: number; skipped?: number; wait?: number; error?: string };
+type Outcome = { done: number; sent: number; failed: number; skipped?: number; wait?: number; error?: string; lost?: number[] };
+
+const sharesId = (a: Record<string, any> = {}, b: Record<string, any> = {}): boolean =>
+  Object.entries(a).some(([key, value]) => value != null && b[key] != null && String(b[key]) === String(value));
+
+function mdblistMissed(write: any, missed: any): boolean {
+  const list = (key: string): any[] => (Array.isArray(missed?.[key]) ? missed[key] : []);
+  if (write.season == null || write.episode == null) return list('movies').some((entry) => sharesId(entry?.ids, write.ids));
+  if (list('shows').some((entry) => sharesId(entry?.ids, write.ids))) return true;
+  return list('episodes').some((entry) => Number(entry?.season) === Number(write.season) && Number(entry?.number) === Number(write.episode) && sharesId(entry?.show?.ids, write.ids));
+}
 
 type Target = { ids: Record<string, any>; season?: number; episode?: number; episodeIds?: Record<string, number>; fallback?: { ids: Record<string, any>; season: number; episode: number } | null };
 
@@ -381,49 +391,67 @@ function statusOf(calls: Array<{ status: number }>, error: any): number {
   return error ? -1 : 0;
 }
 
-async function writeMdblist(items: CopyItem[], apiKey: string, config: any): Promise<Outcome> {
+export async function writeMdblist(items: CopyItem[], apiKey: string, config: any): Promise<Outcome> {
   const { mdblistCallsLeft, addHistoryBatch } = require('../../utils/mdbList');
   const { remaining, limit, resetAt } = mdblistCallsLeft(apiKey);
   if (remaining !== null && remaining <= Math.max(50, (limit ?? 0) / 5)) return { done: 0, sent: 0, failed: 0, wait: resetAt - Date.now(), error: 'Waiting for the MDBList quota to reset' };
   const writes: any[] = [];
-  let unresolved = 0;
-  for (const item of items) {
+  const from: number[] = [];
+  const lost: number[] = [];
+  for (const [i, item] of items.entries()) {
     const target = await copyTarget('mdblist', item, config);
-    if (!target) unresolved += 1;
-    else writes.push({ ...target, watchedAt: iso(item.at) });
+    if (!target) lost.push(i);
+    else {
+      writes.push({ ...target, watchedAt: iso(item.at) });
+      from.push(i);
+    }
   }
-  if (!writes.length) return { done: items.length, sent: 0, failed: unresolved };
+  if (!writes.length) return { done: items.length, sent: 0, failed: lost.length, lost };
+  const unresolved = lost.length;
   try {
-    const { notFound } = await addHistoryBatch(writes, apiKey);
-    return { done: items.length, sent: writes.length - notFound, failed: unresolved + notFound };
+    const { notFound, missed } = await addHistoryBatch(writes, apiKey);
+    for (const [w, write] of writes.entries()) if (mdblistMissed(write, missed)) lost.push(from[w]);
+    return { done: items.length, sent: writes.length - notFound, failed: unresolved + notFound, lost };
   } catch (error: any) {
     if (error?.code === 'MDBLIST_QUOTA_EXHAUSTED' || error?.response?.status === 429) return { done: 0, sent: 0, failed: 0, wait: mdblistCallsLeft(apiKey).resetAt - Date.now(), error: 'MDBList quota spent' };
     throw error;
   }
 }
 
-async function writeSimkl(items: CopyItem[], tokenId: string, config: any): Promise<Outcome> {
+export async function writeSimkl(items: CopyItem[], tokenId: string, config: any): Promise<Outcome> {
   const { getSimklToken, getSimklQuota, addHistoryBatch } = require('../../utils/simklUtils');
   const accessToken = (await getSimklToken(tokenId))?.access_token;
   if (!accessToken) throw new Error('No Simkl token');
   const quota = await getSimklQuota(accessToken).catch(() => null);
   if (quota && quota.remaining <= Math.max(25, quota.limit / 5)) return { done: 0, sent: 0, failed: 0, wait: quota.resetsAt - Date.now(), error: 'Waiting for the Simkl allowance to reset' };
   const writes: any[] = [];
-  let failed = 0;
-  for (const item of items) {
+  const from: number[] = [];
+  const lost: number[] = [];
+  for (const [i, item] of items.entries()) {
     const target = await copyTarget('simkl', item, config);
-    if (!target) failed += 1;
-    else writes.push({ ...target, watchedAt: iso(item.at) });
+    if (!target) lost.push(i);
+    else {
+      writes.push({ ...target, watchedAt: iso(item.at) });
+      from.push(i);
+    }
   }
+  const failed = lost.length;
   if (writes.length) {
     try {
       const first = await addHistoryBatch(writes.map(({ fallback, ...write }) => write), accessToken);
       const missed = new Set(first.missed.map((ids) => JSON.stringify(ids)));
+      const firstMissed = (write: any) => missed.has(JSON.stringify(write.ids)) || first.missed.some((ids) => sharesId(ids, write.ids));
       const retry = writes.filter((write) => write.fallback && missed.has(JSON.stringify(write.ids)));
-      if (!retry.length) return { done: items.length, sent: writes.length - first.notFound, failed: failed + first.notFound };
+      if (!retry.length) {
+        for (const [w, write] of writes.entries()) if (firstMissed(write)) lost.push(from[w]);
+        return { done: items.length, sent: writes.length - first.notFound, failed: failed + first.notFound, lost };
+      }
       const second = await addHistoryBatch(retry.map((write) => ({ ...write.fallback, watchedAt: write.watchedAt })), accessToken);
       const recovered = retry.length - second.notFound;
-      return { done: items.length, sent: writes.length - first.notFound + recovered, failed: failed + first.notFound - recovered };
+      for (const [w, write] of writes.entries()) {
+        if (firstMissed(write) && (!write.fallback || second.missed.some((ids) => sharesId(ids, write.fallback.ids)))) lost.push(from[w]);
+      }
+      return { done: items.length, sent: writes.length - first.notFound + recovered, failed: failed + first.notFound - recovered, lost };
     } catch (error: any) {
       const code = error?.response?.data?.error;
       if (error?.code === 'SIMKL_QUOTA_EXHAUSTED' || code === 'user_limit_exceeded' || code === 'app_limit_exceeded') {
@@ -434,7 +462,7 @@ async function writeSimkl(items: CopyItem[], tokenId: string, config: any): Prom
       throw error;
     }
   }
-  return { done: items.length, sent: 0, failed };
+  return { done: items.length, sent: 0, failed, lost };
 }
 
 async function writeOneByOne(service: string, items: CopyItem[], credential: string, config: any, userUUID: string): Promise<Outcome> {

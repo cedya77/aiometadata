@@ -586,7 +586,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     key: 'JELLYFIN_COPY_BATCH_SIZE',
     envVar: 'JELLYFIN_COPY_BATCH_SIZE',
     label: 'Jellyfin Tracker Copy Batch Size',
-    description: 'How many watches a copy sends to MDBList or Simkl in one request.',
+    description: 'How many watches a copy, or a send of missing watches, puts in one request to MDBList or Simkl.',
     category: 'Features',
     type: 'number',
     default: 100,

@@ -17,7 +17,7 @@ import type { WatchTrackingService } from './watchTracking';
 const logger = consola.withTag('TrackerOutbox');
 const database: any = require('./database');
 
-export type OutboxOp = 'scrobble' | 'credit' | 'unwatch' | 'redate' | 'catchUp' | 'clearResume' | 'anime' | 'episodes' | 'dropped' | 'watchlist' | 'rate';
+export type OutboxOp = 'scrobble' | 'credit' | 'unwatch' | 'redate' | 'catchUp' | 'catchUps' | 'clearResume' | 'anime' | 'episodes' | 'dropped' | 'watchlist' | 'rate';
 
 export interface OutboxJob {
   service: WatchTrackingService;
@@ -39,6 +39,7 @@ const executors: Record<OutboxOp, Executor> = {
   unwatch: (service, p, config) => require('./playbackHandler').deliverUnwatch(service, p, config),
   redate: (service, p, config) => require('./playbackHandler').deliverWatchDate(service, p, config),
   catchUp: (service, p, config, userUUID) => require('./playbackHandler').deliverCatchUp(service, p, config, userUUID),
+  catchUps: (service, p, config, userUUID) => require('./playbackHandler').deliverCatchUps(service, p, config, userUUID),
   clearResume: (service, p, config) => require('./playbackHandler').deliverClearResume(service, p, config),
   anime: (service, p, config, userUUID) => require('./playbackHandler').deliverAnime(service, p, config, userUUID),
   episodes: (service, p, config) => require('./subtitleHandler').markEpisodes(p.videos, config, p.method, p.scope, service),
@@ -48,7 +49,7 @@ const executors: Record<OutboxOp, Executor> = {
 };
 
 // Writes that change what the trackers report as watched, rather than only where playback stands.
-const CHANGES_WATCHED = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'redate', 'catchUp', 'episodes', 'dropped', 'anime']);
+const CHANGES_WATCHED = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'redate', 'catchUp', 'catchUps', 'episodes', 'dropped', 'anime']);
 const CHANGES_RESUME = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'clearResume', 'episodes']);
 const CHANGES_UPCOMING = new Set<OutboxOp>(['watchlist']);
 
@@ -110,6 +111,7 @@ export async function pendingWatches(service: WatchTrackingService, credential: 
     else if (row.op === 'unwatch') note(p.id, false, row.created_at);
     else if (row.op === 'scrobble' && p.report?.event === 'stop' && p.report?.played === true) note(p.id, true, row.created_at);
     else if (row.op === 'episodes') for (const video of p.videos ?? []) note(video, p.method === 'addToHistory', row.created_at);
+    else if (row.op === 'catchUps') for (const item of p.items ?? []) for (const video of item?.ids ?? []) note(video, true, row.created_at);
     else if (row.op === 'anime') note(p.id, true, row.created_at);
   }
   return [...out.values()];
@@ -386,7 +388,7 @@ function noteDelivery(row: any, config: any, payload: any, kind: 'sent' | 'retry
     profile: row.profile ?? '',
     op: row.op,
     video: job.video,
-    detail: { verb: job.verb, count: job.count, ...detail },
+    detail: { verb: job.verb, count: job.count, ...(job.videos ? { videos: job.videos } : {}), ...detail },
   });
 }
 

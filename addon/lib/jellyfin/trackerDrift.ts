@@ -9,7 +9,8 @@ const database: any = require('../database');
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ANIME_LISTS = new Set<string>(['anilist', 'mal']);
 const OWN_ORIGINS = new Set(['server', 'play']);
-const WATCH_OPS = new Set(['scrobble', 'credit', 'catchUp', 'anime', 'episodes']);
+const WATCH_OPS = new Set(['scrobble', 'credit', 'catchUp', 'catchUps', 'anime', 'episodes']);
+const BATCHED = new Set<string>(['simkl', 'mdblist']);
 
 export interface DriftSource {
   service: Capable;
@@ -119,10 +120,18 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   for (const row of (await database.listTrackerActivity([sourceKey], settled, 2000).catch(() => [])) as any[]) {
     if (row.kind !== 'sent' || !row.video || !WATCH_OPS.has(String(row.op))) continue;
     if (row.op === 'scrobble' && !String(row.detail ?? '').includes('"verb":"Watched"')) continue;
-    const parsed = parseStremioId(String(row.video));
-    const reach = ANIME_LISTS.has(source.service) && parsed?.episode != null ? parsed.episode : Infinity;
-    const key = ANIME_LISTS.has(source.service) && parsed?.episode != null ? parsed.base : String(row.video);
-    sent.set(key, Math.max(sent.get(key) ?? 0, reach));
+    let listed: string[] = [];
+    if (row.op === 'catchUps') {
+      try {
+        listed = JSON.parse(row.detail ?? '{}').videos ?? [];
+      } catch {}
+    }
+    for (const video of [String(row.video), ...listed]) {
+      const parsed = parseStremioId(video);
+      const reach = ANIME_LISTS.has(source.service) && parsed?.episode != null ? parsed.episode : Infinity;
+      const key = ANIME_LISTS.has(source.service) && parsed?.episode != null ? parsed.base : video;
+      sent.set(key, Math.max(sent.get(key) ?? 0, reach));
+    }
   }
   if (ANIME_LISTS.has(source.service)) {
     for (const id of waiting) {
@@ -214,6 +223,24 @@ export async function pushDrift(userUUID: string, config: any, source: DriftSour
   for (const [profile, list] of byProfile) {
     const scoped = scopeConfigToProfile(config, userUUID, profile || null);
     if (!credentialFor(scoped, source.service)) continue;
+    if (BATCHED.has(source.service)) {
+      const size = envInt('JELLYFIN_COPY_BATCH_SIZE', 100, 1);
+      const ordered = [...list].sort((a, b) => a.at - b.at);
+      const jobs = [];
+      for (let i = 0; i < ordered.length; i += size) {
+        const chunk = ordered.slice(i, i + size);
+        jobs.push({
+          service: source.service,
+          op: 'catchUps' as const,
+          item: 'catch-up',
+          coalesce: `catchUps:${spellingFor(source.service, chunk[0].ids)}:${chunk[0].at}:${chunk.length}`,
+          payload: { items: chunk.map((v) => ({ ids: spellingsFor(source.service, v.ids), kind: v.kind, metaId: v.metaId, season: v.season, episode: v.episode, at: v.at })) },
+        });
+      }
+      await enqueueTrackerWrites(userUUID, scoped, jobs);
+      queued += list.length;
+      continue;
+    }
     await enqueueTrackerWrites(userUUID, scoped, list.map((v) => {
       const id = spellingFor(source.service, v.ids);
       return {

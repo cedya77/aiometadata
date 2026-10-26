@@ -646,12 +646,15 @@ export async function dashboardDrift(userUUID: string, profile: string | null): 
       const drift = await driftOf(userUUID, key, source);
       const outcomes = new Map<string, string | null>();
       for (const row of (await database.listTrackerActivity([key], Date.now() - driftWindowDays() * DAY_MS, 2000).catch(() => [])) as any[]) {
-        if (!row.video || outcomes.has(String(row.video)) || (row.kind !== 'sent' && row.kind !== 'failed')) continue;
+        if (!row.video || (row.kind !== 'sent' && row.kind !== 'failed')) continue;
         let detail: any = {};
         try {
           detail = JSON.parse(row.detail ?? '{}');
         } catch {}
-        outcomes.set(String(row.video), row.kind === 'failed' && (detail.status === 404 || detail.status === 422) ? String(detail.reason ?? 'not found') : null);
+        const outcome = row.kind === 'failed' && (detail.status === 404 || detail.status === 422) ? String(detail.reason ?? 'not found') : null;
+        for (const video of [String(row.video), ...(Array.isArray(detail.videos) ? detail.videos.map(String) : [])]) {
+          if (!outcomes.has(video)) outcomes.set(video, outcome);
+        }
       }
       const items = async (viewings: any[]) => {
         const groups = new Map<string, any[]>();
@@ -766,16 +769,20 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
   }
 
   const wanted = new Set(shows);
+  const baseOf = (video: string): string => parseStremioId(video)?.base ?? video;
   const attempts = ((await database.listTrackerActivity([key], Date.now() - driftWindowDays() * DAY_MS, 2000).catch(() => [])) as any[])
-    .filter((row) => row.video && (row.kind === 'sent' || row.kind === 'failed' || row.kind === 'dropped') && wanted.has(parseStremioId(String(row.video))?.base ?? String(row.video)))
-    .slice(0, 6)
+    .filter((row) => row.video && (row.kind === 'sent' || row.kind === 'failed' || row.kind === 'dropped'))
     .map((row) => {
       let detail: any = {};
       try {
         detail = JSON.parse(row.detail ?? '{}');
       } catch {}
-      return { at: Number(row.at), kind: row.kind, video: String(row.video), verb: detail.verb ?? null, reason: detail.reason ?? null };
-    });
+      const videos = [String(row.video), ...(Array.isArray(detail.videos) ? detail.videos.map(String) : [])];
+      const video = videos.find((entry) => wanted.has(baseOf(entry)));
+      return video ? { at: Number(row.at), kind: row.kind, video, verb: detail.verb ?? null, reason: detail.reason ?? null } : null;
+    })
+    .filter(Boolean)
+    .slice(0, 6);
 
   return {
     service: source.service,
