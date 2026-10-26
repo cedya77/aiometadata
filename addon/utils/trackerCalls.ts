@@ -10,6 +10,7 @@ export interface TrackerCall {
   status: number;
   body?: string;
   retryAt?: number;
+  rewatch?: boolean;
 }
 
 const TRACKER_HOSTS = new Set([
@@ -49,6 +50,7 @@ export function noteTrackerCall(url: string, status: number, body?: string, retr
     host,
     status,
     ...(status >= 400 && body ? { body: String(body).slice(0, 300) } : {}),
+    ...(status >= 200 && status < 300 && /[?&]allow_rewatch=yes\b/.test(url) ? { rewatch: true } : {}),
     ...(retryAt ? { retryAt } : Number.isFinite(seconds) && seconds > 0 ? { retryAt: Date.now() + seconds * 1000 } : {}),
   });
 }

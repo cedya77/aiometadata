@@ -333,7 +333,7 @@ async function deliver(row: any): Promise<void> {
 
   if (outcome.kind === 'done') {
     await database.deleteTrackerOutbox(row.id);
-    if (calls.length) noteDelivery(row, config, payload, 'sent', { status: calls[calls.length - 1]?.status ?? null, attempts: row.attempts + 1 });
+    if (calls.length) noteDelivery(row, config, payload, 'sent', { status: calls[calls.length - 1]?.status ?? null, attempts: row.attempts + 1, ...(calls.some((call) => call.rewatch) ? { rewatch: true } : {}) });
     if (row.attempts > 0) logger.info(`Sent ${label} after ${row.attempts + 1} attempts`);
     settle(row.user_uuid, config, [row.op]);
     return;

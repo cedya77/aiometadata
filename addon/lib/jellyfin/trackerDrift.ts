@@ -162,11 +162,14 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
     const everSent = new Set<string>();
     for (const row of (await database.listTrackerActivity([sourceKey], since, 2000).catch(() => [])) as any[]) {
       if (row.kind !== 'sent' || !row.video || !WATCH_OPS.has(String(row.op))) continue;
-      everSent.add(String(row.video));
-      if (row.op !== 'catchUps') continue;
+      let detail: any = {};
       try {
-        for (const video of JSON.parse(row.detail ?? '{}').videos ?? []) everSent.add(String(video));
+        detail = JSON.parse(row.detail ?? '{}') ?? {};
       } catch {}
+      if (source.service === 'simkl' && detail.rewatch !== true) continue;
+      if (row.op === 'scrobble' && detail.verb !== 'Watched') continue;
+      everSent.add(String(row.video));
+      if (row.op === 'catchUps') for (const video of detail.videos ?? []) everSent.add(String(video));
     }
     const missing = new Set(behind);
     const heldAt = (v: Viewing) => Math.max(0, ...v.ids.flatMap((id) => [
