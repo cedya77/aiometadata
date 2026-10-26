@@ -141,6 +141,10 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   const matched: Map<string, string[]> = await theirSpellings(userUUID, source.service, ours).catch(() => new Map());
   const held = await watchedAmong(snapshot, [...ours, ...[...matched.values()].flat()]);
   let behind = judged.filter((v) => !v.ids.some((id) => held.has(id) || waiting.has(id) || (matched.get(id) ?? []).some((theirs) => held.has(theirs))));
+  const spelled = new Map<string, string[]>();
+  for (const id of new Set(behind.flatMap((v) => v.ids))) spelled.set(id, await videoIdAliases(id).catch(() => [] as string[]));
+  const heldElsewhere = await watchedAmong(snapshot, [...new Set([...spelled.values()].flat())]);
+  behind = behind.filter((v) => !v.ids.some((id) => (spelled.get(id) ?? []).some((alias) => heldElsewhere.has(alias) || waiting.has(alias))));
   if (ANIME_LISTS.has(source.service)) {
     const counts = await seriesCountsAmong(snapshot, [...new Set(behind.flatMap((v) => v.ids.map((id) => parseStremioId(id)?.base ?? id)))]);
     behind = behind.filter((v) => !v.ids.some((id) => (counts.get(parseStremioId(id)?.base ?? id)?.at ?? 0) > v.at));
