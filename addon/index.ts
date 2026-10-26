@@ -8364,6 +8364,58 @@ addon.get("/api/dashboard/jellyfin/:userUUID/calendar", requireDashboardAdmin, a
   }
 });
 
+addon.get("/api/dashboard/jellyfin/:userUUID/calendar/feed", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const secret = await require('./lib/jellyfin/calendarFeed').calendarFeedSecret(String(req.params.userUUID), profile);
+    res.json({ secret });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the calendar feed' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/calendar/feed", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    const secret = await require('./lib/jellyfin/calendarFeed').issueCalendarFeed(String(req.params.userUUID), profile);
+    if (!secret) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json({ secret });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to create the calendar feed' });
+  }
+});
+
+addon.delete("/api/dashboard/jellyfin/:userUUID/calendar/feed", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    await require('./lib/jellyfin/calendarFeed').revokeCalendarFeed(String(req.params.userUUID), profile);
+    res.json({ success: true });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to turn off the calendar feed' });
+  }
+});
+
+addon.get("/calendar/:secret.ics", async (req, res) => {
+  try {
+    const body = await require('./lib/jellyfin/calendarFeed').calendarFeed(String(req.params.secret));
+    if (!body) {
+      res.status(404).type('text/plain').send('No such calendar');
+      return;
+    }
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.type('text/calendar; charset=utf-8').send(body);
+  } catch (error) {
+    consola.error('[Calendar Feed] Error:', error);
+    res.status(500).type('text/plain').send('Could not build the calendar');
+  }
+});
+
 addon.get("/api/dashboard/jellyfin/:userUUID/library", requireDashboardAdmin, async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;

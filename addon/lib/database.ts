@@ -556,6 +556,13 @@ class Database {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_jellyfin_tokens_user ON jellyfin_tokens(user_uuid)`,
       `CREATE INDEX IF NOT EXISTS idx_jellyfin_tokens_used ON jellyfin_tokens(last_used_at)`,
+      `CREATE TABLE IF NOT EXISTS jellyfin_calendar_feeds (
+        user_uuid TEXT NOT NULL,
+        profile TEXT NOT NULL DEFAULT '',
+        secret TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (user_uuid, profile)
+      )`,
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid TEXT UNIQUE NOT NULL,
         trusted_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -832,6 +839,13 @@ class Database {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_jellyfin_tokens_user ON jellyfin_tokens(user_uuid)`,
       `CREATE INDEX IF NOT EXISTS idx_jellyfin_tokens_used ON jellyfin_tokens(last_used_at)`,
+      `CREATE TABLE IF NOT EXISTS jellyfin_calendar_feeds (
+        user_uuid VARCHAR(64) NOT NULL,
+        profile TEXT NOT NULL DEFAULT '',
+        secret VARCHAR(64) NOT NULL UNIQUE,
+        created_at BIGINT NOT NULL,
+        PRIMARY KEY (user_uuid, profile)
+      )`,
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid VARCHAR(255) UNIQUE NOT NULL,
         trusted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -1217,6 +1231,7 @@ class Database {
       await this.runQuery(deleteTrustedQuery, [userUUID]);
       await require('./jellyfin/tokens').revokeUserTokens(userUUID).catch(() => undefined);
       await require('./jellyfin/context').forgetSeen([userUUID]).catch(() => undefined);
+      await this.deleteCalendarFeed(userUUID, null).catch(() => undefined);
 
       const deleteAliasQuery = this.type === 'sqlite'
         ? 'DELETE FROM user_aliases WHERE user_uuid = ?'
@@ -2455,6 +2470,44 @@ class Database {
       ? 'DELETE FROM jellyfin_tokens WHERE user_uuid = ?'
       : 'DELETE FROM jellyfin_tokens WHERE user_uuid = $1';
     await this.runQuery(query, [userUUID]);
+  }
+
+  async getCalendarFeed(userUUID: string, profile: string): Promise<string | null> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT secret FROM jellyfin_calendar_feeds WHERE user_uuid = ? AND profile = ?'
+      : 'SELECT secret FROM jellyfin_calendar_feeds WHERE user_uuid = $1 AND profile = $2';
+    const row = await this.getQuery(query, [userUUID, profile]);
+    return row?.secret ? String(row.secret) : null;
+  }
+
+  async findCalendarFeed(secret: string): Promise<{ user_uuid: string; profile: string } | null> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT user_uuid, profile FROM jellyfin_calendar_feeds WHERE secret = ?'
+      : 'SELECT user_uuid, profile FROM jellyfin_calendar_feeds WHERE secret = $1';
+    return (await this.getQuery(query, [secret])) ?? null;
+  }
+
+  async saveCalendarFeed(userUUID: string, profile: string, secret: string): Promise<void> {
+    const query = this.type === 'sqlite'
+      ? `INSERT INTO jellyfin_calendar_feeds (user_uuid, profile, secret, created_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (user_uuid, profile) DO UPDATE SET secret = excluded.secret, created_at = excluded.created_at`
+      : `INSERT INTO jellyfin_calendar_feeds (user_uuid, profile, secret, created_at) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (user_uuid, profile) DO UPDATE SET secret = EXCLUDED.secret, created_at = EXCLUDED.created_at`;
+    await this.runQuery(query, [userUUID, profile, secret, Date.now()]);
+  }
+
+  async deleteCalendarFeed(userUUID: string, profile: string | null): Promise<void> {
+    if (profile === null) {
+      const query = this.type === 'sqlite'
+        ? 'DELETE FROM jellyfin_calendar_feeds WHERE user_uuid = ?'
+        : 'DELETE FROM jellyfin_calendar_feeds WHERE user_uuid = $1';
+      await this.runQuery(query, [userUUID]);
+      return;
+    }
+    const query = this.type === 'sqlite'
+      ? 'DELETE FROM jellyfin_calendar_feeds WHERE user_uuid = ? AND profile = ?'
+      : 'DELETE FROM jellyfin_calendar_feeds WHERE user_uuid = $1 AND profile = $2';
+    await this.runQuery(query, [userUUID, profile]);
   }
 
   async deleteJellyfinTokensForProfile(userUUID: string, profileId: string | null): Promise<void> {

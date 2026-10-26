@@ -346,7 +346,7 @@ export interface NextUpStep {
 type NextUpTrace = (row: any, source: NextUpSource, step: NextUpStep) => void;
 
 let nextUpTracer: ((userUUID: string, config: any, trace: NextUpTrace) => Promise<any[]>) | null = null;
-let calendarReader: ((userUUID: string, config: any, from: number, to: number) => Promise<any[]>) | null = null;
+let calendarReader: ((userUUID: string, config: any, from: number, to: number, withFilms?: boolean) => Promise<any[]>) | null = null;
 let titleReader: ((userUUID: string, config: any, itemId: string) => Promise<{ meta: any; item: any; episodes: any[]; seasons: any[] } | null>) | null = null;
 let searchReader: {
   catalogs: (userUUID: string, config: any) => Promise<Array<{ id: string; type: string; name: string }>>;
@@ -378,8 +378,8 @@ export async function readTitle(userUUID: string, config: any, itemId: string): 
   return titleReader ? titleReader(userUUID, config, itemId) : null;
 }
 
-export async function readCalendar(userUUID: string, config: any, from: number, to: number): Promise<any[] | null> {
-  return calendarReader ? calendarReader(userUUID, config, from, to) : null;
+export async function readCalendar(userUUID: string, config: any, from: number, to: number, withFilms = false): Promise<any[] | null> {
+  return calendarReader ? calendarReader(userUUID, config, from, to, withFilms) : null;
 }
 
 const episodeLabel = (episode: any) => ({

@@ -1709,6 +1709,46 @@ export function useJellyfinCalendar(userUUID: string | null, profile: string | n
   );
 }
 
+const calendarFeedKey = (userUUID: string | null, profile: string | null) => ['dashboard', 'jellyfin', 'calendar-feed', userUUID, profile] as const;
+
+export function useJellyfinCalendarFeed(userUUID: string | null, profile: string | null, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<{ secret: string | null }>(
+    calendarFeedKey(userUUID, profile),
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/calendar/feed?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID), poll: false }
+  );
+}
+
+export function useJellyfinCalendarFeedActions() {
+  const getHeaders = useApiHeaders();
+  const queryClient = useQueryClient();
+  return {
+    issue: async (userUUID: string, profile: string | null): Promise<string> => {
+      const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/calendar/feed`, {
+        method: 'POST',
+        headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile: profile ?? undefined }),
+      });
+      if (!response.ok) throw new Error(`Could not make a calendar link (${response.status})`);
+      const { secret } = await response.json();
+      queryClient.setQueryData(calendarFeedKey(userUUID, profile), { secret });
+      return secret;
+    },
+    revoke: async (userUUID: string, profile: string | null): Promise<void> => {
+      const params = new URLSearchParams();
+      if (profile !== null) params.set('profile', profile);
+      const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/calendar/feed?${params}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      if (!response.ok) throw new Error(`Could not turn off the calendar link (${response.status})`);
+      queryClient.setQueryData(calendarFeedKey(userUUID, profile), { secret: null });
+    },
+  };
+}
+
 export interface JellyfinLibraryRow {
   metaId: string;
   type: 'movie' | 'series';

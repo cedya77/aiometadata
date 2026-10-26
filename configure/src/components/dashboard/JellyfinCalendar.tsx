@@ -1,8 +1,10 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { CalendarDays, Check, ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
+import { toast } from "sonner";
+import { CalendarDays, CalendarPlus, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, ImageOff, Link2Off, Loader2, RotateCcw } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useOpenTitle } from "./jellyfinUtils";
-import { useJellyfinCalendar, type DashboardTab, type JellyfinCalendarRow } from "@/hooks/useDashboardQueries";
+import { useJellyfinCalendar, useJellyfinCalendarFeed, useJellyfinCalendarFeedActions, type DashboardTab, type JellyfinCalendarRow } from "@/hooks/useDashboardQueries";
 
 const WEEK = 7;
 
@@ -349,6 +351,72 @@ const DayPanel = ({ day, loading, onFocus }: { day: Day; loading: boolean; onFoc
   </section>
 );
 
+const feedUrl = (secret: string) => `${window.location.origin}/calendar/${secret}.ics`;
+
+async function copyLink(url: string, title: string) {
+  try {
+    await navigator.clipboard.writeText(url);
+    toast.success(title, { description: "Add it in your calendar app as a calendar from a URL." });
+  } catch {
+    toast.message("Copy this link", { description: url, duration: 20_000 });
+  }
+}
+
+function CalendarSubscribe({ userUUID, profile, profileName, activeTab }: { userUUID: string; profile: string | null; profileName: string; activeTab: DashboardTab }) {
+  const { data, isLoading } = useJellyfinCalendarFeed(userUUID, profile, { activeTab });
+  const { issue, revoke } = useJellyfinCalendarFeedActions();
+  const [busy, setBusy] = useState(false);
+  const secret = data?.secret ?? null;
+
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await work();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const subscribe = () => run(async () => copyLink(feedUrl(await issue(userUUID, profile)), "Calendar link copied"));
+  const renew = () => run(async () => copyLink(feedUrl(await issue(userUUID, profile)), "New calendar link copied"));
+  const turnOff = () => run(async () => {
+    await revoke(userUUID, profile);
+    toast.success("Calendar link turned off");
+  });
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" aria-label="Subscribe in a calendar app" title="Subscribe in a calendar app" disabled={isLoading} className={cx("glass flex size-9 items-center justify-center rounded-full transition-colors hover:bg-black/50 disabled:opacity-50", secret && "text-blue-400")}>
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <CalendarPlus className="size-4" />}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuLabel className="text-xs font-normal leading-relaxed text-muted-foreground">
+          {secret
+            ? `Calendar apps holding this link follow ${profileName}'s episodes and watchlisted films as they are scheduled.`
+            : `A private link that puts ${profileName}'s episodes and watchlisted films in Google, Apple or Outlook Calendar.`}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {secret ? (
+          <>
+            <DropdownMenuItem asChild>
+              <a href={feedUrl(secret).replace(/^https?:/, "webcal:")}><ExternalLink className="size-4" /> Open in a calendar app</a>
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={busy} onSelect={() => void copyLink(feedUrl(secret), "Calendar link copied")}><Copy className="size-4" /> Copy link</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled={busy} onSelect={() => void renew()}><RotateCcw className="size-4" /> Make a new link</DropdownMenuItem>
+            <DropdownMenuItem disabled={busy} onSelect={() => void turnOff()} className="text-red-300 focus:text-red-200"><Link2Off className="size-4" /> Turn off the link</DropdownMenuItem>
+          </>
+        ) : (
+          <DropdownMenuItem disabled={busy} onSelect={() => void subscribe()}><CalendarPlus className="size-4" /> Make a link and copy it</DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export default function JellyfinCalendar({ userUUID, profile, profileName, activeTab }: { userUUID: string; profile: string | null; profileName: string; activeTab: DashboardTab }) {
   const first = useMemo(() => firstWeekday(), []);
   const [now, setNow] = useState(() => Date.now());
@@ -451,6 +519,7 @@ export default function JellyfinCalendar({ userUUID, profile, profileName, activ
                 <ChevronRight className="size-4" />
               </button>
             </div>
+            <CalendarSubscribe userUUID={userUUID} profile={profile} profileName={profileName} activeTab={activeTab} />
           </div>
         </div>
 
