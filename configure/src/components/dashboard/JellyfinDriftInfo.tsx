@@ -70,8 +70,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Detail({ userUUID, laneKey, service, side, item, activeTab, open }: { userUUID: string; laneKey: string; service: string; side: "behind" | "ahead"; item: JellyfinDriftItem; activeTab: DashboardTab; open: boolean }) {
+function Detail({ userUUID, laneKey, service, side: shown, item, activeTab, open }: { userUUID: string; laneKey: string; service: string; side: "behind" | "ahead" | "again"; item: JellyfinDriftItem; activeTab: DashboardTab; open: boolean }) {
   const name = nameOf(service);
+  const side = shown === "ahead" ? "ahead" : "behind";
   const { data, isLoading, isError } = useJellyfinDriftDetail(userUUID, laneKey, side, item, open, { activeTab });
   const seasons = seasonsOf(item);
   const film = item.kind === "movie";
@@ -79,7 +80,7 @@ function Detail({ userUUID, laneKey, service, side, item, activeTab, open }: { u
     <div className="space-y-3.5">
       <div>
         <p className="truncate text-sm font-semibold">{item.title ?? "Unknown title"}</p>
-        <p className="text-xs text-muted-foreground">{side === "behind" ? `Watched here, missing on ${name}` : `Watched on ${name}, missing here`}</p>
+        <p className="text-xs text-muted-foreground">{shown === "again" ? `Rewatched here, ${name} has only an earlier watch` : side === "behind" ? `Watched here, missing on ${name}` : `Watched on ${name}, missing here`}</p>
       </div>
 
       <Section title={film ? "Watched" : side === "behind" ? "Watched here" : `Watched on ${name}`}>
@@ -164,7 +165,7 @@ export default function DriftInfo({ userUUID, laneKey, service, side, item, acti
   userUUID: string;
   laneKey: string;
   service: string;
-  side: "behind" | "ahead";
+  side: "behind" | "ahead" | "again";
   item: JellyfinDriftItem;
   activeTab: DashboardTab;
   children: React.ReactElement;

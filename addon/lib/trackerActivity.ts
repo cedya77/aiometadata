@@ -43,7 +43,8 @@ export function summariseJob(op: string, payload: any, item: string | null = nul
     case 'catchUp': return one('Sent a missed watch');
     case 'catchUps': {
       const videos = (Array.isArray(p.items) ? p.items : []).map((entry: any) => entry?.ids?.[0]).filter(Boolean) as string[];
-      return { verb: videos.length === 1 ? 'Sent a missed watch' : `Sent ${videos.length} missed watches`, video: videos[0] ?? item, count: videos.length, videos };
+      const noun = p.rewatch ? (videos.length === 1 ? 'a rewatch' : `${videos.length} rewatches`) : videos.length === 1 ? 'a missed watch' : `${videos.length} missed watches`;
+      return { verb: `Sent ${noun}`, video: videos[0] ?? item, count: videos.length, videos };
     }
     case 'clearResume': return one('Cleared the resume point');
     case 'anime': return one('Moved anime progress');

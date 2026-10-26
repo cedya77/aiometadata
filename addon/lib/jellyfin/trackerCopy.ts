@@ -418,7 +418,7 @@ export async function writeMdblist(items: CopyItem[], apiKey: string, config: an
   }
 }
 
-export async function writeSimkl(items: CopyItem[], tokenId: string, config: any): Promise<Outcome> {
+export async function writeSimkl(items: CopyItem[], tokenId: string, config: any, rewatch = false): Promise<Outcome> {
   const { getSimklToken, getSimklQuota, addHistoryBatch } = require('../../utils/simklUtils');
   const accessToken = (await getSimklToken(tokenId))?.access_token;
   if (!accessToken) throw new Error('No Simkl token');
@@ -438,7 +438,7 @@ export async function writeSimkl(items: CopyItem[], tokenId: string, config: any
   const failed = lost.length;
   if (writes.length) {
     try {
-      const first = await addHistoryBatch(writes.map(({ fallback, ...write }) => write), accessToken);
+      const first = await addHistoryBatch(writes.map(({ fallback, ...write }) => write), accessToken, rewatch);
       const missed = new Set(first.missed.map((ids) => JSON.stringify(ids)));
       const firstMissed = (write: any) => missed.has(JSON.stringify(write.ids)) || first.missed.some((ids) => sharesId(ids, write.ids));
       const retry = writes.filter((write) => write.fallback && missed.has(JSON.stringify(write.ids)));
@@ -446,7 +446,7 @@ export async function writeSimkl(items: CopyItem[], tokenId: string, config: any
         for (const [w, write] of writes.entries()) if (firstMissed(write)) lost.push(from[w]);
         return { done: items.length, sent: writes.length - first.notFound, failed: failed + first.notFound, lost };
       }
-      const second = await addHistoryBatch(retry.map((write) => ({ ...write.fallback, watchedAt: write.watchedAt })), accessToken);
+      const second = await addHistoryBatch(retry.map((write) => ({ ...write.fallback, watchedAt: write.watchedAt })), accessToken, rewatch);
       const recovered = retry.length - second.notFound;
       for (const [w, write] of writes.entries()) {
         if (firstMissed(write) && (!write.fallback || second.missed.some((ids) => sharesId(ids, write.fallback.ids)))) lost.push(from[w]);

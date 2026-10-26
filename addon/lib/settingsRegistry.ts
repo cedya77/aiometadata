@@ -572,6 +572,17 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     max: 1440,
   },
   {
+    key: 'JELLYFIN_TRACKER_REWATCH_GAP_HOURS',
+    envVar: 'JELLYFIN_TRACKER_REWATCH_GAP_HOURS',
+    label: 'Jellyfin Tracker Rewatch Gap (hours)',
+    description: 'A watch here this much newer than a tracker\'s last watch of the same episode or film is listed as a rewatch the tracker lacks. Simkl ignores rewatches less than two days apart.',
+    category: 'Features',
+    type: 'number',
+    default: 48,
+    min: 48,
+    max: 8760,
+  },
+  {
     key: 'JELLYFIN_TRACKER_DRIFT_CACHE_SECONDS',
     envVar: 'JELLYFIN_TRACKER_DRIFT_CACHE_SECONDS',
     label: 'Jellyfin Tracker Comparison Cache (seconds)',

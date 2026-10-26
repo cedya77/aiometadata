@@ -2117,6 +2117,8 @@ export interface JellyfinDriftLane {
   key: string;
   behind: JellyfinDriftItem[];
   ahead: JellyfinDriftItem[];
+  rewatched?: JellyfinDriftItem[];
+  rewatchNote?: 'free' | null;
   unread: number;
   readAt: number | null;
   error: string | null;

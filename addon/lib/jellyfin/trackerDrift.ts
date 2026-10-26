@@ -11,6 +11,7 @@ const ANIME_LISTS = new Set<string>(['anilist', 'mal']);
 const OWN_ORIGINS = new Set(['server', 'play']);
 const WATCH_OPS = new Set(['scrobble', 'credit', 'catchUp', 'catchUps', 'anime', 'episodes']);
 const BATCHED = new Set<string>(['simkl', 'mdblist']);
+const REWATCHABLE = new Set<string>(['simkl', 'mdblist']);
 
 export interface DriftSource {
   service: Capable;
@@ -32,6 +33,7 @@ export interface Viewing {
 export interface Drift {
   behind: Viewing[];
   ahead: Viewing[];
+  rewatched: Viewing[];
   unread: number;
   since: number;
   readAt: number | null;
@@ -105,7 +107,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   const since = Date.now() - driftWindowDays() * DAY_MS;
   const state = await database.getTrackerSync(sourceKey).catch(() => null);
   const readAt = Number(state?.synced_at) || null;
-  const empty: Drift = { behind: [], ahead: [], unread: 0, since, readAt };
+  const empty: Drift = { behind: [], ahead: [], rewatched: [], unread: 0, since, readAt };
   if (!readAt || !(Number(state?.version) > 0)) return empty;
 
   const snapshot = await indexedSnapshot(source.service, source.credential, source.scoped);
@@ -154,6 +156,32 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   for (const id of new Set(behind.flatMap((v) => v.ids))) spelled.set(id, await videoIdAliases(id).catch(() => [] as string[]));
   const heldElsewhere = await watchedAmong(snapshot, [...new Set([...spelled.values()].flat())]);
   behind = behind.filter((v) => !v.ids.some((id) => (spelled.get(id) ?? []).some((alias) => heldElsewhere.has(alias) || waiting.has(alias))));
+  let rewatched: Viewing[] = [];
+  if (REWATCHABLE.has(source.service)) {
+    const gap = envInt('JELLYFIN_TRACKER_REWATCH_GAP_HOURS', 48, 48) * 60 * 60 * 1000;
+    const everSent = new Set<string>();
+    for (const row of (await database.listTrackerActivity([sourceKey], since, 2000).catch(() => [])) as any[]) {
+      if (row.kind !== 'sent' || !row.video || !WATCH_OPS.has(String(row.op))) continue;
+      everSent.add(String(row.video));
+      if (row.op !== 'catchUps') continue;
+      try {
+        for (const video of JSON.parse(row.detail ?? '{}').videos ?? []) everSent.add(String(video));
+      } catch {}
+    }
+    const missing = new Set(behind);
+    const heldAt = (v: Viewing) => Math.max(0, ...v.ids.flatMap((id) => [
+      held.get(id) ?? 0,
+      ...(matched.get(id) ?? []).map((theirs) => held.get(theirs) ?? 0),
+      ...(spelled.get(id) ?? []).map((alias) => heldElsewhere.get(alias) ?? 0),
+    ]));
+    rewatched = judged.filter((v) => {
+      if (missing.has(v) || v.ids.some((id) => waiting.has(id) || everSent.has(id))) return false;
+      const at = heldAt(v);
+      return at > 0 && v.at - at > gap;
+    });
+    const again = await statesFor(userUUID, rewatched);
+    rewatched = rewatched.filter((v) => v.ids.some((id) => Number(again.get(`${v.profile}|${id}`)?.played) === 1));
+  }
   if (ANIME_LISTS.has(source.service)) {
     const counts = await seriesCountsAmong(snapshot, [...new Set(behind.flatMap((v) => v.ids.map((id) => parseStremioId(id)?.base ?? id)))]);
     behind = behind.filter((v) => !v.ids.some((id) => (counts.get(parseStremioId(id)?.base ?? id)?.at ?? 0) > v.at));
@@ -162,7 +190,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   behind = behind.filter((v) => v.ids.some((id) => Number(states.get(`${v.profile}|${id}`)?.played) === 1));
 
   const ahead = ANIME_LISTS.has(source.service) ? [] : await aheadOf(userUUID, source, sourceKey, since, unmarking);
-  return { behind, ahead, unread: mine.filter((v) => v.at > settled).length, since, readAt };
+  return { behind, ahead, rewatched, unread: mine.filter((v) => v.at > settled).length, since, readAt };
 }
 
 async function statesFor(userUUID: string, viewings: Viewing[]): Promise<Map<string, any>> {
@@ -206,7 +234,7 @@ async function aheadOf(userUUID: string, source: DriftSource, sourceKey: string,
   return out;
 }
 
-export async function pushDrift(userUUID: string, config: any, source: DriftSource, viewings: Viewing[]): Promise<number> {
+export async function pushDrift(userUUID: string, config: any, source: DriftSource, viewings: Viewing[], again: Viewing[] = []): Promise<number> {
   const { enqueueTrackerWrites } = require('../trackerOutbox');
   const byProfile = new Map<string, Viewing[]>();
   if (ANIME_LISTS.has(source.service)) {
@@ -219,26 +247,48 @@ export async function pushDrift(userUUID: string, config: any, source: DriftSour
     viewings = [...furthest.values()];
   }
   for (const v of viewings) byProfile.set(v.profile, [...(byProfile.get(v.profile) ?? []), v]);
+  const rewatches = new Map<string, Viewing[]>();
+  if (BATCHED.has(source.service)) {
+    for (const v of again) {
+      byProfile.set(v.profile, byProfile.get(v.profile) ?? []);
+      rewatches.set(v.profile, [...(rewatches.get(v.profile) ?? []), v]);
+    }
+  }
   let queued = 0;
   for (const [profile, list] of byProfile) {
     const scoped = scopeConfigToProfile(config, userUUID, profile || null);
     if (!credentialFor(scoped, source.service)) continue;
     if (BATCHED.has(source.service)) {
       const size = envInt('JELLYFIN_COPY_BATCH_SIZE', 100, 1);
-      const ordered = [...list].sort((a, b) => a.at - b.at);
+      const sets: Array<{ list: Viewing[]; rewatch: boolean }> = [];
+      const repeat = rewatches.get(profile) ?? [];
+      if (source.service === 'simkl') {
+        sets.push({ list, rewatch: false });
+        const byShow = new Map<string, Viewing[]>();
+        for (const v of repeat) byShow.set(v.metaId, [...(byShow.get(v.metaId) ?? []), v]);
+        for (const show of byShow.values()) sets.push({ list: show, rewatch: true });
+      } else {
+        sets.push({ list: [...list, ...repeat], rewatch: false });
+      }
       const jobs = [];
-      for (let i = 0; i < ordered.length; i += size) {
-        const chunk = ordered.slice(i, i + size);
-        jobs.push({
-          service: source.service,
-          op: 'catchUps' as const,
-          item: 'catch-up',
-          coalesce: `catchUps:${spellingFor(source.service, chunk[0].ids)}:${chunk[0].at}:${chunk.length}`,
-          payload: { items: chunk.map((v) => ({ ids: spellingsFor(source.service, v.ids), kind: v.kind, metaId: v.metaId, season: v.season, episode: v.episode, at: v.at })) },
-        });
+      for (const set of sets) {
+        const ordered = [...set.list].sort((a, b) => a.at - b.at);
+        for (let i = 0; i < ordered.length; i += size) {
+          const chunk = ordered.slice(i, i + size);
+          jobs.push({
+            service: source.service,
+            op: 'catchUps' as const,
+            item: 'catch-up',
+            coalesce: `catchUps:${set.rewatch ? 'again:' : ''}${spellingFor(source.service, chunk[0].ids)}:${chunk[0].at}:${chunk.length}`,
+            payload: {
+              items: chunk.map((v) => ({ ids: spellingsFor(source.service, v.ids), kind: v.kind, metaId: v.metaId, season: v.season, episode: v.episode, at: v.at })),
+              ...(set.rewatch ? { rewatch: true } : {}),
+            },
+          });
+        }
       }
       await enqueueTrackerWrites(userUUID, scoped, jobs);
-      queued += list.length;
+      queued += list.length + repeat.length;
       continue;
     }
     await enqueueTrackerWrites(userUUID, scoped, list.map((v) => {

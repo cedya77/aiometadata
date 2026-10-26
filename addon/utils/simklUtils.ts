@@ -894,9 +894,9 @@ function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
   return Object.keys(ids).length > 0 ? ids : null;
 }
 
-export async function addHistoryBatch(writes: HistoryWrite[], accessToken: string): Promise<{ notFound: number; missed: Array<Record<string, any>> }> {
+export async function addHistoryBatch(writes: HistoryWrite[], accessToken: string, rewatch = false): Promise<{ notFound: number; missed: Array<Record<string, any>> }> {
   const response: any = await makeAuthenticatedSimklRequest(
-    `${SIMKL_BASE_URL}/sync/history`, accessToken, `Simkl history batch of ${writes.length}`, 'POST', historyBatchPayload(writes), 60000
+    `${SIMKL_BASE_URL}/sync/history${rewatch ? '?allow_rewatch=yes' : ''}`, accessToken, `Simkl history batch of ${writes.length}`, 'POST', historyBatchPayload(writes), 60000
   );
   if (response.status < 200 || response.status >= 300) {
     const error: any = new Error(`Simkl answered ${response.status}`);

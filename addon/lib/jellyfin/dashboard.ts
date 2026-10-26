@@ -691,14 +691,22 @@ export async function dashboardDrift(userUUID: string, profile: string | null): 
         });
         return out.sort((a, b) => b.lastAt - a.lastAt);
       };
-      return { key, behind: await items(drift.behind), ahead: await items(drift.ahead), unread: drift.unread, readAt: drift.readAt, error: null };
+      const rewatchNote = drift.rewatched.length && !(await keepsRewatches(source)) ? 'free' : null;
+      return { key, behind: await items(drift.behind), ahead: await items(drift.ahead), rewatched: await items(drift.rewatched), rewatchNote, unread: drift.unread, readAt: drift.readAt, error: null };
     } catch (error: any) {
-      return { key, behind: [], ahead: [], unread: 0, readAt: null, error: String(error?.message || error).slice(0, 200) };
+      return { key, behind: [], ahead: [], rewatched: [], rewatchNote: null, unread: 0, readAt: null, error: String(error?.message || error).slice(0, 200) };
     }
   });
   const out = { checkedAt: Date.now(), days: driftWindowDays(), lanes };
   drifts.set(memoKey, out);
   return out;
+}
+
+async function keepsRewatches(source: SyncSource): Promise<boolean> {
+  if (source.service !== 'simkl') return true;
+  const { getSimklToken, simklKeepsRewatches } = require('../../utils/simklUtils');
+  const token = (await getSimklToken(source.credential).catch(() => null))?.access_token;
+  return token ? simklKeepsRewatches(token) : false;
 }
 
 export async function dashboardDriftAction(userUUID: string, key: string, action: 'push' | 'pull', items: string[] | null): Promise<number | null> {
@@ -710,8 +718,9 @@ export async function dashboardDriftAction(userUUID: string, key: string, action
   const drift = await driftOf(userUUID, key, source);
   const wanted = (v: any) => !items || items.includes(`${v.profile}|${v.metaId}`);
   const driftSource = { service: source.service, credential: source.credential, keys: source.keys, scoped: source.scoped };
+  const again = action === 'push' && drift.rewatched.length && await keepsRewatches(source) ? drift.rewatched.filter(wanted) : [];
   const done = action === 'push'
-    ? await pushDrift(userUUID, config, driftSource, drift.behind.filter(wanted))
+    ? await pushDrift(userUUID, config, driftSource, drift.behind.filter(wanted), again)
     : await pullDrift(userUUID, driftSource, drift.ahead.filter(wanted));
   forgetDrift(userUUID);
   if (action === 'pull') {

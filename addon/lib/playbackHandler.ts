@@ -420,13 +420,13 @@ export async function deliverCatchUp(service: WatchTrackingService, p: { type: s
   if (parsedId) await require('./subtitleHandler').creditHistory(parsedId, config, service, p.at);
 }
 
-export async function deliverCatchUps(service: WatchTrackingService, p: { items?: any[] }, config: any, userUUID: string): Promise<void> {
+export async function deliverCatchUps(service: WatchTrackingService, p: { items?: any[]; rewatch?: boolean }, config: any, userUUID: string): Promise<void> {
   const items = Array.isArray(p.items) ? p.items : [];
   const credential = service === 'mdblist' ? config.apiKeys?.mdblist : service === 'simkl' ? config.apiKeys?.simklTokenId : null;
   if (!items.length || !credential) return;
   const { writeMdblist, writeSimkl } = require('./jellyfin/trackerCopy');
   const { noteTrackerCall } = require('../utils/trackerCalls');
-  const outcome = service === 'mdblist' ? await writeMdblist(items, credential, config) : await writeSimkl(items, credential, config);
+  const outcome = service === 'mdblist' ? await writeMdblist(items, credential, config) : await writeSimkl(items, credential, config, p.rewatch === true);
   const name = service === 'mdblist' ? 'MDBList' : 'Simkl';
   const url = service === 'mdblist' ? 'https://api.mdblist.com/sync/watched' : 'https://api.simkl.com/sync/history';
   if (outcome.wait) {
