@@ -794,6 +794,8 @@ async function checkinSimkl(
       logger.warn(`[Simkl Checkin] Skipping checkin - missing or invalid Simkl token for tokenId ${tokenId}`);
       return;
     }
+    const marks = options.action !== 'start' && options.action !== 'pause';
+    const sent = { ...options, rewatch: marks && await require('../utils/simklUtils').simklKeepsRewatches(accessToken) };
 
     if (parsedId.type === 'movie') {
       const normalized = normalizeIdsForMovie(parsedId);
@@ -804,7 +806,7 @@ async function checkinSimkl(
       const ids = await withTmdbId(normalized, 'movie');
 
       logger.debug(`[Simkl Checkin] Tracking movie (${buildIdSummary(ids)})`);
-      await checkinMovie(ids, accessToken, options);
+      await checkinMovie(ids, accessToken, sent);
       return;
     }
 
@@ -819,7 +821,7 @@ async function checkinSimkl(
       logger.debug(
         `[Simkl Checkin] Checkin in episode (${buildIdSummary(ids)}) S${resolution.season}E${resolution.episode}`
       );
-      await checkinSeries(ids, resolution.season, resolution.episode, accessToken, resolution.fallbackData, options);
+      await checkinSeries(ids, resolution.season, resolution.episode, accessToken, resolution.fallbackData, sent);
       return;
     }
 

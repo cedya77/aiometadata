@@ -50,11 +50,25 @@ function withAppParams(url: string): string {
 }
 
 /** Simkl counts a stop as watched from AIOM's own played threshold on; it accepts 50 to 100. */
-function scrobbleUrl(action: string, minProgress?: number): string {
+function scrobbleUrl(action: string, minProgress?: number, rewatch = false): string {
   const url = `${SIMKL_BASE_URL}/scrobble/${action}`;
   if (action === 'pause') return url;
   const threshold = Math.min(100, Math.max(50, minProgress ?? envInt('JELLYFIN_PLAYED_THRESHOLD', 80, 1)));
-  return `${url}?min_progress=${threshold}`;
+  return `${url}?min_progress=${threshold}${rewatch && action !== 'start' ? '&allow_rewatch=yes' : ''}`;
+}
+
+export async function simklPlan(accessToken: string): Promise<'free' | 'pro' | 'vip' | null> {
+  const hash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
+  const plan = await cacheWrapGlobal(`simkl-plan:${hash}`, async () => {
+    const response: any = await makeAuthenticatedSimklRequest(`${SIMKL_BASE_URL}/users/settings`, accessToken, 'Simkl account plan', 'GET', undefined, 10000);
+    return { type: response?.data?.account?.type ?? null };
+  }, envInt('SIMKL_PLAN_TTL', 24 * 60 * 60, 60)).catch(() => null);
+  return ['free', 'pro', 'vip'].includes(plan?.type) ? plan.type : null;
+}
+
+export async function simklKeepsRewatches(accessToken: string): Promise<boolean> {
+  const plan = await simklPlan(accessToken);
+  return plan === 'pro' || plan === 'vip';
 }
 
 function simklDataParams(): string {
@@ -983,6 +997,7 @@ export interface SimklScrobbleOptions {
   /** 0-100. Simkl marks an item watched on stop at the played threshold or above. */
   progress?: number;
   minProgress?: number;
+  rewatch?: boolean;
 }
 
 async function checkinMovie(
@@ -1004,7 +1019,7 @@ async function checkinMovie(
 
   try {
 
-    const url = scrobbleUrl(action, options.minProgress);
+    const url = scrobbleUrl(action, options.minProgress, options.rewatch);
     const watchedAt = new Date().toISOString();
 
     const payload = {
@@ -1089,7 +1104,7 @@ async function checkinSeries(
   };
 
   const doCheckin = async (ids: Record<string, string | number>, attemptLabel: string, seasonNumber: number, episodeNumber:number) => {
-      const url = withAppParams(scrobbleUrl(action, options.minProgress));
+      const url = withAppParams(scrobbleUrl(action, options.minProgress, options.rewatch));
       const payload = {
         progress,
         show: { ids: ids },
