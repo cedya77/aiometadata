@@ -92,7 +92,6 @@ export function startJob(config: any, userUUID: string, catalogId: string, force
         : await recommend(config, userUUID, profile, entry.kind);
       job.picks = picks.length;
       if (!picks.length) throw new Error(picksFailure(config));
-      if (force) await require('./refresh').bumpRowStamp(viewer);
 
       // Warms the meta caches the row will read, so the first open is not the
       // first time every poster and rating is fetched.

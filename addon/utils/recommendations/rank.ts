@@ -538,7 +538,14 @@ export async function recommend(
 
   // Rewriting this before it expires is the shared refresh-ahead's job, one
   // layer up: a page rebuild re-runs this build with the source cache bypassed.
-  return cacheWrapGlobal(key, build, ttl, { sourceList: true });
+  let built = false;
+  const picks = await cacheWrapGlobal(key, async () => {
+    const result = await build();
+    built = true;
+    return result;
+  }, ttl, { sourceList: true });
+  if (built) await require('./refresh').bumpRowStamp(require('./history').viewerKey(config, userUUID));
+  return picks;
 }
 
 module.exports = { recommend, parsePicks, eraBrief, picksKey };
