@@ -33,7 +33,9 @@ export function Poster({ src }: { src: string | null }) {
 const KIND_LABEL: Record<string, string> = { tv: "Show", anime: "Anime", movie: "Film" };
 const same = (a: string | null | undefined, b: string | null | undefined) => Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
 
-function guessLinks(ours: Map<number, Array<{ number: number; name: string | null }>>, theirs: JellyfinMatchSeason[], held: Links | null): Links {
+type OurEpisode = { number: number; name: string | null; airsAt: number | null };
+
+function guessLinks(ours: Map<number, OurEpisode[]>, theirs: JellyfinMatchSeason[], held: Links | null): Links {
   const out: Links = {};
   for (const [season, episodes] of ours) {
     if (held?.[String(season)]) {
@@ -41,15 +43,17 @@ function guessLinks(ours: Map<number, Array<{ number: number; name: string | nul
       continue;
     }
     let found: { season: number; offset: number } | null = null;
-    for (const episode of episodes.slice(0, 3)) {
+    for (let i = 0; i < Math.min(episodes.length, 6) && !found; i += 1) {
+      const episode = episodes[i];
+      const next = episodes[i + 1];
       for (const target of theirs) {
         const hit = target.episodes.find((e) => same(e.title, episode.name));
-        if (hit) {
-          found = { season: target.number, offset: hit.number - episode.number };
-          break;
-        }
+        if (!hit) continue;
+        const after = next ? target.episodes.find((e) => e.number === hit.number + (next.number - episode.number)) : null;
+        if (next && !same(after?.title, next.name)) continue;
+        found = { season: target.number, offset: hit.number - episode.number };
+        break;
       }
-      if (found) break;
     }
     out[String(season)] = found ?? { season: theirs.some((t) => t.number === season) ? season : theirs[0]?.number ?? season, offset: 0 };
   }
@@ -82,10 +86,10 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
   const { data: title, isLoading: titleLoading } = useJellyfinTitle(userUUID, profile, series ? subject.open : null, { activeTab });
 
   const ours = useMemo(() => {
-    const out = new Map<number, Array<{ number: number; name: string | null }>>();
+    const out = new Map<number, OurEpisode[]>();
     for (const episode of title?.episodes ?? []) {
       if (episode.season === null || episode.season < 1 || episode.number === null) continue;
-      out.set(episode.season, [...(out.get(episode.season) ?? []), { number: episode.number, name: episode.name }]);
+      out.set(episode.season, [...(out.get(episode.season) ?? []), { number: episode.number, name: episode.name, airsAt: episode.airsAt }]);
     }
     for (const season of subject.seasons) if (season > 0 && !out.has(season)) out.set(season, []);
     for (const list of out.values()) list.sort((a, b) => a.number - b.number);
@@ -126,7 +130,17 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
 
   const theirSeason = (number: number) => detail?.seasons.find((s) => s.number === number) ?? null;
   const shown = preview ?? [...ours.keys()][0] ?? null;
-  const ready = Boolean(picked && detail && (!series || links));
+  const pointless = useMemo(() => {
+    if (!series || !links || !detail?.seasons.length) return [] as Array<{ season: number; count: number }>;
+    const now = Date.now();
+    return [...ours.entries()].map(([season, episodes]) => {
+      const link = links[String(season)];
+      const target = detail.seasons.find((s) => s.number === link?.season);
+      const count = episodes.filter((e) => (e.airsAt === null || e.airsAt <= now) && !target?.episodes.some((t) => t.number === e.number + (link?.offset ?? 0))).length;
+      return { season, count };
+    }).filter((entry) => entry.count > 0);
+  }, [series, links, detail, ours]);
+  const ready = Boolean(picked && detail && (!series || links) && !pointless.length);
 
   const save = async () => {
     if (!picked || !detail) return;
@@ -226,6 +240,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                             min={1}
                             value={link.offset + 1}
                             onChange={(event) => { const start = Math.max(1, Number(event.target.value) || 1); setLinks({ ...links, [String(season)]: { ...link, offset: start - 1 } }); setPreview(season); }}
+                            onWheel={(event) => event.currentTarget.blur()}
                             className="h-8 w-14 rounded-lg border border-white/[0.12] bg-background px-2 text-xs text-foreground"
                           />
                         </label>
@@ -258,6 +273,12 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                 )}
               </div>
             )
+          )}
+
+          {pointless.length > 0 && (
+            <p className="rounded-xl bg-amber-400/[0.08] px-3.5 py-2.5 text-xs leading-relaxed text-amber-100 ring-1 ring-inset ring-amber-300/20">
+              {pointless.map((entry) => `season ${entry.season}: ${entry.count} ${entry.count === 1 ? "episode" : "episodes"}`).join(", ").replace(/^s/, "S")} would point at episodes {name} doesn't have. Pick another season or starting episode.
+            </p>
           )}
 
           <div className="flex items-center justify-end gap-2 pt-1">
