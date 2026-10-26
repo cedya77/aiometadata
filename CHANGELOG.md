@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.8.1](https://github.com/cedya77/aiometadata/compare/v3.8.0...v3.8.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **recommendations:** read each Jellyfin profile's own Simkl history ([945bb6f](https://github.com/cedya77/aiometadata/commit/945bb6f2b5a4ad075faba423cc8136833721384c))
+
 ## [3.8.0](https://github.com/cedya77/aiometadata/compare/v3.7.0...v3.8.0) (2026-10-25)
 
 
