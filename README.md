@@ -124,6 +124,7 @@ Present a configuration as a Jellyfin server, so Jellyfin clients browse your ca
 - **Search**: Enable/disable search engines per type; enable AI search with Gemini API key.
 - **Integrations**: Connect MDBList and more for personal lists.
 - **Security**: Set user and (optional) addon password for config protection.
+- **Parent Config**: Link a configuration to a parent and inherit its settings section by section, so one change updates every linked configuration. See **[Parent Config](docs/parent-config.md)**.
 
 All configuration is managed via the `/configure` UI and saved per-user (UUID) in the database.
 
@@ -135,6 +136,7 @@ All configuration is managed via the `/configure` UI and saved per-user (UUID) i
 - `/api/config/save` — Save user config (POST)
 - `/api/config/load/:userUUID` — Load user config (POST)
 - `/api/config/update/:userUUID` — Update user config (PUT)
+- `/api/config/verify-parent/:userUUID` — Check a parent config's UUID and password (POST)
 - `/api/config/is-trusted/:uuid` — Check if UUID is trusted (GET)
 - `/api/cache/*` — Cache health and admin endpoints
 - `/poster/:type/:id` — Poster proxy with fallback and RPDB support

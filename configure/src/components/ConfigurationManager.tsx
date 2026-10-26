@@ -22,6 +22,7 @@ import { Callout } from "@/components/settings/Callout";
 import { ConfigStatusPanel, CONFIG_STATUS_SUMMARY_ID } from "@/components/settings/ConfigStatusPanel";
 import { SettingRow } from "@/components/settings/SettingRow";
 import { taggedManifestUrl } from "@/lib/managerAccounts";
+import { ParentConfigCard } from "@/components/ParentConfigCard";
 
 interface SavedConfig {
   userUUID: string;
@@ -704,6 +705,8 @@ export function ConfigurationManager() {
         </Card>
       )}
       
+      <ParentConfigCard />
+
       {/* Import/Export Section */}
       <Suspense fallback={<ConfigurationSectionFallback />}>
         <LazyConfigImportExport />

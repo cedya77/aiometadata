@@ -85,6 +85,7 @@ export function ConfigImportExport() {
       // never removes the ones already holding a working key.
       managers: config.managers,
       managerAccounts: mergeImportedAccounts(config.managerAccounts, importData.config.managerAccounts),
+      parentConfig: config.parentConfig,
       apiKeys: (() => {
         if (importData.metadata?.apiKeysExcluded) {
           return config.apiKeys;

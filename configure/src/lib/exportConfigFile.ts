@@ -56,6 +56,8 @@ export function exportConfigFile(
     ...config,
     apiKeys: excludeApiKeys ? emptyApiKeys : { ...config.apiKeys },
     ...withoutManagerSecrets(config, excludeApiKeys),
+    // The link holds the parent's password, so like a manager key it never leaves in a file.
+    parentConfig: undefined,
     ...(excludeApiKeys ? { jellyfinUserPin: undefined } : {}),
     ...(excludeApiKeys && config.jellyfinUsers
       ? { jellyfinUsers: config.jellyfinUsers.map(({ pin: _pin, ...user }) => (user.accounts ? { ...user, accounts: { ...user.accounts, apiKeys: {} } } : user)) }

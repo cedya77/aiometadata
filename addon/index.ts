@@ -731,6 +731,7 @@ addon.use(requireSigninForApi);
 addon.post("/api/config/save", configApi.saveConfig.bind(configApi));
 addon.post("/api/config/load/:userUUID", configLoadRateLimitMiddleware, configApi.loadConfig.bind(configApi));
 addon.put("/api/config/update/:userUUID", configApi.updateConfig.bind(configApi));
+addon.post("/api/config/verify-parent/:userUUID", configLoadRateLimitMiddleware, configApi.verifyParent.bind(configApi));
 addon.get('/api/config/is-trusted/:uuid', configApi.isTrusted.bind(configApi));
 addon.post("/api/test-keys", testKeysRateLimitMiddleware, configApi.testApiKeys);
 
@@ -4846,14 +4847,15 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
     const { userUUID } = req.params;
     try {
         // Load config from database
-        const config = await database.getUserConfig(userUUID);
+        let config = await database.getUserConfig(userUUID);
         if (!config) {
             consola.debug(`[Manifest] No config found for user: ${userUUID}`);
             res.setHeader('Access-Control-Allow-Origin', '*');
             res.setHeader('Access-Control-Allow-Headers', '*');
             return res.status(404).send({ err: "User configuration not found." });
         }
-        
+        if (config.parentConfig) config = await loadRouteConfig(userUUID);
+
         const { tags, unknown: unknownTags } = resolveManifestTags(config, req.query.tag);
         req.manifestTags = tags;
         // The cap itself applies to catalog and search requests, not to the manifest.

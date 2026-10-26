@@ -6,6 +6,7 @@ const ALIAS_PATH_PREFIXES = new Set([
   'api/jellyfin',
   'api/config/load',
   'api/config/update',
+  'api/config/verify-parent',
   'api/config/is-trusted',
   'api/config/delete-user',
   'api/config/clear-cache',

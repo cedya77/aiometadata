@@ -63,8 +63,19 @@ const {
   MAX_AI_TRIGGER_KEYWORD_LENGTH,
 } = require('../utils/aiSearchTrigger');
 const { deleteKeysByPattern } = require('./redisUtils');
+const { mergeParentConfig, normalizeParentLink } = require('./parentConfig');
+const { LRUCache } = require('lru-cache');
 
 const MAX_TAG_NAME_LENGTH = 32;
+
+// A bcrypt check on every request would be far too slow, so a parent link's
+// password is checked once per window. Passwords only change through an admin
+// reset, which takes effect for linked configs once the window runs out.
+const parentLinkChecks = new LRUCache({ max: 5000, ttl: 10 * 60 * 1000 });
+
+function parentLinkKey(link) {
+  return `${link.uuid}:${crypto.createHash('sha256').update(link.password).digest('hex')}`;
+}
 
 function getMaxCatalogs() {
   const raw = process.env.MAX_CATALOGS;
@@ -337,8 +348,11 @@ class ConfigApi {
         }
       }
 
+      const served = await this.applyParentConfig(config);
+      if (served.error) return res.status(400).json({ error: served.error });
+
       // Validate required API keys
-      const validation = this.validateRequiredKeys(config);
+      const validation = this.validateRequiredKeys(served.config);
       if (!validation.valid) {
         return res.status(400).json({
           error: validation.message,
@@ -347,7 +361,7 @@ class ConfigApi {
       }
 
       // Optional catalog count ceiling (opt-in via MAX_CATALOGS env var)
-      const catalogCheck = this.validateCatalogCount(config);
+      const catalogCheck = this.validateCatalogCount(served.config);
       if (!catalogCheck.valid) {
         return res.status(400).json({
           error: catalogCheck.message,
@@ -718,6 +732,25 @@ class ConfigApi {
     }
   }
 
+  // Checks a parent's UUID and password for the Parent Config card, without handing out its config.
+  async verifyParent(req, res) {
+    try {
+      await this.initialize();
+      const { userUUID } = req.params;
+      const password = req.body?.password;
+      if (!userUUID || typeof password !== 'string' || !password) {
+        return res.status(400).json({ error: 'Parent UUID and password are required' });
+      }
+      if (!await database.verifyPassword(userUUID, password)) {
+        return res.status(401).json({ error: 'Invalid parent UUID or password' });
+      }
+      res.json({ success: true, userUUID });
+    } catch (error) {
+      logger.error('Verify parent error:', error);
+      res.status(500).json({ error: 'Failed to check the parent configuration' });
+    }
+  }
+
   // Update configuration (requires password)
   async updateConfig(req, res) {
     logger.debug(`updateConfig called for userUUID: ${req.params.userUUID}`);
@@ -755,8 +788,11 @@ class ConfigApi {
         }
       }
 
+      const served = await this.applyParentConfig(config, userUUID);
+      if (served.error) return res.status(400).json({ error: served.error });
+
       // Validate required API keys
-      const validation = this.validateRequiredKeys(config);
+      const validation = this.validateRequiredKeys(served.config);
       if (!validation.valid) {
         return res.status(400).json({
           error: validation.message,
@@ -765,7 +801,7 @@ class ConfigApi {
       }
 
       // Optional catalog count ceiling (opt-in via MAX_CATALOGS env var)
-      const catalogCheck = this.validateCatalogCount(config);
+      const catalogCheck = this.validateCatalogCount(served.config);
       if (!catalogCheck.valid) {
         return res.status(400).json({
           error: catalogCheck.message,
@@ -1114,10 +1150,59 @@ class ConfigApi {
 
   // Load configuration from database by UUID (for internal use)
   /**
-   * The cached configuration itself, shared by every caller, so it is read and
-   * never changed. loadConfigFromDatabase hands out a copy a route may change.
+   * The configuration every route works from, shared by every caller, so it is
+   * read and never changed. loadConfigFromDatabase hands out a copy a route may
+   * change. A linked parent is merged in on every call rather than cached, so a
+   * parent's save reaches its children at once.
    */
   async loadSharedConfig(userUUID) {
+    const config = await this.loadStoredConfig(userUUID);
+    if (!config?.parentConfig) return config;
+    try {
+      return mergeParentConfig(await this.resolveParentConfig(config.parentConfig, userUUID), config);
+    } catch (error) {
+      logger.debug(`Serving ${String(userUUID).substring(0, 8)}... without its parent config: ${error.message}`);
+      const { parentConfig: _unused, ...own } = config;
+      return own;
+    }
+  }
+
+  /**
+   * The parent a link points at, as stored. Throws with the reason when the link
+   * cannot be used: no such config, itself, or a password that no longer matches.
+   */
+  async resolveParentConfig(rawLink, childUUID, { recheck = false } = {}) {
+    const link = normalizeParentLink(rawLink);
+    if (!link) throw new Error('Enter the parent configuration\'s UUID and password');
+    if (link.uuid === childUUID) throw new Error('A configuration cannot be its own parent');
+
+    const key = parentLinkKey(link);
+    let valid = recheck ? undefined : parentLinkChecks.get(key);
+    if (valid === undefined) {
+      valid = await database.verifyPassword(link.uuid, link.password);
+      parentLinkChecks.set(key, valid);
+    }
+    if (!valid) throw new Error('Invalid parent UUID or password');
+    return this.loadStoredConfig(link.uuid);
+  }
+
+  /**
+   * Checks a parent link before a save and tidies it in place. Returns the config
+   * as it will be served, for the checks that are about what gets served.
+   */
+  async applyParentConfig(config, userUUID) {
+    if (!config.parentConfig) return { config };
+    try {
+      const parent = await this.resolveParentConfig(config.parentConfig, userUUID, { recheck: true });
+      config.parentConfig = normalizeParentLink(config.parentConfig);
+      return { config: mergeParentConfig(parent, config) };
+    } catch (error) {
+      return { error: `Parent config: ${error.message}` };
+    }
+  }
+
+  /** The configuration as its owner saved it, cached, without any parent applied. */
+  async loadStoredConfig(userUUID) {
     try {
       await this.initialize();
       
@@ -1618,6 +1703,7 @@ module.exports = {
   saveConfig: configApi.saveConfig.bind(configApi),
   loadConfig: configApi.loadConfig.bind(configApi),
   updateConfig: configApi.updateConfig.bind(configApi),
+  verifyParent: configApi.verifyParent.bind(configApi),
   getStats: configApi.getStats.bind(configApi),
   getAddonInfo: configApi.getAddonInfo.bind(configApi),
   isTrusted: configApi.isTrusted.bind(configApi),

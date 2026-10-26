@@ -575,6 +575,12 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     description: 'Required by the addon administrator.',
     keywords: ['addon password', 'password'],
   },
+  {
+    id: 'configuration.parentConfig', section: 'configuration', anchor: 'parent-config',
+    label: 'Parent Config',
+    description: 'Take settings from another configuration, section by section, so one change updates every configuration linked to it.',
+    keywords: ['parent', 'inherit', 'link', 'child', 'profiles', 'multiple configs'],
+  },
 
   // ── Catalogs — coarse, anchor: null (spec §4.3) ──
   // CatalogsSettings.tsx is 5,512 lines and imports six integration panels

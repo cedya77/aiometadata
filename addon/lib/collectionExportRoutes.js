@@ -37,8 +37,9 @@ function buildIdentity(req, userUUID, config) {
 }
 
 async function loadEntries(userUUID) {
-  const config = await database.getUserConfig(userUUID);
+  let config = await database.getUserConfig(userUUID);
   if (!config) return { error: 'notFound' };
+  if (config.parentConfig) config = await require('./configApi').loadSharedConfig(userUUID);
   let entries = Array.isArray(config.collections) ? config.collections : [];
   const prefix = config.collectionImagesViaCache ? getCollectionImagePrefix() : '';
   if (prefix) entries = proxyCollectionImages(entries, prefix);

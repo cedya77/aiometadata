@@ -1,5 +1,6 @@
 import type { AppConfig } from '../contexts/config';
 import { readValue, ART_TYPES, CONTENT_TYPES, type ContentType } from './artProviders';
+import { fieldStrategy } from '../../../addon/lib/parentConfig';
 
 export type ApiKeyId =
   | 'tmdb'
@@ -108,6 +109,11 @@ export function isKeyInUse(config: ConfigLike, id: ApiKeyId): boolean {
 
 export function isKeyConfigured(config: ConfigLike, id: ApiKeyId, caps: ConfigCaps): boolean {
   const apiKeys: Record<string, string | undefined> = config?.apiKeys || {};
+  const keyName = id !== 'ai_service' ? id : aiProvider(config) === 'openrouter' ? 'openrouter' : 'gemini';
+  // A key taken from the parent is checked by the server, against the merged config, on save.
+  if (config?.parentConfig && fieldStrategy(config.parentConfig, 'apiKeys', `apiKeys.${keyName}`) !== 'override') {
+    return true;
+  }
   if (id === 'ai_service') {
     // The unselected provider's key cannot serve a search, so it cannot satisfy
     // the requirement either.
