@@ -590,7 +590,7 @@ export async function dashboardSyncNow(userUUID: string, key: string, full: bool
   const { syncMirror } = require('./trackerMirror');
   const before = Number((await database.getTrackerSync(key).catch(() => null))?.version) || 0;
   const started = Date.now();
-  const version = await syncMirror(source.service, source.credential, source.scoped, { full });
+  const version = await syncMirror(source.service, source.credential, source.scoped, { full, fresh: true });
   forgetDrift(userUUID);
   return { ms: Date.now() - started, changed: version !== before };
 }

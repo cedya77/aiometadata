@@ -1762,8 +1762,9 @@ async function fetchMDBListCatalog(
  * key's library moved: the watch mirror, the paused-titles gate and the hide-watched
  * filter. A watch recorded here clears it.
  */
-async function fetchMdblistLastActivities(apiKey: string): Promise<any> {
+async function fetchMdblistLastActivities(apiKey: string, fresh = false): Promise<any> {
   const keyHash = crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
+  if (fresh) await require('../lib/getCache').redis?.del(`global:mdblist_last_activities:${keyHash}`).catch(() => undefined);
   return cacheWrapGlobal(
     `mdblist_last_activities:${keyHash}`,
     async () => {

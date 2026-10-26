@@ -684,9 +684,10 @@ async function fetchSimklUserStats(tokenId: string): Promise<any> {
   );
 }
 
-async function fetchSimklLastActivities(accessToken: string, config?: any): Promise<any> {
+async function fetchSimklLastActivities(accessToken: string, config?: any, fresh = false): Promise<any> {
   const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
   const cacheKey = `simkl-api-last-activities:${tokenHash}`;
+  if (fresh) await require('../lib/getCache').redis?.del(`global:${cacheKey}`).catch(() => undefined);
   
   // Cached so that rapid pagination requests share one "state of truth"
   // instead of hitting the API once per page.

@@ -39,7 +39,7 @@ const running = new Map<string, Promise<number>>();
  * and returns its version, which moves only when something did. The first sync of an
  * account reads its whole library once.
  */
-export function syncMirror(service: MirrorService, credential: string, config: any, options: { full?: boolean } = {}): Promise<number> {
+export function syncMirror(service: MirrorService, credential: string, config: any, options: { full?: boolean; fresh?: boolean } = {}): Promise<number> {
   const key = sourceKeyFor(service, credential);
   const held = running.get(key);
   if (held && !options.full) return held;
@@ -47,7 +47,7 @@ export function syncMirror(service: MirrorService, credential: string, config: a
     .then(async () => {
       const { recordingTrackerCalls } = require('../../utils/trackerCalls');
       let version = 0;
-      const { calls, error } = await recordingTrackerCalls(async () => { version = await runSync(service, key, credential, config, options.full === true); });
+      const { calls, error } = await recordingTrackerCalls(async () => { version = await runSync(service, key, credential, config, options.full === true, options.fresh === true); });
       if (!error) return version;
       const said = readFailure(calls, error);
       require('../trackerActivity').noteRead(key, service, { error: said });
@@ -79,7 +79,7 @@ export async function mirrorVersion(service: MirrorService, credential: string):
   return Number(state?.version) || 0;
 }
 
-async function runSync(service: MirrorService, key: string, credential: string, config: any, full = false): Promise<number> {
+async function runSync(service: MirrorService, key: string, credential: string, config: any, full = false, fresh = false): Promise<number> {
   const state = await database.getTrackerSync(key);
   let watermark: any = null;
   try {
@@ -93,9 +93,9 @@ async function runSync(service: MirrorService, key: string, credential: string, 
 
   const started = Date.now();
   const outcome = service === 'simkl'
-    ? await syncSimkl(key, credential, config, watermark)
+    ? await syncSimkl(key, credential, config, watermark, fresh)
     : service === 'mdblist'
-      ? await syncMdblist(key, credential, watermark)
+      ? await syncMdblist(key, credential, watermark, fresh)
       : service === 'publicmetadb'
         ? await syncPmdb(key, credential, watermark)
         : await syncAnimeList(service, key, credential, watermark);
@@ -141,7 +141,7 @@ function simklRows(type: string, entries: any[]): MirrorRow[] {
   return rows;
 }
 
-async function syncSimkl(key: string, tokenId: string, config: any, watermark: any): Promise<SyncOutcome> {
+async function syncSimkl(key: string, tokenId: string, config: any, watermark: any, fresh = false): Promise<SyncOutcome> {
   const { getSimklToken, fetchSimklLastActivities, makeAuthenticatedSimklRequest } = require('../../utils/simklUtils');
   const token = await getSimklToken(tokenId);
   const accessToken = token?.access_token;
@@ -150,7 +150,7 @@ async function syncSimkl(key: string, tokenId: string, config: any, watermark: a
   const get = async (path: string) =>
     (await makeAuthenticatedSimklRequest(`https://api.simkl.com${path}`, accessToken, 'Simkl mirror'))?.data ?? {};
 
-  const activities = await fetchSimklLastActivities(accessToken, config);
+  const activities = await fetchSimklLastActivities(accessToken, config, fresh);
   if (!activities?.all) throw new Error('Simkl activities could not be read');
 
   if (!watermark?.all) {
@@ -227,8 +227,8 @@ function mdblistShowRow(entry: any): MirrorRow | null {
   return id ? { key: `showinfo:${id}`, group: `show:${id}`, data: entry } : null;
 }
 
-function mdblistActivities(apiKey: string): Promise<any> {
-  return require('../../utils/mdbList').fetchMdblistLastActivities(apiKey);
+function mdblistActivities(apiKey: string, fresh = false): Promise<any> {
+  return require('../../utils/mdbList').fetchMdblistLastActivities(apiKey, fresh);
 }
 
 async function mdblistUpNextMark(apiKey: string): Promise<{ upnext_at: number; upnext_next: number | null }> {
@@ -314,8 +314,8 @@ async function journalRows(key: string, rows: any[]): Promise<MirrorRow[]> {
   return out;
 }
 
-async function syncMdblist(key: string, apiKey: string, watermark: any): Promise<SyncOutcome> {
-  const activities = await mdblistActivities(apiKey);
+async function syncMdblist(key: string, apiKey: string, watermark: any, fresh = false): Promise<SyncOutcome> {
+  const activities = await mdblistActivities(apiKey, fresh);
   if (!activities?.server_time) throw new Error('MDBList activities could not be read');
   if (watermark?.server_time && watermark.format === 3) {
     const verdict = await mdblistCutShort(key, apiKey, watermark);
