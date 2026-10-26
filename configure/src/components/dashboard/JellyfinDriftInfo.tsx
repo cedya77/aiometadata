@@ -130,6 +130,11 @@ function Detail({ userUUID, laneKey, service, side, item, activeTab, open }: { u
                     ? `${data.holds.watched} of ${data.holds.total || "?"} episodes watched${data.holds.at ? `, last ${day(data.holds.at)}` : ""}`
                     : `${name} has no show under these ids`}
               </p>
+              {data.holds.kind === "series" && data.holds.season !== undefined && (
+                <p className="text-xs text-muted-foreground">
+                  Season {data.holds.season} {data.holds.numbers?.length ? <>held as episodes <span className="text-foreground/90">{ranges(data.holds.numbers)}</span></> : "has no episodes held under these ids"}
+                </p>
+              )}
             </Section>
           )}
 

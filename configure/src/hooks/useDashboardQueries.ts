@@ -2092,7 +2092,7 @@ export interface JellyfinDriftDetail {
   sendsAs: { ids: Record<string, string | number>; season: number | null; episode: number | null } | null;
   sendError: string | null;
   match: { title: string; year: number | null; seasons: Record<string, { season: number; offset: number }> } | null;
-  holds: { kind: 'movie'; found: boolean; watchedAt: number | null } | { kind: 'series'; found: boolean; watched: number; total: number; at: number | null } | null;
+  holds: { kind: 'movie'; found: boolean; watchedAt: number | null } | { kind: 'series'; found: boolean; watched: number; total: number; at: number | null; season?: number; numbers?: number[] } | null;
   attempts: Array<{ at: number; kind: 'sent' | 'failed' | 'dropped'; video: string; verb: string | null; reason: string | null }>;
 }
 

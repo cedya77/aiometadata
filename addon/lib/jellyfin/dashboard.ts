@@ -764,7 +764,17 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
     } else {
       const counts = await seriesCountsAmong(snapshot, [...shows, ...theirShows]);
       const best = [...counts.values()].sort((a: any, b: any) => b.watched - a.watched)[0] ?? null;
-      holds = { kind: 'series', found: Boolean(best), watched: best?.watched ?? 0, total: best?.total ?? 0, at: best?.at || null };
+      const season = Number(parsed.season ?? 1);
+      const theirSeason = match?.seasons?.[String(season)]?.season ?? season;
+      const spellings = new Map<string, number>();
+      const ourShows = [...new Set([...shows, ...aliases.map((alias) => parseStremioId(alias)?.base).filter(Boolean)])] as string[];
+      for (let episode = 1; episode <= 80; episode += 1) {
+        for (const base of ourShows) spellings.set(`${base}:${season}:${episode}`, episode);
+        for (const base of theirShows) spellings.set(`${base}:${theirSeason}:${episode}`, episode);
+      }
+      const seen = await watchedAmong(snapshot, [...spellings.keys()]);
+      const numbers = [...new Set([...seen.keys()].map((id) => spellings.get(id)!))].sort((a, b) => a - b);
+      holds = { kind: 'series', found: Boolean(best), watched: best?.watched ?? 0, total: best?.total ?? 0, at: best?.at || null, season: theirSeason, numbers };
     }
   }
 
