@@ -638,10 +638,21 @@ export async function dashboardDrift(userUUID: string, profile: string | null): 
   const held = drifts.get(memoKey);
   if (held) return held;
   const { driftWindowDays, spellingFor } = require('./trackerDrift');
+  const { parseStremioId } = require('./idsCodec');
+  const { MATCH_SERVICES, matchFor } = require('./trackerMatch');
   const sources = syncSources(config, userUUID, profile);
   const lanes = await mapWithConcurrency([...sources.entries()], 2, async ([key, source]) => {
     try {
       const drift = await driftOf(userUUID, key, source);
+      const outcomes = new Map<string, string | null>();
+      for (const row of (await database.listTrackerActivity([key], Date.now() - driftWindowDays() * DAY_MS, 2000).catch(() => [])) as any[]) {
+        if (!row.video || outcomes.has(String(row.video)) || (row.kind !== 'sent' && row.kind !== 'failed')) continue;
+        let detail: any = {};
+        try {
+          detail = JSON.parse(row.detail ?? '{}');
+        } catch {}
+        outcomes.set(String(row.video), row.kind === 'failed' && (detail.status === 404 || detail.status === 422) ? String(detail.reason ?? 'not found') : null);
+      }
       const items = async (viewings: any[]) => {
         const groups = new Map<string, any[]>();
         for (const v of viewings) {
@@ -653,9 +664,19 @@ export async function dashboardDrift(userUUID: string, profile: string | null): 
           list.sort((a: any, b: any) => (a.season ?? 0) - (b.season ?? 0) || (a.episode ?? 0) - (b.episode ?? 0) || a.at - b.at);
           const spelling = spellingFor(source.service, list[list.length - 1].ids);
           const named = await withDeadline(describe(userUUID, spelling).catch(() => null));
+          const bases = [...new Set(list.flatMap((v: any) => v.ids.map((video: string) => parseStremioId(video)?.base ?? video)))] as string[];
+          const matchable = MATCH_SERVICES.has(source.service);
+          const matched = matchable ? (await Promise.all(bases.map((base) => matchFor(userUUID, source.service, base)))).find(Boolean) ?? null : null;
           return {
             id,
             kind: list[0].kind,
+            video: spelling,
+            bases,
+            ...(matchable ? {
+              seasons: [...new Set(list.map((v: any) => v.season).filter((season: any) => Number.isFinite(season)))].sort((a: any, b: any) => a - b),
+              unmatched: list.flatMap((v: any) => v.ids).map((video: string) => outcomes.get(video)).find(Boolean) ?? null,
+              matchedTo: matched ? matched.target.title : null,
+            } : {}),
             title: named && named.title !== spelling ? named.title : null,
             open: list[0].kind === 'movie'
               ? { id: list[0].ids.find((id: string) => id.startsWith('tt')) ?? list[0].metaId, type: 'movie' }
@@ -695,6 +716,175 @@ export async function dashboardDriftAction(userUUID: string, key: string, action
     require('./resume').invalidateResume(userUUID);
   }
   return done;
+}
+
+export async function dashboardDriftItem(userUUID: string, key: string, side: 'behind' | 'ahead', video: string, bases: string[]): Promise<any | null> {
+  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const source = config ? syncSources(config, userUUID).get(key) : null;
+  const { parseStremioId } = require('./idsCodec');
+  const parsed = parseStremioId(video);
+  const shows = bases.filter((base) => parseStremioId(base)?.base === base).slice(0, 20);
+  if (!source || !parsed || !shows.length) return null;
+  const { driftWindowDays } = require('./trackerDrift');
+  const { videoIdAliases } = require('./aliases');
+  const { matchFor, MATCH_SERVICES } = require('./trackerMatch');
+  const { indexedSnapshot, seriesCountsAmong, watchedAmong } = require('./watched');
+  const { trackerConfig } = require('../accounts');
+
+  const match = MATCH_SERVICES.has(source.service)
+    ? (await Promise.all(shows.map((base) => matchFor(userUUID, source.service, base)))).find(Boolean) ?? null
+    : null;
+  const aliases: string[] = await videoIdAliases(video).catch(() => []);
+
+  let sendsAs: any = null;
+  let sendError: string | null = null;
+  if (side === 'behind' && source.service !== 'anilist' && source.service !== 'mal') {
+    const { parseMediaId, historyTarget } = require('../subtitleHandler');
+    const media = parseMediaId(video);
+    try {
+      const target: any = media ? await withDeadline(historyTarget(media, { ...trackerConfig(source.scoped, source.service), userUUID }, source.service), 'slow') : null;
+      if (target === 'slow') sendError = 'Working out the ids took too long; open this again';
+      else if (target) sendsAs = { ids: target.ids, season: target.season ?? null, episode: target.episode ?? null };
+      else sendError = media ? `No ${source.service} ids for ${video}` : `${video} is not an id trackers take`;
+    } catch (error: any) {
+      sendError = String(error?.message || error).slice(0, 200);
+    }
+  }
+
+  const snapshot = await indexedSnapshot(source.service, source.credential, source.scoped).catch(() => null);
+  const theirShows = match ? [match.target.ids.imdb, match.target.ids.tvdb && `tvdb:${match.target.ids.tvdb}`, match.target.ids.tmdb && `tmdb:${match.target.ids.tmdb}`].filter(Boolean).map(String) : [];
+  let holds: any = null;
+  if (snapshot?.source) {
+    if (parsed.episode === null || parsed.episode === undefined) {
+      const held = await watchedAmong(snapshot, [...shows, ...theirShows]);
+      holds = { kind: 'movie', watchedAt: held.size ? Math.max(...held.values()) || null : null, found: held.size > 0 };
+    } else {
+      const counts = await seriesCountsAmong(snapshot, [...shows, ...theirShows]);
+      const best = [...counts.values()].sort((a: any, b: any) => b.watched - a.watched)[0] ?? null;
+      holds = { kind: 'series', found: Boolean(best), watched: best?.watched ?? 0, total: best?.total ?? 0, at: best?.at || null };
+    }
+  }
+
+  const wanted = new Set(shows);
+  const attempts = ((await database.listTrackerActivity([key], Date.now() - driftWindowDays() * DAY_MS, 2000).catch(() => [])) as any[])
+    .filter((row) => row.video && (row.kind === 'sent' || row.kind === 'failed' || row.kind === 'dropped') && wanted.has(parseStremioId(String(row.video))?.base ?? String(row.video)))
+    .slice(0, 6)
+    .map((row) => {
+      let detail: any = {};
+      try {
+        detail = JSON.parse(row.detail ?? '{}');
+      } catch {}
+      return { at: Number(row.at), kind: row.kind, video: String(row.video), verb: detail.verb ?? null, reason: detail.reason ?? null };
+    });
+
+  return {
+    service: source.service,
+    side,
+    video,
+    aliases: aliases.filter((alias) => alias !== video).slice(0, 6),
+    sendsAs,
+    sendError,
+    match: match ? { title: match.target.title, year: match.target.year, seasons: match.seasons } : null,
+    holds,
+    attempts,
+  };
+}
+
+async function matchSource(userUUID: string, key: string): Promise<SyncSource | null> {
+  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const source = config ? syncSources(config, userUUID).get(key) ?? null : null;
+  const { MATCH_SERVICES } = require('./trackerMatch');
+  return source && MATCH_SERVICES.has(source.service) ? source : null;
+}
+
+const MATCH_ID_KEYS = new Set(['simkl', 'imdb', 'tvdb', 'tmdb']);
+
+function cleanIds(value: any): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  for (const [key, raw] of Object.entries(value && typeof value === 'object' ? value : {})) {
+    if (!MATCH_ID_KEYS.has(key)) continue;
+    if (key === 'imdb') {
+      if (typeof raw === 'string' && /^tt\d+$/.test(raw)) out.imdb = raw;
+    } else if (Number.isInteger(Number(raw)) && Number(raw) > 0) {
+      out[key] = Number(raw);
+    }
+  }
+  return out;
+}
+
+function cleanCandidate(value: any): any | null {
+  const ids = cleanIds(value?.ids);
+  if (!Object.keys(ids).length) return null;
+  const posterUrl = typeof value?.posterUrl === 'string' && /^https:\/\//.test(value.posterUrl) ? value.posterUrl.slice(0, 500) : null;
+  return {
+    ids,
+    title: String(value?.title ?? '').slice(0, 200),
+    year: Number.isInteger(Number(value?.year)) ? Number(value.year) : null,
+    posterUrl,
+    kind: ['tv', 'anime', 'movie'].includes(value?.kind) ? value.kind : 'tv',
+    episodes: Number.isInteger(Number(value?.episodes)) ? Number(value.episodes) : null,
+  };
+}
+
+export async function dashboardMatchSearch(userUUID: string, key: string, query: string, kind: 'movie' | 'series'): Promise<any[] | null> {
+  const source = await matchSource(userUUID, key);
+  if (!source) return null;
+  const { searchTargets } = require('./trackerMatch');
+  return searchTargets(source.service, source.credential, query, kind);
+}
+
+export async function dashboardMatchDetail(userUUID: string, key: string, candidate: any): Promise<any | null> {
+  const source = await matchSource(userUUID, key);
+  const picked = cleanCandidate(candidate);
+  if (!source || !picked) return null;
+  const { targetDetail } = require('./trackerMatch');
+  return targetDetail(source.service, source.credential, picked, source.scoped);
+}
+
+export async function dashboardMatches(userUUID: string, key: string): Promise<any[] | null> {
+  const source = await matchSource(userUUID, key);
+  if (!source) return null;
+  const { listMatches } = require('./trackerMatch');
+  return listMatches(userUUID, source.service);
+}
+
+export async function dashboardMatchSave(userUUID: string, key: string, body: any): Promise<{ match: any; sent: number } | null> {
+  const source = await matchSource(userUUID, key);
+  const target = cleanCandidate(body?.target);
+  const { parseStremioId } = require('./idsCodec');
+  const bases = (Array.isArray(body?.bases) ? body.bases : [])
+    .filter((base: unknown) => typeof base === 'string' && parseStremioId(base)?.base === base)
+    .slice(0, 20);
+  if (!source || !target || !bases.length) return null;
+  const seasons: Record<string, { season: number; offset: number }> = {};
+  for (const [ours, link] of Object.entries(body?.seasons && typeof body.seasons === 'object' ? body.seasons : {})) {
+    const season = Number((link as any)?.season);
+    const offset = Number((link as any)?.offset ?? 0);
+    if (!/^\d{1,4}$/.test(ours) || !Number.isInteger(season) || season < 0 || season > 9999 || !Number.isInteger(offset) || Math.abs(offset) > 9999) continue;
+    seasons[ours] = { season, offset };
+  }
+  const { saveMatch } = require('./trackerMatch');
+  const match = await saveMatch(userUUID, source.service, {
+    bases,
+    kind: body?.kind === 'movie' ? 'movie' : 'series',
+    title: typeof body?.title === 'string' ? body.title.slice(0, 200) : null,
+    open: typeof body?.open?.id === 'string' && body.open.id.length <= 100 ? { id: body.open.id, type: body.open.type === 'movie' ? 'movie' : 'series' } : null,
+    target: { ids: target.ids, title: target.title, year: target.year, posterUrl: target.posterUrl, kind: target.kind },
+    seasons,
+  });
+  forgetDrift(userUUID);
+  const item = typeof body?.item === 'string' ? body.item : null;
+  const sent = item ? (await dashboardDriftAction(userUUID, key, 'push', [item]).catch(() => 0)) ?? 0 : 0;
+  return { match, sent };
+}
+
+export async function dashboardMatchRemove(userUUID: string, key: string, group: string): Promise<boolean> {
+  const source = await matchSource(userUUID, key);
+  if (!source) return false;
+  const { removeMatch } = require('./trackerMatch');
+  await removeMatch(userUUID, source.service, group);
+  forgetDrift(userUUID);
+  return true;
 }
 
 function copySide(source: SyncSource, key: string): any {

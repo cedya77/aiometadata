@@ -1,13 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowDownToLine, ArrowLeftRight, CheckCircle2, ChevronRight, Film, History, LayoutList, Loader2, MoreHorizontal, Network, RefreshCw, RotateCcw, Send, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, CheckCircle2, ChevronRight, Film, History, LayoutList, Link2, Loader2, MoreHorizontal, Network, Pencil, RefreshCw, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useJellyfinSync, useJellyfinSyncActions, useJellyfinSyncDrift, type DashboardTab, type JellyfinDriftItem, type JellyfinDriftLane, type JellyfinSyncFeedItem, type JellyfinSyncLane, type JellyfinSyncRow, type JellyfinSyncWrite } from "@/hooks/useDashboardQueries";
+import { useJellyfinSync, useJellyfinSyncActions, useJellyfinSyncDrift, useJellyfinTrackerMatches, type DashboardTab, type JellyfinDriftItem, type JellyfinDriftLane, type JellyfinSyncFeedItem, type JellyfinSyncLane, type JellyfinSyncRow, type JellyfinSyncWrite, type JellyfinTrackerMatch } from "@/hooks/useDashboardQueries";
 import { Eyebrow, Logo, Still, Toggle } from "./TrackerParts";
-import { ANIME_ONLY, COPY_FROM, nameOf } from "./trackerNames";
+import { ANIME_ONLY, COPY_FROM, MATCHABLE, nameOf } from "./trackerNames";
 import JellyfinCopy from "./JellyfinCopy";
+import TrackerMatchDialog, { Poster, type MatchSubject } from "./JellyfinTrackerMatch";
+import DriftInfo from "./JellyfinDriftInfo";
 import { Ambient } from "./JellyfinShared";
 import { useOpenTitle, useRemembered, when } from "./jellyfinUtils";
 
@@ -185,7 +187,7 @@ function datesOf(item: JellyfinDriftItem): string {
   return first === last ? first : `${first} to ${last}`;
 }
 
-function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo }: {
+function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, service, onMatch, info }: {
   title: string;
   items: JellyfinDriftItem[];
   all: string;
@@ -195,8 +197,14 @@ function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo }: 
   prefix: string;
   where: string;
   onGo: (items: string[] | null) => void;
+  service?: string;
+  onMatch?: (item: JellyfinDriftItem) => void;
+  info?: { userUUID: string; laneKey: string; side: "behind" | "ahead"; activeTab: DashboardTab };
 }) {
   const openTitle = useOpenTitle();
+  const withInfo = (item: JellyfinDriftItem, row: React.ReactElement) => info && service
+    ? <DriftInfo userUUID={info.userUUID} laneKey={info.laneKey} service={service} side={info.side} item={item} activeTab={info.activeTab}>{row}</DriftInfo>
+    : row;
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
@@ -210,13 +218,20 @@ function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo }: 
       <div className="space-y-1">
         {items.map((item) => (
           <div key={item.id} className="group flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-white/[0.04]">
-            <button type="button" disabled={!openTitle} onClick={() => openTitle?.(item.open)} aria-label={`Open ${item.title ?? "this title"}`} className="flex min-w-0 flex-1 items-center gap-3.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
+            {withInfo(item, <button type="button" disabled={!openTitle} onClick={() => openTitle?.(item.open)} aria-label={`Open ${item.title ?? "this title"}`} className="flex min-w-0 flex-1 items-center gap-3.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
               <span className="overflow-hidden rounded-lg"><Still src={item.imageUrl} className="w-20 rounded-lg transition-transform duration-500 group-hover:scale-105 sm:w-28" /></span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold underline-offset-4 group-hover:underline">{item.title ?? "Unknown title"}</span>
                 <span className="block text-xs text-muted-foreground">{spanOf(item)}<span className="max-sm:block"><span className="max-sm:hidden"> · </span>{where} {datesOf(item)}</span></span>
+                {onMatch && item.unmatched && !item.matchedTo && <span className="mt-0.5 block text-xs text-amber-200/90">{nameOf(service ?? "")} can't find this title</span>}
+                {onMatch && item.matchedTo && <span className="mt-0.5 block truncate text-xs text-muted-foreground">Matched to {item.matchedTo}</span>}
               </span>
-            </button>
+            </button>)}
+            {onMatch && (item.unmatched || item.matchedTo) && (
+              <button type="button" onClick={() => onMatch(item)} aria-label={`Match ${item.title ?? "this title"} on ${nameOf(service ?? "")}`} className={cx("flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors", item.matchedTo ? "border border-white/[0.12] text-foreground/90 hover:bg-white/10" : "bg-amber-400/15 text-amber-100 ring-1 ring-inset ring-amber-300/30 hover:bg-amber-400/25")}>
+                <Link2 className="size-3.5" /> <span className="hidden sm:inline">{item.matchedTo ? "Edit match" : "Match"}</span>
+              </button>
+            )}
             <button type="button" onClick={() => onGo([item.id])} disabled={busy !== null} aria-label={`${one}: ${item.title ?? "this title"}`} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.12] px-3 text-xs font-medium text-foreground/90 transition-colors hover:bg-white/10 disabled:opacity-50">
               {busy === `${prefix}${item.id}` ? <Loader2 className="size-3.5 animate-spin" /> : icon} <span className="hidden sm:inline">{one}</span>
             </button>
@@ -247,7 +262,26 @@ function Waiting({ write, now, onOutbox }: { write: JellyfinSyncWrite; now: numb
   );
 }
 
-function LaneDetail({ lane, drift, days, queue, events, now, reading, busy, onRun, onOutbox, onDrift }: {
+function MatchRow({ match, service, onEdit, onRemove }: { match: JellyfinTrackerMatch; service: string; onEdit: () => void; onRemove: () => void }) {
+  const moved = Object.entries(match.seasons).filter(([ours, link]) => Number(ours) !== link.season || link.offset !== 0);
+  const seasons = moved.map(([ours, link]) => `season ${ours} is ${link.offset ? `season ${link.season} from episode ${link.offset + 1}` : `season ${link.season}`}`).join(", ");
+  return (
+    <div className="flex items-center gap-3 rounded-xl p-1.5">
+      <Poster src={match.target.posterUrl} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold">{match.title ?? "A title"} <span className="font-normal text-muted-foreground">is</span> {match.target.title}{match.target.year ? <span className="font-normal text-muted-foreground"> ({match.target.year})</span> : null}</p>
+        <p className="truncate text-xs text-muted-foreground">{seasons ? `On ${nameOf(service)}, ${seasons}` : `Same seasons on ${nameOf(service)}`}</p>
+      </div>
+      <button type="button" onClick={onEdit} aria-label="Edit match" title="Edit match" className="flex size-8 shrink-0 items-center justify-center rounded-full text-foreground/80 transition hover:bg-white/10"><Pencil className="size-4" /></button>
+      <button type="button" onClick={onRemove} aria-label="Remove match" title="Remove match" className="flex size-8 shrink-0 items-center justify-center rounded-full text-foreground/60 transition hover:bg-white/10 hover:text-red-300"><Trash2 className="size-4" /></button>
+    </div>
+  );
+}
+
+function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, events, now, reading, busy, onRun, onOutbox, onDrift, onChanged }: {
+  userUUID: string;
+  profile: string | null;
+  activeTab: DashboardTab;
   lane: JellyfinSyncLane;
   drift: JellyfinDriftLane | undefined;
   days: number;
@@ -259,8 +293,30 @@ function LaneDetail({ lane, drift, days, queue, events, now, reading, busy, onRu
   onRun: (full: boolean) => void;
   onOutbox: (action: "retry" | "drop", ids: number[]) => Promise<void>;
   onDrift: (action: "push" | "pull", items: string[] | null) => void;
+  onChanged: () => void;
 }) {
   const name = nameOf(lane.service);
+  const matchable = MATCHABLE.has(lane.service);
+  const actions = useJellyfinSyncActions();
+  const { data: matchData, refetch: refetchMatches } = useJellyfinTrackerMatches(userUUID, lane.key, matchable, { activeTab });
+  const [matching, setMatching] = useState<MatchSubject | null>(null);
+  const matches = matchData?.matches ?? [];
+  const matchItem = (item: JellyfinDriftItem) => {
+    const existing = matches.find((m) => m.bases.some((base) => item.bases?.includes(base))) ?? null;
+    setMatching({ item: item.id, bases: item.bases ?? [], kind: item.kind === "movie" ? "movie" : "series", title: item.title, open: item.open, seasons: item.seasons ?? [], existing });
+  };
+  const editMatch = (match: JellyfinTrackerMatch) => setMatching({ item: null, bases: match.bases, kind: match.kind, title: match.title, open: match.open, seasons: Object.keys(match.seasons).map(Number), existing: match });
+  const removeMatch = async (match: JellyfinTrackerMatch) => {
+    try {
+      await actions.matchRemove(userUUID, lane.key, match.group);
+      toast.success(`${match.title ?? "The title"} is no longer matched on ${name}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not remove the match");
+    } finally {
+      void refetchMatches();
+      onChanged();
+    }
+  };
   const state = laneState(lane, now, drift);
   const ids = queue.map((w) => w.id);
   const reason = lane.readError ?? (state.tone !== "paused" ? lane.lastError : null);
@@ -307,8 +363,8 @@ function LaneDetail({ lane, drift, days, queue, events, now, reading, busy, onRu
         <p className="flex items-center gap-2 text-sm text-emerald-200/90"><CheckCircle2 className="size-4 shrink-0" /> {name} has every watch made here{ANIME_ONLY.has(lane.service) ? "" : `, and nothing it got in the last ${days} days is missing here`}.</p>
       ) : (
         <>
-          {drift.behind.length > 0 && <DriftList title={`Missing on ${name}`} items={drift.behind} all="Send all" one="Send" icon={<Send className="size-3.5" />} busy={busy} prefix="push:" where="watched here" onGo={(items) => onDrift("push", items)} />}
-          {drift.ahead.length > 0 && <DriftList title={`Only on ${name}`} items={drift.ahead} all="Bring all in" one="Bring in" icon={<ArrowDownToLine className="size-3.5" />} busy={busy} prefix="pull:" where="watched" onGo={(items) => onDrift("pull", items)} />}
+          {drift.behind.length > 0 && <DriftList title={`Missing on ${name}`} items={drift.behind} all="Send all" one="Send" icon={<Send className="size-3.5" />} busy={busy} prefix="push:" where="watched here" onGo={(items) => onDrift("push", items)} service={lane.service} onMatch={matchable ? matchItem : undefined} info={{ userUUID, laneKey: lane.key, side: "behind", activeTab }} />}
+          {drift.ahead.length > 0 && <DriftList title={`Only on ${name}`} items={drift.ahead} all="Bring all in" one="Bring in" icon={<ArrowDownToLine className="size-3.5" />} busy={busy} prefix="pull:" where="watched" onGo={(items) => onDrift("pull", items)} service={lane.service} info={{ userUUID, laneKey: lane.key, side: "ahead", activeTab }} />}
         </>
       )}
 
@@ -317,6 +373,26 @@ function LaneDetail({ lane, drift, days, queue, events, now, reading, busy, onRu
           <Eyebrow>Waiting to send <span className="tabular-nums opacity-70">({queue.length})</span></Eyebrow>
           {queue.map((write) => <Waiting key={write.id} write={write} now={now} onOutbox={onOutbox} />)}
         </div>
+      )}
+
+      {matches.length > 0 && (
+        <div className="space-y-1">
+          <Eyebrow>Matched by hand <span className="tabular-nums opacity-70">({matches.length})</span></Eyebrow>
+          {matches.map((match) => <MatchRow key={match.group} match={match} service={lane.service} onEdit={() => editMatch(match)} onRemove={() => void removeMatch(match)} />)}
+        </div>
+      )}
+
+      {matching && (
+        <TrackerMatchDialog
+          userUUID={userUUID}
+          profile={profile}
+          activeTab={activeTab}
+          laneKey={lane.key}
+          service={lane.service}
+          subject={matching}
+          onClose={() => setMatching(null)}
+          onSaved={() => { void refetchMatches(); onChanged(); }}
+        />
       )}
 
       {bursts.length > 0 && (
@@ -656,6 +732,9 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
   const detailOf = (lane: JellyfinSyncLane) => (
     <LaneDetail
       key={lane.key}
+      userUUID={userUUID}
+      profile={profile}
+      activeTab={activeTab}
       lane={lane}
       drift={drifts.get(lane.key)}
       days={days}
@@ -667,6 +746,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
       onRun={(full) => void runLane(lane, full)}
       onOutbox={outbox}
       onDrift={(action, items) => void settle(lane, action, items)}
+      onChanged={refresh}
     />
   );
 

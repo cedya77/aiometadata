@@ -136,8 +136,11 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
     return parsed?.episode != null && (sent.get(parsed.base) ?? 0) >= parsed.episode && sent.get(parsed.base) !== Infinity;
   };
   const judged = mine.filter((v) => v.at <= settled && !v.ids.some(wasSent));
-  const held = await watchedAmong(snapshot, [...new Set(judged.flatMap((v) => v.ids))]);
-  let behind = judged.filter((v) => !v.ids.some((id) => held.has(id) || waiting.has(id)));
+  const ours = [...new Set(judged.flatMap((v) => v.ids))];
+  const { theirSpellings } = require('./trackerMatch');
+  const matched: Map<string, string[]> = await theirSpellings(userUUID, source.service, ours).catch(() => new Map());
+  const held = await watchedAmong(snapshot, [...ours, ...[...matched.values()].flat()]);
+  let behind = judged.filter((v) => !v.ids.some((id) => held.has(id) || waiting.has(id) || (matched.get(id) ?? []).some((theirs) => held.has(theirs))));
   if (ANIME_LISTS.has(source.service)) {
     const counts = await seriesCountsAmong(snapshot, [...new Set(behind.flatMap((v) => v.ids.map((id) => parseStremioId(id)?.base ?? id)))]);
     behind = behind.filter((v) => !v.ids.some((id) => (counts.get(parseStremioId(id)?.base ?? id)?.at ?? 0) > v.at));
@@ -162,9 +165,11 @@ async function statesFor(userUUID: string, viewings: Viewing[]): Promise<Map<str
 
 async function aheadOf(userUUID: string, source: DriftSource, sourceKey: string, since: number, unmarking: Set<string>): Promise<Viewing[]> {
   const rows: any[] = await database.watchIndexSince(sourceKey, since);
+  const { ourSpellings } = require('./trackerMatch');
   const candidates: Viewing[] = [];
   for (const row of rows) {
-    const ids = [String(row.video_id), ...(await videoIdAliases(String(row.video_id)).catch(() => [] as string[]))];
+    const ours: string[] = await ourSpellings(userUUID, source.service, String(row.video_id)).catch(() => []);
+    const ids = [...ours, String(row.video_id), ...(await videoIdAliases(String(row.video_id)).catch(() => [] as string[]))];
     if (ids.some((id) => unmarking.has(id))) continue;
     const viewing = viewingOf('', row.at, ids);
     if (viewing) candidates.push(viewing);

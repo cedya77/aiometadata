@@ -563,6 +563,15 @@ class Database {
         created_at INTEGER NOT NULL,
         PRIMARY KEY (user_uuid, profile)
       )`,
+      `CREATE TABLE IF NOT EXISTS tracker_matches (
+        user_uuid TEXT NOT NULL,
+        service TEXT NOT NULL,
+        base TEXT NOT NULL,
+        match_group TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_uuid, service, base)
+      )`,
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid TEXT UNIQUE NOT NULL,
         trusted_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -845,6 +854,15 @@ class Database {
         secret VARCHAR(64) NOT NULL UNIQUE,
         created_at BIGINT NOT NULL,
         PRIMARY KEY (user_uuid, profile)
+      )`,
+      `CREATE TABLE IF NOT EXISTS tracker_matches (
+        user_uuid VARCHAR(64) NOT NULL,
+        service VARCHAR(32) NOT NULL,
+        base TEXT NOT NULL,
+        match_group TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        PRIMARY KEY (user_uuid, service, base)
       )`,
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid VARCHAR(255) UNIQUE NOT NULL,
@@ -1232,6 +1250,7 @@ class Database {
       await require('./jellyfin/tokens').revokeUserTokens(userUUID).catch(() => undefined);
       await require('./jellyfin/context').forgetSeen([userUUID]).catch(() => undefined);
       await this.deleteCalendarFeed(userUUID, null).catch(() => undefined);
+      await this.deleteTrackerMatches(userUUID).catch(() => undefined);
 
       const deleteAliasQuery = this.type === 'sqlite'
         ? 'DELETE FROM user_aliases WHERE user_uuid = ?'
@@ -2508,6 +2527,40 @@ class Database {
       ? 'DELETE FROM jellyfin_calendar_feeds WHERE user_uuid = ? AND profile = ?'
       : 'DELETE FROM jellyfin_calendar_feeds WHERE user_uuid = $1 AND profile = $2';
     await this.runQuery(query, [userUUID, profile]);
+  }
+
+  async listTrackerMatches(userUUID: string, service: string): Promise<Array<{ base: string; match_group: string; data: string }>> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT base, match_group, data FROM tracker_matches WHERE user_uuid = ? AND service = ?'
+      : 'SELECT base, match_group, data FROM tracker_matches WHERE user_uuid = $1 AND service = $2';
+    return (await this.allQuery(query, [userUUID, service])) || [];
+  }
+
+  async saveTrackerMatch(userUUID: string, service: string, group: string, bases: string[], data: string): Promise<void> {
+    await this.deleteTrackerMatch(userUUID, service, group, bases);
+    const query = this.type === 'sqlite'
+      ? 'INSERT INTO tracker_matches (user_uuid, service, base, match_group, data, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+      : 'INSERT INTO tracker_matches (user_uuid, service, base, match_group, data, updated_at) VALUES ($1, $2, $3, $4, $5, $6)';
+    const now = Date.now();
+    for (const base of bases) await this.runQuery(query, [userUUID, service, base, group, data, now]);
+  }
+
+  async deleteTrackerMatch(userUUID: string, service: string, group: string, bases: string[] = []): Promise<void> {
+    const byGroup = this.type === 'sqlite'
+      ? 'DELETE FROM tracker_matches WHERE user_uuid = ? AND service = ? AND match_group = ?'
+      : 'DELETE FROM tracker_matches WHERE user_uuid = $1 AND service = $2 AND match_group = $3';
+    await this.runQuery(byGroup, [userUUID, service, group]);
+    const byBase = this.type === 'sqlite'
+      ? 'DELETE FROM tracker_matches WHERE user_uuid = ? AND service = ? AND base = ?'
+      : 'DELETE FROM tracker_matches WHERE user_uuid = $1 AND service = $2 AND base = $3';
+    for (const base of bases) await this.runQuery(byBase, [userUUID, service, base]);
+  }
+
+  async deleteTrackerMatches(userUUID: string): Promise<void> {
+    const query = this.type === 'sqlite'
+      ? 'DELETE FROM tracker_matches WHERE user_uuid = ?'
+      : 'DELETE FROM tracker_matches WHERE user_uuid = $1';
+    await this.runQuery(query, [userUUID]);
   }
 
   async deleteJellyfinTokensForProfile(userUUID: string, profileId: string | null): Promise<void> {

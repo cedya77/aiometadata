@@ -2052,6 +2052,65 @@ export interface JellyfinDriftItem {
   open: { id: string; type: 'movie' | 'series' };
   views: Array<{ at: number; season: number | null; episode: number | null }>;
   lastAt: number;
+  video?: string;
+  bases?: string[];
+  seasons?: number[];
+  unmatched?: string | null;
+  matchedTo?: string | null;
+}
+
+export interface JellyfinMatchCandidate {
+  ids: Record<string, string | number>;
+  title: string;
+  year: number | null;
+  posterUrl: string | null;
+  kind: string;
+  episodes: number | null;
+}
+
+export interface JellyfinMatchSeason {
+  number: number;
+  episodes: Array<{ number: number; title: string | null; airedAt: number | null }>;
+}
+
+export interface JellyfinTrackerMatch {
+  group: string;
+  bases: string[];
+  kind: 'movie' | 'series';
+  title: string | null;
+  open: { id: string; type: 'movie' | 'series' } | null;
+  target: JellyfinMatchCandidate;
+  seasons: Record<string, { season: number; offset: number }>;
+  updatedAt: number;
+}
+
+export interface JellyfinDriftDetail {
+  service: string;
+  side: 'behind' | 'ahead';
+  video: string;
+  aliases: string[];
+  sendsAs: { ids: Record<string, string | number>; season: number | null; episode: number | null } | null;
+  sendError: string | null;
+  match: { title: string; year: number | null; seasons: Record<string, { season: number; offset: number }> } | null;
+  holds: { kind: 'movie'; found: boolean; watchedAt: number | null } | { kind: 'series'; found: boolean; watched: number; total: number; at: number | null } | null;
+  attempts: Array<{ at: number; kind: 'sent' | 'failed' | 'dropped'; video: string; verb: string | null; reason: string | null }>;
+}
+
+export function useJellyfinDriftDetail(userUUID: string, key: string, side: 'behind' | 'ahead', item: JellyfinDriftItem, open: boolean, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams({ key, side, video: item.video ?? '', bases: (item.bases ?? []).join(',') });
+  return useJellyfinQuery<JellyfinDriftDetail>(
+    ['dashboard', 'jellyfin', 'sync', 'drift-item', userUUID, key, side, item.id],
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/drift/item?${params}`,
+    { ...options, enabledWhen: open && Boolean(item.video), poll: false }
+  );
+}
+
+export function useJellyfinTrackerMatches(userUUID: string, key: string | null, open: boolean, options: DashboardQueryOptions = {}) {
+  return useJellyfinQuery<{ matches: JellyfinTrackerMatch[] }>(
+    ['dashboard', 'jellyfin', 'sync', 'matches', userUUID, key],
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/matches?key=${encodeURIComponent(key ?? '')}`,
+    { ...options, enabledWhen: open && Boolean(key), poll: false }
+  );
 }
 
 export interface JellyfinDriftLane {
@@ -2160,6 +2219,16 @@ function syncActions(getHeaders: () => Record<string, string>) {
     copyDescribe: (userUUID: string, videos: string[]) => post<Record<string, JellyfinCopyNamed>>(userUUID, 'copy/describe', { videos }),
     copyStart: (userUUID: string, body: { profile: string | null; from: string; to: string; since: number; titles: string[] | null; what: JellyfinCopyWhat; retry: boolean }) => post<{ id: number }>(userUUID, 'copy', body),
     copyControl: (userUUID: string, id: number, action: 'pause' | 'resume' | 'stop') => post<{ ok: boolean }>(userUUID, `copy/${id}`, { action }),
+    matchSearch: async (userUUID: string, key: string, query: string, kind: 'movie' | 'series'): Promise<JellyfinMatchCandidate[]> => {
+      const params = new URLSearchParams({ key, q: query, kind });
+      const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/match/search?${params}`, { headers: getHeaders() });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || `The search failed (${response.status})`);
+      return Array.isArray(data?.results) ? data.results : [];
+    },
+    matchDetail: (userUUID: string, key: string, candidate: JellyfinMatchCandidate) => post<{ ids: Record<string, string | number>; seasons: JellyfinMatchSeason[] }>(userUUID, 'match/detail', { key, candidate }),
+    matchSave: (userUUID: string, body: { key: string; item: string | null; bases: string[]; kind: 'movie' | 'series'; title: string | null; open: { id: string; type: 'movie' | 'series' } | null; target: JellyfinMatchCandidate; seasons: Record<string, { season: number; offset: number }> }) => post<{ match: JellyfinTrackerMatch; sent: number }>(userUUID, 'match', body),
+    matchRemove: (userUUID: string, key: string, group: string) => post<{ ok: boolean }>(userUUID, 'match/remove', { key, group }),
   };
 }
 

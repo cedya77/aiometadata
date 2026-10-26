@@ -8691,6 +8691,106 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/drift", requireDashboardAdmin
   }
 });
 
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift/item", requireDashboardAdmin, async (req, res) => {
+  try {
+    const key = typeof req.query.key === 'string' ? req.query.key : '';
+    const video = typeof req.query.video === 'string' ? req.query.video.slice(0, 120) : '';
+    const side = req.query.side === 'ahead' ? 'ahead' : 'behind';
+    const bases = typeof req.query.bases === 'string' ? req.query.bases.split(',').slice(0, 20) : [];
+    const detail = key && video ? await require('./lib/jellyfin/dashboard').dashboardDriftItem(String(req.params.userUUID), key, side, video, bases) : null;
+    if (!detail) {
+      res.status(404).json({ error: 'No such title on this tracker account' });
+      return;
+    }
+    res.json(detail);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the details' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/match/search", requireDashboardAdmin, async (req, res) => {
+  try {
+    const key = typeof req.query.key === 'string' ? req.query.key : '';
+    const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
+    const kind = req.query.kind === 'movie' ? 'movie' : 'series';
+    if (!key || query.length < 2) {
+      res.status(400).json({ error: 'Name the tracker account and what to look for' });
+      return;
+    }
+    const results = await require('./lib/jellyfin/dashboard').dashboardMatchSearch(String(req.params.userUUID), key, query, kind);
+    if (!results) {
+      res.status(404).json({ error: 'No tracker account on this configuration that titles can be matched on' });
+      return;
+    }
+    res.json({ results });
+  } catch (error: any) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(502).json({ error: 'The tracker could not be searched' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/match/detail", requireDashboardAdmin, async (req, res) => {
+  try {
+    const key = typeof req.body?.key === 'string' ? req.body.key : '';
+    const detail = key ? await require('./lib/jellyfin/dashboard').dashboardMatchDetail(String(req.params.userUUID), key, req.body?.candidate) : null;
+    if (!detail) {
+      res.status(404).json({ error: 'That title could not be read from the tracker' });
+      return;
+    }
+    res.json(detail);
+  } catch (error: any) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(502).json({ error: 'The tracker could not be read' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/matches", requireDashboardAdmin, async (req, res) => {
+  try {
+    const key = typeof req.query.key === 'string' ? req.query.key : '';
+    const matches = key ? await require('./lib/jellyfin/dashboard').dashboardMatches(String(req.params.userUUID), key) : null;
+    if (!matches) {
+      res.status(404).json({ error: 'No tracker account on this configuration that titles can be matched on' });
+      return;
+    }
+    res.json({ matches });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the matched titles' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/match", requireDashboardAdmin, async (req, res) => {
+  try {
+    const key = typeof req.body?.key === 'string' ? req.body.key : '';
+    const saved = key ? await require('./lib/jellyfin/dashboard').dashboardMatchSave(String(req.params.userUUID), key, req.body) : null;
+    if (!saved) {
+      res.status(400).json({ error: 'Pick a title on the tracker and the title it stands for here' });
+      return;
+    }
+    res.json(saved);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to save the match' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/match/remove", requireDashboardAdmin, async (req, res) => {
+  try {
+    const key = typeof req.body?.key === 'string' ? req.body.key : '';
+    const group = typeof req.body?.group === 'string' ? req.body.group : '';
+    const removed = key && group ? await require('./lib/jellyfin/dashboard').dashboardMatchRemove(String(req.params.userUUID), key, group) : false;
+    if (!removed) {
+      res.status(404).json({ error: 'No such match' });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to remove the match' });
+  }
+});
+
 addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/preview", requireDashboardAdmin, async (req, res) => {
   try {
     const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
