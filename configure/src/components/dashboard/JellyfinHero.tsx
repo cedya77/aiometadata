@@ -3,7 +3,7 @@ import { sizedArt } from "./art";
 import { Loader2, Pause, Play } from "lucide-react";
 import { type JellyfinConfiguration, type JellyfinProfileSummary, type JellyfinSessionRow } from "@/hooks/useDashboardQueries";
 import { Art, ShelfTitle } from "./JellyfinShared";
-import { when, clock, duration, useFolded, dayKey, type Activity } from "./jellyfinUtils";
+import { when, clock, duration, dayKey, type Activity } from "./jellyfinUtils";
 
 function Avatar({ src, name, size }: { src: string | null; name: string; size: "sm" | "lg" }) {
   const [failed, setFailed] = useState(false);
@@ -123,7 +123,6 @@ export function Hero({ data, profile, onProfile, activity, controls, switching }
 }
 const HEAT = ["bg-muted/50", "bg-blue-500/25", "bg-blue-500/50", "bg-blue-500/80", "bg-blue-400"];
 export function ActivityMap({ activity }: { activity: Activity }) {
-  const [folded, fold] = useFolded("jellyfin.fold.activity");
   const scroller = useRef<HTMLDivElement>(null);
   const { weeks, months, cut } = useMemo(() => {
     const today = new Date();
@@ -158,18 +157,16 @@ export function ActivityMap({ activity }: { activity: Activity }) {
   useEffect(() => {
     const el = scroller.current;
     if (el) el.scrollLeft = el.scrollWidth;
-  }, [weeks.length, folded]);
+  }, [weeks.length]);
   const level = (n: number) => (n <= 0 ? 0 : n <= cut[0] ? 1 : n <= cut[1] ? 2 : n <= cut[2] ? 3 : 4);
   return (
-    <section className={`px-4 sm:px-6 ${folded ? "py-3" : "py-4"}`}>
-      <div className={`flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 ${folded ? "" : "mb-3"}`}>
-        <ShelfTitle title="Activity" count={null} folded={folded} onFold={fold} />
+    <section className="px-4 py-4 sm:px-6">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <ShelfTitle title="Activity" count={null} />
         <p className="text-xs text-muted-foreground tabular-nums">
           <span className="text-foreground">{activity.total.toLocaleString()}</span> watched in the last year · <span className="text-foreground">{activity.active}</span> active days · best streak <span className="text-foreground">{activity.best}</span>
         </p>
       </div>
-      {!folded && (
-      <>
       <div ref={scroller} className="overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="min-w-[720px] space-y-1">
           <div className="relative h-3 text-[10px] text-muted-foreground">
@@ -189,8 +186,6 @@ export function ActivityMap({ activity }: { activity: Activity }) {
       <div className="mt-2 flex items-center justify-end gap-1 text-[10px] text-muted-foreground">
         Less {HEAT.map((c) => <span key={c} className={`h-[11px] w-[11px] rounded-[2px] ${c}`} />)} More
       </div>
-      </>
-      )}
     </section>
   );
 }

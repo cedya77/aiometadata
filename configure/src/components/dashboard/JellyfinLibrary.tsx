@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowRight, Bookmark, ChevronDown, Film, LayoutGrid, Layers, Loader2, Star, ThumbsDown, Tv, Undo2 } from "lucide-react";
+import { ArrowRight, Bookmark, Film, LayoutGrid, Layers, Loader2, Star, ThumbsDown, Tv, Undo2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { sizedArt } from "./art";
 import { useOpenTitle } from "./jellyfinUtils";
@@ -304,12 +304,11 @@ function Detail({ row, tab, action }: { row: JellyfinLibraryRow; tab: JellyfinLi
 export default function JellyfinLibrary({ userUUID, profile, profileName, activeTab }: { userUUID: string; profile: string | null; profileName: string; activeTab: DashboardTab }) {
   const [tab, setTab] = useState<JellyfinLibraryTab>(() => remembered("jellyfin.library.tab", "watchlist", ["watchlist", "ratings", "dropped"] as const));
   const [view, setView] = useState<View>(() => remembered("jellyfin.library.view", "deck", ["deck", "wall"] as const));
-  const [folded, setFolded] = useState(() => remembered("jellyfin.fold.library", "0", ["0", "1"] as const) === "1");
   const [kind, setKind] = useState<JellyfinLibraryKind>("all");
   const [index, setIndex] = useState(0);
   const [offset, setOffset] = useState(0);
   const [rows, setRows] = useState<JellyfinLibraryRow[]>([]);
-  const { data, isLoading, isFetching, isPlaceholderData, isError, refetch } = useJellyfinLibrary(userUUID, profile, tab, kind, offset, { activeTab, enabled: !folded });
+  const { data, isLoading, isFetching, isPlaceholderData, isError, refetch } = useJellyfinLibrary(userUUID, profile, tab, kind, offset, { activeTab });
   const current = Boolean(data) && !isPlaceholderData && data!.tab === tab && data!.kind === kind;
   const queryClient = useQueryClient();
   const undrop = useJellyfinUndrop();
@@ -399,24 +398,10 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
     setView(next);
     remember("jellyfin.library.view", next);
   };
-  const fold = () => {
-    setFolded(!folded);
-    remember("jellyfin.fold.library", folded ? "0" : "1");
-  };
   const onKey = (event: React.KeyboardEvent) => {
     if (event.key === "ArrowDown" || event.key === "ArrowRight") { event.preventDefault(); pick(Math.min(rows.length - 1, at + 1)); }
     if (event.key === "ArrowUp" || event.key === "ArrowLeft") { event.preventDefault(); pick(Math.max(0, at - 1)); }
   };
-
-  if (folded) {
-    return (
-      <section className="px-4 py-3 sm:px-6">
-        <button type="button" onClick={fold} aria-expanded={false} className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground">
-          <ChevronDown className="size-3.5 -rotate-90" /> {profileName}'s library
-        </button>
-      </section>
-    );
-  }
 
   const Icon = meta.icon;
   const failedPanel = (
@@ -438,9 +423,7 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
           <div className="flex min-w-0 items-center gap-4">
             <Fan rows={rows} />
             <div className="min-w-0">
-              <button type="button" onClick={fold} aria-expanded className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:text-foreground">
-                <ChevronDown className="size-3.5" /> {profileName}'s library
-              </button>
+              <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{profileName}'s library</span>
               <h2 className="text-3xl font-bold tracking-tight">{meta.label}</h2>
               <p className="truncate text-xs text-muted-foreground">
                 {data ? `${count.toLocaleString()} ${count === 1 ? "title" : "titles"}` : "…"}

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowDownToLine, ArrowLeftRight, CheckCircle2, ChevronDown, Film, History, LayoutList, Loader2, MoreHorizontal, Network, RefreshCw, RotateCcw, Send, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, CheckCircle2, ChevronRight, Film, History, LayoutList, Loader2, MoreHorizontal, Network, RefreshCw, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinSync, useJellyfinSyncActions, useJellyfinSyncDrift, type DashboardTab, type JellyfinDriftItem, type JellyfinDriftLane, type JellyfinSyncFeedItem, type JellyfinSyncLane, type JellyfinSyncRow, type JellyfinSyncWrite } from "@/hooks/useDashboardQueries";
@@ -9,7 +9,7 @@ import { Eyebrow, Logo, Still, Toggle } from "./TrackerParts";
 import { ANIME_ONLY, COPY_FROM, nameOf } from "./trackerNames";
 import JellyfinCopy from "./JellyfinCopy";
 import { Ambient } from "./JellyfinShared";
-import { useFolded, useOpenTitle, useRemembered, when } from "./jellyfinUtils";
+import { useOpenTitle, useRemembered, when } from "./jellyfinUtils";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
@@ -489,8 +489,8 @@ const dayOf = (at: number): string => {
   return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 };
 
-export default function JellyfinSync({ userUUID, profile, profileName, watched, rows, activeTab }: { userUUID: string; profile: string | null; profileName: string; watched: number; rows: JellyfinSyncRow[]; activeTab: DashboardTab }) {
-  const [folded, fold] = useFolded("jellyfin.fold.sync", true);
+export default function JellyfinSync({ userUUID, profile, profileName, watched, rows, activeTab, compact = false, onOpen }: { userUUID: string; profile: string | null; profileName: string; watched: number; rows: JellyfinSyncRow[]; activeTab: DashboardTab; compact?: boolean; onOpen?: () => void }) {
+  const folded = compact;
   const [tab, setTab] = useRemembered<Tab>("jellyfin.sync.tab", "trackers");
   const [view, setView] = useRemembered<View>("jellyfin.sync.view", "ledger");
   const [chosen, setChosen] = useState<string | null>(null);
@@ -621,14 +621,14 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
   if (folded) {
     return (
       <section className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-6">
-        <button type="button" onClick={fold} aria-expanded={false} className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground">
-          <ChevronDown className="size-3.5 -rotate-90" /> {profileName}'s trackers
+        <button type="button" onClick={onOpen} className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground">
+          {profileName}'s trackers <ChevronRight className="size-3.5" />
         </button>
         <span className="flex items-center gap-2">
           {rows.map((row, i) => {
             const tone: Tone = row.readError ? "failing" : row.lastError ? (limited(row.lastError) ? "paused" : "failing") : row.pending > 0 ? "waiting" : row.imported ? "ok" : "idle";
             return (
-              <button key={`${row.service}-${i}`} type="button" onClick={fold} aria-label={`Open trackers: ${nameOf(row.service)}`} title={`${nameOf(row.service)}: ${row.readError ? "can't read" : row.pending ? `${row.pending} waiting` : `read ${when(row.syncedAt)}`}`} className="relative transition-transform hover:scale-110">
+              <button key={`${row.service}-${i}`} type="button" onClick={onOpen} aria-label={`Open trackers: ${nameOf(row.service)}`} title={`${nameOf(row.service)}: ${row.readError ? "can't read" : row.pending ? `${row.pending} waiting` : `read ${when(row.syncedAt)}`}`} className="relative transition-transform hover:scale-110">
                 <Logo service={row.service} size={20} />
                 <span className={cx("absolute -bottom-0.5 -right-0.5 size-2 rounded-full ring-2 ring-background", DOT[tone])} />
               </button>
@@ -676,9 +676,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
       <div className="relative px-4 py-6 sm:px-6">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
-            <button type="button" onClick={fold} aria-expanded className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:text-foreground">
-              <ChevronDown className="size-3.5" /> {profileName}'s trackers
-            </button>
+            <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{profileName}'s trackers</span>
             <h2 className="text-3xl font-bold tracking-tight">{tab === "copy" ? "Copy between trackers" : headline}</h2>
             <p className="truncate text-xs text-muted-foreground">
               {tab === "copy" ? "Through your history here, so it ends up complete too" : data ? `Your history and ${lanes.length} ${lanes.length === 1 ? "tracker" : "trackers"}` : "…"}

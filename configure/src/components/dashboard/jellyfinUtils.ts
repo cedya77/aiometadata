@@ -41,24 +41,6 @@ export function duration(ms: number): string {
   const m = minutes % 60;
   return m ? `${h}h ${m}m` : `${h}h`;
 }
-export function useFolded(key: string, initial = false): [boolean, () => void] {
-  const [folded, setFolded] = useState(() => {
-    try {
-      const stored = localStorage.getItem(key);
-      return stored === null ? initial : stored === "1";
-    } catch {
-      return initial;
-    }
-  });
-  const toggle = () => {
-    setFolded(!folded);
-    try {
-      if (!folded === initial) localStorage.removeItem(key);
-      else localStorage.setItem(key, folded ? "0" : "1");
-    } catch {}
-  };
-  return [folded, toggle];
-}
 export function recall<T>(key: string, initial: T): T {
   try {
     const stored = sessionStorage.getItem(key);

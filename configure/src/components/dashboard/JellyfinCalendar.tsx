@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
+import { CalendarDays, Check, ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useOpenTitle } from "./jellyfinUtils";
 import { useJellyfinCalendar, type DashboardTab, type JellyfinCalendarRow } from "@/hooks/useDashboardQueries";
@@ -235,23 +235,6 @@ const DayStrip = ({ days, selected, today, onSelect }: { days: Day[]; selected: 
 
 type View = "week" | "month";
 const VIEW_KEY = "jellyfin.calendar.view";
-const FOLDED_KEY = "jellyfin.calendar.folded";
-
-function storedFolded(): boolean {
-  try {
-    return localStorage.getItem(FOLDED_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function storeFolded(folded: boolean) {
-  try {
-    if (folded) localStorage.setItem(FOLDED_KEY, "1");
-    else localStorage.removeItem(FOLDED_KEY);
-  } catch {}
-}
-
 function storedView(): View {
   try {
     return localStorage.getItem(VIEW_KEY) === "month" ? "month" : "week";
@@ -387,14 +370,9 @@ export default function JellyfinCalendar({ userUUID, profile, profileName, activ
   const [month, setMonth] = useState(thisMonth);
   const [picked, setPicked] = useState<string | null>(null);
   const [ambient, setAmbient] = useState<string | undefined>();
-  const [folded, setFolded] = useState(storedFolded);
-  const fold = () => {
-    storeFolded(!folded);
-    setFolded(!folded);
-  };
 
   const span = useMemo(() => (view === "month" ? monthWindow(month, first) : { start: weekStart, days: WEEK }), [view, month, first, weekStart]);
-  const { data, isLoading, isFetching, isError, refetch } = useJellyfinCalendar(userUUID, profile, span.start, span.days, { activeTab, enabled: !folded });
+  const { data, isLoading, isFetching, isError, refetch } = useJellyfinCalendar(userUUID, profile, span.start, span.days, { activeTab });
   const days = useMemo(() => buildDays(span.start, span.days, data?.rows, now, today), [span, data, now, today]);
   const counted = view === "month" ? days.filter((day) => day.date.getMonth() === month.getMonth()) : days;
   const total = counted.reduce((sum, day) => sum + day.airings.length, 0);
@@ -439,13 +417,8 @@ export default function JellyfinCalendar({ userUUID, profile, profileName, activ
 
   return (
     <section className="relative isolate overflow-hidden">
-      {!folded && <AmbientBackdrop src={ambient ?? lead} />}
-      <div className={cx("relative flex flex-col gap-6 px-4 sm:px-6", folded ? "py-3" : "py-6")}>
-        {folded ? (
-          <button type="button" onClick={fold} aria-expanded={false} className="flex items-center gap-1.5 self-start text-[11px] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground">
-            <ChevronDown className="size-3.5 -rotate-90" /> {profileName}'s calendar
-          </button>
-        ) : (
+      <AmbientBackdrop src={ambient ?? lead} />
+      <div className="relative flex flex-col gap-6 px-4 py-6 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex min-w-0 flex-col gap-1">
             <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -478,20 +451,16 @@ export default function JellyfinCalendar({ userUUID, profile, profileName, activ
                 <ChevronRight className="size-4" />
               </button>
             </div>
-            <button type="button" onClick={fold} aria-expanded aria-label="Fold the calendar" className="glass flex size-9 items-center justify-center rounded-full transition-colors hover:bg-black/50">
-              <ChevronDown className="size-4 rotate-180" />
-            </button>
           </div>
         </div>
-        )}
 
-        {!folded && isError && !isFetching && (
+        {isError && !isFetching && (
           <div className="flex flex-col items-center gap-3 py-12 text-center">
             <p className="text-sm text-muted-foreground">Could not read this calendar.</p>
             <button type="button" onClick={() => void refetch()} className="glass h-8 rounded-full px-4 text-xs font-medium hover:bg-white/15">Retry</button>
           </div>
         )}
-        {!folded && !(isError && !isFetching) && (
+        {!(isError && !isFetching) && (
         <div className={cx("transition-opacity duration-300", isFetching && !isLoading && "opacity-70")}>
           {view === "month" ? (
             <div className="flex flex-col gap-8">

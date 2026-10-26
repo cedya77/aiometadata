@@ -3,11 +3,16 @@ import type { DashboardTab, JellyfinTitlePerson, JellyfinTitleRef } from '@/hook
 
 export type DashboardPage = { kind: 'title'; ref: JellyfinTitleRef } | { kind: 'person'; person: JellyfinTitlePerson };
 
+export type JellyfinSection = 'overview' | 'library' | 'shows' | 'calendar' | 'history' | 'trackers';
+
+export const JELLYFIN_SECTIONS: readonly JellyfinSection[] = ['overview', 'library', 'shows', 'calendar', 'history', 'trackers'];
+
 export interface DashboardRoute {
   tab: DashboardTab | null;
   config: string | null;
   profile: string | null;
   page: DashboardPage | null;
+  section?: JellyfinSection;
 }
 
 export interface DashboardLocation extends DashboardRoute {
@@ -44,13 +49,15 @@ export function parseDashboardUrl(pathname: string, search: string): DashboardRo
   const parts = pathname.replace(/^\/dashboard/i, '').split('/').filter(Boolean).map(decode);
   const tab = TABS.find((name) => name === parts[0]) ?? null;
   if (tab !== 'jellyfin' || !parts[1]) return { tab, config: null, profile: null, page: null };
-  const [kind, id] = [parts[2], parts[3]];
+  const section = JELLYFIN_SECTIONS.find((name) => name === parts[2]) ?? 'overview';
+  const at = section === parts[2] ? 3 : 2;
+  const [kind, id] = [parts[at], parts[at + 1]];
   let page: DashboardPage | null = null;
   if (id && (kind === 'movie' || kind === 'series')) page = { kind: 'title', ref: { id, type: kind } };
   else if (id && kind === 'item') page = { kind: 'title', ref: { item: id } };
   else if (id && kind === 'person') page = { kind: 'person', person: { id, name: '', role: null, type: '', photo: null } };
   const profile = new URLSearchParams(search).get('profile');
-  return { tab, config: parts[1], profile: profile === MAIN_PROFILE ? '' : profile, page };
+  return { tab, config: parts[1], profile: profile === MAIN_PROFILE ? '' : profile, page, section };
 }
 
 export function dashboardUrl(route: DashboardRoute, name?: string): string {
@@ -58,6 +65,7 @@ export function dashboardUrl(route: DashboardRoute, name?: string): string {
   let path = `${BASE}/${route.tab}`;
   if (route.tab !== 'jellyfin' || !route.config) return path;
   path += `/${encode(route.config)}`;
+  if (route.section && route.section !== 'overview') path += `/${route.section}`;
   const page = route.page;
   if (page) {
     const [kind, id] = page.kind === 'person' ? ['person', page.person.id] : 'item' in page.ref ? ['item', page.ref.item] : [page.ref.type, page.ref.id];
@@ -102,9 +110,10 @@ export function useDashboardRoute(): DashboardLocation {
 }
 
 export function navigateDashboard(route: DashboardRoute, options: { replace?: boolean; stack?: DashboardPage[] } = {}): void {
+  const here = parseDashboardUrl(window.location.pathname, window.location.search);
   const stack = route.page ? options.stack ?? [route.page] : [];
-  const url = dashboardUrl(route);
-  if (!options.replace && url === dashboardUrl(parseDashboardUrl(window.location.pathname, window.location.search)) && (entryOf(window.history.state)?.stack.length ?? 0) === stack.length) return;
+  const url = dashboardUrl(route.section === undefined && route.tab === here.tab && route.config === here.config ? { ...route, section: here.section } : route);
+  if (!options.replace && url === dashboardUrl(here) && (entryOf(window.history.state)?.stack.length ?? 0) === stack.length) return;
   const state = { dashboard: newEntry(stack) };
   if (options.replace) window.history.replaceState(state, '', url);
   else window.history.pushState(state, '', url);

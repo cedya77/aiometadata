@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import JellyfinCalendar from "./JellyfinCalendar";
 import JellyfinLibrary from "./JellyfinLibrary";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LayoutGrid, Loader2, Search, TableProperties, Upload, X } from "lucide-react";
+import { Activity as ActivityIcon, Bookmark, CalendarDays, History, LayoutGrid, Loader2, Network, Search, TableProperties, Tv, Upload, X } from "lucide-react";
 import {
   useJellyfinConfiguration,
   useJellyfinExport,
@@ -24,11 +24,50 @@ import JellyfinSync from "./JellyfinSync";
 import { MoreFooter, PlayTable, PlayedByDay, ProgressCard, Row } from "./JellyfinPlays";
 import { Sentinel, Shelf, Stat } from "./JellyfinShared";
 import { Shows } from "./JellyfinShows";
-import { when, useFolded, useRemembered, activityOf, usePagedPlays, OpenTitleContext, titleRefOf, recall, remember, SELECTED_KEY, profileKey } from "./jellyfinUtils";
-import { navigateDashboard, useDashboardRoute, type DashboardLocation, type DashboardPage } from "@/lib/dashboardRoute";
+import { when, useRemembered, activityOf, usePagedPlays, OpenTitleContext, titleRefOf, recall, remember, SELECTED_KEY, profileKey } from "./jellyfinUtils";
+import { navigateDashboard, useDashboardRoute, type DashboardLocation, type DashboardPage, type JellyfinSection } from "@/lib/dashboardRoute";
 
 
 type View = "cards" | "table";
+
+const SECTIONS: Array<{ key: JellyfinSection; label: string; icon: typeof Tv }> = [
+  { key: "overview", label: "Overview", icon: ActivityIcon },
+  { key: "library", label: "Library", icon: Bookmark },
+  { key: "shows", label: "Shows", icon: Tv },
+  { key: "calendar", label: "Calendar", icon: CalendarDays },
+  { key: "history", label: "History", icon: History },
+  { key: "trackers", label: "Trackers", icon: Network },
+];
+
+function SectionBar({ section, onSection }: { section: JellyfinSection; onSection: (next: JellyfinSection) => void }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const strip = scroller.current;
+    const active = strip?.querySelector<HTMLElement>("[aria-current=page]");
+    if (!strip || !active) return;
+    const left = active.offsetLeft - strip.offsetLeft;
+    if (left < strip.scrollLeft || left + active.offsetWidth > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollTo({ left: left - (strip.clientWidth - active.offsetWidth) / 2, behavior: "smooth" });
+    }
+  }, [section]);
+  return (
+    <nav aria-label="Sections" className="sticky top-[57px] z-20 border-t border-white/[0.06] bg-background/80 backdrop-blur-lg">
+      <div ref={scroller} className="flex gap-1 overflow-x-auto px-4 py-2 [scrollbar-width:none] sm:px-6 [&::-webkit-scrollbar]:hidden">
+        {SECTIONS.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onSection(key)}
+            aria-current={key === section ? "page" : undefined}
+            className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${key === section ? "bg-foreground text-background" : "text-muted-foreground hover:bg-white/10 hover:text-foreground"}`}
+          >
+            <Icon className="h-3.5 w-3.5" /> {label}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
 function ShelfSkeleton() {
   return (
     <section className="space-y-3 px-4 py-4 sm:px-6">
@@ -62,13 +101,18 @@ function ConfigurationSkeleton() {
 const EMPTY_PLAYS: JellyfinPlayRow[] = [];
 function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: string; route: DashboardLocation; activeTab: DashboardTab; onClose: () => void }) {
   const profile = route.profile;
+  const section = route.section ?? "overview";
+  const sectionsTop = useRef<HTMLDivElement>(null);
+  const setSection = (next: JellyfinSection) => {
+    navigateDashboard({ tab: "jellyfin", config: userUUID, profile, page: null, section: next });
+    const top = sectionsTop.current ? sectionsTop.current.getBoundingClientRect().top + window.scrollY - 57 : 0;
+    if (window.scrollY > top) requestAnimationFrame(() => window.scrollTo({ top, behavior: "instant" }));
+  };
   useEffect(() => remember(profileKey(userUUID), profile, null), [userUUID, profile]);
   const setProfile = (next: string | null) => navigateDashboard({ tab: "jellyfin", config: userUUID, profile: next, page: null }, { replace: true });
   const [view, setView] = useRemembered<View>("jellyfin.view", "cards");
   const [exporting, setExporting] = useState(false);
   const [allProgress, setAllProgress] = useRemembered<boolean>("jellyfin.allProgress", false);
-  const [foldedProgress, foldProgress] = useFolded("jellyfin.fold.progress");
-  const [foldedPlayed, foldPlayed] = useFolded("jellyfin.fold.played");
   const exportJson = useJellyfinExport();
   const { data, isLoading, isError, isFetching, isPlaceholderData } = useJellyfinConfiguration(userUUID, profile, null, { activeTab });
   const progress = usePagedPlays(userUUID, profile, "progress", data?.inProgress ?? EMPTY_PLAYS, data?.totals?.progress ?? 0, activeTab);
@@ -109,10 +153,10 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   const controls = (
     <>
       <JellyfinSearch userUUID={userUUID} profile={profile} profileName={profileName} local={localTitles} activeTab={activeTab} />
-      <div className="glass inline-flex rounded-full p-0.5">
+      {(section === "overview" || section === "history") && <div className="glass inline-flex rounded-full p-0.5">
         <Button size="sm" variant={view === "cards" ? "secondary" : "ghost"} className="h-7 rounded-full px-2.5" onClick={() => setView("cards")} aria-label="Cards"><LayoutGrid className="h-3.5 w-3.5" /></Button>
         <Button size="sm" variant={view === "table" ? "secondary" : "ghost"} className="h-7 rounded-full px-2.5" onClick={() => setView("table")} aria-label="Table"><TableProperties className="h-3.5 w-3.5" /></Button>
-      </div>
+      </div>}
       {isFetching && !isLoading && !switching && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
       <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" onClick={runExport} disabled={exporting}>
         {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Export JSON
@@ -121,12 +165,15 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
     </>
   );
 
+  const watched = (profile === null ? data.profiles : data.profiles.filter((p) => p.key === profile)).reduce((sum, p) => sum + p.movies + p.episodes, 0);
   const trackers = data.sync.filter((row) => row.profiles.includes(historyName)).map((row) => TRACKER_NAMES[row.service] ?? row.service);
   return (
     <OpenTitleContext.Provider value={openTitle}>
     <div className="border-t border-white/[0.06]">
       {route.stack.length > 0 && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} trackers={trackers} stack={route.stack} activeTab={activeTab} onOpen={openStack} />}
       <Hero data={data} profile={profile} onProfile={setProfile} activity={activity} controls={controls} switching={switching} />
+      <div ref={sectionsTop} />
+      <SectionBar section={section} onSection={setSection} />
       {switching ? (
         <div className="divide-y divide-white/[0.06] border-t border-white/[0.06]">
           <section className="flex gap-2 px-4 py-3 sm:px-6">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-7 w-36 rounded-full" />)}</section>
@@ -134,46 +181,51 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
           <ShelfSkeleton />
         </div>
       ) : (
-      <div className={`divide-y divide-white/[0.06] border-t border-white/[0.06] transition-opacity ${isFetching && !isLoading ? "opacity-60" : "opacity-100"}`}>
-        <JellyfinSync key={`sync:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} watched={(profile === null ? data.profiles : data.profiles.filter((p) => p.key === profile)).reduce((sum, p) => sum + p.movies + p.episodes, 0)} rows={data.sync} activeTab={activeTab} />
-        <Shelf
-          title="Continue watching"
-          count={progress.more ? data.totals?.progress ?? progress.rows.length : progress.rows.length}
-          folded={foldedProgress}
-          onFold={foldProgress}
-          action={view === "cards" && progress.rows.length > 3 && (
-            <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs" onClick={() => setAllProgress(!allProgress)}>
-              {allProgress ? "Show as a row" : "View all"}
-            </Button>
-          )}
-        >
-          {progress.rows.length === 0
-            ? <p className="text-xs text-muted-foreground">Nothing in progress.</p>
-            : view === "table"
-              ? <><PlayTable rows={progress.rows} kind="progress" /><Sentinel key={progress.rows.length} onVisible={progress.loadMore} /><MoreFooter paged={progress} /></>
-              : allProgress
-                ? <><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{progress.rows.map((row) => <ProgressCard key={`${row.profile}|${row.videoId}`} row={row} />)}</div><Sentinel key={progress.rows.length} onVisible={progress.loadMore} /><MoreFooter paged={progress} /></>
-                : (
-                  <>
-                    <Row onEnd={progress.more && !progress.failed ? progress.loadMore : undefined} loading={progress.loading}>
-                      {progress.rows.map((row) => <div key={`${row.profile}|${row.videoId}`} className="w-64 shrink-0 snap-start sm:w-80"><ProgressCard row={row} /></div>)}
-                    </Row>
-                    {progress.failed && <MoreFooter paged={progress} />}
-                  </>
-                )}
-        </Shelf>
-        <JellyfinLibrary key={`library:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} activeTab={activeTab} />
-        <Shows key={`shows:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} activeTab={activeTab} />
-        <JellyfinCalendar key={`calendar:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} activeTab={activeTab} />
-        <ActivityMap activity={activity} />
-        <Shelf title="Recently played" count={played.more ? data.totals?.played ?? played.rows.length : played.rows.length} folded={foldedPlayed} onFold={foldPlayed}>
-          {played.rows.length === 0
-            ? <p className="text-xs text-muted-foreground">Nothing played yet.</p>
-            : view === "table"
-              ? <PlayTable rows={played.rows} kind="played" />
-              : <PlayedByDay rows={played.rows} />}
-          {played.rows.length > 0 && <><Sentinel key={played.rows.length} onVisible={played.loadMore} /><MoreFooter paged={played} /></>}
-        </Shelf>
+      <div className={`min-h-screen divide-y divide-white/[0.06] border-t border-white/[0.06] transition-opacity ${isFetching && !isLoading ? "opacity-60" : "opacity-100"}`}>
+        {section === "overview" && (
+          <>
+            <JellyfinSync key={`sync:${profile ?? ""}`} compact onOpen={() => setSection("trackers")} userUUID={userUUID} profile={profile} profileName={profileName} watched={watched} rows={data.sync} activeTab={activeTab} />
+            <Shelf
+              title="Continue watching"
+              count={progress.more ? data.totals?.progress ?? progress.rows.length : progress.rows.length}
+              action={view === "cards" && progress.rows.length > 3 && (
+                <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs" onClick={() => setAllProgress(!allProgress)}>
+                  {allProgress ? "Show as a row" : "View all"}
+                </Button>
+              )}
+            >
+              {progress.rows.length === 0
+                ? <p className="text-xs text-muted-foreground">Nothing in progress.</p>
+                : view === "table"
+                  ? <><PlayTable rows={progress.rows} kind="progress" /><Sentinel key={progress.rows.length} onVisible={progress.loadMore} /><MoreFooter paged={progress} /></>
+                  : allProgress
+                    ? <><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{progress.rows.map((row) => <ProgressCard key={`${row.profile}|${row.videoId}`} row={row} />)}</div><Sentinel key={progress.rows.length} onVisible={progress.loadMore} /><MoreFooter paged={progress} /></>
+                    : (
+                      <>
+                        <Row onEnd={progress.more && !progress.failed ? progress.loadMore : undefined} loading={progress.loading}>
+                          {progress.rows.map((row) => <div key={`${row.profile}|${row.videoId}`} className="w-64 shrink-0 snap-start sm:w-80"><ProgressCard row={row} /></div>)}
+                        </Row>
+                        {progress.failed && <MoreFooter paged={progress} />}
+                      </>
+                    )}
+            </Shelf>
+            <ActivityMap activity={activity} />
+          </>
+        )}
+        {section === "library" && <JellyfinLibrary key={`library:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} activeTab={activeTab} />}
+        {section === "shows" && <Shows key={`shows:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} activeTab={activeTab} />}
+        {section === "calendar" && <JellyfinCalendar key={`calendar:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} activeTab={activeTab} />}
+        {section === "history" && (
+          <Shelf title="Recently played" count={played.more ? data.totals?.played ?? played.rows.length : played.rows.length}>
+            {played.rows.length === 0
+              ? <p className="text-xs text-muted-foreground">Nothing played yet.</p>
+              : view === "table"
+                ? <PlayTable rows={played.rows} kind="played" />
+                : <PlayedByDay rows={played.rows} />}
+            {played.rows.length > 0 && <><Sentinel key={played.rows.length} onVisible={played.loadMore} /><MoreFooter paged={played} /></>}
+          </Shelf>
+        )}
+        {section === "trackers" && <JellyfinSync key={`sync:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} watched={watched} rows={data.sync} activeTab={activeTab} />}
       </div>
       )}
     </div>

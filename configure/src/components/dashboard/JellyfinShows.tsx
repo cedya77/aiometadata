@@ -10,7 +10,7 @@ import {
   type JellyfinShowRow,
 } from "@/hooks/useDashboardQueries";
 import { Art, Shelf } from "./JellyfinShared";
-import { when, useFolded, useOpenTitle } from "./jellyfinUtils";
+import { when, useOpenTitle } from "./jellyfinUtils";
 
 const episodeRef = (ref: JellyfinEpisodeRef | null): string => {
   if (!ref || ref.number === null) return "";
@@ -83,8 +83,7 @@ export function Shows({ userUUID, profile, profileName, activeTab }: { userUUID:
   const [all, setAll] = useState(false);
   const [refreshing, setRefreshing] = useState<string | null>(null);
   const refreshShow = useJellyfinShowRefresh();
-  const [folded, fold] = useFolded("jellyfin.fold.shows");
-  const { data, isLoading, isError, isFetching } = useJellyfinShows(userUUID, profile, fresh, { activeTab, enabled: !folded });
+  const { data, isLoading, isError, isFetching } = useJellyfinShows(userUUID, profile, fresh, { activeTab });
   const rows = data?.rows ?? [];
   const counts = Object.fromEntries(SHOW_FILTERS.map((f) => [f.key, f.outcomes.length ? rows.filter((r) => f.outcomes.includes(r.outcome)).length : rows.length])) as Record<ShowFilter, number>;
   const picked = SHOW_FILTERS.find((f) => f.key === filter)!;
@@ -108,8 +107,6 @@ export function Shows({ userUUID, profile, profileName, activeTab }: { userUUID:
     <Shelf
       title={`Shows, ${profileName}'s Next Up`}
       count={data ? rows.length : null}
-      folded={folded}
-      onFold={fold}
       action={
         <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
           {data && !isFetching && <span className="tabular-nums">built in {(data.ms / 1000).toFixed(1)} s</span>}
