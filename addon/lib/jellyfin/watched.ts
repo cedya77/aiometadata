@@ -533,11 +533,27 @@ export async function fetchMdblistWatched(apiKey: string, mediatype: 'episode' |
 export async function assembleMdblist(data: MdblistData, config: any): Promise<RawSnapshot> {
   const { movieRows, episodeRows, showRows = [], upNext, droppedShows, droppedUnread } = data;
   const { Resolutions } = require('./resolutions');
-  const { mdblistEpisodeRef, mdblistWatchedRef } = require('../../utils/mdbList');
+  const { mdblistEpisodeRef, mdblistWatchedRef, mdblistTvdbOrder } = require('../../utils/mdbList');
   const resolutions = new Resolutions();
   const nextRefs = upNext.map((item: any) => mdblistEpisodeRef(item?.show, item?.next_episode));
-  const watchedRefs: any[] = [];
-  for (const entry of episodeRows) watchedRefs.push(await mdblistWatchedRef(entry?.episode, config));
+  const reordered = new Set<number>();
+  for (const entry of episodeRows) {
+    const episode = entry?.episode;
+    const linked = episode?.tvdb_ids;
+    const show = Number(episode?.show?.ids?.tmdb);
+    if (!show || !linked || !Number.isFinite(Number(linked.season))) continue;
+    if (Number(linked.season) !== Number(episode.season) || Number(linked.episode) !== Number(episode.number)) reordered.add(show);
+  }
+  const apiKey = require('../accounts').credentialOf(config, 'mdblist');
+  const orders = new Map<number, any>();
+  if (apiKey) for (const show of reordered) orders.set(show, await mdblistTvdbOrder(show, apiKey));
+  const watched: Array<{ entry: any; ref: any }> = [];
+  for (const entry of episodeRows) {
+    const episode = entry?.episode;
+    const places: any[] = orders.get(Number(episode?.show?.ids?.tmdb))?.get(`${episode?.season}:${episode?.number}`) ?? [null];
+    for (const place of places) watched.push({ entry, ref: await mdblistWatchedRef(episode, config, place) });
+  }
+  const watchedRefs = watched.map(({ ref }) => ref);
   await resolutions.preload(
     [
       ...watchedRefs.filter(Boolean).map((ref: any) => [ref.ids, ref.season, ref.episode, ref.tvdb ? 'tvdb' : 'tmdb']),
@@ -566,8 +582,8 @@ export async function assembleMdblist(data: MdblistData, config: any): Promise<R
 
   const latest = new Map<string, { resolved: any; season: number; number: number; at: number }>();
   const byShow = new Map<string, { metaIds: Set<string>; anime: boolean; regular: number }>();
-  for (const [index, entry] of episodeRows.entries()) {
-    const ref = watchedRefs[index];
+  const counted = new Set<any>();
+  for (const { entry, ref } of watched) {
     if (!ref) continue;
     const { season, episode: number } = ref;
     const ids = entry?.episode?.show?.ids ?? {};
@@ -581,7 +597,10 @@ export async function assembleMdblist(data: MdblistData, config: any): Promise<R
     if (seen) at.set(resolved.videoId, seen);
     recordWatch(history, { kind: 'episode', id: resolved.videoId, metaId: resolved.metaId, mediaType: resolved.mediaType, at: seen });
     const counts = series.get(resolved.metaId) ?? { watched: 0, total: 0 };
-    counts.watched += 1;
+    if (!counted.has(entry)) {
+      counted.add(entry);
+      counts.watched += 1;
+    }
     if (seen && (!counts.at || seen > counts.at)) counts.at = seen;
     series.set(resolved.metaId, counts);
     if (ids.mdblist) {
@@ -674,7 +693,7 @@ export async function assembleMdblist(data: MdblistData, config: any): Promise<R
 type MirroredService = 'simkl' | 'mdblist' | 'publicmetadb' | 'anilist' | 'mal';
 
 // Raised to rebuild indexes written in an older spelling.
-const INDEX_FORMAT = 8;
+const INDEX_FORMAT = 9;
 
 interface SummaryData {
   format?: number;

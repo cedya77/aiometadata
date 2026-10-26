@@ -1075,6 +1075,19 @@ async function fetchTvdbMap(tmdbId: number, apiKey: string): Promise<{ episodes:
   }, envInt('MDBLIST_TVDB_MAP_TTL', 7 * 24 * 60 * 60, 60), { upstream: true, resultClassifier: classifyResultAllowEmpty });
 }
 
+async function mdblistTvdbOrder(tmdbId: number, apiKey: string): Promise<Map<string, Array<{ season: number; episode: number }>> | null> {
+  const { episodes } = await fetchTvdbMap(tmdbId, apiKey).catch(() => ({ episodes: [] as any[] }));
+  if (!episodes.length || episodes.some((entry: any) => Number(entry?.season) >= 1900)) return null;
+  const order = new Map<string, Array<{ season: number; episode: number }>>();
+  for (const entry of episodes) {
+    const numbers = [entry?.tmdb_season, entry?.tmdb_episode, entry?.season, entry?.episode].map(Number);
+    if (!numbers.every(Number.isFinite)) continue;
+    const key = `${numbers[0]}:${numbers[1]}`;
+    order.set(key, [...(order.get(key) ?? []), { season: numbers[2], episode: numbers[3] }]);
+  }
+  return order.size ? order : null;
+}
+
 async function tmdbEpisodeFromTvdb(tmdbId: number, season: number, episode: number, apiKey: string): Promise<{ season: number; episode: number } | null> {
   const { episodes } = await fetchTvdbMap(tmdbId, apiKey);
   if (!episodes.length || episodes.some((entry: any) => Number(entry?.season) >= 1900)) return null;
@@ -1232,8 +1245,12 @@ function mdblistEpisodeRef(show: any, episode: any): { ids: Record<string, any>;
   return { ids: show?.ids ?? {}, season, episode: number, tvdb: false };
 }
 
-async function mdblistWatchedRef(episode: any, config: any): Promise<{ ids: Record<string, any>; season: number; episode: number; tvdb: boolean } | null> {
+async function mdblistWatchedRef(episode: any, config: any, placed?: { season: number; episode: number } | null): Promise<{ ids: Record<string, any>; season: number; episode: number; tvdb: boolean } | null> {
   const show = episode?.show;
+  const series = episode?.tvdb_ids?.series ?? show?.ids?.tvdb;
+  if (placed && (series || show?.ids?.imdb)) {
+    return { ids: { ...(series ? { tvdb: series } : {}), ...(show?.ids?.imdb ? { imdb: show.ids.imdb } : {}) }, season: placed.season, episode: placed.episode, tvdb: true };
+  }
   const named = mdblistEpisodeRef(show, { season: episode?.season, episode: episode?.number, tvdb_ids: episode?.tvdb_ids });
   if (named?.tvdb || show?.ids?.imdb || show?.ids?.tvdb || !episode?.ids?.tvdb) return named;
   const found = await require('../lib/tvdb').getEpisodeNumbering(String(episode.ids.tvdb), config).catch(() => null);
@@ -1773,6 +1790,7 @@ export {
   convertGenreToSlug,
   makeRateLimitedMDBListRequest,
   tmdbEpisodeFromTvdb,
+  mdblistTvdbOrder,
   mdblistCallsLeft,
   makeRateLimitedMDBListPost,
   testMdblistKey,

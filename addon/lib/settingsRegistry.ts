@@ -3690,6 +3690,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 60,
   },
   {
+    key: 'SIMKL_PLAN_TTL',
+    envVar: 'SIMKL_PLAN_TTL',
+    label: 'Simkl Account Plan TTL (sec)',
+    description: 'How long a Simkl account\'s plan is reused. Only PRO and VIP accounts keep rewatches, so rewatches are sent to those alone.',
+    category: 'Cache',
+    type: 'number',
+    default: 86400,
+    min: 60,
+  },
+  {
     key: 'TMDB_KEYWORD_EXPORT_TTL',
     envVar: 'TMDB_KEYWORD_EXPORT_TTL',
     label: 'TMDB Keyword Export TTL (sec)',

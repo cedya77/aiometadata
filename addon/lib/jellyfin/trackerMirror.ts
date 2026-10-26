@@ -275,6 +275,45 @@ async function mdblistCutShort(key: string, apiKey: string, watermark: any): Pro
   return remaining === null || remaining - pages >= Math.max(50, (limit ?? 0) / 5) ? 'read' : 'later';
 }
 
+const later = (a: unknown, b: unknown): unknown => (String(a ?? '') > String(b ?? '') ? a : b);
+
+async function journalRows(key: string, rows: any[]): Promise<MirrorRow[]> {
+  const groups = new Map<string, Map<string, any>>();
+  const heldIn = async (group: string): Promise<Map<string, any>> => {
+    if (!groups.has(group)) {
+      const held = new Map<string, any>();
+      for (const row of (await database.listTrackerMirrorGroup(key, group).catch(() => [])) as any[]) {
+        try {
+          held.set(String(row.item_key), JSON.parse(row.data));
+        } catch {}
+      }
+      groups.set(group, held);
+    }
+    return groups.get(group)!;
+  };
+  const out: MirrorRow[] = [];
+  for (const row of rows) {
+    const id = row?.ids?.mdblist;
+    if (!id) continue;
+    if (row.item_type === 'movie') {
+      const group = `movie:${id}`;
+      const existing = (await heldIn(group)).get(group);
+      out.push({ key: group, group, data: existing ? { ...existing, last_watched_at: later(existing.last_watched_at, row.value_at) } : { movie: { ids: row.ids }, last_watched_at: row.value_at } });
+      continue;
+    }
+    const group = `show:${id}`;
+    const itemKey = `ep:${id}:${row.season}:${row.episode}`;
+    const existing = (await heldIn(group)).get(itemKey);
+    out.push({
+      key: itemKey,
+      group,
+      sub: String(row.season),
+      data: existing ? { ...existing, last_watched_at: later(existing.last_watched_at, row.value_at) } : { episode: { show: { ids: row.ids }, season: row.season, number: row.episode }, last_watched_at: row.value_at },
+    });
+  }
+  return out;
+}
+
 async function syncMdblist(key: string, apiKey: string, watermark: any): Promise<SyncOutcome> {
   const activities = await mdblistActivities(apiKey);
   if (!activities?.server_time) throw new Error('MDBList activities could not be read');
@@ -309,9 +348,10 @@ async function syncMdblist(key: string, apiKey: string, watermark: any): Promise
   if (watched) {
     // The journal holds each item's latest state, removals included; replayed from the
     // last sync, it says what left. What arrived is read whole from the history, whose
-    // since filters on the watch date, so a watch dated before the last sync needs a full read.
+    // since filters on the watch date, so a watch dated before the last sync is taken from its journal row.
     const removals: any[] = [];
-    let backdated = false;
+    const backdated: any[] = [];
+    let arrived = 0;
     let cursor = '';
     const read = new Set<string>();
     for (;;) {
@@ -324,7 +364,8 @@ async function syncMdblist(key: string, apiKey: string, watermark: any): Promise
       if (body?.requires_full_sync) return mdblistFull(key, apiKey, activities);
       for (const row of Array.isArray(body?.journal) ? body.journal : []) {
         if (row?.category === 'watched' && row?.status === 'removed') removals.push(row);
-        if (row?.category === 'watched' && row?.status === 'added' && row?.value_at && row.value_at < watermark.server_time) backdated = true;
+        if (row?.category === 'watched' && row?.status === 'added' && row?.value_at && row.value_at < watermark.server_time) backdated.push(row);
+        else if (row?.category === 'watched' && row?.status === 'added') arrived += 1;
       }
       cursor = body?.pagination?.next_cursor ?? '';
       if (!cursor) break;
@@ -334,7 +375,8 @@ async function syncMdblist(key: string, apiKey: string, watermark: any): Promise
       }
       read.add(cursor);
     }
-    if (backdated) return mdblistFull(key, apiKey, activities);
+    if (backdated.some((row) => row?.item_type !== 'episode' && row?.item_type !== 'movie')) return mdblistFull(key, apiKey, activities);
+    if (backdated.length) await database.upsertTrackerMirror(key, await journalRows(key, backdated));
 
     // A season or show is journaled as removed when it stops being complete.
     for (const row of removals) {
@@ -344,12 +386,14 @@ async function syncMdblist(key: string, apiKey: string, watermark: any): Promise
       else if (row.item_type === 'episode') await database.deleteTrackerMirror(key, [`ep:${show}:${row.season}:${row.episode}`]);
     }
 
-    const { fetchMdblistWatched } = require('./watched');
-    const movies = await fetchMdblistWatched(apiKey, 'movie', watermark.server_time);
-    const episodes = await fetchMdblistWatched(apiKey, 'episode', watermark.server_time);
-    const shows = await fetchMdblistWatched(apiKey, 'show', watermark.server_time);
-    const rows = [...movies.map(mdblistMovieRow), ...episodes.map(mdblistEpisodeRow), ...shows.map(mdblistShowRow)].filter(Boolean) as MirrorRow[];
-    if (rows.length) await database.upsertTrackerMirror(key, rows);
+    if (arrived) {
+      const { fetchMdblistWatched } = require('./watched');
+      const movies = await fetchMdblistWatched(apiKey, 'movie', watermark.server_time);
+      const episodes = await fetchMdblistWatched(apiKey, 'episode', watermark.server_time);
+      const shows = await fetchMdblistWatched(apiKey, 'show', watermark.server_time);
+      const rows = [...movies.map(mdblistMovieRow), ...episodes.map(mdblistEpisodeRow), ...shows.map(mdblistShowRow)].filter(Boolean) as MirrorRow[];
+      if (rows.length) await database.upsertTrackerMirror(key, rows);
+    }
   }
   if (dropped) {
     const { fetchMdblistDropped } = require('./watched');
