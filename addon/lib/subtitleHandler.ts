@@ -593,10 +593,7 @@ async function redateHistory(parsedId: ParsedMediaId, config: any, only: Tracked
       episode = resolution.episode;
     }
   }
-  if (!ids) {
-    logger.debug(`[${only}] Moving a watch date skipped: no ids for ${parsedId.provider}:${parsedId.id}`);
-    return;
-  }
+  if (!ids) throw noIdsFor(only, parsedId);
   const { envInt } = require('../utils/envNumber');
   const within = envInt('JELLYFIN_WATCH_DATE_MATCH_HOURS', 12, 0) * 60 * 60 * 1000;
   if (only === 'publicmetadb') await redatePublicMetaDb(config, ids, mediaType, season, episode, change, within);
