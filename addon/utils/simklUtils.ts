@@ -879,6 +879,14 @@ function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
   return Object.keys(ids).length > 0 ? ids : null;
 }
 
+function unmatched(url: string, data: any): boolean {
+  const missed = data?.not_found;
+  const items = ['movies', 'shows', 'anime', 'episodes'].flatMap((key) => (Array.isArray(missed?.[key]) ? missed[key] : []));
+  if (!items.length) return false;
+  noteTrackerCall(url, 404, 'not found on Simkl');
+  return true;
+}
+
 export async function addToHistory(
   idInput: Record<string, string | number>,
   accessToken: string,
@@ -893,6 +901,10 @@ export async function addToHistory(
       `${SIMKL_BASE_URL}/sync/history`, accessToken, 'Simkl add to history', 'POST', payload, 10000
     );
     if (response.status >= 200 && response.status < 300) {
+      if (unmatched(`${SIMKL_BASE_URL}/sync/history`, response.data)) {
+        logger.warn('[Simkl] Add to history did not find the title', { ids: idInput, season, episode, not_found: response.data?.not_found });
+        return false;
+      }
       logger.info('[Simkl] Added to history', { ids: idInput, season, episode });
       return true;
     }
@@ -966,6 +978,10 @@ export async function removeFromHistory(
       `${SIMKL_BASE_URL}/sync/history/remove`, accessToken, 'Simkl remove from history', 'POST', payload, 10000
     );
     if (response.status >= 200 && response.status < 300) {
+      if (unmatched(`${SIMKL_BASE_URL}/sync/history/remove`, response.data)) {
+        logger.warn('[Simkl] Remove from history did not find the title', { ids: idInput, season, episode, not_found: response.data?.not_found });
+        return false;
+      }
       logger.info('[Simkl] Removed from history', { ids: idInput, season, episode });
       return true;
     }

@@ -1402,6 +1402,7 @@ async function historySync(
     const missed = response?.data?.not_found;
     const missing = ['movies', 'shows', 'episodes'].reduce((n, key) => n + (Array.isArray(missed?.[key]) ? missed[key].length : 0), 0);
     if (missing > 0) {
+      noteTrackerCall(`https://api.mdblist.com/sync/${path}`, 404, 'not found on MDBList');
       logger.warn(`[MDBList] /sync/${path} did not find the title`, { ids: idInput, season, episode, not_found: missed });
       return false;
     }
