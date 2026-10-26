@@ -391,8 +391,13 @@ async function resolveSeriesIds(parsedId: ParsedMediaId, config: any = {}, isSim
     case 'tmdb': {
       const mapping = idMapper.getMappingByTmdbId(parsedId.id, 'series');
       if (!mapping) {
-        logger.debug(`[Watch Tracking] No mapping found for TMDB series ${parsedId.id}`);
-        return null;
+        const regular = require('./id-mappings').getByTmdbId(parsedId.id, 'series');
+        const all = regular?.imdbId || regular?.tvdbId
+          ? null
+          : await require('./id-resolver').resolveAllIds(`tmdb:${parsedId.id}`, 'series', config, {}, ['imdb', 'tvdb']).catch(() => null);
+        const imdb = regular?.imdbId || all?.imdbId || null;
+        const tvdb = Number(regular?.tvdbId || all?.tvdbId) || null;
+        return { ids: { tmdb: parseInt(parsedId.id, 10), ...(imdb ? { imdb } : {}), ...(tvdb ? { tvdb } : {}) }, season: parsedId.season!, episode: parsedId.episode! };
       }
       const ids: Record<string, any> = {};
       if (mapping.imdb_id) ids.imdb = mapping.imdb_id;

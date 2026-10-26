@@ -89,6 +89,10 @@ export async function videoIdAliases(videoId: string): Promise<string[]> {
       if (anime) {
         add(anime);
         for (const alias of await videoIdAliases(anime)) add(alias);
+      } else if (!idMapper.getSeriesMappingsByTmdbId(tmdbId).length) {
+        const regular = idMappings.getByTmdbId?.(String(tmdbId), 'series');
+        if (regular?.imdbId) add(`${regular.imdbId}:${parsed.season}:${parsed.episode}`);
+        if (regular?.tvdbId) add(`tvdb:${regular.tvdbId}:${parsed.season}:${parsed.episode}`);
       }
       return [...out];
     }
@@ -106,18 +110,25 @@ export async function videoIdAliases(videoId: string): Promise<string[]> {
           || idMappings.getByImdbId?.(imdbId, 'series')?.tvdbId
           || null;
 
+      let animeFound = false;
       if (tvdbId) {
         if (parsed.idType === 'imdb') add(`tvdb:${tvdbId}:${season}:${episode}`);
         const anidb = await animeList.resolveAnidbEpisodeFromTvdbEpisode(tvdbId, season, episode);
         const listed = anidb?.anidbId ? null : idMapper.resolveKitsuEpisodeFromTvdbMapping(tvdbId, season, episode);
         const anime = anidb?.anidbId ? idMapper.getMappingByAnidbId(anidb.anidbId) : listed ? idMapper.getMappingByKitsuId(listed.kitsuId) : null;
         const animeEpisode = anidb?.anidbId ? anidb.anidbEpisode : listed?.episodeNumber;
+        animeFound = Boolean(anime);
         if (anime?.kitsu_id) add(`kitsu:${anime.kitsu_id}:${animeEpisode}`);
         if (anime?.mal_id) add(`mal:${anime.mal_id}:${animeEpisode}`);
         const tmdbSeason = anime ? wholeTmdbSeason(anime) : null;
         if (tmdbSeason !== null) add(`tmdb:${anime.themoviedb_id}:${tmdbSeason}:${animeEpisode}`);
       }
       if (parsed.idType === 'tvdb' && mapping?.imdb_id) add(`${mapping.imdb_id}:${season}:${episode}`);
+      if (!mapping && !animeFound) {
+        const regular = imdbId ? idMappings.getByImdbId?.(imdbId, 'series') : idMappings.getByTvdbId?.(parsed.base.split(':')[1], 'series');
+        if (regular?.tmdbId) add(`tmdb:${regular.tmdbId}:${season}:${episode}`);
+        if (parsed.idType === 'tvdb' && regular?.imdbId) add(`${regular.imdbId}:${season}:${episode}`);
+      }
       return [...out];
     }
   } catch {
