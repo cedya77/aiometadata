@@ -22,9 +22,11 @@ export function ProgressCard({ row }: { row: JellyfinPlayRow }) {
         </div>
         <div className="flex items-center gap-2">
           <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/20">
-            {pct !== null && <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-blue-400" style={{ width: `${Math.min(100, Math.max(2, pct))}%` }} />}
+            {pct !== null
+              ? <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-blue-400" style={{ width: `${Math.min(100, Math.max(2, pct))}%` }} />
+              : row.positionMs > 0 && <div className="h-full w-1/4 rounded-full bg-gradient-to-r from-blue-500 to-blue-500/0" />}
           </div>
-          <span className="whitespace-nowrap text-[10px] tabular-nums text-white/75">{left ? `${left} left` : clock(row.positionMs)}</span>
+          <span className="whitespace-nowrap text-[10px] tabular-nums text-white/75">{left ? `${left} left` : row.positionMs > 0 ? `${clock(row.positionMs)} in` : clock(row.positionMs)}</span>
         </div>
       </div>
     </div>
