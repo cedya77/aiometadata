@@ -183,8 +183,9 @@ function Timeline({ userUUID, profile, personId, kind, role, order, jump, active
     const data = page.data;
     if (!data || data.offset !== offset) return;
     setRows((held) => {
-      const seen = new Set(held.map((row) => row.id));
-      return [...held.slice(0, offset), ...data.rows.filter((row) => !seen.has(row.id))];
+      const kept = held.slice(0, offset);
+      const seen = new Set(kept.map((row) => row.id));
+      return [...kept, ...data.rows.filter((row) => !seen.has(row.id))];
     });
   }, [page.data, offset]);
 
