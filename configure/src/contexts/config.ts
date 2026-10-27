@@ -68,6 +68,7 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime' | 'all';
   enabled: boolean;
+  searchEnabled?: boolean;
   tags?: string[];
   source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd' | 'simkl' | 'movielens' | 'flixpatrol' | 'publicmetadb' | 'recommendations' | 'merged' | 'lumiere' | 'aiom'; // Keep source as the display label
   sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs
