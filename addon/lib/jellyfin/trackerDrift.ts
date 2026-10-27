@@ -159,7 +159,9 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   let rewatched: Viewing[] = [];
   if (REWATCHABLE.has(source.service)) {
     const gap = envInt('JELLYFIN_TRACKER_REWATCH_GAP_HOURS', 48, 48) * 60 * 60 * 1000;
-    const everSent = new Set<string>();
+    // When each title was last sent, so a send stands only for the viewings made before it.
+    const sentAt = new Map<string, number>();
+    const noteSent = (video: string, at: number) => sentAt.set(video, Math.max(sentAt.get(video) ?? 0, at));
     for (const row of (await database.listTrackerActivity([sourceKey], since, 2000).catch(() => [])) as any[]) {
       if (row.kind !== 'sent' || !row.video || !WATCH_OPS.has(String(row.op))) continue;
       let detail: any = {};
@@ -168,8 +170,8 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
       } catch {}
       if (source.service === 'simkl' && detail.rewatch !== true) continue;
       if (row.op === 'scrobble' && detail.verb !== 'Watched') continue;
-      everSent.add(String(row.video));
-      if (row.op === 'catchUps') for (const video of detail.videos ?? []) everSent.add(String(video));
+      noteSent(String(row.video), Number(row.at) || 0);
+      if (row.op === 'catchUps') for (const video of detail.videos ?? []) noteSent(String(video), Number(row.at) || 0);
     }
     const missing = new Set(behind);
     const heldAt = (v: Viewing) => Math.max(0, ...v.ids.flatMap((id) => [
@@ -178,7 +180,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
       ...(spelled.get(id) ?? []).map((alias) => heldElsewhere.get(alias) ?? 0),
     ]));
     rewatched = judged.filter((v) => {
-      if (missing.has(v) || v.ids.some((id) => waiting.has(id) || everSent.has(id))) return false;
+      if (missing.has(v) || v.ids.some((id) => waiting.has(id) || (sentAt.get(id) ?? 0) >= v.at)) return false;
       const at = heldAt(v);
       return at > 0 && v.at - at > gap;
     });
