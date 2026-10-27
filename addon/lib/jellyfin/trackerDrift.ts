@@ -364,7 +364,14 @@ export async function recoverFailed(sourceKey: string, service: Capable): Promis
     if (!credential || sourceKeyFor(service, credential) !== sourceKey) continue;
     const source: DriftSource = { service, credential, keys: new Set([profile]), scoped };
     const drift = await driftFor(userUUID, source);
-    const videos = rows.map((row) => String(row.video));
+    // A failed batch names its first title in the row and every title in its detail.
+    const videos = rows.flatMap((row) => {
+      let detail: any = {};
+      try {
+        detail = JSON.parse(row.detail ?? '{}') ?? {};
+      } catch {}
+      return [String(row.video), ...(Array.isArray(detail.videos) ? detail.videos.map(String) : [])];
+    });
     const reaches = (v: Viewing) => v.ids.some((id) => videos.some((video) => {
       if (video === id) return true;
       const a = parseStremioId(video);
