@@ -1345,6 +1345,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_CALENDAR_BLOCK_DAYS',
+    envVar: 'JELLYFIN_CALENDAR_BLOCK_DAYS',
+    label: 'Jellyfin Calendar Block (days)',
+    description: 'How many days of a calendar are worked out together. Every week or month inside one block is then cut from the same result, so moving through the calendar does not start over each time.',
+    category: 'Features',
+    type: 'number',
+    default: 120,
+    min: 7,
+  },
+  {
     key: 'JELLYFIN_CALENDAR_FUTURE_DAYS',
     envVar: 'JELLYFIN_CALENDAR_FUTURE_DAYS',
     label: 'Jellyfin Calendar Future Window (days)',

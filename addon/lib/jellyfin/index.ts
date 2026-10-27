@@ -3315,9 +3315,24 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
   const heldCalendar = async (userUUID: string, config: any, from: number, to: number, withFilms = false): Promise<any[]> => {
     const digest = (await watchedSnapshot(userUUID, config)).fingerprint;
-    const memoKey = `${userUUID}:${profileKey(config)}:calendar:${from}:${to}:${digest}${withFilms ? ':films' : ''}`;
-    return memoNextUp(userUUID, memoKey, () => buildCalendar(userUUID, config, from, to, withFilms), (built) =>
-      built.length === 0 ? Date.now() + envInt('JELLYFIN_CALENDAR_EMPTY_TTL', 30, 1) * 1000 : null);
+    const blockMs = envInt('JELLYFIN_CALENDAR_BLOCK_DAYS', 120, 7) * 24 * 60 * 60 * 1000;
+    const starts: number[] = [];
+    for (let start = Math.floor(from / blockMs) * blockMs; start <= to; start += blockMs) starts.push(start);
+    let whole: Promise<any[]> | null = null;
+    const span = () => (whole ??= buildCalendar(userUUID, config, starts[0], starts[starts.length - 1] + blockMs - 1, withFilms));
+    const blocks = await Promise.all(starts.map((start) => {
+      const memoKey = `${userUUID}:${profileKey(config)}:calendar:${start}:${blockMs}:${digest}${withFilms ? ':films' : ''}`;
+      const inBlock = (item: any) => {
+        const at = Date.parse(item?.PremiereDate || '');
+        return at >= start && at < start + blockMs;
+      };
+      return memoNextUp(userUUID, memoKey, async () => (await span()).filter(inBlock), (built) =>
+        built.length === 0 ? Date.now() + envInt('JELLYFIN_CALENDAR_EMPTY_TTL', 30, 1) * 1000 : null);
+    }));
+    return blocks.flat().filter((item) => {
+      const at = Date.parse(item?.PremiereDate || '');
+      return at >= from && at <= to;
+    });
   };
   calendarReader = heldCalendar;
 
