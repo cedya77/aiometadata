@@ -2112,16 +2112,18 @@ class Database {
     return (rows || []).map((row: any) => Number(row.id));
   }
 
-  async updateCopyJob(id: number, patch: Partial<{ status: string; cursor: number; sent: number; skipped: number; failed: number; nextAt: number; claimedUntil: number; stalls: number; lastError: string | null; finishedAt: number | null }>): Promise<void> {
+  async updateCopyJob(id: number, patch: Partial<{ status: string; cursor: number; sent: number; skipped: number; failed: number; nextAt: number; claimedUntil: number; stalls: number; lastError: string | null; finishedAt: number | null }>, whileStatus?: string): Promise<boolean> {
     const columns: Record<string, string> = { status: 'status', cursor: 'cursor', sent: 'sent', skipped: 'skipped', failed: 'failed', nextAt: 'next_at', claimedUntil: 'claimed_until', stalls: 'stalls', lastError: 'last_error', finishedAt: 'finished_at' };
     const entries = Object.entries(patch).filter(([key]) => columns[key]);
     const sqlite = this.type === 'sqlite';
     const sets = entries.map(([key], i) => `${columns[key]} = ${sqlite ? '?' : `$${i + 1}`}`);
     sets.push(`updated_at = ${sqlite ? '?' : `$${entries.length + 1}`}`);
-    await this.runQuery(
-      `UPDATE tracker_copy_jobs SET ${sets.join(', ')} WHERE id = ${sqlite ? '?' : `$${entries.length + 2}`}`,
-      [...entries.map(([, value]) => value), Date.now(), id]
+    const guard = whileStatus === undefined ? '' : ` AND status = ${sqlite ? '?' : `$${entries.length + 3}`}`;
+    const result = await this.runQuery(
+      `UPDATE tracker_copy_jobs SET ${sets.join(', ')} WHERE id = ${sqlite ? '?' : `$${entries.length + 2}`}${guard}`,
+      [...entries.map(([, value]) => value), Date.now(), id, ...(whileStatus === undefined ? [] : [whileStatus])]
     );
+    return Number(result?.changes ?? result?.rowCount ?? 0) > 0;
   }
 
   async pruneTrackerActivity(before: number): Promise<void> {

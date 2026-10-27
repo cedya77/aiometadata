@@ -334,10 +334,12 @@ export async function startCopy(userUUID: string, profile: string, from: CopySid
 export async function controlCopy(userUUID: string, id: number, action: 'pause' | 'resume' | 'stop'): Promise<boolean> {
   const job = await database.getCopyJob(id);
   if (!job || job.user_uuid !== userUUID) return false;
-  if (action === 'stop' && ['running', 'paused'].includes(job.status)) await database.updateCopyJob(id, { status: 'stopped', finishedAt: Date.now() });
-  else if (action === 'pause' && job.status === 'running') await database.updateCopyJob(id, { status: 'paused' });
-  else if (action === 'resume' && job.status === 'paused') await database.updateCopyJob(id, { status: 'running', nextAt: 0 });
-  else return false;
+  const moved = action === 'stop'
+    ? (job.status === 'running' || job.status === 'paused') && await database.updateCopyJob(id, { status: 'stopped', finishedAt: Date.now() }, job.status)
+    : action === 'pause'
+      ? job.status === 'running' && await database.updateCopyJob(id, { status: 'paused' }, 'running')
+      : job.status === 'paused' && await database.updateCopyJob(id, { status: 'running', nextAt: 0 }, 'paused');
+  if (!moved) return false;
   wakeCopies();
   return true;
 }
@@ -536,7 +538,7 @@ async function step(id: number): Promise<void> {
   const credential = config ? credentialFor(config, job.to_service) : undefined;
   const { sourceKeyFor } = require('./trackerMirror');
   if (!credential || sourceKeyFor(job.to_service, credential) !== job.to_key) {
-    await database.updateCopyJob(id, { status: 'failed', lastError: `${NAMES[job.to_service]} is no longer connected`, finishedAt: Date.now() });
+    await database.updateCopyJob(id, { status: 'failed', lastError: `${NAMES[job.to_service]} is no longer connected`, finishedAt: Date.now() }, 'running');
     return;
   }
   const what: CopyWhat = MARKS.has(job.what) ? job.what : 'watches';
@@ -562,7 +564,7 @@ async function step(id: number): Promise<void> {
     const message = String(error?.message || error).slice(0, 300);
     logger.warn(`Copy ${id} to ${job.to_service} stopped on a batch (${count}): ${message}`);
     if (count >= envInt('JELLYFIN_COPY_MAX_STRIKES', 5, 1)) {
-      await database.updateCopyJob(id, { status: 'failed', lastError: message, finishedAt: Date.now() });
+      await database.updateCopyJob(id, { status: 'failed', lastError: message, finishedAt: Date.now() }, 'running');
       strikes.delete(id);
     } else {
       await database.updateCopyJob(id, { nextAt: Date.now() + count * 60_000, lastError: message });
@@ -604,7 +606,8 @@ async function step(id: number): Promise<void> {
 }
 
 async function finish(job: any): Promise<void> {
-  await database.updateCopyJob(job.id, { status: 'done', finishedAt: Date.now(), lastError: null });
+  // A stop or pause pressed while the last batch was out stays as it was.
+  if (!(await database.updateCopyJob(job.id, { status: 'done', finishedAt: Date.now(), lastError: null }, 'running'))) return;
   const stored = await database.getUserConfig(job.user_uuid).catch(() => null);
   const config = stored ? scopeConfigToProfile(stored, job.user_uuid, job.profile || null) : null;
   const credential = config ? credentialFor(config, job.to_service) : undefined;
