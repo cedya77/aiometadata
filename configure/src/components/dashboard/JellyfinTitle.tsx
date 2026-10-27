@@ -204,7 +204,7 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
             ...(unaired ? [] : [{ icon: <Cast className="size-4" />, label: "Play on a device", onSelect: () => onPlayOn({ x: menu.x, y: menu.y }) }]),
             { icon: <Check className="size-4" />, label: "Mark watched", onSelect: () => onAction("played") },
             { icon: <Undo2 className="size-4" />, label: "Mark unwatched", onSelect: () => onAction("unplayed") },
-            { icon: <CheckCheck className="size-4" />, label: "Watched up to here", onSelect: () => onAction("playedUpTo") },
+            ...(ep.season === 0 ? [] : [{ icon: <CheckCheck className="size-4" />, label: "Watched up to here", onSelect: () => onAction("playedUpTo") }]),
           ]} />
         )}
       </div>
