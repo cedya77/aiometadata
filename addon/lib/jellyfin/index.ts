@@ -3315,7 +3315,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
   searchReader = {
     catalogs: async (userUUID: string, config: any) =>
-      getSearchableCatalogs(await getCatalogs(userUUID, config)).map((catalog: any) => ({ id: String(catalog.id), type: String(catalog.type), name: String(catalog.name ?? catalog.id) })),
+      // A collection opens as a set of films, which the dashboard's title page does not show.
+      getSearchableCatalogs(await getCatalogs(userUUID, config)).filter((catalog: any) => !isBoxSetCatalog(catalog)).map((catalog: any) => ({ id: String(catalog.id), type: String(catalog.type), name: String(catalog.name ?? catalog.id) })),
     run: async (userUUID: string, config: any, catalog: { id: string; type: string }, term: string) =>
       (await fetchCatalogPage(userUUID, catalog.type, catalog.id, { search: term, light: '1' }, profileTags(config))) ?? [],
   };
@@ -3327,6 +3328,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     if (!meta) return null;
     const serverId = serverIdFor(userUUID);
     const item = metaToBaseItem(meta, descriptor.t, serverId, null);
+    if (item.Type === 'BoxSet') return null;
     item.Id = normaliseJellyfinId(itemId);
     const episodes = descriptor.k === 'series' ? buildEpisodes(meta, descriptor.t, item.Id, serverId, null) : [];
     const seasons = descriptor.k === 'series' ? buildSeasons(meta, descriptor.t, item.Id, serverId) : [];

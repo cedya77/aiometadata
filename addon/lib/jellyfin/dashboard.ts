@@ -6,7 +6,7 @@ import { liveSessions, liveSessionsFor, type LiveSession } from './playstate';
 import { syncStatus } from './playstateSync';
 import { seenConfigurations } from './context';
 import { seriesIndex } from './episodeIndex';
-import { fetchMeta, seriesStatus } from './items';
+import { fetchMeta, isBoxSetMeta, seriesStatus } from './items';
 import { groupBySpelling } from './aliases';
 import { defaultUserName, listProfiles, profileKey, scopeConfigToProfile } from './profiles';
 import { CAPABLE, credentialFor } from './trackerSource';
@@ -1856,7 +1856,7 @@ export async function dashboardFindTitles(userUUID: string, profile: string | nu
       return {
         query,
         available: true,
-        results: metas.filter((meta) => meta?.id && !seen.has(String(meta.id)) && seen.add(String(meta.id))).slice(0, envInt('JELLYFIN_DASHBOARD_SEARCH_RESULTS', 12, 1) * 2).map((meta) => ({
+        results: metas.filter((meta) => meta?.id && !isBoxSetMeta(meta) && !seen.has(String(meta.id)) && seen.add(String(meta.id))).slice(0, envInt('JELLYFIN_DASHBOARD_SEARCH_RESULTS', 12, 1) * 2).map((meta) => ({
           id: String(meta.id),
           type: meta.type === 'movie' || catalog.type === 'movie' || catalog.type === 'anime.movie' ? 'movie' : 'series',
           title: String(meta.name ?? meta.id),
