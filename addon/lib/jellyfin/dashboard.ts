@@ -1207,7 +1207,7 @@ export interface DeviceRow {
 export function dashboardDevices(userUUID: string, profile: string | null): Promise<DeviceRow[] | null> {
   return asProfile(userUUID, profile, async (config) => {
     const { liveDevices } = require('./socket');
-    const devices: Array<{ deviceId: string; client: string; device: string; version: string; lastSeen: number; playableMediaTypes: string[]; supportedCommands: string[] }> =
+    const devices: Array<{ deviceId: string; client: string; device: string; version: string; lastSeen: number; playableMediaTypes?: string[]; supportedCommands: string[] }> =
       await liveDevices(userUUID, profileKey(config));
     return devices.map((device) => ({
       deviceId: device.deviceId,
@@ -1216,7 +1216,7 @@ export function dashboardDevices(userUUID: string, profile: string | null): Prom
       version: device.version,
       lastSeen: device.lastSeen,
       canOpen: device.supportedCommands.includes('DisplayContent'),
-      canPlay: device.playableMediaTypes.includes('Video'),
+      canPlay: (device.playableMediaTypes ?? []).includes('Video'),
     }));
   });
 }

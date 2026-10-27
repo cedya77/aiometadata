@@ -3911,9 +3911,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         client: own.client,
         device: own.device,
         version: own.version,
-        playableMediaTypes: list(param(source, 'PlayableMediaTypes')),
+        playableMediaTypes: param(source, 'PlayableMediaTypes') === undefined ? undefined : list(param(source, 'PlayableMediaTypes')),
         supportedCommands: list(param(source, 'SupportedCommands')),
-        supportsMediaControl: String(param(source, 'SupportsMediaControl')).toLowerCase() === 'true',
+        supportsMediaControl: param(source, 'SupportsMediaControl') === undefined ? undefined : String(param(source, 'SupportsMediaControl')).toLowerCase() === 'true',
       });
     } catch (error: any) {
       logger.debug(`Capabilities save failed: ${error?.message || error}`);

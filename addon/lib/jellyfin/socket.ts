@@ -170,9 +170,10 @@ export interface DeviceCapabilities {
   client: string;
   device: string;
   version: string;
-  playableMediaTypes: string[];
+  /** Left out when the client did not say, which is not the same as saying none or false. */
+  playableMediaTypes?: string[];
   supportedCommands: string[];
-  supportsMediaControl: boolean;
+  supportsMediaControl?: boolean;
 }
 
 export interface LiveDevice extends DeviceCapabilities {
@@ -193,7 +194,7 @@ export async function saveCapabilities(userUUID: string, profile: string, device
     client: short(details.client),
     device: short(details.device),
     version: short(details.version, 32),
-    playableMediaTypes: shortList(details.playableMediaTypes, 10),
+    playableMediaTypes: details.playableMediaTypes && shortList(details.playableMediaTypes, 10),
     supportedCommands: shortList(details.supportedCommands, 100),
   };
   if (!redis) return void localCapabilities.set(key, capabilities, { ttl: detailsMs() });
@@ -231,9 +232,9 @@ export async function liveDevices(userUUID: string, profile: string): Promise<Li
       client: capabilities?.client ?? 'Unknown',
       device: capabilities?.device ?? 'Unknown',
       version: capabilities?.version ?? '0.0.0',
-      playableMediaTypes: capabilities?.playableMediaTypes ?? [],
+      playableMediaTypes: capabilities?.playableMediaTypes,
       supportedCommands: capabilities?.supportedCommands ?? [],
-      supportsMediaControl: capabilities?.supportsMediaControl ?? false,
+      supportsMediaControl: capabilities?.supportsMediaControl,
       deviceId,
       lastSeen: seen.get(deviceId)!,
     };

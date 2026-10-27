@@ -159,7 +159,7 @@ export function sessionInfo(
   serverId: string,
   userName: string,
   client: { client: string; device: string; deviceId: string; version: string },
-  remote?: { playableMediaTypes: string[]; supportedCommands: string[]; lastSeen: number }
+  remote?: { playableMediaTypes?: string[]; supportedCommands: string[]; supportsMediaControl?: boolean; lastSeen: number }
 ): any {
   const seen = new Date(remote?.lastSeen ?? Date.now()).toISOString();
   return {
@@ -172,10 +172,10 @@ export function sessionInfo(
     DeviceId: client.deviceId,
     ApplicationVersion: client.version,
     IsActive: true,
-    SupportsMediaControl: remote ? true : false,
-    SupportsRemoteControl: remote ? true : false,
+    SupportsMediaControl: remote ? remote.supportsMediaControl !== false : false,
+    SupportsRemoteControl: remote ? remote.supportsMediaControl !== false : false,
     HasCustomDeviceName: false,
-    PlayableMediaTypes: remote?.playableMediaTypes.length ? remote.playableMediaTypes : ['Video'],
+    PlayableMediaTypes: remote?.playableMediaTypes ?? ['Video'],
     SupportedCommands: remote?.supportedCommands ?? [],
     NowPlayingQueue: [],
     NowPlayingQueueFullItems: [],
