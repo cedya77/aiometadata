@@ -251,12 +251,29 @@ export function SearchSettings() {
       : {}),
   });
 
+  // Helper to format custom catalogs into dropdown options
+  const getCatalogOptions = (catalogs: any[] | undefined, mediaType: 'movie' | 'series'): SelectableOption[] => {
+    return (catalogs || [])
+      .filter((c) => c.type === mediaType || c.type === 'all') // Now just a clean, direct match
+      .filter((c) => c.enabled !== false && c.searchEnabled !== false)    
+      .map((c) => ({
+        value: `catalog.${c.id}`,
+        label: `Catalog: ${c.name || c.id}`,
+      }));
+  };
+
   const optionsForSlot = (slot: SearchSlot): SelectableOption[] => {
     switch (slot.id) {
       case 'movie':
-        return movieSearchProviders.map(toOption);
+        return [
+          ...movieSearchProviders.map(toOption),
+          ...getCatalogOptions(config.catalogs, 'movie')
+        ];
       case 'series':
-        return seriesSearchProviders.map(toOption);
+        return [
+          ...seriesSearchProviders.map(toOption),
+          ...getCatalogOptions(config.catalogs, 'series')
+        ];
       case 'anime_series':
         return animeSearchProviders.filter(p => p.mediaType.includes('anime_series')).map(toOption);
       case 'anime_movie':
