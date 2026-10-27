@@ -650,6 +650,8 @@ async function redatePublicMetaDb(
   const answer = await setWatchedDate(apiKey, String(old.id), new Date(change.to).toISOString());
   const moved = answer?.item ?? { ...old, watched_at: new Date(change.to).toISOString() };
   await database.upsertTrackerMirror(mirrorKey, [{ key: `play:${old.id}`, group, data: moved }]).catch(() => undefined);
+  // An older play can move without changing what a read compares, so the watched state is rebuilt here.
+  await database.bumpTrackerSyncVersion(mirrorKey).catch(() => undefined);
 }
 
 async function redateMdblist(
