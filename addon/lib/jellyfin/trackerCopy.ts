@@ -1,4 +1,5 @@
 import consola from 'consola';
+import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { trackerConfig, type AccountService } from '../accounts';
 import { videoIdAliases } from './aliases';
@@ -196,9 +197,11 @@ export interface MarkCopyPlan {
   checkedAt: number;
 }
 
-const plans = new Map<string, CopyPlan | MarkCopyPlan>();
+const planMs = () => envInt('JELLYFIN_COPY_PLAN_MINUTES', 10, 1) * 60 * 1000;
+// A plan is reused only while fresh, so it is not kept past that either.
+const plans = new LRUCache<string, CopyPlan | MarkCopyPlan>({ max: 200, ttl: planMs(), ttlAutopurge: true });
 const planKey = (userUUID: string, from: CopySide, to: CopySide, since: number, what: CopyWhat = 'watches', retry = false) => `${userUUID}|${from.key}|${to.key}|${since}|${what}|${retry}`;
-const fresh = (plan: { checkedAt: number } | undefined) => plan && Date.now() - plan.checkedAt < envInt('JELLYFIN_COPY_PLAN_MINUTES', 10, 1) * 60 * 1000;
+const fresh = (plan: { checkedAt: number } | undefined) => plan && Date.now() - plan.checkedAt < planMs();
 
 async function readFresh(side: CopySide): Promise<void> {
   const { syncMirror } = require('./trackerMirror');
@@ -220,7 +223,7 @@ export async function planMarkCopy(userUUID: string, what: Mark, from: CopySide,
     reasons: refused ? { ...planned.reasons, refused } : planned.reasons,
     checkedAt: Date.now(),
   };
-  plans.set(key, plan);
+  plans.set(key, plan, { ttl: planMs() });
   return plan;
 }
 
@@ -250,7 +253,7 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
       blocked: { noId: 0, refused: left.filter((item) => tried.has(copyKey(item))).length },
       checkedAt: Date.now(),
     };
-    plans.set(key, plan);
+    plans.set(key, plan, { ttl: planMs() });
     return plan;
   }
   await indexedSnapshot(from.service, from.credential, from.scoped);
@@ -317,7 +320,7 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
     blocked,
     checkedAt: Date.now(),
   };
-  plans.set(key, plan);
+  plans.set(key, plan, { ttl: planMs() });
   return plan;
 }
 
