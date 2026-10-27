@@ -35,7 +35,7 @@ export function extensionInfo(origin: string): any {
     logo: process.env.ADDON_LOGO_URL?.trim() || `${origin}/logo.png`,
     configureUrl: `${origin}/configure`,
     pinSignIn: false,
-    features: EXTENSIONS,
+    features: require('../criticRatings').criticRatingsEnabled() ? { ...EXTENSIONS, criticRatings: 1 } : EXTENSIONS,
     version: { tag: `v${buildInfo.version}` },
   };
 }
