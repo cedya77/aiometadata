@@ -1965,14 +1965,20 @@ class Database {
     return Number.isFinite(wakeAt) && wakeAt > 0 ? wakeAt : null;
   }
 
-  async purgeTrackerOutbox(now: number): Promise<number> {
-    const result = await this.runQuery(
-      this.type === 'sqlite'
-        ? 'DELETE FROM tracker_outbox WHERE expires_at <= ? AND claimed_until <= ?'
-        : 'DELETE FROM tracker_outbox WHERE expires_at <= $1 AND claimed_until <= $1',
-      this.type === 'sqlite' ? [now, now] : [now]
-    );
-    return Number(result?.changes ?? result?.rowCount ?? 0);
+  async purgeTrackerOutbox(now: number): Promise<Array<{ user_uuid: string; profile: string; service: string; op: string }>> {
+    const sqlite = this.type === 'sqlite';
+    const rows = (await this.allPrimaryQuery(
+      sqlite
+        ? 'SELECT id, user_uuid, profile, service, op FROM tracker_outbox WHERE expires_at <= ? AND claimed_until <= ?'
+        : 'SELECT id, user_uuid, profile, service, op FROM tracker_outbox WHERE expires_at <= $1 AND claimed_until <= $1',
+      sqlite ? [now, now] : [now]
+    )) || [];
+    for (let at = 0; at < rows.length; at += 500) {
+      const ids = rows.slice(at, at + 500).map((row: any) => Number(row.id));
+      const marks = ids.map((_, i) => (sqlite ? '?' : `$${i + 2}`)).join(', ');
+      await this.runQuery(`DELETE FROM tracker_outbox WHERE claimed_until <= ${sqlite ? '?' : '$1'} AND id IN (${marks})`, [now, ...ids]);
+    }
+    return rows;
   }
 
   async claimTrackerOutbox(id: number, until: number): Promise<boolean> {

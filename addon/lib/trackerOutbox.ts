@@ -213,7 +213,16 @@ async function pump(): Promise<void> {
       if (now - lastPurgeAt >= HEARTBEAT_MS) {
         lastPurgeAt = now;
         const purged = await database.purgeTrackerOutbox(now);
-        if (purged) logger.info(`Dropped ${purged} tracker write(s) too late to send`);
+        if (purged.length) {
+          logger.info(`Dropped ${purged.length} tracker write(s) too late to send`);
+          const seen = new Set<string>();
+          for (const row of purged) {
+            const owner = `${row.user_uuid}|${row.profile ?? ''}|${row.service}`;
+            if (!CHANGES_WATCHED.has(row.op as OutboxOp) || seen.has(owner)) continue;
+            seen.add(owner);
+            await unlayerStored(row);
+          }
+        }
       }
 
       const slots = concurrency() - active.size;
@@ -298,6 +307,7 @@ async function deliver(row: any): Promise<void> {
   if (row.expires_at <= Date.now()) {
     logger.debug(`Dropping ${label}: too late to send`);
     await database.deleteTrackerOutbox(row.id);
+    await unlayerStored(row);
     return;
   }
 
@@ -372,6 +382,18 @@ export async function unlayer(row: { op: string; service: string }, config: any)
   if (!credential) return;
   const { sourceKeyFor } = require('./jellyfin/trackerMirror');
   await database.bumpTrackerSyncVersion(sourceKeyFor(row.service, credential)).catch(() => undefined);
+}
+
+// A write that leaves unsent without its configuration at hand.
+async function unlayerStored(row: { user_uuid: string; profile?: string | null; service: string; op: string }): Promise<void> {
+  if (!CHANGES_WATCHED.has(row.op as OutboxOp)) return;
+  try {
+    const stored = await require('./configApi').loadSharedConfig(row.user_uuid);
+    const { scopeConfigToProfile } = require('./jellyfin/profiles');
+    await unlayer(row, scopeConfigToProfile(stored, row.user_uuid, row.profile || null));
+  } catch (error: any) {
+    logger.debug(`Could not rebuild ${row.service} watched state for ${row.user_uuid}: ${error?.message || error}`);
+  }
 }
 
 function noteDelivery(row: any, config: any, payload: any, kind: 'sent' | 'retry' | 'failed', detail: Record<string, unknown>): void {
