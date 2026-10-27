@@ -1462,6 +1462,8 @@ export async function libraryPicks(userUUID: string, config: any, tab: 'ratings'
     return mapWithConcurrency(rated, envInt('JELLYFIN_DASHBOARD_DESCRIBE_CONCURRENCY', 8, 1), async (r): Promise<LibraryPick> => {
       const guess: Array<'movie' | 'series'> = r.type ? [r.type] : r.key.startsWith('tt') ? ['movie', 'series'] : ['series', 'movie'];
       const named = r.type ? null : await describeTitle(userUUID, r.key, guess, r.keys);
+      // Kept, so a rating saved before kinds were stored is looked up once rather than on every read.
+      if (named) void database.setRatingType(userUUID, key, r.keys, named.type).catch(() => undefined);
       return { metaId: r.key, types: named ? [named.type] : guess, at: r.at, rating: r.rating };
     });
   }

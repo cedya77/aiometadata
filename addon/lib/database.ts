@@ -2499,6 +2499,17 @@ class Database {
     }
   }
 
+  /** Records the kind of a rating saved before kinds were stored, leaving its date alone. */
+  async setRatingType(userUUID: string, profile: string, metaIds: string[], metaType: 'movie' | 'series'): Promise<void> {
+    if (!metaIds.length) return;
+    const sqlite = this.type === 'sqlite';
+    const marks = metaIds.map((_, i) => (sqlite ? '?' : `$${i + 4}`)).join(', ');
+    await this.runQuery(
+      `UPDATE jellyfin_ratings SET meta_type = ${sqlite ? '?' : '$1'} WHERE user_uuid = ${sqlite ? '?' : '$2'} AND profile = ${sqlite ? '?' : '$3'} AND meta_type IS NULL AND meta_id IN (${marks})`,
+      [metaType, userUUID, profile, ...metaIds]
+    );
+  }
+
   async listRemoteRatings(userUUID: string, limit: number): Promise<any[]> {
     const query = this.type === 'sqlite'
       ? "SELECT meta_id, meta_type, pmdb_id FROM jellyfin_ratings WHERE user_uuid = ? AND pmdb_id IS NOT NULL AND meta_id LIKE 'tmdb:%' ORDER BY updated_at DESC LIMIT ?"
