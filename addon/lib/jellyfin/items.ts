@@ -911,7 +911,7 @@ async function readMeta(
   const work = (async () => {
     try {
       const { invokeRoute } = require('../inProcessRoutes');
-      const reply = await invokeRoute('meta', url, { userUUID, type: stremioType, id, ...(beforeArt ? { beforeArt: '1' } : {}) }, routeTimeout());
+      const reply = await invokeRoute('meta', url, { userUUID, type: stremioType, id, forJellyfin: '1', ...(beforeArt ? { beforeArt: '1' } : {}) }, routeTimeout());
       if (reply.status < 200 || reply.status >= 300) {
         logger.debug(`Meta ${stremioType}/${id} returned ${reply.status}`);
         return null;

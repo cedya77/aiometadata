@@ -1,11 +1,11 @@
 import {
-  SOURCE_ORDER,
-  SOURCE_SCALE,
   cachedRatings,
   criticRatingsEnabled,
   loadRatings,
-  nativeValue,
+  malRating,
+  ratingEntries,
   ratingKey,
+  recentRelease,
   type RatingRef,
   type Scores,
 } from '../criticRatings';
@@ -23,11 +23,6 @@ interface Rated {
   series?: SeriesRatingIds;
 }
 
-function recentOf(item: any): boolean {
-  const premiere = Date.parse(item.PremiereDate ?? '');
-  return Number.isFinite(premiere) && premiere > Date.now() - envInt('CRITIC_RATINGS_RECENT_DAYS', 30, 0) * 24 * 3600 * 1000;
-}
-
 function ratedOf(item: any, single: boolean): Rated | null {
   if (!item || typeof item !== 'object') return null;
   if (item.Type === 'Episode') {
@@ -43,7 +38,7 @@ function ratedOf(item: any, single: boolean): Rated | null {
   if (!RATED.has(item.Type)) return null;
   const tmdbId = String(item.ProviderIds?.Tmdb ?? '');
   if (NUMERIC_ID.test(tmdbId)) {
-    return { item, ref: { kind: item.Type === 'Series' ? 'tv' : 'movie', tmdbId, recent: recentOf(item) } };
+    return { item, ref: { kind: item.Type === 'Series' ? 'tv' : 'movie', tmdbId, recent: recentRelease(item.PremiereDate) } };
   }
   const malId = String(item.ProviderIds?.MyAnimeList ?? '');
   return single && NUMERIC_ID.test(malId) ? { item, malId } : null;
@@ -57,15 +52,8 @@ function itemsOf(body: any, oneAsked: boolean): { items: any[]; single: boolean 
 }
 
 function apply({ item, series }: Rated, scores: Scores): void {
-  const ratings: Array<{ source: string; value: number; scale: number; url?: string }> = [];
-  const imdb = series ? series.imdbRating : item.CommunityRating;
   const imdbId = series ? series.imdbId : IMDB_ID.test(String(item.ProviderIds?.Imdb ?? '')) ? item.ProviderIds.Imdb : undefined;
-  if (typeof imdb === 'number') ratings.push({ source: 'imdb', value: imdb, scale: 10, ...(imdbId ? { url: `https://www.imdb.com/title/${imdbId}/` } : {}) });
-  for (const source of SOURCE_ORDER) {
-    const score = scores[source];
-    if (typeof score !== 'number') continue;
-    ratings.push({ source, value: nativeValue(source, score), scale: SOURCE_SCALE[source] });
-  }
+  const ratings = ratingEntries(scores, series ? series.imdbRating : item.CommunityRating, imdbId);
   if (ratings.length === 0) return;
   if (series) {
     item.aiostreams = { ...(item.aiostreams ?? {}), seriesRatings: ratings };
@@ -73,20 +61,6 @@ function apply({ item, series }: Rated, scores: Scores): void {
   }
   if (typeof scores.tomatoes === 'number') item.CriticRating = Math.round(scores.tomatoes);
   item.aiostreams = { ...(item.aiostreams ?? {}), ratings };
-}
-
-async function malScore(malId: string, waitMs: number): Promise<number | undefined> {
-  const { getAnimeDetailsCached }: any = require('../mal');
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const details = await Promise.race([
-    getAnimeDetailsCached(malId).catch(() => null),
-    new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), waitMs);
-    }),
-  ]);
-  clearTimeout(timer);
-  const score = Number(details?.score);
-  return Number.isFinite(score) && score > 0 ? Math.round(score * 100) / 10 : undefined;
 }
 
 export function oneIdAsked(query: any): boolean {
@@ -120,7 +94,7 @@ export function withCriticRatings(body: any, oneAsked = false): Promise<void> | 
   const wait = single ? envInt('CRITIC_RATINGS_DETAIL_WAIT_MS', 1500, 0) : 0;
   return Promise.all([
     missing.length > 0 ? loadRatings(missing, wait) : Promise.resolve(new Map<string, Scores>()),
-    Promise.all(needsMal.map((entry) => malScore(entry.malId!, wait))),
+    Promise.all(needsMal.map((entry) => malRating(entry.malId!, wait))),
   ]).then(([loaded, malScores]) => {
     const mals = new Map(needsMal.map((entry, index) => [entry, malScores[index]]));
     for (const entry of rated) {

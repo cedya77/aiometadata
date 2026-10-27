@@ -261,6 +261,42 @@ export function nativeValue(source: RatingSource, score: number): number {
   return Math.round((score * SOURCE_SCALE[source]) / 10) / 10;
 }
 
+export interface RatingEntry {
+  source: 'imdb' | RatingSource;
+  value: number;
+  scale: number;
+  url?: string;
+}
+
+export function ratingEntries(scores: Scores, imdbRating?: number | null, imdbId?: string): RatingEntry[] {
+  const entries: RatingEntry[] = [];
+  if (typeof imdbRating === 'number') entries.push({ source: 'imdb', value: imdbRating, scale: 10, ...(imdbId ? { url: `https://www.imdb.com/title/${imdbId}/` } : {}) });
+  for (const source of SOURCE_ORDER) {
+    const score = scores[source];
+    if (typeof score === 'number') entries.push({ source, value: nativeValue(source, score), scale: SOURCE_SCALE[source] });
+  }
+  return entries;
+}
+
+export function recentRelease(date: unknown): boolean {
+  const released = Date.parse(typeof date === 'string' ? date : '');
+  return Number.isFinite(released) && released > Date.now() - envInt('CRITIC_RATINGS_RECENT_DAYS', 30, 0) * 24 * HOUR;
+}
+
+export async function malRating(malId: string, waitMs: number): Promise<number | undefined> {
+  const { getAnimeDetailsCached }: any = require('./mal');
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const details = await Promise.race([
+    getAnimeDetailsCached(malId).catch(() => null),
+    new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), waitMs);
+    }),
+  ]);
+  clearTimeout(timer);
+  const score = Number(details?.score);
+  return Number.isFinite(score) && score > 0 ? Math.round(score * 100) / 10 : undefined;
+}
+
 export function criticRatingsStats(): { cached: number; queued: number; fetching: number; pausedForMs: number } {
   return { cached: memory.size, queued: pending.size, fetching: inflight.size, pausedForMs: Math.max(0, pausedUntil - Date.now()) };
 }
