@@ -2009,11 +2009,18 @@ class Database {
     return rows.map((row: any) => ({ ...row, created_at: Number(row.created_at) }));
   }
 
-  async outboxRowsForConfiguration(userUUID: string, limit = 200): Promise<any[]> {
-    const query = this.type === 'sqlite'
-      ? 'SELECT id, profile, service, op, item_key, payload, attempts, next_at, claimed_until, created_at, last_error FROM tracker_outbox WHERE user_uuid = ? AND expires_at > ? ORDER BY id LIMIT ?'
-      : 'SELECT id, profile, service, op, item_key, payload, attempts, next_at, claimed_until, created_at, last_error FROM tracker_outbox WHERE user_uuid = $1 AND expires_at > $2 ORDER BY id LIMIT $3';
-    return (await this.allQuery(query, [userUUID, Date.now(), limit])) || [];
+  /** One tracker account's waiting writes, oldest first up to `limit`, with how many wait in all. */
+  async outboxRowsForLane(userUUID: string, service: string, profiles: string[], limit = 200): Promise<{ rows: any[]; total: number }> {
+    if (!profiles.length) return { rows: [], total: 0 };
+    const sqlite = this.type === 'sqlite';
+    const marks = profiles.map((_, i) => (sqlite ? '?' : `$${i + 4}`)).join(', ');
+    const where = `user_uuid = ${sqlite ? '?' : '$1'} AND service = ${sqlite ? '?' : '$2'} AND expires_at > ${sqlite ? '?' : '$3'} AND profile IN (${marks})`;
+    const params = [userUUID, service, Date.now(), ...profiles];
+    const [rows, count] = await Promise.all([
+      this.allQuery(`SELECT id, profile, service, op, item_key, payload, attempts, next_at, claimed_until, created_at, last_error FROM tracker_outbox WHERE ${where} ORDER BY id LIMIT ${sqlite ? '?' : `$${profiles.length + 4}`}`, [...params, limit]),
+      this.getQuery(`SELECT COUNT(*) AS n FROM tracker_outbox WHERE ${where}`, params),
+    ]);
+    return { rows: rows || [], total: Number(count?.n) || 0 };
   }
 
   async hurryTrackerOutbox(userUUID: string, ids: number[]): Promise<number> {

@@ -497,11 +497,13 @@ export async function dashboardSync(userUUID: string, viewer: string | null): Pr
   const keys = [...sources.keys()];
   const now = Date.now();
   const { summariseJob } = require('../trackerActivity');
-  const [queued, activity, states] = await Promise.all([
-    database.outboxRowsForConfiguration(userUUID).catch(() => []),
+  const [waitingByLane, activity, states] = await Promise.all([
+    Promise.all(keys.map((key) => database.outboxRowsForLane(userUUID, sources.get(key)!.service, [...sources.get(key)!.keys]).catch(() => ({ rows: [], total: 0 })))),
     database.listTrackerActivity(keys, now - envInt('JELLYFIN_TRACKER_ACTIVITY_DAYS', 14, 1) * DAY_MS).catch(() => []),
     Promise.all(keys.map((key) => database.getTrackerSync(key).catch(() => null))),
   ]);
+  const queued = waitingByLane.flatMap((lane: any) => lane.rows);
+  const waitingIn = new Map<string, number>(keys.map((key, i) => [key, waitingByLane[i].total]));
   const laneOf = (service: string, profileKeyOfRow: string) => keys.find((key) => sources.get(key)!.service === service && sources.get(key)!.keys.has(profileKeyOfRow));
 
   const writes = (queued as any[]).map((row) => {
@@ -567,7 +569,7 @@ export async function dashboardSync(userUUID: string, viewer: string | null): Pr
       fullAt: Number(state?.full_at) || null,
       imported: Number(state?.version) > 0,
       readError: lastReadFailure && (!lastRead || lastReadFailure.at > lastRead.at) ? String(lastReadFailure.detail.error ?? '') : null,
-      pending: waiting.length,
+      pending: Math.max(waitingIn.get(key) ?? 0, waiting.length),
       nextTryAt: waiting.length ? Math.min(...waiting.map((w) => w.nextAt)) : null,
       lastError: [...waiting].reverse().find((w) => w.lastError)?.lastError ?? null,
       sent: day.filter((row) => row.kind === 'sent').length,
