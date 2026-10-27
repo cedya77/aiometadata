@@ -65,7 +65,7 @@ export function historyBatchPayload(writes: HistoryWrite[]): any {
     const key = JSON.stringify(write.ids);
     const show = shows.get(key) ?? { ids: write.ids, seasons: new Map<number, any[]>() };
     const episodes = show.seasons.get(write.season) ?? [];
-    if (!episodes.some((e) => e.number === write.episode)) episodes.push({ number: write.episode, ...at });
+    if (!episodes.some((e) => e.number === write.episode && e.watched_at === (write.watchedAt || undefined))) episodes.push({ number: write.episode, ...at });
     show.seasons.set(write.season, episodes);
     shows.set(key, show);
   }
