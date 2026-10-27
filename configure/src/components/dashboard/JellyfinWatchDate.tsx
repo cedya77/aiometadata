@@ -28,6 +28,7 @@ export interface WatchDateAnchor {
 const startOfDay = (at: number) => { const d = new Date(at); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const sameDay = (a: number, b: number) => startOfDay(a) === startOfDay(b);
 const withTime = (day: number, hours: number, minutes: number) => { const d = new Date(day); d.setHours(hours, minutes, 0, 0); return d.getTime(); };
+const addDays = (day: number, days: number) => { const d = new Date(day); d.setDate(d.getDate() + days); return startOfDay(d.getTime()); };
 const timeOf = (at: number) => { const d = new Date(at); return { hours: d.getHours(), minutes: d.getMinutes() }; };
 
 function releaseDay(at: number): number {
@@ -120,7 +121,7 @@ export default function WatchDateSheet({ target, anchor, trackers, onSave, onClo
 
   const quick = useMemo(() => {
     const today = startOfDay(now);
-    const yesterday = today - DAY;
+    const yesterday = addDays(today, -1);
     const earlier = Math.max(today, Math.floor((now - 2 * 3_600_000) / 900_000) * 900_000);
     const out: Array<{ label: string; at: () => number; is: (at: number) => boolean }> = [
       { label: "Earlier today", at: () => earlier, is: (at) => sameDay(at, now) },
@@ -201,7 +202,7 @@ export default function WatchDateSheet({ target, anchor, trackers, onSave, onClo
     const by = moves[event.key];
     if (!by || zoom !== "days") return;
     event.preventDefault();
-    const day = startOfDay(picked) + by * DAY;
+    const day = addDays(picked, by);
     if (day > now) return;
     pickDay(day);
     requestAnimationFrame(() => grid.current?.querySelector<HTMLButtonElement>("[data-picked=true]")?.focus({ preventScroll: true }));
