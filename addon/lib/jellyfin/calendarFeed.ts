@@ -16,9 +16,11 @@ export async function calendarFeedSecret(userUUID: string, profile: string | nul
 function withViewer<T>(userUUID: string, profile: string | null, work: (config: any, name: string) => Promise<T | null>): Promise<T | null> {
   const { runInViewerScope } = require('./viewer');
   const { loadConfig } = require('./context');
+  // The dashboard names the main profile '' and the profile list names it null.
+  const id = profile || null;
   return runInViewerScope(false, async () => {
-    const config = await loadConfig({ jellyfin: { userUUID, profileId: profile } }).catch(() => null);
-    const viewer = config ? listProfiles(config, userUUID).find((p) => p.id === profile) : null;
+    const config = await loadConfig({ jellyfin: { userUUID, profileId: id } }).catch(() => null);
+    const viewer = config ? listProfiles(config, userUUID).find((p) => p.id === id) : null;
     return viewer ? work(config, viewer.name) : null;
   });
 }
