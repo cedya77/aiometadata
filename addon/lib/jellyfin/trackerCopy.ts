@@ -1,5 +1,6 @@
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
+import { trackerConfig, type AccountService } from '../accounts';
 import { videoIdAliases } from './aliases';
 import { scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
@@ -483,7 +484,7 @@ async function writeOneByOne(service: string, items: CopyItem[], credential: str
         const created = Date.parse(String(answer?.item?.created ?? '').replace(' ', 'T'));
         existing = Number.isFinite(created) && Date.now() - created > 60_000;
       } else {
-        await require('../playbackHandler').deliverCatchUp(service, { type: item.kind === 'movie' ? 'movie' : 'series', id: spellingFor(service, item.ids), at: item.at ?? Date.now() }, config, userUUID);
+        await require('../playbackHandler').deliverCatchUp(service, { type: item.kind === 'movie' ? 'movie' : 'series', id: spellingFor(service, item.ids), at: item.at ?? Date.now() }, trackerConfig(config, service as AccountService), userUUID);
       }
     });
     if (!calls.length) {
