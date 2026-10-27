@@ -2021,7 +2021,7 @@ export interface JellyfinSyncFeedItem {
   verb: string;
   count: number;
   video: string | null;
-  services: Array<{ service: string; kind: JellyfinSyncKind; reason: string | null }>;
+  services: Array<{ service: string; lane: string; kind: JellyfinSyncKind; reason: string | null }>;
   title: string | null;
   episode: string | null;
   imageUrl: string | null;

@@ -617,7 +617,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
 
   const eventsOf = (lane: JellyfinSyncLane): Event[] => {
     const writes = (data?.feed ?? []).flatMap((f) => {
-      const mark = f.services.find((s) => s.service === lane.service);
+      const mark = f.services.find((s) => s.lane === lane.key);
       return mark ? [{ at: f.at, kind: mark.kind, verb: f.verb, title: [f.title, f.episode].filter(Boolean).join(" · ") || null, imageUrl: f.imageUrl, reason: mark.reason, services: [] }] : [];
     });
     const reads = lane.pulse.filter((p) => p.kind === "read" || p.kind === "readFailed").map((p) => ({

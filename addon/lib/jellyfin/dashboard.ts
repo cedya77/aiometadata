@@ -532,9 +532,9 @@ export async function dashboardSync(userUUID: string, viewer: string | null): Pr
   const feed: any[] = [];
   for (const row of feedRows) {
     const held = feed.find((entry) => entry.video === row.video && entry.verb === row.detail.verb && Math.abs(entry.at - row.at) < 2 * 60 * 1000);
-    const mark = { service: String(row.service), kind: String(row.kind), reason: row.detail.reason ?? null };
+    const mark = { service: String(row.service), lane: String(row.source_key), kind: String(row.kind), reason: row.detail.reason ?? null };
     if (held) {
-      if (!held.services.some((s: any) => s.service === mark.service)) held.services.push(mark);
+      if (!held.services.some((s: any) => s.lane === mark.lane)) held.services.push(mark);
       continue;
     }
     if (feed.length >= envInt('JELLYFIN_DASHBOARD_SYNC_FEED', 60, 10)) continue;
