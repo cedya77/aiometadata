@@ -8,6 +8,7 @@ const database: any = require('../database');
 
 const KINDS = new Set(['intro', 'credits']);
 const MAX_POINTS = 8000;
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const NEIGHBOURS = 6;
 const PRUNE_EVERY_MS = 60 * 60 * 1000;
 let prunedAt = 0;
@@ -39,6 +40,8 @@ export async function saveSeasonFingerprint(itemId: unknown, body: any, config: 
   const kind = kindOf(body?.Kind);
   const startMs = Number(body?.StartMs);
   const points = typeof body?.Points === 'string' ? body.Points : '';
+  // Node's decoder skips characters outside base64, so the text itself is checked before its decoded size.
+  if (points.length > 4 * Math.ceil((MAX_POINTS * 4) / 3) || points.length % 4 !== 0 || !BASE64.test(points)) return false;
   const size = Buffer.from(points, 'base64').length;
   if (!kind || !Number.isFinite(startMs) || startMs < 0 || !size || size % 4 !== 0 || size / 4 > MAX_POINTS) return false;
   const at = await episodeOf(itemId, config);
