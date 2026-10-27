@@ -2390,6 +2390,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       const local = builtinPosterCachePath(cached);
       if (local) {
         const step = hasRenditions(url) ? null : widthStep(maxWidth);
+        const unstored = step ? unstoredSource(local) : null;
+        if (unstored) {
+          await sizedArtwork(req, res, unstored, step!, relaying);
+          return;
+        }
         await serveFromPosterCache(req, res, local, cached, step);
         return;
       }
@@ -2433,9 +2438,13 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     background: { small: 480, medium: 1920, large: 1920 },
   };
 
-  /** Hosts that publish each image at several sizes, so a smaller one is a link rather than a resize. */
+  const FANART = 'https://assets.fanart.tv/fanart/';
+  const FANART_PREVIEW = 'https://assets.fanart.tv/preview/';
+  const FANART_PREVIEW_WIDTH = 200;
+
+  /** Hosts whose smaller copy is picked to fit the width asked for, so a resize would gain nothing. */
   const hasRenditions = (url: string): boolean =>
-    url.startsWith('https://image.tmdb.org/t/p/') || url.startsWith(TVDB) || METAHUB.test(url);
+    url.startsWith('https://image.tmdb.org/t/p/') || METAHUB.test(url) || url.startsWith(FANART_PREVIEW);
 
   /** The source's own smallest rendition at least as wide as asked, never larger than the link names. */
   const sourceSized = (url: string, kind: string, maxWidth: number): string => {
@@ -2451,6 +2460,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       const thumb = TVDB_THUMBS.find(([path]) => path.test(url));
       return thumb && maxWidth <= thumb[1] ? url.replace(/(\.\w+)$/, '_t$1') : url;
     }
+    if (url.startsWith(FANART) && kind !== 'logo' && maxWidth <= FANART_PREVIEW_WIDTH) return url.replace(FANART, FANART_PREVIEW);
     const metahub = METAHUB.exec(url);
     if (metahub) {
       const [prefix, kindName, size] = metahub;
@@ -2561,37 +2571,45 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
   };
 
+  const sourceImage = async (url: string): Promise<{ body: Buffer; contentType: string }> => {
+    const { openImageStream } = require('../posterCache/upstream');
+    const { getMaxObjectBytes } = require('../posterCache/config');
+    const upstream = await openImageStream(url);
+    if (upstream.notModified) throw new Error('not modified');
+    const limit = getMaxObjectBytes();
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    for await (const chunk of upstream.response.data) {
+      bytes += chunk.length;
+      if (bytes > limit) {
+        upstream.response.data.destroy();
+        throw new Error(`larger than ${limit} bytes`);
+      }
+      chunks.push(Buffer.from(chunk));
+    }
+    return { body: Buffer.concat(chunks), contentType: upstream.contentType };
+  };
+
+  const sendArtwork = (res: any, image: { body: Buffer; contentType: string }): void => {
+    res.set('Content-Type', image.contentType);
+    res.set('Content-Security-Policy', IMAGE_CSP);
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.end(image.body);
+  };
+
   const shapedPoster = async (req: any, res: any, url: string, maxWidth: number, relaying: boolean): Promise<void> => {
     try {
       const image = await cachedArtwork(`${url}|${widthStep(maxWidth) ?? 0}|shaped`, async () => {
         if (imageQueueFull()) throw new ImageQueueFull();
-        const { openImageStream } = require('../posterCache/upstream');
-        const { getMaxObjectBytes } = require('../posterCache/config');
         const { shapePoster } = require('../posterCache/shape');
-        const upstream = await openImageStream(url);
-        if (upstream.notModified) throw new Error('not modified');
-        const limit = getMaxObjectBytes();
-        const chunks: Buffer[] = [];
-        let bytes = 0;
-        for await (const chunk of upstream.response.data) {
-          bytes += chunk.length;
-          if (bytes > limit) {
-            upstream.response.data.destroy();
-            throw new Error(`larger than ${limit} bytes`);
-          }
-          chunks.push(Buffer.from(chunk));
-        }
-        const source = Buffer.concat(chunks);
+        const source = await sourceImage(url);
         return inImageSlot(async () => {
-          const shaped = await shapePoster(source, upstream.contentType);
+          const shaped = await shapePoster(source.body, source.contentType);
           const step = widthStep(maxWidth);
           return step ? shrinkToWidth(shaped.body, shaped.contentType, step) : shaped;
         });
       });
-      res.set('Content-Type', image.contentType);
-      res.set('Content-Security-Policy', IMAGE_CSP);
-      res.set('Cache-Control', 'public, max-age=86400');
-      res.end(image.body);
+      sendArtwork(res, image);
     } catch (error: any) {
       if (error instanceof ImageQueueFull) {
         if (relaying) await relayImage(req, res, url);
@@ -2600,6 +2618,28 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
       logger.debug(`Image stream failed for ${url}: ${error?.message || error}`);
       res.status(404).end();
+    }
+  };
+
+  const unstoredSource = (path: string): string | null => {
+    const posterCache = require('../posterCache/config');
+    const match = /^\/([a-z]+)\/(https?:\/\/.+)$/i.exec(path.slice(posterCache.POSTER_CACHE_ROUTE.length));
+    if (!match || !posterCache.isValidImageClass(match[1]) || posterCache.isClassEnabled(match[1])) return null;
+    return match[2];
+  };
+
+  const sizedArtwork = async (req: any, res: any, url: string, step: number, relaying: boolean): Promise<void> => {
+    try {
+      const image = await cachedArtwork(`${url}|${step}|sized`, async () => {
+        if (imageQueueFull()) throw new ImageQueueFull();
+        const source = await sourceImage(url);
+        return inImageSlot(() => shrinkToWidth(source.body, source.contentType, step));
+      });
+      sendArtwork(res, image);
+    } catch (error: any) {
+      if (!(error instanceof ImageQueueFull)) logger.debug(`Image resize failed for ${url}: ${error?.message || error}`);
+      if (relaying) await relayImage(req, res, url);
+      else res.redirect(302, url);
     }
   };
 
