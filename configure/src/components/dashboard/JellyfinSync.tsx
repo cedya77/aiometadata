@@ -52,6 +52,7 @@ function laneState(lane: JellyfinSyncLane, now: number, drift?: JellyfinDriftLan
     return { tone: "waiting", short: `${lane.pending} waiting`, line: `${lane.pending} waiting, sending ${soon}` };
   }
   if (!lane.imported) return { tone: "idle", short: "Not read yet", line: "Not read yet" };
+  if (drift?.error) return { tone: "failing", short: "Can't compare", line: `Couldn't compare ${nameOf(lane.service)} with your history` };
   const missing = watchesIn(drift?.behind);
   if (missing) return { tone: "drift", short: `${missing} missing`, line: `Missing ${watches(missing)} from your history` };
   const extra = watchesIn(drift?.ahead);
@@ -720,7 +721,9 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
     );
   }
 
-  const apart = [...drifts.values()].reduce((sum, d) => sum + watchesIn(d.behind) + watchesIn(d.ahead), 0);
+  // Rewatches count here as on each lane, unless the account would not keep them.
+  const apart = [...drifts.values()].reduce((sum, d) => sum + watchesIn(d.behind) + watchesIn(d.ahead) + (d.rewatchNote ? 0 : watchesIn(d.rewatched)), 0);
+  const uncompared = lanes.filter((lane) => drifts.get(lane.key)?.error);
   const unreadable = lanes.filter((lane) => lane.readError);
   const pending = lanes.reduce((sum, lane) => sum + lane.pending, 0);
   const headline = !data ? "Trackers"
@@ -728,6 +731,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
     : unreadable.length ? (unreadable.length === 1 ? `Can't read ${nameOf(unreadable[0].service)}` : `Can't read ${unreadable.length} trackers`)
     : pending ? `${pending} waiting to send`
     : !driftData ? "Comparing…"
+    : uncompared.length ? (uncompared.length === 1 ? `Can't compare ${nameOf(uncompared[0].service)}` : `Can't compare ${uncompared.length} trackers`)
     : apart ? `${apart === 1 ? "One watch" : `${apart.toLocaleString()} watches`} apart`
     : "In step";
   const selectedDrift = selected ? drifts.get(selected.key) : undefined;
