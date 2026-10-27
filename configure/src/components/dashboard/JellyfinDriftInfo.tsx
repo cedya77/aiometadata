@@ -134,6 +134,7 @@ function Detail({ userUUID, laneKey, service, side: shown, item, activeTab, open
               {data.holds.kind === "series" && data.holds.season !== undefined && (
                 <p className="text-xs text-muted-foreground">
                   Season {data.holds.season} {data.holds.numbers?.length ? <>held as episodes <span className="text-foreground/90">{ranges(data.holds.numbers)}</span></> : "has no episodes held under these ids"}
+                  {data.holds.upTo ? ` (episodes 1 to ${data.holds.upTo} checked)` : ""}
                 </p>
               )}
             </Section>

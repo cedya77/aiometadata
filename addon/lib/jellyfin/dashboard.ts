@@ -778,13 +778,15 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
       const theirSeason = match?.seasons?.[String(season)]?.season ?? season;
       const spellings = new Map<string, number>();
       const ourShows = [...new Set([...shows, ...aliases.map((alias) => parseStremioId(alias)?.base).filter(Boolean)])] as string[];
-      for (let episode = 1; episode <= 80; episode += 1) {
+      // Long seasons run past 80, so the search reaches the episode asked about and the show's own count.
+      const upTo = Math.min(1000, Math.max(80, Number(parsed.episode) || 0, Number(sendsAs?.episode) || 0, Number(best?.total) || 0));
+      for (let episode = 1; episode <= upTo; episode += 1) {
         for (const base of ourShows) spellings.set(`${base}:${season}:${episode}`, episode);
         for (const base of theirShows) spellings.set(`${base}:${theirSeason}:${episode}`, episode);
       }
       const seen = await watchedAmong(snapshot, [...spellings.keys()]);
       const numbers = [...new Set([...seen.keys()].map((id) => spellings.get(id)!))].sort((a, b) => a - b);
-      holds = { kind: 'series', found: Boolean(best), watched: best?.watched ?? 0, total: best?.total ?? 0, at: best?.at || null, season: theirSeason, numbers };
+      holds = { kind: 'series', found: Boolean(best), watched: best?.watched ?? 0, total: best?.total ?? 0, at: best?.at || null, season: theirSeason, numbers, upTo };
     }
   }
 
