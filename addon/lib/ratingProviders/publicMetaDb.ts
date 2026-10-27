@@ -74,8 +74,9 @@ function consensus(rows: Row[]): Scores {
   const byLabel = new Map<RatingSource, Map<number, { count: number; latest: string }>>();
   for (const row of rows) {
     const source = LABELS[String(row.label ?? '').trim().toUpperCase()];
-    const score = Number(row.score);
-    if (!source || !Number.isFinite(score) || score <= 0 || score > 100) continue;
+    // Zero is a real score, so a missing one must not read as zero.
+    const score = row.score === null || row.score === undefined || String(row.score).trim() === '' ? NaN : Number(row.score);
+    if (!source || !Number.isFinite(score) || score < 0 || score > 100) continue;
     const value = Math.round(score * 10) / 10;
     const tally = byLabel.get(source) ?? new Map();
     const seen = tally.get(value) ?? { count: 0, latest: '' };
