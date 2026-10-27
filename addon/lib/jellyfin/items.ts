@@ -6,6 +6,7 @@ import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId, parseStremioId } from './ids';
 import { normaliseJellyfinId } from './idsCodec';
+import { rememberSeriesRatingIds } from './seriesRatingIds';
 import { EMPTY_USER_DATA } from './dto';
 import { placeholderSources } from './streams';
 import redis from '../redisClient';
@@ -718,6 +719,7 @@ export function metaToBaseItem(
   if (images.thumb) imageTags.Thumb = imageTag(images.thumb);
   if (wide) imageTags.Primary = wideTag(imageTags.Thumb);
   const ids = providerIds(meta);
+  if (itemType === 'Series') rememberSeriesRatingIds(id, meta);
 
   return {
     Name: meta.name,
@@ -909,7 +911,7 @@ async function readMeta(
   const work = (async () => {
     try {
       const { invokeRoute } = require('../inProcessRoutes');
-      const reply = await invokeRoute('meta', url, { userUUID, type: stremioType, id, ...(beforeArt ? { beforeArt: '1' } : {}) }, routeTimeout());
+      const reply = await invokeRoute('meta', url, { userUUID, type: stremioType, id, forJellyfin: '1', ...(beforeArt ? { beforeArt: '1' } : {}) }, routeTimeout());
       if (reply.status < 200 || reply.status >= 300) {
         logger.debug(`Meta ${stremioType}/${id} returned ${reply.status}`);
         return null;
@@ -1113,6 +1115,7 @@ export function buildEpisode(
   parentImages?: Record<string, any>
 ): any {
   const art = parentImages ?? parentArt(meta, seriesId, serverId);
+  rememberSeriesRatingIds(seriesId, meta);
   {
     const hasSeason = Number.isInteger(video.season);
 

@@ -4940,6 +4940,11 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
 
 
 // --- Catalog Route under /stremio/:userUUID prefix ---
+function withCatalogCriticRatings(metas: any[], config: any, req: any): Promise<any[]> | any[] {
+  const { criticRatingsWanted, metasWithCriticRatings } = require('./lib/stremioCriticRatings');
+  return criticRatingsWanted(config, req) ? metasWithCriticRatings(metas) : metas;
+}
+
 const catalogRoute = async function (req, res) {
   const { userUUID, type, id, extra } = req.params;
   const storedConfig = await loadRouteConfig(userUUID);
@@ -4960,7 +4965,7 @@ const catalogRoute = async function (req, res) {
       const metas = await collectionCatalogMetas(userUUID, config, tags, id, skip);
       if (!metas) return res.status(404).send({ error: "Collection not found" });
       req.userConfig = config;
-      return respond(req, res, { metas });
+      return respond(req, res, { metas: await withCatalogCriticRatings(metas, config, req) });
     }
   }
 
@@ -4970,7 +4975,7 @@ const catalogRoute = async function (req, res) {
       const sourceId = new URLSearchParams(extra || '').get('similar') || '';
       const metas = sourceId ? await similarCatalogMetas(userUUID, config, type, sourceId) : [];
       req.userConfig = config;
-      return respond(req, res, { metas });
+      return respond(req, res, { metas: await withCatalogCriticRatings(metas, config, req) });
     }
   }
 
@@ -5715,6 +5720,11 @@ const catalogRoute = async function (req, res) {
       }
     }
 
+    if (Array.isArray(responseData?.metas)) {
+      const metas = await withCatalogCriticRatings(responseData.metas, config, req);
+      if (metas !== responseData.metas) responseData = { ...responseData, metas };
+    }
+
     const httpCacheOpts = { cacheMaxAge: 0, staleRevalidate: 5 * 60 }; // No cache for regular catalogs, 5 min stale-while-revalidate
     respond(req, res, responseData, httpCacheOpts);
 
@@ -5890,6 +5900,11 @@ const metaRoute = async function (req, res) {
           ...(video.released ? { releaseInfo: String(video.released).slice(0, 4) } : {}),
         })),
       };
+    }
+
+    {
+      const { criticRatingsWanted, metaWithCriticRatings } = require('./lib/stremioCriticRatings');
+      if (criticRatingsWanted(config, req)) result = { ...result, meta: await metaWithCriticRatings(result.meta) };
     }
 
     // Use aggressive cache control for meta routes to ensure fresh data when config changes

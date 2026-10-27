@@ -229,6 +229,7 @@ export interface AppConfig {
   showPrefix: boolean;
   showMetaProviderAttribution: boolean;
   hideErrors?: boolean;
+  criticRatings?: boolean;
   castCount: number;
   displayAgeRating: boolean;
   contentRatingCountry?: string;

@@ -723,6 +723,7 @@ async function fetchSkips(
 }
 
 export {
+  globalThrottle as throttlePublicMetaDb,
   validateKey,
   fetchSkips,
   fetchResume,

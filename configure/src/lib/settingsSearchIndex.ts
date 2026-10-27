@@ -33,6 +33,12 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['credit', 'source'],
   },
   {
+    id: 'general.criticRatings', section: 'general', anchor: 'critic-ratings',
+    label: 'Critic Ratings',
+    description: 'Add critic and audience scores to titles, for apps that show them.',
+    keywords: ['ratings', 'rotten tomatoes', 'metacritic', 'letterboxd', 'roger ebert', 'scores', 'critics'],
+  },
+  {
     id: 'general.displayAgeRating', section: 'general', anchor: 'display-age-rating',
     label: 'Display Age Rating',
     description: 'Show rating/certification in genres.',

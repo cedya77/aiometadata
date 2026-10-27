@@ -141,6 +141,10 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, hideErrors: checked ? undefined : true }));
   };
 
+  const handleCriticRatingsChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, criticRatings: checked ? true : undefined }));
+  };
+
   const handleCastCountChange = (value: string) => {
     const count = parseInt(value, 10);
     setConfig(prevConfig => ({ ...prevConfig, castCount: count === -1 ? undefined : count }));
@@ -305,6 +309,14 @@ export function GeneralSettings() {
                 <p className="text-sm text-muted-foreground">When a provider refuses a request, show the reason as a card in the row instead of an empty one.</p>
               </div>
               <Switch id="show-errors" checked={config.hideErrors !== true} onCheckedChange={handleHideErrorsChange} />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="min-w-[12rem] flex-1">
+                <Label htmlFor="critic-ratings" className="font-medium">Critic Ratings</Label>
+                <p className="text-sm text-muted-foreground">Add Rotten Tomatoes, Metacritic, Letterboxd, Roger Ebert, Trakt, TMDB and MyAnimeList scores to titles, for apps that show them. Most apps ignore them, so leave this off unless yours reads them.</p>
+              </div>
+              <Switch id="critic-ratings" checked={config.criticRatings === true} onCheckedChange={handleCriticRatingsChange} />
             </div>
 
             <div className="space-y-3 p-3 rounded-lg">
