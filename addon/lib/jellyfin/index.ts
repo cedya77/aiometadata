@@ -3893,7 +3893,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       sessions.push(...listed);
     }
     if (!param(req.query, 'ControllableByUserId') && !ownListed) {
-      sessions.unshift(sessionInfo(scopes[0].profile.userId, serverId, scopes[0].profile.name, own));
+      const mine = [sessionInfo(scopes[0].profile.userId, serverId, scopes[0].profile.name, own)];
+      if (scopes[0].config) await withNowPlaying(userUUID, scopes[0].config, serverId, mine);
+      sessions.unshift(...mine);
     }
     const deviceId = param(req.query, 'DeviceId');
     res.json(deviceId ? sessions.filter((session) => session.DeviceId === String(deviceId)) : sessions);
