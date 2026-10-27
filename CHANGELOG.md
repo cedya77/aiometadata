@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.8.2](https://github.com/cedya77/aiometadata/compare/v3.8.1...v3.8.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* **anime:** skip an untyped AnimeAPI TMDB id that the show's own ids contradict ([708d255](https://github.com/cedya77/aiometadata/commit/708d2555902f7ceed86c0436399fa9030ffb4ba4))
+* **cache:** recheck a meta often while its provider still calls it unreleased ([9df7776](https://github.com/cedya77/aiometadata/commit/9df7776d2247bf6aa13334b35a3121ffb9f44929))
+* **dashboard:** load the calendar's neighbouring weeks ahead and calm its backdrop ([14122c0](https://github.com/cedya77/aiometadata/commit/14122c007a198e658323ef7cf24b99a6fe4d1d65))
+* **dashboard:** show a play's progress from the episode runtime when it has none ([3ab036e](https://github.com/cedya77/aiometadata/commit/3ab036e50ea4d5e57b04c50a055cebc31900e6b3))
+* **jellyfin:** count a show watched under its TMDB id under its IMDb and TVDB ids too ([0018909](https://github.com/cedya77/aiometadata/commit/0018909a0d508079acf7d752a838108645fd22e3))
+* **jellyfin:** key a recommendation row's length and position by its rebuild ([e2308cb](https://github.com/cedya77/aiometadata/commit/e2308cb5a3aeb00bda9369453941a44e660c2d7b))
+* **jellyfin:** let a burst of artwork wait for a resize slot ([82a9b30](https://github.com/cedya77/aiometadata/commit/82a9b30a5c2374a4e5ba88a44c9ce502734a3b9d))
+* **jellyfin:** send artwork at the width a client asks for ([e564836](https://github.com/cedya77/aiometadata/commit/e5648362b61a38c79f10ac23c301493ad0a6a020))
+* **jellyfin:** show a rebuilt recommendation row's new length straight away ([4bd3d3c](https://github.com/cedya77/aiometadata/commit/4bd3d3cf753590fe4bfe6ae44cf05fcb6acdf0bf))
+* **jellyfin:** work out the calendar once for each block of days ([108c566](https://github.com/cedya77/aiometadata/commit/108c5662c4051b84b237d6cc31ccaa41f80d57ae))
+* **mal:** shorten MAL details cached longer than their airing status allows ([1fea912](https://github.com/cedya77/aiometadata/commit/1fea912b560e41414971e210e68ab170b11f89b1))
+* **mdblist:** place a reordered show's watched episodes by MDBList's TVDB map ([7a01326](https://github.com/cedya77/aiometadata/commit/7a01326926fe0851d07484583cc6f7c4a4301dea))
+* **recommendations:** count a title once when its histories share only a TMDB id ([52311c8](https://github.com/cedya77/aiometadata/commit/52311c8027a817e6b23e1a9c7b24b5db032dfa56))
+* **recommendations:** find anime in every history, and always tell the model what was watched ([8c90992](https://github.com/cedya77/aiometadata/commit/8c90992a8181af0d810398f35371d7b1aaac4f81))
+* **recommendations:** job progress needs the configuration's password or signed-in account ([168c699](https://github.com/cedya77/aiometadata/commit/168c69986ee4dadf9088a7b3d10f7e27776c464e))
+* **recommendations:** leave out every title a profile played, named or not ([f5efc10](https://github.com/cedya77/aiometadata/commit/f5efc10a41810968b98452c4bc5e3a8a5db5de88))
+* **recommendations:** leave out watched titles the mapping file does not know ([9097bea](https://github.com/cedya77/aiometadata/commit/9097bead42b1bf425f364846fdf20d920f1b731f))
+* **recommendations:** mark anime from every history as anime in the taste sample ([26aeca6](https://github.com/cedya77/aiometadata/commit/26aeca62fff3c7c4a48fa33f5cb618c34aec9808))
+* **recommendations:** never merge a film and a series that share a TMDB number ([829d808](https://github.com/cedya77/aiometadata/commit/829d8083a354385f7a16349929a2e3136f83c317))
+* **recommendations:** rate every pick the local id mappings can place on IMDb ([59b2894](https://github.com/cedya77/aiometadata/commit/59b28940325d303745219f31dee9f637052c29a5))
+* **recommendations:** read a watched title's ids from its cached metadata as a last resort ([7548835](https://github.com/cedya77/aiometadata/commit/75488350d4fe8083aa5e9bbbe1f0835bb8bfb810))
+* **recommendations:** report refused builds, follow every profile's build, offer rows only with a history ([d2d2718](https://github.com/cedya77/aiometadata/commit/d2d2718e22b3a1619f31323825cc44a9d8fa5048))
+* **recommendations:** stop refreshing rows for profiles that were removed ([9c861ff](https://github.com/cedya77/aiometadata/commit/9c861ff176776c48f53e91390df0049d48b3b622))
+* **simkl:** log a rewatch on PRO and VIP accounts ([f1315a1](https://github.com/cedya77/aiometadata/commit/f1315a1891e14e0f8258db8fa1eb522544a0a32e))
+* **watch-tracking:** send a show filed under its TMDB id to the trackers ([102339d](https://github.com/cedya77/aiometadata/commit/102339d80814fad0b6223c35ef299b938acdf037))
+
+
+### Performance Improvements
+
+* **mdblist:** take a back-dated watch from MDBList's journal instead of reading the whole library ([f22db94](https://github.com/cedya77/aiometadata/commit/f22db942699fa496f852d2556848fd65c034be09))
+
 ## [3.8.1](https://github.com/cedya77/aiometadata/compare/v3.8.0...v3.8.1) (2026-10-26)
 
 
