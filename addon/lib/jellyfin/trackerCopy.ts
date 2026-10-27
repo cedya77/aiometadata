@@ -534,7 +534,7 @@ async function step(id: number): Promise<void> {
   const job = await database.getCopyJob(id);
   if (!job || job.status !== 'running') return;
   const stored = await database.getUserConfig(job.user_uuid).catch(() => null);
-  const config = stored ? scopeConfigToProfile(stored, job.user_uuid, job.profile || null) : null;
+  const config = stored ? { ...scopeConfigToProfile(stored, job.user_uuid, job.profile || null), userUUID: job.user_uuid } : null;
   const credential = config ? credentialFor(config, job.to_service) : undefined;
   const { sourceKeyFor } = require('./trackerMirror');
   if (!credential || sourceKeyFor(job.to_service, credential) !== job.to_key) {
@@ -609,7 +609,7 @@ async function finish(job: any): Promise<void> {
   // A stop or pause pressed while the last batch was out stays as it was.
   if (!(await database.updateCopyJob(job.id, { status: 'done', finishedAt: Date.now(), lastError: null }, 'running'))) return;
   const stored = await database.getUserConfig(job.user_uuid).catch(() => null);
-  const config = stored ? scopeConfigToProfile(stored, job.user_uuid, job.profile || null) : null;
+  const config = stored ? { ...scopeConfigToProfile(stored, job.user_uuid, job.profile || null), userUUID: job.user_uuid } : null;
   const credential = config ? credentialFor(config, job.to_service) : undefined;
   if (!credential) return;
   await require('./watched').forgetTrackerReads(job.to_service, credential).catch(() => undefined);

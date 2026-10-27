@@ -440,7 +440,7 @@ function syncSources(config: any, userUUID: string, only: string | null = null):
   const sources = new Map<string, SyncSource>();
   for (const profile of historyProfiles(config, userUUID)) {
     if (only !== null && profile.key !== only) continue;
-    const scoped = scopeConfigToProfile(config, userUUID, profile.key || null);
+    const scoped = { ...scopeConfigToProfile(config, userUUID, profile.key || null), userUUID };
     for (const service of CAPABLE) {
       const credential = credentialFor(scoped, service);
       if (!credential) continue;

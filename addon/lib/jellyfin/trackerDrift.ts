@@ -368,7 +368,7 @@ export async function recoverFailed(sourceKey: string, service: Capable): Promis
     const [userUUID, profile] = owner.split('|');
     const config = await database.getUserConfig(userUUID).catch(() => null);
     if (!config) continue;
-    const scoped = scopeConfigToProfile(config, userUUID, profile || null);
+    const scoped = { ...scopeConfigToProfile(config, userUUID, profile || null), userUUID };
     const credential = credentialFor(scoped, service);
     const { sourceKeyFor } = require('./trackerMirror');
     if (!credential || sourceKeyFor(service, credential) !== sourceKey) continue;
