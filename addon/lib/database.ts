@@ -2132,8 +2132,12 @@ class Database {
     return Number(result?.changes ?? result?.rowCount ?? 0) > 0;
   }
 
-  async pruneTrackerActivity(before: number): Promise<void> {
-    await this.runQuery(`DELETE FROM tracker_activity WHERE at < ${this.type === 'sqlite' ? '?' : '$1'}`, [before]);
+  async pruneTrackerActivity(before: number, failedBefore = before): Promise<void> {
+    const sqlite = this.type === 'sqlite';
+    await this.runQuery(
+      `DELETE FROM tracker_activity WHERE at < ${sqlite ? '?' : '$1'} AND (kind <> 'failed' OR at < ${sqlite ? '?' : '$2'})`,
+      [before, failedBefore]
+    );
   }
 
   async deleteTrackerOutbox(id: number): Promise<void> {

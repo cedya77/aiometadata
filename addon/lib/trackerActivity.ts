@@ -80,7 +80,11 @@ export async function noteActivity(note: ActivityNote): Promise<void> {
     await database.addTrackerActivity({ ...note, at: Date.now() });
     if (Date.now() - prunedAt > 60 * 60 * 1000) {
       prunedAt = Date.now();
-      await database.pruneTrackerActivity(Date.now() - envInt('JELLYFIN_TRACKER_ACTIVITY_DAYS', 14, 1) * 24 * 60 * 60 * 1000);
+      const day = 24 * 60 * 60 * 1000;
+      const keep = envInt('JELLYFIN_TRACKER_ACTIVITY_DAYS', 14, 1);
+      // Failed writes stay as long as a later good read may still resend them.
+      const { driftWindowDays } = require('./jellyfin/trackerDrift');
+      await database.pruneTrackerActivity(Date.now() - keep * day, Date.now() - Math.max(keep, driftWindowDays()) * day);
     }
   } catch (error: any) {
     logger.debug(`Could not note ${note.service} ${note.kind}: ${error?.message || error}`);
