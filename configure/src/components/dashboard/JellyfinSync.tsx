@@ -268,8 +268,14 @@ function Waiting({ write, now, onOutbox }: { write: JellyfinSyncWrite; now: numb
 }
 
 function MatchRow({ match, service, onEdit, onRemove }: { match: JellyfinTrackerMatch; service: string; onEdit: () => void; onRemove: () => void }) {
-  const moved = Object.entries(match.seasons).filter(([ours, link]) => Number(ours) !== link.season || link.offset !== 0);
-  const seasons = moved.map(([ours, link]) => `season ${ours} is ${link.offset ? `season ${link.season} from episode ${link.offset + 1}` : `season ${link.season}`}`).join(", ");
+  const byEpisode = [...new Set(Object.entries(match.episodes ?? {})
+    .filter(([ours, theirs]) => !theirs || ours !== `${theirs.season}:${theirs.episode}`)
+    .map(([ours]) => Number(ours.split(":")[0])))].sort((a, b) => a - b);
+  const moved = Object.entries(match.seasons).filter(([ours, link]) => !byEpisode.includes(Number(ours)) && (Number(ours) !== link.season || (!match.episodes && link.offset !== 0)));
+  const seasons = [
+    ...moved.map(([ours, link]) => `season ${ours} is ${link.offset && !match.episodes ? `season ${link.season} from episode ${link.offset + 1}` : `season ${link.season}`}`),
+    ...(byEpisode.length ? [`${byEpisode.length === 1 ? "season" : "seasons"} ${byEpisode.join(", ")} matched episode by episode`] : []),
+  ].join(", ");
   return (
     <div className="flex items-center gap-3 rounded-xl p-1.5">
       <Poster src={match.target.posterUrl} />

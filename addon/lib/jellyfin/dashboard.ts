@@ -758,6 +758,7 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
       const target: any = media ? await withDeadline(historyTarget(media, { ...trackerConfig(source.scoped, source.service), userUUID }, source.service), 'slow') : null;
       if (target === 'slow') sendError = 'Working out the ids took too long; open this again';
       else if (target) sendsAs = { ids: target.ids, season: target.season ?? null, episode: target.episode ?? null };
+      else if (match && media && (await require('./trackerMatch').unsentAmong(userUUID, source.service, [video])).has(video)) sendError = 'Its match sends nothing for this episode: an earlier part carries it, or the tracker does not have it';
       else sendError = media ? `No ${source.service} ids for ${video}` : `${video} is not an id trackers take`;
     } catch (error: any) {
       sendError = String(error?.message || error).slice(0, 200);
@@ -892,6 +893,18 @@ export async function dashboardMatchSave(userUUID: string, key: string, body: an
     if (!/^\d{1,4}$/.test(ours) || !Number.isInteger(season) || season < 0 || season > 9999 || !Number.isInteger(offset) || Math.abs(offset) > 9999) continue;
     seasons[ours] = { season, offset };
   }
+  const episodes: Record<string, { season: number; episode: number } | null> = {};
+  for (const [ours, theirs] of Object.entries(body?.episodes && typeof body.episodes === 'object' ? body.episodes : {}).slice(0, 5000)) {
+    if (!/^\d{1,4}:\d{1,5}$/.test(ours)) continue;
+    if (theirs === null) {
+      episodes[ours] = null;
+      continue;
+    }
+    const season = Number((theirs as any)?.season);
+    const episode = Number((theirs as any)?.episode);
+    if (!Number.isInteger(season) || season < 0 || season > 9999 || !Number.isInteger(episode) || episode < 1 || episode > 99999) continue;
+    episodes[ours] = { season, episode };
+  }
   const { saveMatch } = require('./trackerMatch');
   const match = await saveMatch(userUUID, source.service, {
     bases,
@@ -900,6 +913,7 @@ export async function dashboardMatchSave(userUUID: string, key: string, body: an
     open: typeof body?.open?.id === 'string' && body.open.id.length <= 100 ? { id: body.open.id, type: body.open.type === 'movie' ? 'movie' : 'series' } : null,
     target: { ids: target.ids, title: target.title, year: target.year, posterUrl: target.posterUrl, kind: target.kind },
     seasons,
+    ...(Object.keys(episodes).length ? { episodes } : {}),
   });
   forgetDrift(userUUID);
   const item = typeof body?.item === 'string' ? body.item : null;

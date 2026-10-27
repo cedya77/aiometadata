@@ -2081,6 +2081,7 @@ export interface JellyfinTrackerMatch {
   open: { id: string; type: 'movie' | 'series' } | null;
   target: JellyfinMatchCandidate;
   seasons: Record<string, { season: number; offset: number }>;
+  episodes?: Record<string, { season: number; episode: number } | null>;
   updatedAt: number;
 }
 
@@ -2229,7 +2230,7 @@ function syncActions(getHeaders: () => Record<string, string>) {
       return Array.isArray(data?.results) ? data.results : [];
     },
     matchDetail: (userUUID: string, key: string, candidate: JellyfinMatchCandidate) => post<{ ids: Record<string, string | number>; seasons: JellyfinMatchSeason[] }>(userUUID, 'match/detail', { key, candidate }),
-    matchSave: (userUUID: string, body: { key: string; item: string | null; bases: string[]; kind: 'movie' | 'series'; title: string | null; open: { id: string; type: 'movie' | 'series' } | null; target: JellyfinMatchCandidate; seasons: Record<string, { season: number; offset: number }> }) => post<{ match: JellyfinTrackerMatch; sent: number }>(userUUID, 'match', body),
+    matchSave: (userUUID: string, body: { key: string; item: string | null; bases: string[]; kind: 'movie' | 'series'; title: string | null; open: { id: string; type: 'movie' | 'series' } | null; target: JellyfinMatchCandidate; seasons: Record<string, { season: number; offset: number }>; episodes?: Record<string, { season: number; episode: number } | null> }) => post<{ match: JellyfinTrackerMatch; sent: number }>(userUUID, 'match', body),
     matchRemove: (userUUID: string, key: string, group: string) => post<{ ok: boolean }>(userUUID, 'match/remove', { key, group }),
   };
 }

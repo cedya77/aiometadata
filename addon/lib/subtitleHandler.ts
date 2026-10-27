@@ -328,8 +328,15 @@ const baseOf = (parsedId: ParsedMediaId): string => (parsedId.provider === 'imdb
 
 async function seriesTarget(parsedId: ParsedMediaId, config: any, service: TrackedService): Promise<ResolvedSeriesIds | null> {
   const matched = await require('./jellyfin/trackerMatch').matchedTarget(config?.userUUID, service, baseOf(parsedId), parsedId.season, parsedId.episode);
+  if (matched?.unsent) return null;
   if (matched?.episode) return { ids: matched.ids, season: matched.season, episode: matched.episode };
   return resolveSeriesIds(parsedId, config, service === 'simkl');
+}
+
+async function matchLeavesUnsent(parsedId: ParsedMediaId, config: any, service: TrackedService): Promise<boolean> {
+  if (parsedId.type === 'movie' || parsedId.episode === undefined || parsedId.episode === null) return false;
+  const matched = await require('./jellyfin/trackerMatch').matchedTarget(config?.userUUID, service, baseOf(parsedId), parsedId.season, parsedId.episode).catch(() => null);
+  return matched?.unsent === true;
 }
 
 async function movieTarget(parsedId: ParsedMediaId, config: any, service: TrackedService): Promise<Record<string, any> | null> {
@@ -775,6 +782,10 @@ async function eachHistoryService(
           const byId = resolution.episodeIds ? [{ season: resolution.season, episode: resolution.episode, ids: resolution.episodeIds }] : undefined;
           await utils[method](ids, credential, resolution.season, resolution.episode, byId, watchedAt);
         } else {
+          if (await matchLeavesUnsent(parsedId, config, service)) {
+            logger.debug(`[${service}] ${what} skipped: its saved match sends nothing for ${parsedId.provider}:${parsedId.id}`);
+            continue;
+          }
           logger.debug(`[${service}] ${what} skipped: no ids for ${parsedId.provider}:${parsedId.id}`);
           unresolved = service;
         }
@@ -821,8 +832,10 @@ async function markEpisodes(
       if (!credential) continue;
 
       const groups = new Map<string, { ids: Record<string, any>; episodes: Array<{ season: number; episode: number; ids?: Record<string, number> }> }>();
+      let unsent = 0;
       for (const id of parsed) {
         const resolution = await seriesTarget(id, config, service);
+        if (!resolution && await matchLeavesUnsent(id, config, service)) unsent += 1;
         if (!resolution) continue;
         const ids = await withTmdbId(resolution.ids, 'series');
         const key = JSON.stringify(ids);
@@ -830,7 +843,7 @@ async function markEpisodes(
         group.episodes.push({ season: resolution.season, episode: resolution.episode, ...(resolution.episodeIds ? { ids: resolution.episodeIds } : {}) });
         groups.set(key, group);
       }
-      if (!groups.size) unresolved = service;
+      if (!groups.size && unsent < parsed.length) unresolved = service;
       for (const group of groups.values()) {
         await utils[method](group.ids, credential, undefined, undefined, group.episodes);
       }

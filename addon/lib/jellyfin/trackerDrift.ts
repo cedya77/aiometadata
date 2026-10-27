@@ -146,9 +146,10 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
     const parsed = parseStremioId(id);
     return parsed?.episode != null && (sent.get(parsed.base) ?? 0) >= parsed.episode && sent.get(parsed.base) !== Infinity;
   };
-  const judged = mine.filter((v) => v.at <= settled && !v.ids.some(wasSent));
+  const { theirSpellings, unsentAmong } = require('./trackerMatch');
+  const unsent: Set<string> = await unsentAmong(userUUID, source.service, [...new Set(mine.flatMap((v) => v.ids))]).catch(() => new Set<string>());
+  const judged = mine.filter((v) => v.at <= settled && !v.ids.some(wasSent) && !v.ids.some((id) => unsent.has(id)));
   const ours = [...new Set(judged.flatMap((v) => v.ids))];
-  const { theirSpellings } = require('./trackerMatch');
   const matched: Map<string, string[]> = await theirSpellings(userUUID, source.service, ours).catch(() => new Map());
   const held = await watchedAmong(snapshot, [...ours, ...[...matched.values()].flat()]);
   let behind = judged.filter((v) => !v.ids.some((id) => held.has(id) || waiting.has(id) || (matched.get(id) ?? []).some((theirs) => held.has(theirs))));

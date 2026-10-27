@@ -290,6 +290,8 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
     const heldAsSpelled = (v: Viewing) => to.service === 'simkl' && held !== null && v.ids.some((id) => held.has(id) || held.has(ownTmdb?.get(id) ?? ''));
     const tried = await triedBefore(userUUID, from, to, 'watches', retry);
     const asItem = (v: Viewing): CopyItem => ({ ids: v.ids, kind: v.kind, metaId: v.metaId, season: v.season, episode: v.episode, at: v.at > 0 ? v.at : null });
+    const unsent: Set<string> = await require('./trackerMatch').unsentAmong(userUUID, to.service, [...new Set(missing.flatMap((v) => v.ids))]).catch(() => new Set<string>());
+    if (unsent.size) missing = missing.filter((v) => !v.ids.some((id) => unsent.has(id)));
     const targets: Array<Target | null> = await mapWithConcurrency(missing, envInt('JELLYFIN_COPY_PLAN_CONCURRENCY', 8, 1), (v: Viewing) => copyTarget(to.service, asItem(v), to.scoped).catch(() => null));
     missing = missing.filter((v, index) => {
       const target = targets[index];

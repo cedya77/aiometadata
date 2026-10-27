@@ -10,6 +10,11 @@ export interface SeasonLink {
   offset: number;
 }
 
+export interface EpisodeRef {
+  season: number;
+  episode: number;
+}
+
 export interface MatchTarget {
   ids: Record<string, string | number>;
   title: string;
@@ -26,6 +31,7 @@ export interface TrackerMatch {
   open: { id: string; type: 'movie' | 'series' } | null;
   target: MatchTarget;
   seasons: Record<string, SeasonLink>;
+  episodes?: Record<string, EpisodeRef | null>;
   updatedAt: number;
 }
 
@@ -103,13 +109,55 @@ export async function removeMatch(userUUID: string, service: string, group: stri
   indexes.delete(`${userUUID}|${service}`);
 }
 
-export function theirEpisode(match: TrackerMatch, season: number, episode: number): { season: number; episode: number } | null {
+interface EpisodeLookup {
+  forward: Map<string, EpisodeRef | null>;
+  covered: Set<string>;
+  reverse: Map<string, EpisodeRef[]>;
+}
+
+const lookups = new WeakMap<TrackerMatch, EpisodeLookup>();
+const refKey = (season: number, episode: number) => `${season}:${episode}`;
+
+function lookupOf(match: TrackerMatch): EpisodeLookup {
+  const held = lookups.get(match);
+  if (held) return held;
+  const lookup: EpisodeLookup = { forward: new Map(), covered: new Set(), reverse: new Map() };
+  const entries = Object.entries(match.episodes ?? {})
+    .map(([key, theirs]) => {
+      const [season, episode] = key.split(':').map(Number);
+      return { key, season, episode, theirs };
+    })
+    .filter((entry) => Number.isInteger(entry.season) && Number.isInteger(entry.episode))
+    .sort((a, b) => a.season - b.season || a.episode - b.episode);
+  const claimed = new Set<string>();
+  for (const entry of entries) {
+    lookup.forward.set(entry.key, entry.theirs);
+    if (!entry.theirs) continue;
+    const theirs = refKey(entry.theirs.season, entry.theirs.episode);
+    if (claimed.has(theirs)) lookup.covered.add(entry.key);
+    claimed.add(theirs);
+    lookup.reverse.set(theirs, [...(lookup.reverse.get(theirs) ?? []), { season: entry.season, episode: entry.episode }]);
+  }
+  lookups.set(match, lookup);
+  return lookup;
+}
+
+export function theirEpisode(match: TrackerMatch, season: number, episode: number): EpisodeRef | null {
+  const lookup = lookupOf(match);
+  const key = refKey(season, episode);
+  if (lookup.forward.has(key)) return lookup.forward.get(key) ?? null;
   const link = match.seasons[String(season)];
   const number = episode + (link?.offset ?? 0);
   return number >= 1 ? { season: link ? link.season : season, episode: number } : null;
 }
 
-export function ourEpisode(match: TrackerMatch, season: number, episode: number): { season: number; episode: number } | null {
+export function sendsNothing(match: TrackerMatch, season: number, episode: number): boolean {
+  const lookup = lookupOf(match);
+  const key = refKey(season, episode);
+  return lookup.covered.has(key) || (lookup.forward.has(key) && !lookup.forward.get(key));
+}
+
+function linkedEpisode(match: TrackerMatch, season: number, episode: number): EpisodeRef | null {
   const links = Object.entries(match.seasons)
     .filter(([, link]) => link.season === season)
     .map(([ours, link]) => ({ season: Number(ours), offset: link.offset }));
@@ -118,12 +166,34 @@ export function ourEpisode(match: TrackerMatch, season: number, episode: number)
   return best ? { season: best.season, episode: episode - best.offset } : null;
 }
 
-export async function matchedTarget(userUUID: string | undefined, service: string, base: string, season?: number, episode?: number): Promise<{ ids: Record<string, string | number>; season?: number; episode?: number } | null> {
+export function ourEpisodes(match: TrackerMatch, season: number, episode: number): EpisodeRef[] {
+  const lookup = lookupOf(match);
+  const listed = lookup.reverse.get(refKey(season, episode));
+  if (listed?.length) return listed;
+  const linked = linkedEpisode(match, season, episode);
+  return linked && !lookup.forward.has(refKey(linked.season, linked.episode)) ? [linked] : [];
+}
+
+export async function matchedTarget(userUUID: string | undefined, service: string, base: string, season?: number, episode?: number): Promise<{ ids: Record<string, string | number>; season?: number; episode?: number; unsent?: true } | null> {
   const match = await matchFor(userUUID, service, base);
   if (!match) return null;
   if (match.kind === 'movie' || episode === undefined || episode === null) return { ids: { ...match.target.ids } };
+  if (sendsNothing(match, season ?? 1, episode)) return { ids: { ...match.target.ids }, unsent: true };
   const theirs = theirEpisode(match, season ?? 1, episode);
   return theirs ? { ids: { ...match.target.ids }, ...theirs } : null;
+}
+
+export async function unsentAmong(userUUID: string | undefined, service: string, ids: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!userUUID || !MATCH_SERVICES.has(service)) return out;
+  const index = await indexFor(userUUID, service);
+  if (!index.byBase.size) return out;
+  for (const id of ids) {
+    const parsed = parseStremioId(id);
+    const match = parsed ? index.byBase.get(parsed.base) : null;
+    if (parsed && match && parsed.episode !== null && parsed.episode !== undefined && sendsNothing(match, parsed.season ?? 1, parsed.episode)) out.add(id);
+  }
+  return out;
 }
 
 export async function theirSpellings(userUUID: string, service: string, ids: string[]): Promise<Map<string, string[]>> {
@@ -159,8 +229,7 @@ export async function ourSpellings(userUUID: string, service: string, id: string
       if (match.kind === 'movie') out.push(...match.bases);
       continue;
     }
-    const ours = ourEpisode(match, parsed.season ?? 1, parsed.episode);
-    if (ours) out.push(...match.bases.map((base) => `${base}:${ours.season}:${ours.episode}`));
+    for (const ours of ourEpisodes(match, parsed.season ?? 1, parsed.episode)) out.push(...match.bases.map((base) => `${base}:${ours.season}:${ours.episode}`));
   }
   return out;
 }
