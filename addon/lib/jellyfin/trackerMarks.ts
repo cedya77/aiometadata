@@ -39,7 +39,7 @@ export interface MarkSide {
   scoped: any;
 }
 
-type Outcome = { done: number; sent: number; failed: number; skipped?: number; wait?: number; error?: string };
+type Outcome = { done: number; sent: number; failed: number; skipped?: number; wait?: number; error?: string; stalled?: boolean };
 
 const ID_KEYS = ['imdb', 'tmdb', 'tvdb', 'mal', 'anilist', 'kitsu', 'anidb', 'simkl'];
 const TYPED = new Set(['tmdb', 'tvdb', 'simkl']);
@@ -460,7 +460,7 @@ export async function writeMarks(what: Mark, items: MarkItem[], side: MarkSide, 
     const last = calls[calls.length - 1];
     const status = last ? last.status : error ? -1 : 0;
     if (calls.length && (status === 0 || status === 429 || status >= 500)) {
-      return { done, sent, failed, wait: status === 429 ? (what === 'ratings' ? 15 * 60_000 : 30_000) : 60_000, error: `${side.service === 'publicmetadb' ? 'PublicMetaDB' : side.service === 'anilist' ? 'AniList' : 'MyAnimeList'} answered ${status || 'nothing'}` };
+      return { done, sent, failed, wait: status === 429 ? (what === 'ratings' ? 15 * 60_000 : 30_000) : 60_000, error: `${side.service === 'publicmetadb' ? 'PublicMetaDB' : side.service === 'anilist' ? 'AniList' : 'MyAnimeList'} answered ${status || 'nothing'}`, stalled: status !== 429 };
     }
     done += 1;
     const outcome: string = error ? 'failed' : landed;

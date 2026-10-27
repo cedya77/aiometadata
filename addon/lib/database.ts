@@ -179,7 +179,7 @@ class Database {
     await this.ensureWatches();
     await this.ensureWatchlistMetaType();
     await this.ensureTrackerOutboxProfile();
-    await this.ensureCopyJobClaims();
+    await this.ensureCopyJobColumns();
     await this.ensureRatingsMetaType();
   }
 
@@ -338,17 +338,23 @@ class Database {
     }
   }
 
-  async ensureCopyJobClaims(): Promise<void> {
-    try {
-      if (this.type === 'sqlite') {
-        const existing = await this.allQuery(`PRAGMA table_info(tracker_copy_jobs)`);
-        if (!existing.length || existing.some((column: any) => column.name === 'claimed_until')) return;
-        await this.runQuery(`ALTER TABLE tracker_copy_jobs ADD COLUMN claimed_until INTEGER NOT NULL DEFAULT 0`);
-      } else {
-        await this.runQuery(`ALTER TABLE tracker_copy_jobs ADD COLUMN IF NOT EXISTS claimed_until BIGINT NOT NULL DEFAULT 0`);
+  async ensureCopyJobColumns(): Promise<void> {
+    const added: Array<[string, string, string]> = [
+      ['claimed_until', 'INTEGER NOT NULL DEFAULT 0', 'BIGINT NOT NULL DEFAULT 0'],
+      ['stalls', 'INTEGER NOT NULL DEFAULT 0', 'INTEGER NOT NULL DEFAULT 0'],
+    ];
+    for (const [name, sqliteType, postgresType] of added) {
+      try {
+        if (this.type === 'sqlite') {
+          const existing = await this.allQuery(`PRAGMA table_info(tracker_copy_jobs)`);
+          if (!existing.length || existing.some((column: any) => column.name === name)) continue;
+          await this.runQuery(`ALTER TABLE tracker_copy_jobs ADD COLUMN ${name} ${sqliteType}`);
+        } else {
+          await this.runQuery(`ALTER TABLE tracker_copy_jobs ADD COLUMN IF NOT EXISTS ${name} ${postgresType}`);
+        }
+      } catch (error: any) {
+        logger.warn(`Could not add tracker_copy_jobs.${name}: ${error.message}`);
       }
-    } catch (error: any) {
-      logger.warn(`Could not add tracker_copy_jobs.claimed_until: ${error.message}`);
     }
   }
 
@@ -495,6 +501,7 @@ class Database {
         failed INTEGER NOT NULL DEFAULT 0,
         next_at INTEGER NOT NULL DEFAULT 0,
         claimed_until INTEGER NOT NULL DEFAULT 0,
+        stalls INTEGER NOT NULL DEFAULT 0,
         last_error TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
@@ -788,6 +795,7 @@ class Database {
         failed INTEGER NOT NULL DEFAULT 0,
         next_at BIGINT NOT NULL DEFAULT 0,
         claimed_until BIGINT NOT NULL DEFAULT 0,
+        stalls INTEGER NOT NULL DEFAULT 0,
         last_error TEXT,
         created_at BIGINT NOT NULL,
         updated_at BIGINT NOT NULL,
@@ -2104,8 +2112,8 @@ class Database {
     return (rows || []).map((row: any) => Number(row.id));
   }
 
-  async updateCopyJob(id: number, patch: Partial<{ status: string; cursor: number; sent: number; skipped: number; failed: number; nextAt: number; claimedUntil: number; lastError: string | null; finishedAt: number | null }>): Promise<void> {
-    const columns: Record<string, string> = { status: 'status', cursor: 'cursor', sent: 'sent', skipped: 'skipped', failed: 'failed', nextAt: 'next_at', claimedUntil: 'claimed_until', lastError: 'last_error', finishedAt: 'finished_at' };
+  async updateCopyJob(id: number, patch: Partial<{ status: string; cursor: number; sent: number; skipped: number; failed: number; nextAt: number; claimedUntil: number; stalls: number; lastError: string | null; finishedAt: number | null }>): Promise<void> {
+    const columns: Record<string, string> = { status: 'status', cursor: 'cursor', sent: 'sent', skipped: 'skipped', failed: 'failed', nextAt: 'next_at', claimedUntil: 'claimed_until', stalls: 'stalls', lastError: 'last_error', finishedAt: 'finished_at' };
     const entries = Object.entries(patch).filter(([key]) => columns[key]);
     const sqlite = this.type === 'sqlite';
     const sets = entries.map(([key], i) => `${columns[key]} = ${sqlite ? '?' : `$${i + 1}`}`);

@@ -341,7 +341,7 @@ export async function controlCopy(userUUID: string, id: number, action: 'pause' 
   return true;
 }
 
-type Outcome = { done: number; sent: number; failed: number; skipped?: number; wait?: number; error?: string; lost?: number[] };
+type Outcome = { done: number; sent: number; failed: number; skipped?: number; wait?: number; error?: string; lost?: number[]; stalled?: boolean };
 
 const sharesId = (a: Record<string, any> = {}, b: Record<string, any> = {}): boolean =>
   Object.entries(a).some(([key, value]) => value != null && b[key] != null && String(b[key]) === String(value));
@@ -493,7 +493,7 @@ async function writeOneByOne(service: string, items: CopyItem[], credential: str
     }
     const status = statusOf(calls, error);
     if (status === 0 || status === 429 || status >= 500 || (status === 403 && /disabled/i.test(String(calls[calls.length - 1]?.body ?? '')))) {
-      return { done, sent, failed, skipped, wait: status === 429 ? 30_000 : 60_000, error: `${NAMES[service]} answered ${status || 'nothing'}` };
+      return { done, sent, failed, skipped, wait: status === 429 ? 30_000 : 60_000, error: `${NAMES[service]} answered ${status || 'nothing'}`, stalled: status === 0 || status >= 500 };
     }
     done += 1;
     if (status >= 200 && status < 300 && existing) skipped += 1;
@@ -568,9 +568,17 @@ async function step(id: number): Promise<void> {
     }
     return;
   }
+  // A title the tracker keeps failing on is given up after a few tries, so it cannot hold the copy forever.
+  let stalls = outcome.stalled ? (outcome.done ? 0 : Number(job.stalls) || 0) + 1 : 0;
+  if (stalls >= ITEM_ATTEMPTS) {
+    outcome.done += 1;
+    outcome.failed += 1;
+    stalls = 0;
+  }
   const cursor = job.cursor + outcome.done;
   await database.updateCopyJob(id, {
     cursor,
+    stalls,
     sent: job.sent + outcome.sent,
     failed: job.failed + outcome.failed,
     skipped: job.skipped + (outcome.skipped ?? 0),
@@ -605,6 +613,7 @@ async function finish(job: any): Promise<void> {
 }
 
 const CLAIM_MS = 10 * 60 * 1000;
+const ITEM_ATTEMPTS = 6;
 
 async function runClaimed(id: number): Promise<void> {
   if (!(await database.claimCopyJob(id, Date.now() + CLAIM_MS))) return;
