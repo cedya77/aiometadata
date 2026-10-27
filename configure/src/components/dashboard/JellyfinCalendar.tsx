@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinCalendar, type DashboardTab, type JellyfinCalendarRow } from "@/hooks/useDashboardQueries";
@@ -62,6 +62,9 @@ function premiereLabel(row: JellyfinCalendarRow, compact: boolean): string | nul
 
 const sized = (src: string | null, width: number) => (src ? `${src}&maxWidth=${width}&quality=90` : null);
 
+const AMBIENT_WIDTH = 200;
+const AMBIENT_DWELL_MS = 250;
+
 function artFor(row: JellyfinCalendarRow, aired: boolean, width: number): string[] {
   const order = aired ? [row.still, row.thumb, row.backdrop] : [row.thumb, row.backdrop, row.still];
   return order.map((src) => sized(src, width)).filter((src): src is string => !!src);
@@ -104,7 +107,7 @@ const EpisodeCard = ({ airing: { row, at, aired }, large = false, onFocus }: { a
   const logo = logoFailed ? null : sized(row.logo, 360);
   const premiere = premiereLabel(row, !large);
   const time = at ? new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(at) : null;
-  const ambient = sized(row.backdrop, 720) ?? sources[sources.length - 1];
+  const ambient = sized(row.backdrop, AMBIENT_WIDTH) ?? artFor(row, aired, AMBIENT_WIDTH).pop();
 
   return (
     <div onMouseEnter={() => onFocus(ambient)} className="group block" title={`${row.seriesName}${row.name ? ` · ${row.name}` : ""}`}>
@@ -386,6 +389,11 @@ export default function JellyfinCalendar({ userUUID, profile, profileName, activ
 
   const span = useMemo(() => (view === "month" ? monthWindow(month, first) : { start: weekStart, days: WEEK }), [view, month, first, weekStart]);
   const { data, isLoading, isFetching, isError, refetch } = useJellyfinCalendar(userUUID, profile, span.start, span.days, { activeTab, enabled: !folded });
+  const [before, after] = useMemo(() => (view === "month"
+    ? [monthWindow(new Date(month.getFullYear(), month.getMonth() - 1, 1), first), monthWindow(new Date(month.getFullYear(), month.getMonth() + 1, 1), first)]
+    : [{ start: addDays(weekStart, -WEEK), days: WEEK }, { start: addDays(weekStart, WEEK), days: WEEK }]), [view, month, first, weekStart]);
+  useJellyfinCalendar(userUUID, profile, before.start, before.days, { activeTab, enabled: !folded && Boolean(data) });
+  useJellyfinCalendar(userUUID, profile, after.start, after.days, { activeTab, enabled: !folded && Boolean(data) });
   const days = useMemo(() => buildDays(span.start, span.days, data?.rows, now, today), [span, data, now, today]);
   const counted = view === "month" ? days.filter((day) => day.date.getMonth() === month.getMonth()) : days;
   const total = counted.reduce((sum, day) => sum + day.airings.length, 0);
@@ -419,14 +427,20 @@ export default function JellyfinCalendar({ userUUID, profile, profileName, activ
 
   const lead = useMemo(() => {
     const day = days.find((d) => d.key >= today && d.airings.length) ?? days.find((d) => d.airings.length);
-    return sized(day?.airings[0]?.row.backdrop ?? null, 720) ?? undefined;
+    return sized(day?.airings[0]?.row.backdrop ?? null, AMBIENT_WIDTH) ?? undefined;
   }, [days, today]);
 
   const heading = view === "month"
     ? new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(month)
     : (new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }) as Intl.DateTimeFormat & { formatRange: (a: Date, b: Date) => string }).formatRange(weekStart, addDays(weekStart, WEEK - 1));
   const atToday = view === "month" ? month.getTime() === thisMonth.getTime() : weekStart.getTime() === thisWeek.getTime();
-  const focus = (src: string | undefined) => src && setAmbient(src);
+  const dwell = useRef<number | null>(null);
+  useEffect(() => () => { if (dwell.current) window.clearTimeout(dwell.current); }, []);
+  const focus = (src: string | undefined) => {
+    if (!src) return;
+    if (dwell.current) window.clearTimeout(dwell.current);
+    dwell.current = window.setTimeout(() => setAmbient(src), AMBIENT_DWELL_MS);
+  };
 
   return (
     <section className="relative isolate overflow-hidden">
