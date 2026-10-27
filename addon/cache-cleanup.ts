@@ -10,6 +10,9 @@ const CLEANUP_FLAG_KEY = 'cache-migration:v2-composite-key-cleanup-complete';
 // The pattern of the OLD, corrupted cache keys that need to be deleted.
 const OLD_CACHE_PATTERN = 'id_mapping:*';
 
+const JIKAN_DETAILS_FLAG_KEY = 'cache-migration:jikan-details-ttl-v1';
+const JIKAN_DETAILS_PATTERN = 'global:*jikan-api:v2:anime-details-*';
+
 /**
  * A helper function to safely find all keys matching a pattern using SCAN.
  */
@@ -30,11 +33,30 @@ async function findKeysByPattern(pattern: string): Promise<string[]> {
  * Checks if the old cache format exists and clears it if necessary.
  * This function is designed to run only ONCE.
  */
+async function holdJikanDetailsToTheirTtl(): Promise<void> {
+  if (!redisClient || await redisClient.get(JIKAN_DETAILS_FLAG_KEY)) return;
+  const { decodeCachePayload } = require('./lib/cacheCodec');
+  const { detailsTtl } = require('./lib/mal');
+  let held = 0;
+  for (const key of await findKeysByPattern(JIKAN_DETAILS_PATTERN)) {
+    const [raw, ttl] = await Promise.all([redisClient.getBuffer(key), redisClient.ttl(key)]);
+    const details = raw ? await decodeCachePayload(raw).catch(() => null) : null;
+    const allowed = details ? detailsTtl(details) : 0;
+    if (allowed <= 0 || ttl <= allowed) continue;
+    await redisClient.expire(key, Math.floor(allowed / 2 + Math.random() * allowed / 2));
+    held++;
+  }
+  await redisClient.set(JIKAN_DETAILS_FLAG_KEY, 'true');
+  logger.info(`Held ${held} cached MAL detail(s) to the time their airing status allows.`);
+}
+
 export async function runCacheCleanup() {
   if (!redisClient || redisClient.status !== 'ready') {
     logger.error('Redis client is not connected. Skipping cache migration.');
     return;
   }
+
+  await holdJikanDetailsToTheirTtl().catch((error) => logger.warn(`Could not recheck cached MAL details: ${error?.message || error}`));
 
   logger.info('Checking cache schema version...');
   

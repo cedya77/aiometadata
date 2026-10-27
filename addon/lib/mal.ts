@@ -938,6 +938,7 @@ async function fetchDiscover(params: Record<string, any> = {}, page: number = 1)
 }
 
 export {
+  detailsTtl,
   malPageSize,
   jikanApiBase,
   isJikanEnabled,
@@ -966,6 +967,7 @@ export {
   fetchDiscover,
 };
 module.exports = {
+  detailsTtl,
   malPageSize,
   jikanApiBase,
   isJikanEnabled,

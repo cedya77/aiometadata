@@ -63,6 +63,7 @@ let animeApiIndex = null;
 let animeApiRows = null;
 let animeApiRowCount = 0;
 let lastOverlayStats = null;
+let untypedTmdbUnchecked = false;
 let animeIdMap = new Map();
 let tvdbIdToAnimeListMap = new Map();
 let tmdbIdToAnimeListMap = new Map();
@@ -234,6 +235,21 @@ function tmdbNamespaceOf(value) {
   return null;
 }
 
+function untypedTmdbContradicted(item, row) {
+  const imdb = toIdList(item.imdb_id)[0] ?? row.imdb;
+  const tvdb = item.tvdb_id ?? row.thetvdb;
+  try {
+    const idMappings = require('./id-mappings');
+    const series = (tvdb != null && idMappings.getSeriesByTvdb(String(tvdb))) || (imdb ? idMappings.getSeriesByImdb(String(imdb)) : undefined);
+    const movie = imdb ? idMappings.getMovieByImdb(String(imdb)) : undefined;
+    const known = [series?.tmdbId, movie?.tmdbId].filter(id => id != null).map(String);
+    return known.length > 0 && !known.includes(String(row.themoviedb));
+  } catch {
+    untypedTmdbUnchecked = true;
+    return false;
+  }
+}
+
 function contradicts(a, b) {
   for (const fribbKey of Object.keys(ANIME_API_FIELDS)) {
     const aValues = fieldValues(a, fribbKey);
@@ -279,6 +295,7 @@ function enrichWithAnimeApi(animeList) {
     return animeList;
   }
 
+  untypedTmdbUnchecked = false;
   const stats = { rows: 0, merged: 0, added: 0, conflicts: 0, rejected: 0 };
   const fields = Object.entries(ANIME_API_FIELDS);
   for (const [fribbKey] of fields) stats[fribbKey] = 0;
@@ -332,6 +349,10 @@ function enrichWithAnimeApi(animeList) {
 
         const owner = owners[fribbKey].get(row[apiKey]);
         if (owner && owner !== item && contradicts(item, owner)) {
+          stats.rejected++;
+          continue;
+        }
+        if (fribbKey === 'themoviedb_id' && !row.themoviedb_type && untypedTmdbContradicted(item, row)) {
           stats.rejected++;
           continue;
         }
@@ -406,6 +427,7 @@ function appendAnimeApiOnlyRows(animeList) {
       || (row.thetvdb !== null && present.tvdb.has(row.thetvdb))
       || (row.imdb !== null && present.imdb.has(row.imdb))) continue;
 
+    const tmdbRejected = row.themoviedb !== null && !row.themoviedb_type && untypedTmdbContradicted({}, row);
     animeList.push({
       type: row.type,
       mal_id: row.myanimelist,
@@ -413,7 +435,7 @@ function appendAnimeApiOnlyRows(animeList) {
       kitsu_id: row.kitsu,
       anidb_id: row.anidb,
       simkl_id: row.simkl,
-      themoviedb_id: row.themoviedb,
+      themoviedb_id: tmdbRejected ? null : row.themoviedb,
       themoviedb_type: row.themoviedb_type,
       tvdb_id: row.thetvdb,
       imdb_id: row.imdb,
@@ -423,7 +445,7 @@ function appendAnimeApiOnlyRows(animeList) {
     if (row.kitsu !== null) present.kitsu.add(row.kitsu);
     if (row.anidb !== null) present.anidb.add(row.anidb);
     if (row.simkl !== null) present.simkl.add(row.simkl);
-    if (row.themoviedb !== null) present.tmdb.add(row.themoviedb);
+    if (row.themoviedb !== null && !tmdbRejected) present.tmdb.add(row.themoviedb);
     if (row.thetvdb !== null) present.tvdb.add(row.thetvdb);
     if (row.imdb !== null) present.imdb.add(row.imdb);
     added++;
@@ -655,6 +677,10 @@ async function reindexAnimeListWithOverlay() {
   } catch (error) {
     logger.warn(`[ID Mapper] [animeApi] Could not re-index the anime list with the overlay: ${error.message}`);
   }
+}
+
+async function recheckUntypedTmdb() {
+  if (untypedTmdbUnchecked) await reindexAnimeListWithOverlay();
 }
 
 async function downloadAndProcessAnimeApi(force = false, skipReloadOnUnchangedEtag = false, reindexAnimeList = true) {
@@ -3000,6 +3026,7 @@ function getKitsuImdbStats() {
 }
 
 module.exports = {
+  recheckUntypedTmdb,
   filmIdsFor,
   filmMappingFor,
   initializeMapper,

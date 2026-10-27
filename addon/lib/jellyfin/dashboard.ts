@@ -6,7 +6,7 @@ import { liveSessions, liveSessionsFor, type LiveSession } from './playstate';
 import { syncStatus } from './playstateSync';
 import { seenConfigurations } from './context';
 import { seriesIndex } from './episodeIndex';
-import { fetchMeta, isBoxSetMeta, seriesStatus } from './items';
+import { fetchMeta, isBoxSetMeta, parseRuntimeTicks, seriesStatus } from './items';
 import { groupBySpelling } from './aliases';
 import { defaultUserName, listProfiles, profileKey, scopeConfigToProfile } from './profiles';
 import { CAPABLE, credentialFor } from './trackerSource';
@@ -69,6 +69,7 @@ interface Named {
   season: number | null;
   number: number | null;
   episodeTitle: string | null;
+  runtimeMs: number;
 }
 
 async function withDeadline<T, F = null>(work: Promise<T>, onTimeout: F = null as F): Promise<T | F> {
@@ -83,6 +84,8 @@ async function withDeadline<T, F = null>(work: Promise<T>, onTimeout: F = null a
   }
 }
 
+const runtimeMsOf = (runtime: unknown): number => Math.round((parseRuntimeTicks(runtime) ?? 0) / 10_000);
+
 // The meta's own images: an episode's still and its show's poster, a film's backdrop and poster.
 async function describe(userUUID: string, videoId: string): Promise<Named> {
   const key = `${userUUID}:${videoId}`;
@@ -90,7 +93,7 @@ async function describe(userUUID: string, videoId: string): Promise<Named> {
   if (held) return held;
 
   const parsed = parseStremioId(videoId);
-  let out: Named = { keys: [videoId], title: videoId, episode: null, imageUrl: null, posterUrl: null, backdropUrl: null, seriesId: null, season: null, number: null, episodeTitle: null };
+  let out: Named = { keys: [videoId], title: videoId, episode: null, imageUrl: null, posterUrl: null, backdropUrl: null, seriesId: null, season: null, number: null, episodeTitle: null, runtimeMs: 0 };
   try {
     if (parsed && parsed.episode !== null && parsed.episode !== undefined) {
       const index = (await seriesIndex(userUUID, parsed.base, { held: true }))
@@ -112,6 +115,7 @@ async function describe(userUUID: string, videoId: string): Promise<Named> {
         season: parsed.season ?? null,
         number: parsed.episode,
         episodeTitle: video?.title ?? null,
+        runtimeMs: runtimeMsOf(video?.runtime),
       };
     } else if (parsed) {
       const meta = await withDeadline(fetchMeta(userUUID, 'movie', parsed.base));
@@ -128,6 +132,7 @@ async function describe(userUUID: string, videoId: string): Promise<Named> {
         season: null,
         number: null,
         episodeTitle: null,
+        runtimeMs: runtimeMsOf(meta?.runtime),
       };
     }
   } catch {
@@ -198,7 +203,7 @@ async function playRows(userUUID: string, rows: any[], names: Map<string, string
       number: named.number,
       episodeTitle: named.episodeTitle,
       positionMs,
-      runtimeMs: Number(row.runtime_ms) || 0,
+      runtimeMs: Number(row.runtime_ms) || named.runtimeMs,
       played,
       lastPlayedAt: row.last_played_at ? Number(row.last_played_at) : null,
       watchedAt,
@@ -215,10 +220,10 @@ async function sessionRows(userUUID: string, names: Map<string, string>): Promis
   return mapWithConcurrency(own, 2, async (s) => {
     const descriptor = await decodeJellyfinId(s.itemId);
     const videoId = descriptor ? stremioIdFor(descriptor) : null;
-    const named: Named = videoId ? await describe(userUUID, videoId) : { keys: [s.itemId], title: s.itemId, episode: null, imageUrl: null, posterUrl: null, backdropUrl: null, seriesId: null, season: null, number: null, episodeTitle: null };
+    const named: Named = videoId ? await describe(userUUID, videoId) : { keys: [s.itemId], title: s.itemId, episode: null, imageUrl: null, posterUrl: null, backdropUrl: null, seriesId: null, season: null, number: null, episodeTitle: null, runtimeMs: 0 };
     const viewer = s.viewer && s.viewer !== s.profile ? names.get(s.viewer) ?? s.viewer.slice(0, 8) : null;
     const held = videoId ? await database.getPlaystate(userUUID, videoId, s.profile).catch(() => null) : null;
-    return { profile: profileLabel(names, s.profile), profileKey: s.profile, viewer, imageUrl: named.imageUrl, backdropUrl: named.backdropUrl, title: named.title, episode: named.episode, positionMs: s.positionMs, runtimeMs: Number(held?.runtime_ms) || 0, paused: s.paused, at: s.at };
+    return { profile: profileLabel(names, s.profile), profileKey: s.profile, viewer, imageUrl: named.imageUrl, backdropUrl: named.backdropUrl, title: named.title, episode: named.episode, positionMs: s.positionMs, runtimeMs: Number(held?.runtime_ms) || named.runtimeMs, paused: s.paused, at: s.at };
   });
 }
 

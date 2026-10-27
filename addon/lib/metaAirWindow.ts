@@ -22,6 +22,12 @@ const { getSetting }: any = require('./settingsService');
 const MIN_TTL_SECONDS = 300;
 const DEFAULT_LAG_SECONDS = 24 * 60 * 60;
 const DEFAULT_JITTER_SECONDS = 60 * 60;
+const DEFAULT_STALE_STATUS_SECONDS = 6 * 60 * 60;
+const DEFAULT_STALE_STATUS_DAYS = 30;
+const PRE_RELEASE_STATUSES = new Set([
+  'not yet aired', 'upcoming', 'unreleased', 'tba', 'planned', 'rumored',
+  'in production', 'post production', 'in development', 'to be determined',
+]);
 
 function readSetting(key: string): string {
   try {
@@ -35,6 +41,26 @@ function positiveSeconds(key: string, fallback: number): number {
   const parsed = Number.parseInt(readSetting(key), 10);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
   return parsed;
+}
+
+function timeOf(value: any): number | null {
+  if (!value) return null;
+  const at = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  return Number.isFinite(at) ? at : null;
+}
+
+function firstAiredAt(meta: any): number | null {
+  const times = [meta?.released, ...(Array.isArray(meta?.videos) ? meta.videos.map((video: any) => video?.released) : [])]
+    .map(timeOf)
+    .filter((at): at is number => at !== null);
+  return times.length ? Math.min(...times) : null;
+}
+
+function statusBehindRelease(meta: any, now: number): boolean {
+  if (!PRE_RELEASE_STATUSES.has(String(meta?.status ?? '').trim().toLowerCase())) return false;
+  const first = firstAiredAt(meta);
+  const days = positiveSeconds('META_TTL_STALE_STATUS_DAYS', DEFAULT_STALE_STATUS_DAYS);
+  return first !== null && first <= now && now - first <= days * 24 * 60 * 60 * 1000;
 }
 
 function nextAirAt(meta: any, now: number): number | null {
@@ -55,6 +81,9 @@ function nextAirAt(meta: any, now: number): number | null {
 
 function clampMetaTtlToAirWindow(meta: any, ttl: number, now: number = Date.now()): number {
   if (!Number.isFinite(ttl) || ttl <= 0) return ttl;
+  if (statusBehindRelease(meta, now)) {
+    ttl = Math.min(ttl, Math.max(MIN_TTL_SECONDS, positiveSeconds('META_TTL_STALE_STATUS_SECONDS', DEFAULT_STALE_STATUS_SECONDS)));
+  }
   if (!meta || meta.type === 'movie') return ttl;
 
   const next = nextAirAt(meta, now);

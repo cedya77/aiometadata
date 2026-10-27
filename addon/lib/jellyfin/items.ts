@@ -551,7 +551,7 @@ export async function fetchWindow(
   };
 }
 
-function parseRuntimeTicks(runtime: any): number | null {
+export function parseRuntimeTicks(runtime: any): number | null {
   if (typeof runtime !== 'string') return null;
   const hours = /(\d+)\s*h/.exec(runtime);
   const minutes = /(\d+)\s*min/.exec(runtime);
