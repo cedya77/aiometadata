@@ -132,7 +132,10 @@ const initializationTasks: InitTask[] = [
   {
     key: 'wikiMappings',
     timeoutMs: 120_000,
-    run: () => initializeMappings(),
+    run: async () => {
+      await initializeMappings();
+      await require('./lib/id-mapper.js').recheckUntypedTmdb();
+    },
     summary: () => {
       const { getIdMappingsStats } = require('./lib/id-mappings.js');
       return `${getIdMappingsStats().totalCount.toLocaleString()} mappings`;
