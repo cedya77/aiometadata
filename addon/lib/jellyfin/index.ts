@@ -2607,7 +2607,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           const shaped = await shapePoster(source.body, source.contentType);
           const step = widthStep(maxWidth);
           return step ? shrinkToWidth(shaped.body, shaped.contentType, step) : shaped;
-        });
+        }, source.body.length);
       });
       sendArtwork(res, image);
     } catch (error: any) {
@@ -2633,7 +2633,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       const image = await cachedArtwork(`${url}|${step}|sized`, async () => {
         if (imageQueueFull()) throw new ImageQueueFull();
         const source = await sourceImage(url);
-        return inImageSlot(() => shrinkToWidth(source.body, source.contentType, step));
+        return inImageSlot(() => shrinkToWidth(source.body, source.contentType, step), source.body.length);
       });
       sendArtwork(res, image);
     } catch (error: any) {
