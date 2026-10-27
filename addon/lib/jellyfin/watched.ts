@@ -53,12 +53,21 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
         const base = parseStremioId(alias)?.base;
         if (base) seen.add(base);
       }
+      let lead = r;
+      let leadParsed = parsed;
+      for (const row of group) {
+        if (Number(row.last_played_at) !== Number(r.last_played_at) || !(Number(row.updated_at) < Number(lead.updated_at))) continue;
+        const spelled = parseStremioId(String(row.video_id));
+        if (!spelled || spelled.episode === null || spelled.episode === undefined) continue;
+        lead = row;
+        leadParsed = spelled;
+      }
       rows.push({
-        metaId: parsed.base,
-        videoId: String(r.video_id),
-        season: parsed.season ?? null,
-        episode: parsed.episode,
-        mediaType: parsed.idType === 'kitsu' || parsed.idType === 'mal' || parsed.idType === 'anilist' ? 'anime' : 'series',
+        metaId: leadParsed.base,
+        videoId: String(lead.video_id),
+        season: leadParsed.season ?? null,
+        episode: leadParsed.episode,
+        mediaType: leadParsed.idType === 'kitsu' || leadParsed.idType === 'mal' || leadParsed.idType === 'anilist' ? 'anime' : 'series',
         lastWatchedAt: Number(r.last_played_at) || Number(r.updated_at) || 0,
       });
     }

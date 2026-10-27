@@ -139,10 +139,11 @@ export async function videoIdAliases(videoId: string): Promise<string[]> {
 
 /** The same patch under every spelling of the episode. */
 export async function upsertPlaystateEverywhere(userUUID: string, videoId: string, patch: any, profile = '', known: string[] = []): Promise<void> {
-  await database.upsertPlaystate(userUUID, videoId, patch, profile);
+  const at = Date.now();
+  await database.upsertPlaystate(userUUID, videoId, patch, profile, at);
   const aliases = new Set([...(await videoIdAliases(videoId)), ...known.filter((id) => id && id !== videoId)]);
   for (const alias of aliases) {
-    await database.upsertPlaystate(userUUID, alias, patch, profile);
+    await database.upsertPlaystate(userUUID, alias, patch, profile, at + 1);
   }
 }
 

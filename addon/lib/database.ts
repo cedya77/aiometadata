@@ -1555,10 +1555,11 @@ class Database {
     userUUID: string,
     videoId: string,
     patch: { positionMs?: number; runtimeMs?: number; played?: boolean; lastPlayedAt?: number | null; origin?: string | null; watch?: WatchPatch },
-    profile = ''
+    profile = '',
+    writtenAt?: number
   ): Promise<void> {
     const existing = await this.getPlaystate(userUUID, videoId, profile);
-    const now = Date.now();
+    const now = writtenAt ?? Date.now();
 
     const positionMs = patch.positionMs ?? existing?.position_ms ?? 0;
     const runtimeMs = patch.runtimeMs ?? existing?.runtime_ms ?? 0;

@@ -3163,8 +3163,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return;
       }
       if (Number.isFinite(airedAt) && airedAt !== Date.parse(next.PremiereDate || '')) next.PremiereDate = new Date(airedAt).toISOString();
+      const startedAt = Date.parse(next.UserData?.LastPlayedDate || '');
       items[index] = next;
-      availableAt[index] = Math.max(row.lastWatchedAt || 0, Number.isFinite(airedAt) ? airedAt : 0);
+      availableAt[index] = Math.max(row.lastWatchedAt || 0, Number.isFinite(airedAt) ? airedAt : 0, Number.isFinite(startedAt) ? startedAt : 0);
+      if (availableAt[index] > 0) next.UserData = { ...next.UserData, LastPlayedDate: new Date(availableAt[index]).toISOString() };
       await traced({ outcome: 'shown', next: episodeLabel(next) });
     });
 
