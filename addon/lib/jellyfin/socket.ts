@@ -75,6 +75,7 @@ function readFrame(buffer: Buffer): { opcode: number; payload: Buffer; size: num
 interface Listener {
   userId: string;
   deviceId: string | null;
+  tokenKey?: string;
   send: (MessageType: string, Data?: any) => void;
 }
 
@@ -136,6 +137,53 @@ function pingMs(): number {
 
 function detailsMs(): number {
   return envInt('JELLYFIN_DEVICE_DETAILS_DAYS', 7, 1) * 24 * 60 * 60 * 1000;
+}
+
+const TOKEN_DEVICE = 'jf:tokendevice:';
+const DEVICE_NAME = 'jf:devicename:';
+const tokenDevices = new LRUCache<string, string>({ max: 5000, ttl: detailsMs() });
+const deviceNames = new LRUCache<string, string>({ max: 5000, ttl: detailsMs() });
+const tokenKey = (token: string) => createHash('sha256').update(token).digest('hex').substring(0, 32);
+
+interface ClientNames {
+  deviceId: string;
+  client: string;
+  device: string;
+  version: string;
+}
+
+function rememberDeviceNames(info: ClientNames): void {
+  const names = JSON.stringify({ client: info.client.slice(0, 128), device: info.device.slice(0, 128), version: info.version.slice(0, 32) });
+  if (deviceNames.get(info.deviceId) === names) return;
+  deviceNames.set(info.deviceId, names);
+  if (redis) redis.set(`${DEVICE_NAME}${info.deviceId}`, names, 'PX', detailsMs()).catch(() => undefined);
+}
+
+export function rememberTokenDevice(token: string | undefined, info: ClientNames): void {
+  const deviceId = info.deviceId;
+  if (!token || !deviceId || deviceId === 'unknown') return;
+  if (info.client !== 'Unknown') rememberDeviceNames(info);
+  const key = tokenKey(token);
+  if (tokenDevices.get(key) === deviceId) return;
+  tokenDevices.set(key, deviceId);
+  if (redis) redis.set(`${TOKEN_DEVICE}${key}`, deviceId, 'PX', detailsMs()).catch(() => undefined);
+  for (const [scope, followers] of listeners) {
+    for (const listener of followers) {
+      if (listener.tokenKey !== key || listener.deviceId) continue;
+      listener.deviceId = deviceId;
+      markListening(scope, deviceId);
+    }
+  }
+}
+
+async function tokenDevice(token: string): Promise<string | null> {
+  const key = tokenKey(token);
+  const held = tokenDevices.get(key);
+  if (held) return held;
+  if (!redis) return null;
+  const stored = await redis.get(`${TOKEN_DEVICE}${key}`).catch(() => null);
+  if (stored) tokenDevices.set(key, stored);
+  return stored;
 }
 
 function maxFrameBytes(): number {
@@ -219,19 +267,27 @@ export async function liveDevices(userUUID: string, profile: string): Promise<Li
   }
   const ids = [...seen.keys()];
   let stored: Array<string | null> = [];
-  if (redis && ids.length) stored = await redis.mget(ids.map((id) => `${CAPABILITIES}${scope}:${id}`)).catch(() => []);
-  return ids.map((deviceId, i) => {
-    let capabilities: DeviceCapabilities | undefined;
+  let named: Array<string | null> = [];
+  if (redis && ids.length) {
+    [stored, named] = await Promise.all([
+      redis.mget(ids.map((id) => `${CAPABILITIES}${scope}:${id}`)).catch(() => []),
+      redis.mget(ids.map((id) => `${DEVICE_NAME}${id}`)).catch(() => []),
+    ]);
+  }
+  const parse = (value: string | null | undefined): any => {
     try {
-      capabilities = stored[i] ? JSON.parse(stored[i] as string) : undefined;
+      return value ? JSON.parse(value) : undefined;
     } catch {
-      capabilities = undefined;
+      return undefined;
     }
-    capabilities ??= localCapabilities.get(`${scope}:${deviceId}`);
+  };
+  return ids.map((deviceId, i) => {
+    const capabilities: DeviceCapabilities | undefined = parse(stored[i]) ?? localCapabilities.get(`${scope}:${deviceId}`);
+    const names: Partial<ClientNames> | undefined = parse(named[i] ?? deviceNames.get(deviceId));
     return {
-      client: capabilities?.client ?? 'Unknown',
-      device: capabilities?.device ?? 'Unknown',
-      version: capabilities?.version ?? '0.0.0',
+      client: capabilities?.client ?? names?.client ?? 'Unknown',
+      device: capabilities?.device ?? names?.device ?? 'Unknown',
+      version: capabilities?.version ?? names?.version ?? '0.0.0',
       playableMediaTypes: capabilities?.playableMediaTypes,
       supportedCommands: capabilities?.supportedCommands ?? [],
       supportsMediaControl: capabilities?.supportsMediaControl,
@@ -308,7 +364,7 @@ export function attachJellyfinSocket(server: any): void {
     const { parseMediaBrowserHeader } = require('./context');
     const header = parseMediaBrowserHeader(req.headers.authorization || req.headers['x-emby-authorization']);
     const token = header.token || req.headers['x-emby-token'] || req.headers['x-mediabrowser-token'] || query.get('api_key') || query.get('ApiKey') || undefined;
-    const deviceId: string | null = query.get('deviceId') || query.get('DeviceId') || header.deviceid || null;
+    const deviceId: string | null = query.get('deviceId') || query.get('DeviceId') || header.deviceid || (token ? await tokenDevice(token) : null) || null;
     const key = req.headers['sec-websocket-key'];
 
     if (!key) {
@@ -353,7 +409,7 @@ export function attachJellyfinSocket(server: any): void {
       if (!socket.destroyed) socket.write(textFrame(JSON.stringify({ MessageType, MessageId: randomUUID().replace(/-/g, ''), Data })));
     };
 
-    const listener: Listener = { userId: dashedGuid(profileUserId(userUUID, session.profileId)), deviceId, send };
+    const listener: Listener = { userId: dashedGuid(profileUserId(userUUID, session.profileId)), deviceId, tokenKey: token ? tokenKey(token) : undefined, send };
     let followers = listeners.get(scope);
     if (!followers) {
       followers = new Set();
@@ -372,7 +428,7 @@ export function attachJellyfinSocket(server: any): void {
       }
       send('KeepAlive');
       if (!socket.destroyed) socket.write(Buffer.from([0x89, 0x00]));
-      markListening(scope, deviceId);
+      markListening(scope, listener.deviceId);
     }, pingMs());
 
     const maxPending = maxFrameBytes();
@@ -415,9 +471,10 @@ export function attachJellyfinSocket(server: any): void {
       const held = listeners.get(scope);
       held?.delete(listener);
       if (held && held.size === 0) listeners.delete(scope);
-      if (deviceId && ![...(held ?? [])].some((other) => other.deviceId === deviceId)) {
-        localCapabilities.delete(`${scope}:${deviceId}`);
-        redis?.hdel(`${DEVICES}${scope}`, deviceId).catch(() => undefined);
+      const gone = listener.deviceId;
+      if (gone && ![...(held ?? [])].some((other) => other.deviceId === gone)) {
+        localCapabilities.delete(`${scope}:${gone}`);
+        redis?.hdel(`${DEVICES}${scope}`, gone).catch(() => undefined);
       }
       const left = (perUser.get(userUUID as string) ?? 1) - 1;
       if (left <= 0) perUser.delete(userUUID as string);

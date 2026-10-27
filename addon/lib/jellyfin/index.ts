@@ -9,6 +9,7 @@ import { randomUUID, timingSafeEqual } from 'crypto';
 import {
   attachJellyfinContext,
   clientInfo,
+  extractToken,
   loadConfig,
   requireAuth,
   serverIdFor,
@@ -29,7 +30,7 @@ import {
 } from './dto';
 import { buildViews, catalogView, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBoxSetCatalog, isBrowsable, requiresGenre, rowFor } from './views';
 import { decodeJellyfinId } from './ids';
-import { liveDevices, saveCapabilities, sendToDevice } from './socket';
+import { liveDevices, rememberTokenDevice, saveCapabilities, sendToDevice } from './socket';
 import { artTag, imageTag, isWideTag } from './imageTags';
 import { buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, filterByIncludeTypes, includeTypesFilter, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
@@ -669,6 +670,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   // --- Authenticated surface ---
 
   router.use(requireAuth);
+  router.use((req: any, _res: any, next: any) => {
+    rememberTokenDevice(extractToken(req), clientInfo(req));
+    next();
+  });
 
   router.get('/System/Info', (req: any, res: any) => {
     res.json({ ...systemInfo(serverIdFor(req.params.userUUID), baseFor(req)), aiostreams: extensionInfo(localAddress(req)) });
