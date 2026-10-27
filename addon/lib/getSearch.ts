@@ -2107,7 +2107,7 @@ async function performTraktSearch(type: string, query: string, language: string,
   }
 }
 
-async function performMdbListSearch(type: string, query: string, language: string, config: any): Promise<any[]> {
+async function performMdbListSearch(type: string, query: string, language: string, config: any, listId?: string, page: number = 1): Promise<any[]> {
   const startTime = Date.now();
   logger.info(`Starting MDBList search for type "${type}" with query: "${query}"`);
   if (!config.apiKeys.mdblist) {
@@ -2115,21 +2115,43 @@ async function performMdbListSearch(type: string, query: string, language: strin
     return [];
   }
   try {
-    const { fetchMdbListSearchItems, fetchMDBListBatchMediaInfo }: any  = require('../utils/mdbList.js');
+    const { fetchMdbListSearchItems, fetchMDBListBatchMediaInfo, fetchMDBListItems }: any  = require('../utils/mdbList.js');
 
     const searchType = type === 'movie' ? 'movie' : 'show';
     const rawResults = new Map();
 
     const addRawResult = (media: any) => {
       if (media && media.ids) {
-        if (media.ids.tmdbid && !rawResults.has(media.ids.tmdbid)) {
+        const tmdbId = media.ids.tmdbid || media.ids.tmdb;
+        if (tmdbId && !rawResults.has(media.ids.tmdbid)) {
           media.media_type = searchType;
-          rawResults.set(media.ids.tmdbid, media);
+          rawResults.set(tmdbId, media);
         }
       }
     };
 
-    const titleResults = await fetchMdbListSearchItems(query, searchType, config.apiKeys.mdblist);
+    let titleResults = []
+    if (listId) {
+      const listResults = await fetchMDBListItems(
+        listId,
+        config.apiKeys.mdblist,
+        language,
+        page,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        type,
+        undefined,
+        undefined,
+        undefined,
+        searchType,
+        query 
+      );
+      titleResults = listResults?.items || []      
+    } else {
+      titleResults = await fetchMdbListSearchItems(query, searchType, config.apiKeys.mdblist);
+    }
 
     if (titleResults?.length) {
       titleResults.forEach((item: any) => addRawResult(item));
@@ -2142,11 +2164,7 @@ async function performMdbListSearch(type: string, query: string, language: strin
       return [];
     }
 
-    const allResults = Array.from(rawResults.values());
-
-    const tmdbIds = allResults
-      .map((m: any) => m?.ids?.tmdbid)
-      .filter(Boolean);
+    const tmdbIds = Array.from(rawResults.keys());
 
     const batchMediaInfo = await fetchMDBListBatchMediaInfo(
       "tmdb",
@@ -2460,6 +2478,7 @@ async function performTraktPeopleSearch(type: string, query: string, language: s
 }
 
 function getProviderFromSearchId(searchId: string): string {
+
   if (searchId.includes('mal.')) {
     return 'mal';
   } else if (searchId.includes('kitsu.')) {
@@ -2493,7 +2512,7 @@ function getProviderFromSearchId(searchId: string): string {
 
 async function getSearch(id: string, type: string, language: string, extra: any, config: any): Promise<{ metas: any[]; error?: string }> {
   const searchStartTime = Date.now();
-
+  
   const queryText = extra?.search || extra?.genre_id || extra?.va_id || 'N/A';
 
   try {
@@ -2628,55 +2647,70 @@ async function getSearch(id: string, type: string, language: string, extra: any,
 
           logger.debug(`Performing direct keyword search for type '${type}' using provider '${providerId}'`);
 
-          switch (providerId) {
-              case 'mal.search.series':
-                metas = await performAnimeSearch('series', query, language, config, page);
+          if (providerId.startsWith(`catalog.`)) {
+            const catalogId = providerId.slice(8);
+
+            const MDBLIST_CATALOG_WITH_ID_REGEX = /^mdblist\.\d+$/;
+
+            switch (true) {
+
+              case MDBLIST_CATALOG_WITH_ID_REGEX.test(catalogId):
+                const listId = catalogId.split('.')[1];            
+                metas = await performMdbListSearch(type, query, language, config, listId, page);
                 break;
-              case 'mal.search.movie':
-                metas = await performAnimeSearch('movie', query, language, config, page);
-                break;
-              case 'kitsu.search.series':
-                metas = await performKitsuSearch('series', query, language, config, page);
-                break;
-              case 'kitsu.search.movie':
-                metas = await performKitsuSearch('movie', query, language, config, page);
-                break;
-              case 'simkl.search.series':
-                metas = await performSimklAnimeSearch('series', query, language, config, page);
-                break;
-              case 'simkl.search.movie':
-                metas = await performSimklAnimeSearch('movie', query, language, config, page);
-                break;
-              case 'tmdb.search':
-                metas = await performTmdbSearch(type, query, language, config, false, page);
-                break;
-              case 'tvdb.search':
-                metas = await performTvdbSearch(type, query, language, config, page);
-                break;
-              case 'tvdb.collections.search':
-                metas = await performTvdbCollectionsSearch(query, language, config);
-                break;
-              case 'tvmaze.search':
-                metas = await performTvmazeSearch(query, language, config, false);
-                break;
-              case 'trakt.search':
-                metas = await performTraktSearch(type, query, language, config);
-                break;
-              case 'mdblist.search':
-                metas = await performMdbListSearch(type, query, language, config);
-                break;
-              case 'imdb.suggestions.search':
-                metas = await performImdbSuggestionSearch(type, query, language, config);
-                break;
-              case 'lumiere.search':
-                metas = await performLumiereSearch(type, query, language, config);
-                break;
-              case 'simkl.search':
-                metas = await performSimklSearch(type, query, language, config, page);
-                break;
+
+            }
+          } else {
+            switch (providerId) {
+                case 'mal.search.series':
+                  metas = await performAnimeSearch('series', query, language, config, page);
+                  break;
+                case 'mal.search.movie':
+                  metas = await performAnimeSearch('movie', query, language, config, page);
+                  break;
+                case 'kitsu.search.series':
+                  metas = await performKitsuSearch('series', query, language, config, page);
+                  break;
+                case 'kitsu.search.movie':
+                  metas = await performKitsuSearch('movie', query, language, config, page);
+                  break;
+                case 'simkl.search.series':
+                  metas = await performSimklAnimeSearch('series', query, language, config, page);
+                  break;
+                case 'simkl.search.movie':
+                  metas = await performSimklAnimeSearch('movie', query, language, config, page);
+                  break;
+                case 'tmdb.search':
+                  metas = await performTmdbSearch(type, query, language, config, false, page);
+                  break;
+                case 'tvdb.search':
+                  metas = await performTvdbSearch(type, query, language, config, page);
+                  break;
+                case 'tvdb.collections.search':
+                  metas = await performTvdbCollectionsSearch(query, language, config);
+                  break;
+                case 'tvmaze.search':
+                  metas = await performTvmazeSearch(query, language, config, false);
+                  break;
+                case 'trakt.search':
+                  metas = await performTraktSearch(type, query, language, config);
+                  break;
+                case 'mdblist.search':
+                  metas = await performMdbListSearch(type, query, language, config);
+                  break;
+                case 'imdb.suggestions.search':
+                  metas = await performImdbSuggestionSearch(type, query, language, config);
+                  break;
+                case 'lumiere.search':
+                  metas = await performLumiereSearch(type, query, language, config);
+                  break;
+                case 'simkl.search':
+                  metas = await performSimklSearch(type, query, language, config, page);
+                  break;
+            }
           }
-        }
         break;
+      }
 
       default:
         logger.warn(`Received unknown search ID: '${id}'`);

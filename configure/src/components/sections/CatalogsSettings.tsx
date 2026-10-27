@@ -31,7 +31,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Copy, MoreHorizontal, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Copy, MoreHorizontal, Sparkles, Search } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -81,6 +81,14 @@ interface CustomizeTemplate {
 const LARGE_LIST_THRESHOLD = 150;
 /** Starting guess only: every mounted row reports its real height back. */
 const ESTIMATED_ROW_HEIGHT = 76;
+
+// Unified Regex for supported search catalogs 
+// 1. (Static MDBList lists like mdblist.2194)
+const SUPPORTED_SEARCH_CATALOGS_REGEX = /^mdblist\.\d+$/;
+const isCatalogSearchSupported = (catalog: any): boolean => {
+  if (!catalog || !catalog.id) return false;
+  return SUPPORTED_SEARCH_CATALOGS_REGEX.test(String(catalog.id));
+};
 
 const DEFAULT_CATALOG_TEMPLATES: Record<string, (catalog: any) => CustomizeTemplate> = {
   'tmdb.top': (c) => ({
@@ -2763,6 +2771,11 @@ const MergedCatalogCard = ({
     updateCatalog(c => ({ ...c, showInHome: !c.showInHome }));
   };
 
+  const handleToggleSearchEnabled = () => {
+    if (!catalog.enabled) return;
+    updateCatalog(c => ({ ...c, searchEnabled: c.searchEnabled === false ? true : false }));
+  };
+
   const handleToggleRatingPosters = () => {
     updateCatalog(c => ({ ...c, enableRatingPosters: c.enableRatingPosters === false ? true : false }));
   };
@@ -2909,6 +2922,12 @@ const MergedCatalogCard = ({
                         <Home className={`h-4 w-4 mr-2 ${catalog.showInHome && catalog.enabled ? 'text-blue-400' : 'text-muted-foreground'}`} />
                         {catalog.showInHome && catalog.enabled ? 'Remove from Home' : 'Show on Home'}
                       </DropdownMenuItem>
+                      {isCatalogSearchSupported(catalog) && (
+                      <DropdownMenuItem onClick={handleToggleSearchEnabled} disabled={!catalog.enabled}>
+                        <Search className={`h-4 w-4 mr-2 ${catalog.searchEnabled !== false && catalog.enabled ? 'text-yellow-400' : 'text-muted-foreground'}`} />
+                        {catalog.searchEnabled !== false && catalog.enabled ? 'Disable as Search' : 'Allow as Search'}
+                      </DropdownMenuItem>
+                      )}
                       {hasRatingPosters && (
                         <DropdownMenuItem onClick={handleToggleRatingPosters} disabled={!catalog.enabled}>
                           <Star className={`h-4 w-4 mr-2 ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-400' : 'text-muted-foreground'}`} />
@@ -2980,6 +2999,22 @@ const MergedCatalogCard = ({
               </TooltipTrigger>
               <TooltipContent>{catalog.showInHome && catalog.enabled ? 'Remove from Home' : 'Show on Home'}</TooltipContent>
             </Tooltip>
+            {isCatalogSearchSupported(catalog) && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleToggleSearchEnabled}
+                  disabled={!catalog.enabled}
+                  className="disabled:opacity-20 disabled:cursor-not-allowed active:scale-90 transition-transform"
+                >
+                  <Search className={`h-5 w-5 transition-colors ${catalog.searchEnabled !== false && catalog.enabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent><p>{catalog.searchEnabled !== false && catalog.enabled ? 'Search Provider Enabled' : 'Search Provider Disabled'}</p></TooltipContent>
+            </Tooltip>
+            )}
             {hasRatingPosters && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -3218,6 +3253,19 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
       )
     }));
   };
+
+  const handleToggleSearchEnabled = () => {
+    if (!catalog.enabled) return;
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        (c.id === catalog.id && c.type === catalog.type) 
+          ? { ...c, searchEnabled: c.searchEnabled === false ? true : false } 
+          : c
+      )
+    }));
+  };
+  
 
   const handleToggleRatingPosters = () => {
     setConfig(prev => ({
@@ -3509,6 +3557,12 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
                     <Home className={`h-4 w-4 mr-2 ${catalog.showInHome && catalog.enabled ? 'text-blue-400' : 'text-muted-foreground'}`} />
                     {catalog.showInHome && catalog.enabled ? 'Remove from Home' : 'Show on Home'}
                   </DropdownMenuItem>
+                  {isCatalogSearchSupported(catalog) && (
+                    <DropdownMenuItem onClick={handleToggleSearchEnabled} disabled={!catalog.enabled}>
+                    <Search className={`h-4 w-4 mr-2 ${catalog.searchEnabled !== false && catalog.enabled ? 'text-yellow-400' : 'text-muted-foreground'}`} />
+                    {catalog.searchEnabled !== false && catalog.enabled ? 'Disable as Search' : 'Allow as Search'}
+                  </DropdownMenuItem>
+                  )}
                   {hasRatingPosters && (
                     <DropdownMenuItem onClick={handleToggleRatingPosters} disabled={!catalog.enabled}>
                       <Star className={`h-4 w-4 mr-2 ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-400' : 'text-muted-foreground'}`} />
@@ -3669,6 +3723,23 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
             </TooltipTrigger>
             <TooltipContent><p>{catalog.showInHome && catalog.enabled ? 'Featured on Home Board' : 'Not on Home Board'}</p></TooltipContent>
           </Tooltip>
+
+          {isCatalogSearchSupported(catalog) && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleToggleSearchEnabled}
+                disabled={!catalog.enabled}
+                className="disabled:opacity-20 disabled:cursor-not-allowed active:scale-90 transition-transform"
+              >
+                <Search className={`h-5 w-5 transition-colors ${catalog.searchEnabled !== false && catalog.enabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent><p>{catalog.searchEnabled !== false && catalog.enabled ? 'Search Provider Enabled' : 'Search Provider Disabled'}</p></TooltipContent>
+          </Tooltip>
+          )}
 
           {(config.apiKeys?.rpdb || config.apiKeys?.topPoster || config.customPosterUrlPattern) && (
             <Tooltip>
