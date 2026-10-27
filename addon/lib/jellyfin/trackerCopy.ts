@@ -604,12 +604,23 @@ async function finish(job: any): Promise<void> {
   void require('./trackerMirror').syncMirror(job.to_service, credential, config).catch(() => undefined);
 }
 
+const CLAIM_MS = 10 * 60 * 1000;
+
+async function runClaimed(id: number): Promise<void> {
+  if (!(await database.claimCopyJob(id, Date.now() + CLAIM_MS))) return;
+  try {
+    await step(id);
+  } finally {
+    await database.updateCopyJob(id, { claimedUntil: 0 }).catch(() => undefined);
+  }
+}
+
 async function tick(): Promise<void> {
   const due: number[] = await database.dueCopyJobs(Date.now()).catch(() => []);
   for (const id of due) {
     if (busy.has(id)) continue;
     busy.add(id);
-    void step(id).catch((error: any) => logger.warn(`Copy ${id} step failed: ${error?.message || error}`)).finally(() => busy.delete(id));
+    void runClaimed(id).catch((error: any) => logger.warn(`Copy ${id} step failed: ${error?.message || error}`)).finally(() => busy.delete(id));
   }
 }
 

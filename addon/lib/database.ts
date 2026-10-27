@@ -179,6 +179,7 @@ class Database {
     await this.ensureWatches();
     await this.ensureWatchlistMetaType();
     await this.ensureTrackerOutboxProfile();
+    await this.ensureCopyJobClaims();
     await this.ensureRatingsMetaType();
   }
 
@@ -337,6 +338,20 @@ class Database {
     }
   }
 
+  async ensureCopyJobClaims(): Promise<void> {
+    try {
+      if (this.type === 'sqlite') {
+        const existing = await this.allQuery(`PRAGMA table_info(tracker_copy_jobs)`);
+        if (!existing.length || existing.some((column: any) => column.name === 'claimed_until')) return;
+        await this.runQuery(`ALTER TABLE tracker_copy_jobs ADD COLUMN claimed_until INTEGER NOT NULL DEFAULT 0`);
+      } else {
+        await this.runQuery(`ALTER TABLE tracker_copy_jobs ADD COLUMN IF NOT EXISTS claimed_until BIGINT NOT NULL DEFAULT 0`);
+      }
+    } catch (error: any) {
+      logger.warn(`Could not add tracker_copy_jobs.claimed_until: ${error.message}`);
+    }
+  }
+
   async createSQLiteTables(): Promise<void> {
     const queries = [
       `CREATE TABLE IF NOT EXISTS user_configs (
@@ -479,6 +494,7 @@ class Database {
         skipped INTEGER NOT NULL DEFAULT 0,
         failed INTEGER NOT NULL DEFAULT 0,
         next_at INTEGER NOT NULL DEFAULT 0,
+        claimed_until INTEGER NOT NULL DEFAULT 0,
         last_error TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
@@ -771,6 +787,7 @@ class Database {
         skipped INTEGER NOT NULL DEFAULT 0,
         failed INTEGER NOT NULL DEFAULT 0,
         next_at BIGINT NOT NULL DEFAULT 0,
+        claimed_until BIGINT NOT NULL DEFAULT 0,
         last_error TEXT,
         created_at BIGINT NOT NULL,
         updated_at BIGINT NOT NULL,
@@ -2038,8 +2055,19 @@ class Database {
   }
 
   async getCopyJob(id: number): Promise<any | null> {
-    const row = await this.getQuery(`SELECT * FROM tracker_copy_jobs WHERE id = ${this.type === 'sqlite' ? '?' : '$1'}`, [id]);
+    const [row] = await this.allPrimaryQuery(`SELECT * FROM tracker_copy_jobs WHERE id = ${this.type === 'sqlite' ? '?' : '$1'}`, [id]);
     return row ? { ...row, items: JSON.parse(row.items || '[]') } : null;
+  }
+
+  async claimCopyJob(id: number, until: number): Promise<boolean> {
+    const now = Date.now();
+    const result = await this.runQuery(
+      this.type === 'sqlite'
+        ? "UPDATE tracker_copy_jobs SET claimed_until = ? WHERE id = ? AND status = 'running' AND claimed_until <= ?"
+        : "UPDATE tracker_copy_jobs SET claimed_until = $1 WHERE id = $2 AND status = 'running' AND claimed_until <= $3",
+      [until, id, now]
+    );
+    return Number(result?.changes ?? result?.rowCount ?? 0) > 0;
   }
 
   async copiedBefore(userUUID: string, fromKey: string, toKey: string, what: string, limit = 20): Promise<any[]> {
@@ -2067,12 +2095,13 @@ class Database {
   }
 
   async dueCopyJobs(now: number): Promise<number[]> {
-    const rows = await this.allQuery(`SELECT id FROM tracker_copy_jobs WHERE status = 'running' AND next_at <= ${this.type === 'sqlite' ? '?' : '$1'} ORDER BY next_at`, [now]);
+    const at = this.type === 'sqlite' ? '?' : '$1';
+    const rows = await this.allPrimaryQuery(`SELECT id FROM tracker_copy_jobs WHERE status = 'running' AND next_at <= ${at} AND claimed_until <= ${at} ORDER BY next_at`, this.type === 'sqlite' ? [now, now] : [now]);
     return (rows || []).map((row: any) => Number(row.id));
   }
 
-  async updateCopyJob(id: number, patch: Partial<{ status: string; cursor: number; sent: number; skipped: number; failed: number; nextAt: number; lastError: string | null; finishedAt: number | null }>): Promise<void> {
-    const columns: Record<string, string> = { status: 'status', cursor: 'cursor', sent: 'sent', skipped: 'skipped', failed: 'failed', nextAt: 'next_at', lastError: 'last_error', finishedAt: 'finished_at' };
+  async updateCopyJob(id: number, patch: Partial<{ status: string; cursor: number; sent: number; skipped: number; failed: number; nextAt: number; claimedUntil: number; lastError: string | null; finishedAt: number | null }>): Promise<void> {
+    const columns: Record<string, string> = { status: 'status', cursor: 'cursor', sent: 'sent', skipped: 'skipped', failed: 'failed', nextAt: 'next_at', claimedUntil: 'claimed_until', lastError: 'last_error', finishedAt: 'finished_at' };
     const entries = Object.entries(patch).filter(([key]) => columns[key]);
     const sqlite = this.type === 'sqlite';
     const sets = entries.map(([key], i) => `${columns[key]} = ${sqlite ? '?' : `$${i + 1}`}`);
