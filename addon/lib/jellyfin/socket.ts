@@ -305,9 +305,9 @@ export function attachJellyfinSocket(server: any): void {
     if (!match) return;
 
     const query = new URLSearchParams(url.split('?')[1] ?? '');
-    const token = query.get('api_key') ?? query.get('ApiKey') ?? undefined;
     const { parseMediaBrowserHeader } = require('./context');
     const header = parseMediaBrowserHeader(req.headers.authorization || req.headers['x-emby-authorization']);
+    const token = header.token || req.headers['x-emby-token'] || req.headers['x-mediabrowser-token'] || query.get('api_key') || query.get('ApiKey') || undefined;
     const deviceId: string | null = query.get('deviceId') || query.get('DeviceId') || header.deviceid || null;
     const key = req.headers['sec-websocket-key'];
 
