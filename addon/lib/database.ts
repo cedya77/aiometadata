@@ -1630,14 +1630,18 @@ class Database {
         const pick = own
           .filter((row) => Math.abs(row.watched_at - from) <= withinMs)
           .sort((a, b) => Math.abs(a.watched_at - from) - Math.abs(b.watched_at - from))[0];
-        if (!pick || pick.watched_at === to) continue;
-        await this.runQuery(
+        if (!pick || pick.watched_at === Math.round(to)) continue;
+        // Another viewing already at that moment keeps its own row, one millisecond apart.
+        let at = Math.round(to);
+        while (own.some((row) => row !== pick && row.watched_at === at)) at += 1;
+        const result = await this.runQuery(
           sqlite
-            ? 'DELETE FROM jellyfin_watches WHERE user_uuid = ? AND profile = ? AND video_id = ? AND watched_at = ?'
-            : 'DELETE FROM jellyfin_watches WHERE user_uuid = $1 AND profile = $2 AND video_id = $3 AND watched_at = $4',
-          [userUUID, profile, id, pick.watched_at]
+            ? 'UPDATE jellyfin_watches SET watched_at = ? WHERE user_uuid = ? AND profile = ? AND video_id = ? AND watched_at = ?'
+            : 'UPDATE jellyfin_watches SET watched_at = $1 WHERE user_uuid = $2 AND profile = $3 AND video_id = $4 AND watched_at = $5',
+          [at, userUUID, profile, id, pick.watched_at]
         );
-        origin = pick.origin;
+        if (Number(result?.changes ?? result?.rowCount ?? 0) > 0) moved += 1;
+        continue;
       }
       await this.runQuery(
         sqlite
