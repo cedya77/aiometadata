@@ -489,9 +489,10 @@ const parseDetail = (value: unknown): Record<string, any> => {
   }
 };
 
-export async function dashboardSync(userUUID: string, profile: string | null): Promise<any | null> {
+export async function dashboardSync(userUUID: string, viewer: string | null): Promise<any | null> {
   const config = await database.getUserConfig(userUUID).catch(() => null);
   if (!config) return null;
+  const profile = historyKeyOf(config, userUUID, viewer);
   const sources = syncSources(config, userUUID, profile);
   const keys = [...sources.keys()];
   const now = Date.now();
@@ -631,9 +632,10 @@ async function driftOf(userUUID: string, key: string, source: SyncSource): Promi
   return driftFor(userUUID, { service: source.service, credential: source.credential, keys: source.keys, scoped: source.scoped });
 }
 
-export async function dashboardDrift(userUUID: string, profile: string | null): Promise<any | null> {
+export async function dashboardDrift(userUUID: string, viewer: string | null): Promise<any | null> {
   const config = await database.getUserConfig(userUUID).catch(() => null);
   if (!config) return null;
+  const profile = historyKeyOf(config, userUUID, viewer);
   const memoKey = `${userUUID}|${profile ?? '*'}`;
   const held = drifts.get(memoKey);
   if (held) return held;
@@ -917,10 +919,10 @@ function copySide(source: SyncSource, key: string): any {
   return { service: source.service, credential: source.credential, key, keys: source.keys, scoped: source.scoped };
 }
 
-async function copyPair(userUUID: string, profile: string | null, fromKey: string, toKey: string, what: string): Promise<{ from: SyncSource; to: SyncSource } | null> {
+async function copyPair(userUUID: string, viewer: string | null, fromKey: string, toKey: string, what: string): Promise<{ from: SyncSource; to: SyncSource } | null> {
   const config = await database.getUserConfig(userUUID).catch(() => null);
   if (!config || fromKey === toKey) return null;
-  const sources = syncSources(config, userUUID, profile);
+  const sources = syncSources(config, userUUID, historyKeyOf(config, userUUID, viewer));
   const from = sources.get(fromKey);
   const to = sources.get(toKey);
   if (!from || !to) return null;
