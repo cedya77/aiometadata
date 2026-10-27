@@ -49,6 +49,7 @@ import { allBoxSets, boxSetGenres, boxSetMembers, boxSetsDeep, boxSetsFor, boxSe
 import { entryItemType, setWatchlisted, watchlistEntries, watchlistItems } from './watchlist';
 import { applyRatings, applyWatchedState, finishedSeries, ownNextUpRows, seriesCountsAmong, upcomingFollowed, watchedAmong, watchedHistory, watchedSnapshot, type NextUpRow, type UpcomingRow } from './watched';
 import { cachedArtwork } from './artwork';
+import { oneIdAsked, withCriticRatings } from './criticRatings';
 import { ImageQueueFull, SIZED_WIDTH, imageQueueFull, inImageSlot, shrinkToWidth, widthStep } from '../posterCache/resize';
 import { IMAGE_CSP } from '../posterCache/proxyResponse';
 import { registerStubs } from './stubs';
@@ -455,9 +456,16 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       logger.debug(`${req.method} ${String(req.originalUrl || '').split('?')[0]} ${res.statusCode} ${Date.now() - started}ms from ${from}`);
     });
     const appleTv = APPLE_TV.test(info.client) || APPLE_TV.test(info.device);
-    res.json = (body: any) => {
+    const send = (body: any) => {
+      if (res.headersSent) return res;
       if (!res.get('Content-Type')) res.set('Content-Type', 'application/json');
       return res.send(JSON.stringify(body, jsonReplacer(appleTv)));
+    };
+    res.json = (body: any) => {
+      const rating = res.statusCode < 300 ? withCriticRatings(body, oneIdAsked(req.query)) : null;
+      if (!rating) return send(body);
+      rating.then(() => send(body), () => send(body));
+      return res;
     };
     next();
   });
