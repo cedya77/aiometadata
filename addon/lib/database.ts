@@ -2293,15 +2293,19 @@ class Database {
     return this.getQuery(query, [sourceKey]);
   }
 
-  async setTrackerSync(sourceKey: string, service: string, state: { watermark: string; version: number; syncedAt: number; fullAt: number }): Promise<void> {
-    const query = this.type === 'sqlite'
+  /** Adds `bump` to the stored version, keeping any bump made while the sync ran, and returns the result. */
+  async setTrackerSync(sourceKey: string, service: string, state: { watermark: string; bump: number; syncedAt: number; fullAt: number }): Promise<number> {
+    const sqlite = this.type === 'sqlite';
+    const query = sqlite
       ? `INSERT INTO jellyfin_tracker_sync (source_key, service, watermark, version, synced_at, full_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (source_key) DO UPDATE SET service = excluded.service, watermark = excluded.watermark, version = excluded.version,
+         ON CONFLICT (source_key) DO UPDATE SET service = excluded.service, watermark = excluded.watermark, version = jellyfin_tracker_sync.version + excluded.version,
            synced_at = excluded.synced_at, full_at = excluded.full_at, updated_at = excluded.updated_at`
       : `INSERT INTO jellyfin_tracker_sync (source_key, service, watermark, version, synced_at, full_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (source_key) DO UPDATE SET service = EXCLUDED.service, watermark = EXCLUDED.watermark, version = EXCLUDED.version,
+         ON CONFLICT (source_key) DO UPDATE SET service = EXCLUDED.service, watermark = EXCLUDED.watermark, version = jellyfin_tracker_sync.version + EXCLUDED.version,
            synced_at = EXCLUDED.synced_at, full_at = EXCLUDED.full_at, updated_at = EXCLUDED.updated_at`;
-    await this.runQuery(query, [sourceKey, service, state.watermark, state.version, state.syncedAt, state.fullAt, Date.now()]);
+    await this.runQuery(query, [sourceKey, service, state.watermark, state.bump, state.syncedAt, state.fullAt, Date.now()]);
+    const [row] = await this.allPrimaryQuery(`SELECT version FROM jellyfin_tracker_sync WHERE source_key = ${sqlite ? '?' : '$1'}`, [sourceKey]);
+    return Number(row?.version) || 0;
   }
 
   async bumpTrackerSyncVersion(sourceKey: string): Promise<void> {

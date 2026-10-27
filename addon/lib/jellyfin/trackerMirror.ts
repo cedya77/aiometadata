@@ -100,10 +100,9 @@ async function runSync(service: MirrorService, key: string, credential: string, 
         ? await syncPmdb(key, credential, watermark)
         : await syncAnimeList(service, key, credential, watermark);
 
-  if (outcome.changed) version += 1;
-  await database.setTrackerSync(key, service, {
+  version = await database.setTrackerSync(key, service, {
     watermark: JSON.stringify(outcome.watermark ?? null),
-    version,
+    bump: outcome.changed ? 1 : 0,
     syncedAt: Date.now(),
     fullAt: outcome.full ? Date.now() : Number(state?.full_at) || 0,
   });
