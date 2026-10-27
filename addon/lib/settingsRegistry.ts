@@ -1,6 +1,7 @@
 import { DEFAULT_CACHE_EPOCH } from './cacheEpoch';
 import { parseProviderPolicies } from './posterCache/config';
 import { isWindowValue } from './runWindow';
+import { availableParallelism } from 'os';
 
 export interface DisabledRule {
   settingKey: string;
@@ -1509,6 +1510,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_CALENDAR_BLOCK_DAYS',
+    envVar: 'JELLYFIN_CALENDAR_BLOCK_DAYS',
+    label: 'Jellyfin Calendar Block (days)',
+    description: 'How many days of a calendar are worked out together. Every week or month inside one block is then cut from the same result, so moving through the calendar does not start over each time.',
+    category: 'Features',
+    type: 'number',
+    default: 120,
+    min: 7,
+  },
+  {
     key: 'JELLYFIN_CALENDAR_FUTURE_DAYS',
     envVar: 'JELLYFIN_CALENDAR_FUTURE_DAYS',
     label: 'Jellyfin Calendar Future Window (days)',
@@ -1835,20 +1846,40 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     key: 'JELLYFIN_IMAGE_RESIZE_CONCURRENCY',
     envVar: 'JELLYFIN_IMAGE_RESIZE_CONCURRENCY',
     label: 'Jellyfin Image Resizes at Once',
-    description: 'How many images the server reshapes or shrinks at the same time. A cold home screen asks for dozens at once; the rest wait their turn, up to Jellyfin Image Resize Queue. Each size is made once and kept with the cached original.',
+    description: 'How many images the server reshapes or shrinks at the same time. A cold home screen asks for dozens at once; the rest wait their turn, up to Jellyfin Image Resize Queue. Each size is made once and kept with the cached original. The default is the number of CPU cores, from 2 to 4.',
     category: 'Features',
     type: 'number',
-    default: 2,
+    default: Math.min(4, Math.max(2, availableParallelism())),
     min: 1,
   },
   {
     key: 'JELLYFIN_IMAGE_RESIZE_QUEUE',
     envVar: 'JELLYFIN_IMAGE_RESIZE_QUEUE',
     label: 'Jellyfin Image Resize Queue',
-    description: 'How many images may wait for a resize slot. Past this, an image is served as it is instead of waiting, so a burst cannot pile up source images in memory.',
+    description: 'How many images may wait for a resize slot. Past this, or past Jellyfin Image Resize Queue (MB), an image is served as it is instead of waiting.',
     category: 'Features',
     type: 'number',
-    default: 32,
+    default: 256,
+    min: 0,
+  },
+  {
+    key: 'JELLYFIN_IMAGE_RESIZE_QUEUE_MB',
+    envVar: 'JELLYFIN_IMAGE_RESIZE_QUEUE_MB',
+    label: 'Jellyfin Image Resize Queue (MB)',
+    description: 'How much source artwork may wait in memory for a resize slot. A burst of large backdrops reaches this long before a burst of small stills, so memory stays bounded whatever the art.',
+    category: 'Features',
+    type: 'number',
+    default: 64,
+    min: 1,
+  },
+  {
+    key: 'JELLYFIN_IMAGE_RESIZE_WAIT_MS',
+    envVar: 'JELLYFIN_IMAGE_RESIZE_WAIT_MS',
+    label: 'Jellyfin Image Resize Wait (ms)',
+    description: 'How long an image waits for a resize slot before it is served as it is. A short wait lets a burst come out small instead of sending the full-size originals.',
+    category: 'Features',
+    type: 'number',
+    default: 3000,
     min: 0,
   },
   {
