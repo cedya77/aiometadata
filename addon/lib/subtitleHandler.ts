@@ -644,8 +644,8 @@ async function redatePublicMetaDb(
       if (page >= result.totalPages || !result.items.length || (oldest !== null && oldest < change.from - within)) break;
     }
   }
-  const placed = nearestPlay(plays, change.to, (play) => play.watched_at, SAME_PLAY_MS);
-  const old = nearestPlay(plays.filter((play) => play !== placed), change.from, (play) => play.watched_at, within);
+  // The viewing being moved is found first, so a destination near it can never stand in for it.
+  const old = nearestPlay(plays, change.from, (play) => play.watched_at, within);
   if (!old?.id) return;
   const answer = await setWatchedDate(apiKey, String(old.id), new Date(change.to).toISOString());
   const moved = answer?.item ?? { ...old, watched_at: new Date(change.to).toISOString() };
@@ -668,8 +668,9 @@ async function redateMdblist(
   const all = await mdblist.historyPlays(mediaType === 'movie' ? 'movie' : 'show', tmdbId, apiKey);
   if (!all) return;
   const plays = mediaType === 'movie' ? all : all.filter((play: any) => play.season_num === season && play.episode_num === episode);
-  const placed = nearestPlay(plays, change.to, (play: any) => play.watched_at, SAME_PLAY_MS);
-  const old = nearestPlay(plays.filter((play: any) => play !== placed), change.from, (play: any) => play.watched_at, within);
+  // The viewing being moved is found first, so a destination near it can never stand in for it.
+  const old = nearestPlay(plays, change.from, (play: any) => play.watched_at, within);
+  const placed = nearestPlay(plays.filter((play: any) => play !== old), change.to, (play: any) => play.watched_at, SAME_PLAY_MS);
   if (!old) {
     if (!placed && Date.now() - change.from < 15 * 60 * 1000) {
       require('../utils/trackerCalls').noteTrackerCall('https://api.mdblist.com/sync/history', 429, 'play not recorded yet', null, Date.now() + 60_000);
