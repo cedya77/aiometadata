@@ -704,11 +704,8 @@ export async function dashboardDrift(userUUID: string, viewer: string | null): P
   return out;
 }
 
-async function keepsRewatches(source: SyncSource): Promise<boolean> {
-  if (source.service !== 'simkl') return true;
-  const { getSimklToken, simklKeepsRewatches } = require('../../utils/simklUtils');
-  const token = (await getSimklToken(source.credential).catch(() => null))?.access_token;
-  return token ? simklKeepsRewatches(token) : false;
+function keepsRewatches(source: SyncSource): Promise<boolean> {
+  return require('./trackerDrift').keepsRewatches(source);
 }
 
 export async function dashboardDriftAction(userUUID: string, key: string, action: 'push' | 'pull', items: string[] | null): Promise<number | null> {

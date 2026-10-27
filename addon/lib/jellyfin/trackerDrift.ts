@@ -331,6 +331,14 @@ function passing(detail: any): boolean {
   return !Number.isFinite(status) || detail?.status === null || status === 0 || status === 429 || status >= 500 || /disabled|did not answer/i.test(String(detail?.reason ?? ''));
 }
 
+/** Whether the account keeps a second viewing of a title it already holds. */
+export async function keepsRewatches(source: { service: string; credential: string }): Promise<boolean> {
+  if (source.service !== 'simkl') return true;
+  const { getSimklToken, simklKeepsRewatches } = require('../../utils/simklUtils');
+  const token = (await getSimklToken(source.credential).catch(() => null))?.access_token;
+  return token ? simklKeepsRewatches(token) : false;
+}
+
 const recovering = new Map<string, number>();
 
 export async function recoverFailed(sourceKey: string, service: Capable): Promise<number> {
@@ -365,21 +373,29 @@ export async function recoverFailed(sourceKey: string, service: Capable): Promis
     const source: DriftSource = { service, credential, keys: new Set([profile]), scoped };
     const drift = await driftFor(userUUID, source);
     // A failed batch names its first title in the row and every title in its detail.
-    const videos = rows.flatMap((row) => {
+    const videosOf = (row: any): string[] => {
       let detail: any = {};
       try {
         detail = JSON.parse(row.detail ?? '{}') ?? {};
       } catch {}
       return [String(row.video), ...(Array.isArray(detail.videos) ? detail.videos.map(String) : [])];
-    });
-    const reaches = (v: Viewing) => v.ids.some((id) => videos.some((video) => {
+    };
+    const reaches = (videos: string[]) => (v: Viewing) => v.ids.some((id) => videos.some((video) => {
       if (video === id) return true;
       const a = parseStremioId(video);
       const b = parseStremioId(id);
       return ANIME_LISTS.has(service) && a?.episode != null && b?.episode != null && a.base === b.base && b.episode <= a.episode;
     }));
-    queued += await pushDrift(userUUID, config, source, drift.behind.filter(reaches));
-    for (const row of rows) await writeGlobalCache(`tracker_recovered:${row.id}`, { at: now }, driftWindowDays() * 24 * 60 * 60);
+    const wanted = reaches(rows.flatMap(videosOf));
+    const rewatches = drift.rewatched.filter(wanted);
+    const again = rewatches.length && await keepsRewatches(source) ? rewatches : [];
+    queued += await pushDrift(userUUID, config, source, drift.behind.filter(wanted), again);
+    // A rewatch the tracker will not keep is left for a later read rather than marked recovered.
+    const unsent = again.length ? [] : rewatches;
+    for (const row of rows) {
+      if (unsent.some(reaches(videosOf(row)))) continue;
+      await writeGlobalCache(`tracker_recovered:${row.id}`, { at: now }, driftWindowDays() * 24 * 60 * 60);
+    }
   }
   return queued;
 }
