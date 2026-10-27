@@ -1,4 +1,5 @@
 import consola from 'consola';
+import { LRUCache } from 'lru-cache';
 import { createHash, randomUUID } from 'crypto';
 import { envInt } from '../../utils/envNumber';
 import redis from '../redisClient';
@@ -179,11 +180,23 @@ export interface LiveDevice extends DeviceCapabilities {
   lastSeen: number;
 }
 
-const localCapabilities = new Map<string, DeviceCapabilities>();
+const localCapabilities = new LRUCache<string, DeviceCapabilities>({ max: 2000 });
 
-export async function saveCapabilities(userUUID: string, profile: string, deviceId: string, capabilities: DeviceCapabilities): Promise<void> {
+const short = (value: unknown, size = 128): string => String(value ?? '').slice(0, size);
+const shortList = (values: string[], count: number): string[] => values.slice(0, count).map((value) => short(value, 64));
+
+export async function saveCapabilities(userUUID: string, profile: string, deviceId: string, details: DeviceCapabilities): Promise<void> {
   const key = `${userUUID}:${profile}:${deviceId}`;
-  if (!redis) return void localCapabilities.set(key, capabilities);
+  // A client names these itself, so what is kept of them is bounded.
+  const capabilities: DeviceCapabilities = {
+    ...details,
+    client: short(details.client),
+    device: short(details.device),
+    version: short(details.version, 32),
+    playableMediaTypes: shortList(details.playableMediaTypes, 10),
+    supportedCommands: shortList(details.supportedCommands, 100),
+  };
+  if (!redis) return void localCapabilities.set(key, capabilities, { ttl: detailsMs() });
   await redis.set(`${CAPABILITIES}${key}`, JSON.stringify(capabilities), 'PX', detailsMs()).catch(() => undefined);
 }
 
