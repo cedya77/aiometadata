@@ -412,9 +412,10 @@ export async function writeMdblist(items: CopyItem[], apiKey: string, config: an
   if (!writes.length) return { done: items.length, sent: 0, failed: lost.length, lost };
   const unresolved = lost.length;
   try {
-    const { notFound, missed } = await addHistoryBatch(writes, apiKey);
+    const { missed } = await addHistoryBatch(writes, apiKey);
     for (const [w, write] of writes.entries()) if (mdblistMissed(write, missed)) lost.push(from[w]);
-    return { done: items.length, sent: writes.length - notFound, failed: unresolved + notFound, lost };
+    // A show MDBList did not find is one entry for every episode written under it.
+    return { done: items.length, sent: writes.length - (lost.length - unresolved), failed: lost.length, lost };
   } catch (error: any) {
     if (error?.code === 'MDBLIST_QUOTA_EXHAUSTED' || error?.response?.status === 429) return { done: 0, sent: 0, failed: 0, wait: mdblistCallsLeft(apiKey).resetAt - Date.now(), error: 'MDBList quota spent' };
     throw error;
