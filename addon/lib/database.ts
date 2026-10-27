@@ -2030,11 +2030,11 @@ class Database {
       );
       return Number(result?.lastID);
     }
-    const row = await this.getQuery(
+    const result = await this.runQuery(
       'INSERT INTO tracker_copy_jobs (user_uuid, profile, from_key, from_service, to_key, to_service, what, status, items, total, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id',
       params
     );
-    return Number(row?.id);
+    return Number(result?.rows?.[0]?.id);
   }
 
   async getCopyJob(id: number): Promise<any | null> {
