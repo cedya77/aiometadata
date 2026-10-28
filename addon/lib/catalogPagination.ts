@@ -28,15 +28,15 @@ const memoryCursors = new LRUCache<string, Map<number, CatalogCursor>>({
   ttl: cursorTtlSeconds() * 1000,
 });
 
-/** `owner` is the Jellyfin user whose own account serves the catalog; '' for the installation. */
+/** `filteredFor` is the user, cap and tags the pages are filtered for; '' for the installation as it is. */
 export function cursorKey(
   userUUID: string,
   cleanId: string,
   type: string,
   genre: string | undefined | null,
-  owner: string = ''
+  filteredFor: string = ''
 ): string {
-  const scope = owner ? `${userUUID}@${owner}` : userUUID;
+  const scope = filteredFor ? `${userUUID}@${filteredFor}` : userUUID;
   return `catalog-cursor:v3:${scope}:${cleanId}:${type}:${genre || 'all'}`;
 }
 

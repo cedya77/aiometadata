@@ -251,12 +251,17 @@ export function hasNamedViewers(config: any, userUUID: string): boolean {
   return others.length > 0 || main.handoffNames.length > 0;
 }
 
+/** The user a handoff request names: null when it names nobody, undefined when it names nobody here while others could be named. */
+export function profileForViewer(config: any, userUUID: string, name: unknown): Profile | null | undefined {
+  if (name === undefined || name === null || (typeof name === 'string' && !name.trim())) return null;
+  if (!hasNamedViewers(config, userUUID)) return null;
+  if (typeof name !== 'string') return undefined;
+  return viewerByName(config, userUUID, name);
+}
+
 /** The config a handoff request acts as; undefined when it names nobody here while others could be named. */
 export function configForViewer(config: any, userUUID: string, name: unknown): any | undefined {
-  if (name === undefined || name === null || (typeof name === 'string' && !name.trim())) return config;
-  if (!hasNamedViewers(config, userUUID)) return config;
-  if (typeof name !== 'string') return undefined;
-  const profile = viewerByName(config, userUUID, name);
-  if (!profile) return undefined;
-  return profile.id ? scopeConfigToProfile(config, userUUID, profile.id) : config;
+  const profile = profileForViewer(config, userUUID, name);
+  if (profile === undefined) return undefined;
+  return profile?.id ? scopeConfigToProfile(config, userUUID, profile.id) : config;
 }

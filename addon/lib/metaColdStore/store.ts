@@ -27,6 +27,48 @@ const EVICT_CHECK_MAX_BYTES = 64 * 1024 * 1024;
 // mid-run env change must not desync reads from what init() already dropped.
 let currentEpoch = 0;
 
+// Compiled once per open database; reads are keyed by how many keys they bind.
+type HotStatements = {
+  selectByCount: Map<number, BetterSqlite3.Statement>;
+  touchMany: (now: number, ks: string[]) => void;
+  upsertMany: (items: any[]) => void;
+};
+let hot: HotStatements | null = null;
+
+function hotStatements(database: BetterSqlite3.Database): HotStatements {
+  if (hot) return hot;
+  const touch = database.prepare(`UPDATE meta_components SET last_access = ? WHERE k = ?`);
+  // `epoch` is part of the update set: a row left behind by a newer release is
+  // reclaimed by whichever epoch last wrote it, so its payload and its label agree.
+  const upsert = database.prepare(`
+    INSERT INTO meta_components (k, meta_id, component, payload, tier, created_at, expires_at, last_access, epoch)
+    VALUES (@k, @meta_id, @component, @payload, @tier, @created_at, @expires_at, @last_access, @epoch)
+    ON CONFLICT(k) DO UPDATE SET
+      payload = excluded.payload, tier = excluded.tier,
+      expires_at = excluded.expires_at, last_access = excluded.last_access,
+      epoch = excluded.epoch
+  `);
+  hot = {
+    selectByCount: new Map(),
+    touchMany: database.transaction((now: number, ks: string[]) => { for (const k of ks) touch.run(now, k); }),
+    upsertMany: database.transaction((items: any[]) => { for (const it of items) upsert.run(it); }),
+  };
+  return hot;
+}
+
+function selectStatement(database: BetterSqlite3.Database, count: number): BetterSqlite3.Statement {
+  const statements = hotStatements(database).selectByCount;
+  let statement = statements.get(count);
+  if (!statement) {
+    const placeholders = Array.from({ length: count }, () => '?').join(',');
+    statement = database.prepare(
+      `SELECT k, payload, expires_at FROM meta_components WHERE k IN (${placeholders}) AND epoch = ?`
+    );
+    statements.set(count, statement);
+  }
+  return statement;
+}
+
 /**
  * Rows predating the epoch column carry the addon version inside `k` and have no
  * recorded payload shape. Epoch 0 marks them, and the purge in init() drops them.
@@ -82,10 +124,8 @@ export function getEncoded(keys: string[]): Map<string, Buffer> {
   const out = new Map<string, Buffer>();
   if (!db || keys.length === 0) return out;
   const now = Date.now();
-  const placeholders = keys.map(() => '?').join(',');
-  const rows = db.prepare(
-    `SELECT k, payload, expires_at FROM meta_components WHERE k IN (${placeholders}) AND epoch = ?`
-  ).all(...keys, currentEpoch) as Array<{ k: string; payload: Buffer; expires_at: number }>;
+  const rows = selectStatement(db, keys.length)
+    .all(...keys, currentEpoch) as Array<{ k: string; payload: Buffer; expires_at: number }>;
 
   const hits: string[] = [];
   for (const row of rows) {
@@ -93,11 +133,7 @@ export function getEncoded(keys: string[]): Map<string, Buffer> {
     out.set(row.k, row.payload);
     hits.push(row.k);
   }
-  if (hits.length) {
-    const touch = db.prepare(`UPDATE meta_components SET last_access = ? WHERE k = ?`);
-    const tx = db.transaction((ks: string[]) => { for (const k of ks) touch.run(now, k); });
-    tx(hits);
-  }
+  if (hits.length) hotStatements(db).touchMany(now, hits);
   return out;
 }
 
@@ -128,18 +164,7 @@ export async function flushNow(): Promise<void> {
     });
   }
 
-  // `epoch` is part of the update set: a row left behind by a newer release is
-  // reclaimed by whichever epoch last wrote it, so its payload and its label agree.
-  const upsert = db.prepare(`
-    INSERT INTO meta_components (k, meta_id, component, payload, tier, created_at, expires_at, last_access, epoch)
-    VALUES (@k, @meta_id, @component, @payload, @tier, @created_at, @expires_at, @last_access, @epoch)
-    ON CONFLICT(k) DO UPDATE SET
-      payload = excluded.payload, tier = excluded.tier,
-      expires_at = excluded.expires_at, last_access = excluded.last_access,
-      epoch = excluded.epoch
-  `);
-  const tx = db.transaction((items: typeof prepared) => { for (const it of items) upsert.run(it); });
-  tx(prepared);
+  hotStatements(db).upsertMany(prepared);
 
   for (const it of prepared) bytesSinceEvictCheck += it.payload.length;
   if (bytesSinceEvictCheck >= Math.min(EVICT_CHECK_MAX_BYTES, Math.floor(getColdStoreMaxBytes() / 16))) {
@@ -286,7 +311,7 @@ export function stats(): ColdStoreStats {
 }
 
 export function close(): void {
-  if (db) { db.close(); db = null; }
+  if (db) { db.close(); db = null; hot = null; }
 }
 
 module.exports = {

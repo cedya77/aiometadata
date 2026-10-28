@@ -115,7 +115,8 @@ async function metahubImageExists(imdbId: string, type: 'logo' | 'poster' | 'bac
     // array sentinel, not a bare boolean: bare booleans cache as EMPTY_RESULT (60s)
     const cached = await cacheWrapGlobal(`metahub-image-exists:${type}:${imdbId}`, async () => {
         try {
-            const res = await httpHead(url, { timeout });
+            // metahub's nginx sends no body on HEAD, so the connection is safe to reuse.
+            const res = await httpHead(url, { timeout, reset: false });
             return [res.status >= 200 && res.status < 300 ? 1 : 0];
         } catch (error: any) {
             const status = error?.response?.status;

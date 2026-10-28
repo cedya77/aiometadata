@@ -507,6 +507,21 @@ const getCacheHeaders = function (opts) {
   return headerParts.length > 0 ? headerParts.join(", ") : false;
 };
 
+/** A named viewer's own tags take the place of the install URL's, as on this addon's own server. */
+function tagsAsked(req) {
+  return req.viewerTags ?? req.query.tag;
+}
+
+function withViewerAccounts(config, scoped) {
+  return { ...config, jellyfinAccounts: scoped.jellyfinAccounts, jellyfinAccountOwner: scoped.jellyfinAccountOwner };
+}
+
+/** A request naming nobody here is refused rather than served as yours. */
+function refuseUnknownViewer(res, area, userUUID, name, quiet = false) {
+  consola[quiet ? 'debug' : 'info'](`[${area}] Unknown viewer "${String(name).slice(0, 64)}" for ${userUUID}`);
+  return res.status(404).json({ error: "Unknown viewer" });
+}
+
 /**
  * The filtering an install URL asks for, from the profiles it names and from the raw
  * parameters. One UUID can then serve both an unrestricted and a family install.
@@ -517,7 +532,7 @@ const getCacheHeaders = function (opts) {
 function applyRatingOverrides(config, req, userUUID) {
   const rawRating = req.query.contentrating ?? req.query.contentRating;
   const rawUnrated = req.query.unrated;
-  const rawTag = req.query.tag;
+  const rawTag = tagsAsked(req);
   if (rawRating === undefined && rawUnrated === undefined && rawTag === undefined) return config;
 
   const { tags: urlTags } = resolveManifestTags(config, rawTag);
@@ -4854,7 +4869,12 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
             return res.status(404).send({ err: "User configuration not found." });
         }
         
-        const { tags, unknown: unknownTags } = resolveManifestTags(config, req.query.tag);
+        const { profileForViewer, scopeConfigToProfile } = require('./lib/jellyfin/profiles');
+        const profile = profileForViewer(config, userUUID, req.query.viewer);
+        if (profile === undefined) return refuseUnknownViewer(res, 'Manifest', userUUID, req.query.viewer);
+        if (profile?.tags.length) req.viewerTags = profile.tags;
+
+        const { tags, unknown: unknownTags } = resolveManifestTags(config, tagsAsked(req));
         req.manifestTags = tags;
         // The cap itself applies to catalog and search requests, not to the manifest.
         // It is resolved here anyway so an install URL can be checked before it is used.
@@ -4873,7 +4893,8 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
         if (unknownTags.length > 0) {
             consola.warn(`[Manifest] User ${userUUID} asked for ${unknownTags.join(', ')}, which no catalog is tagged with`);
         }
-        const manifest = await getManifest(config, { tags, userUUID });
+        const viewer = profile?.id ? scopeConfigToProfile(config, userUUID, profile.id) : undefined;
+        const manifest = await getManifest(config, { tags, userUUID, viewer });
             if (!manifest) {
                 res.setHeader('Access-Control-Allow-Origin', '*');
                 res.setHeader('Access-Control-Allow-Headers', '*');
@@ -4947,13 +4968,13 @@ function withCatalogCriticRatings(metas: any[], config: any, req: any): Promise<
 
 const catalogRoute = async function (req, res) {
   const { userUUID, type, id, extra } = req.params;
-  const storedConfig = await loadRouteConfig(userUUID);
-  
+  // `viewerConfig` is set only for a named viewer and `accountOwner` only by the Jellyfin server's reads, never from the request.
+  const storedConfig = req.viewerConfig ?? await loadRouteConfig(userUUID);
+
   if (!storedConfig) {
     return res.status(404).send({ error: "User configuration not found" });
   }
   const { viewerConfigFor } = require('./lib/accounts');
-  // Set only by the Jellyfin server's in-process reads, never from the request.
   const config = applyRatingOverrides(viewerConfigFor(storedConfig, req.params.accountOwner, id), req, userUUID);
   config.userUUID = userUUID;
 
@@ -4961,7 +4982,7 @@ const catalogRoute = async function (req, res) {
     const { collectionCatalogMetas, isCollectionCatalogId } = require('./lib/collectionBuilder/aiostreamsCollections');
     if (isCollectionCatalogId(id)) {
       const skip = parseInt(new URLSearchParams(extra || '').get('skip') || '0', 10) || 0;
-      const { tags } = resolveManifestTags(storedConfig, req.query.tag);
+      const { tags } = resolveManifestTags(storedConfig, tagsAsked(req));
       const metas = await collectionCatalogMetas(userUUID, config, tags, id, skip);
       if (!metas) return res.status(404).send({ error: "Collection not found" });
       req.userConfig = config;
@@ -5531,7 +5552,10 @@ const catalogRoute = async function (req, res) {
       filtersAlreadyApplied = true;
     } else if (catalogFiltersActive({ config, catalogConfig, cleanId })) {
       const { accountOwner } = require('./lib/accounts');
-      const key = cursorKey(userUUID, cleanId, actualType, genreName, accountOwner(config));
+      const { viewerProfile } = require('./lib/jellyfin/viewer');
+      const filteredFor = [viewerProfile() || accountOwner(config), config._ratingOverride, ...resolveManifestTags(storedConfig, tagsAsked(req)).tags]
+        .filter(Boolean).join('|');
+      const key = cursorKey(userUUID, cleanId, actualType, genreName, filteredFor);
       const skipValue = legacySkip || 0;
       // Deduped here rather than after, so what a page serves, and so where the
       // next one starts, is the same whether it is filled for this request or on
@@ -5733,7 +5757,38 @@ const catalogRoute = async function (req, res) {
     return res.status(500).send("Internal Server Error");
   }
 };
-addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", catalogRoute);
+/** A read naming its household user, as watch state does, gets that user's history and accounts rows;
+ *  a read naming nobody here is refused rather than served as yours. */
+const catalogRouteForViewer = async function (req, res) {
+  const named = req.query.viewer;
+  if (named === undefined || named === '') return catalogRoute(req, res);
+  const { userUUID } = req.params;
+  const storedConfig = await loadRouteConfig(userUUID);
+  if (!storedConfig) return catalogRoute(req, res);
+
+  const { profileForViewer, profileKey, scopeConfigToProfile } = require('./lib/jellyfin/profiles');
+  const profile = profileForViewer(storedConfig, userUUID, named);
+  if (profile === undefined) return refuseUnknownViewer(res, 'Catalog', userUUID, named, true);
+  if (!profile) return catalogRoute(req, res);
+  if (profile.tags.length) req.viewerTags = profile.tags;
+  if (!profile.id) return catalogRoute(req, res);
+
+  const { accountOwner, catalogEntryFor, servesCatalog } = require('./lib/accounts');
+  const scoped = scopeConfigToProfile(storedConfig, userUUID, profile.id);
+  if (!servesCatalog(scoped, catalogEntryFor(storedConfig, req.params.id))) {
+    req.userConfig = storedConfig;
+    return respond(req, res, { metas: [] });
+  }
+
+  req.viewerConfig = withViewerAccounts(storedConfig, scoped);
+  const { noteAccountOwner, noteProfile, runInViewerScope } = require('./lib/jellyfin/viewer');
+  return runInViewerScope(false, () => {
+    noteProfile(profileKey(scoped));
+    noteAccountOwner(accountOwner(scoped));
+    return catalogRoute(req, res);
+  });
+};
+addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", catalogRouteForViewer);
 registerInProcessRoute('catalog', "/stremio/:userUUID/catalog/:type/:id{/:extra}.json", catalogRoute);
 // --- Meta Route (with enhanced caching) ---
 const metaRoute = async function (req, res) {
@@ -5766,8 +5821,13 @@ const metaRoute = async function (req, res) {
   {
     const { collectionMeta, COLLECTION_META_PREFIX } = require('./lib/collectionBuilder/aiostreamsCollections');
     if (stremioId.startsWith(COLLECTION_META_PREFIX)) {
-      const { tags } = resolveManifestTags(config, req.query.tag);
-      const meta = await collectionMeta(userUUID, config, tags, stremioId);
+      const { profileForViewer, scopeConfigToProfile } = require('./lib/jellyfin/profiles');
+      const profile = profileForViewer(config, userUUID, req.query.viewer);
+      if (profile === undefined) return refuseUnknownViewer(res, 'Meta', userUUID, req.query.viewer, true);
+      if (profile?.tags.length) req.viewerTags = profile.tags;
+      const view = profile?.id ? withViewerAccounts(config, scopeConfigToProfile(config, userUUID, profile.id)) : config;
+      const { tags } = resolveManifestTags(config, tagsAsked(req));
+      const meta = await collectionMeta(userUUID, view, tags, stremioId);
       if (!meta) return res.status(404).send({ error: "Collection not found" });
       req.userConfig = config;
       return respond(req, res, { meta });
@@ -5995,10 +6055,7 @@ addon.post(["/stremio/:userUUID/watch_state/push/:type/:id.json", "/stremio/:use
   const { configForViewer } = require('./lib/jellyfin/profiles');
   const named = req.body?.viewer ?? req.query.viewer;
   const viewer = configForViewer(config, userUUID, named);
-  if (!viewer) {
-    consola.info(`[Playback] Unknown viewer "${String(named).slice(0, 64)}" for ${userUUID}, dropping ${type}/${id}`);
-    return res.status(404).json({ error: "Unknown viewer" });
-  }
+  if (!viewer) return refuseUnknownViewer(res, 'Playback', userUUID, named);
 
   try {
     const { handlePlaybackReport } = require('./lib/playbackHandler');
@@ -6032,10 +6089,7 @@ addon.get("/stremio/:userUUID/watch_state/pull.json", async function (req, res) 
 
   const { configForViewer } = require('./lib/jellyfin/profiles');
   const viewer = configForViewer(config, userUUID, req.query.viewer);
-  if (!viewer) {
-    consola.info(`[Watch State] Unknown viewer "${String(req.query.viewer).slice(0, 64)}" for ${userUUID}`);
-    return res.status(404).json({ error: "Unknown viewer" });
-  }
+  if (!viewer) return refuseUnknownViewer(res, 'Watch State', userUUID, req.query.viewer);
 
   try {
     const { buildWatchStatePull } = require('./lib/watchState');

@@ -55,6 +55,8 @@ interface HttpRequestOptions {
   params?: Record<string, string>;
   retryAttempts?: number;
   validateStatus?: (status: number) => boolean;
+  /** undici closes the socket after every HEAD unless this is false. */
+  reset?: boolean;
 }
 
 interface HttpResponse {
@@ -79,7 +81,8 @@ export async function httpRequest(url: string, options: HttpRequestOptions = {})
     timeout = 8000,
     dispatcher,
     params,
-    validateStatus
+    validateStatus,
+    reset
   } = options;
 
   if (params) {
@@ -97,6 +100,7 @@ export async function httpRequest(url: string, options: HttpRequestOptions = {})
     headersTimeout: timeout,
     // No connectTimeout here: undici only honours it on the dispatcher.
     dispatcher: dispatcher || undefined,
+    ...(reset !== undefined ? { reset } : {}),
   };
 
   if (data) {
