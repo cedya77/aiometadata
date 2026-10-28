@@ -476,8 +476,10 @@ export async function trackerSnapshot(userUUID: string, config: any): Promise<Re
       return { ok: part.ok, rows: part.rows.map((row) => ({ ...row, service })) };
     })
   );
+  const { homedRows } = require('./episodeHome');
+  const homed: ResumeRow[] = await homedRows(userUUID, config, parts.flatMap((part) => part.rows));
   const merged = new Map<string, ResumeRow>();
-  for (const row of parts.flatMap((part) => part.rows)) {
+  for (const row of homed) {
     const held = merged.get(row.videoId);
     if (!held || row.updatedAt > held.updatedAt) merged.set(row.videoId, row);
   }

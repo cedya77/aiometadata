@@ -1146,9 +1146,7 @@ async function resolveKitsuIdFromTmdbSeason(tmdbId, seasonNumber) {
       
       // For episode-level mapping, we need to return a representative Kitsu ID
       // The actual episode-specific mapping will be done in getMeta.js
-      const firstKitsuEntry = franchiseInfo.kitsuDetails
-        .filter(entry => entry.subtype?.toLowerCase() === 'tv')
-        .sort((a, b) => new Date(a.startDate || '9999-12-31') - new Date(b.startDate || '9999-12-31'))[0];
+      const firstKitsuEntry = mainTvEntries(franchiseInfo)[0];
       
       if (firstKitsuEntry) {
         logger.debug(`[ID Mapper] Using first Kitsu ID ${firstKitsuEntry.id} as representative for episode-level mapping`);
@@ -1177,6 +1175,7 @@ async function resolveKitsuIdFromTmdbSeason(tmdbId, seasonNumber) {
       // Fallback to first available season
       const firstSeason = franchiseInfo.availableSeasonNumbers[0];
       const firstSeasonInfo = franchiseInfo.seasons[firstSeason];
+      if (!firstSeasonInfo) return null;
       logger.debug(`[ID Mapper] Using fallback season ${firstSeason} (Kitsu ID ${firstSeasonInfo.kitsuId}) for TMDB S${seasonNumber}`);
       return firstSeasonInfo.kitsuId;
     }
@@ -1873,10 +1872,21 @@ async function getFranchiseInfoFromTmdbId(tmdbId) {
     const kitsuDetails = (await kitsu.getMultipleAnimeDetails(kitsuIds))?.data || [];
     const specials = new Set(tmdbMappings.filter(mapping => Number(mapping.season?.tmdb) === 0).map(mapping => mapping.kitsu_id));
     const isSpecial = (item) => specials.has(parseInt(item.id, 10));
-    
+    const seasonHolders = new Map();
+    for (const mapping of tmdbMappings) {
+      const season = Number(mapping.season?.tmdb);
+      if (season > 0) seasonHolders.set(season, (seasonHolders.get(season) || 0) + 1);
+    }
+    const oneEntryPerSeason = [...seasonHolders.values()].every(count => count === 1);
+    const placed = new Set(oneEntryPerSeason ? tmdbMappings.filter(mapping => Number(mapping.season?.tmdb) > 0).map(mapping => mapping.kitsu_id) : []);
+    const isMainEntry = (item) => {
+      const subtype = item.attributes?.subtype?.toLowerCase();
+      return !isSpecial(item) && (subtype === 'tv' || (subtype === 'ona' && placed.has(parseInt(item.id, 10))));
+    };
+
     // Filter for TV series and sort by start date
     const tvSeries = kitsuDetails
-      .filter(item => item.attributes?.subtype?.toLowerCase() === 'tv' && !isSpecial(item))
+      .filter(isMainEntry)
       .sort((a, b) => {
         const aDate = new Date(a.attributes?.startDate || '9999-12-31');
         const bDate = new Date(b.attributes?.startDate || '9999-12-31');
@@ -1885,7 +1895,7 @@ async function getFranchiseInfoFromTmdbId(tmdbId) {
     
     // Filter for OVAs/ONAs and sort by start date
     const ovasAndOnas = kitsuDetails
-      .filter(item => ['ova', 'ona'].includes(item.attributes?.subtype?.toLowerCase()))
+      .filter(item => ['ova', 'ona'].includes(item.attributes?.subtype?.toLowerCase()) && !isMainEntry(item))
       .sort((a, b) => {
         const aDate = new Date(a.attributes?.startDate || '9999-12-31');
         const bDate = new Date(b.attributes?.startDate || '9999-12-31');
@@ -1942,7 +1952,9 @@ async function getFranchiseInfoFromTmdbId(tmdbId) {
         subtype: item.attributes?.subtype,
         startDate: item.attributes?.startDate,
         episodeCount: item.attributes?.episodeCount,
-        ...(isSpecial(item) ? { special: true } : {})
+        ...(isSpecial(item) ? { special: true } : {}),
+        main: isMainEntry(item),
+        tmdbSeason: Number(tmdbMappings.find(mapping => Number(mapping.kitsu_id) === parseInt(item.id, 10))?.season?.tmdb) || null
       }))
     };
 
@@ -2158,7 +2170,7 @@ async function resolveKitsuIdForEpisodeByTvdb(tvdbId, seasonNumber, episodeNumbe
  */
 function mainTvEntries(franchiseInfo) {
   return franchiseInfo.kitsuDetails
-    .filter(entry => entry.subtype?.toLowerCase() === 'tv' && !entry.special)
+    .filter(entry => entry.main ?? (entry.subtype?.toLowerCase() === 'tv' && !entry.special))
     .sort((a, b) => new Date(a.startDate || '9999-12-31') - new Date(b.startDate || '9999-12-31'));
 }
 
@@ -2215,7 +2227,12 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
     // TMDB Season 1 → Kitsu Entry 0, Season 2 → Entry 1, etc.
     // Note: TMDB seasons are 1-based, Kitsu entries array is 0-based
     const seasonIndex = seasonNumber - 1;
-    
+    const placedOnSeason = kitsuEntries.filter(entry => entry.tmdbSeason === seasonNumber);
+    const byPosition = kitsuEntries[seasonIndex];
+    if (placedOnSeason.length === 1 && (!byPosition || (byPosition.tmdbSeason && byPosition.tmdbSeason !== seasonNumber))) {
+      return { kitsuId: placedOnSeason[0].id, episodeNumber };
+    }
+
     if (seasonIndex >= 0 && seasonIndex < kitsuEntries.length) {
       const kitsuEntry = kitsuEntries[seasonIndex];
       logger.debug(`[ID Mapper] TMDB Season ${seasonNumber} maps directly to Kitsu ID ${kitsuEntry.id}, Episode ${episodeNumber} (season-based mapping)`);

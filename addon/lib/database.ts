@@ -1447,6 +1447,23 @@ class Database {
   }
 
   // Only plays with a time: history a sync copied from a tracker carries none.
+  async latestOwnPlayAmong(userUUID: string, profile: string, bases: string[]): Promise<{ videoId: string; at: number } | null> {
+    if (!bases.length) return null;
+    const p = this.type === 'sqlite' ? () => '?' : ((n = 0) => () => `$${++n}`)();
+    const params: any[] = [userUUID, profile];
+    const scope = `user_uuid = ${p()} AND profile = ${p()}`;
+    const spelled = bases.map((base) => {
+      params.push(`${base}:%`);
+      return `video_id LIKE ${p()}`;
+    });
+    const query = `SELECT video_id, last_played_at FROM jellyfin_playstate WHERE ${scope}
+      AND (origin = 'server' OR ((origin IS NULL OR origin = 'play') AND ABS(updated_at - last_played_at) < 2000))
+      AND last_played_at IS NOT NULL AND (played = 1 OR position_ms > 0) AND (${spelled.join(' OR ')})
+      ORDER BY last_played_at DESC, updated_at, video_id LIMIT 1`;
+    const row = await this.getQuery(query, params);
+    return row?.video_id ? { videoId: String(row.video_id), at: Number(row.last_played_at) } : null;
+  }
+
   async listRecentlyPlayed(
     userUUID: string,
     since: number,
@@ -1516,8 +1533,8 @@ class Database {
   async listPlaystateInProgressFor(userUUID: string, limit: number, profile: string | null = null): Promise<any[]> {
     const scoped = profile === null ? '' : (this.type === 'sqlite' ? ' AND profile = ?' : ' AND profile = $3');
     const query = this.type === 'sqlite'
-      ? `SELECT * FROM jellyfin_playstate WHERE user_uuid = ? AND position_ms > 0${scoped} ORDER BY COALESCE(last_played_at, updated_at) DESC LIMIT ?`
-      : `SELECT * FROM jellyfin_playstate WHERE user_uuid = $1 AND position_ms > 0${scoped} ORDER BY COALESCE(last_played_at, updated_at) DESC LIMIT $2`;
+      ? `SELECT * FROM jellyfin_playstate WHERE user_uuid = ? AND position_ms > 0${scoped} ORDER BY COALESCE(last_played_at, updated_at) DESC, updated_at, video_id LIMIT ?`
+      : `SELECT * FROM jellyfin_playstate WHERE user_uuid = $1 AND position_ms > 0${scoped} ORDER BY COALESCE(last_played_at, updated_at) DESC, updated_at, video_id LIMIT $2`;
     return (await this.allQuery(query, profile === null ? [userUUID, limit] : this.type === 'sqlite' ? [userUUID, profile, limit] : [userUUID, limit, profile])) || [];
   }
 
@@ -1707,7 +1724,7 @@ class Database {
       FROM jellyfin_watches w
       LEFT JOIN jellyfin_playstate p ON p.user_uuid = w.user_uuid AND p.profile = w.profile AND p.video_id = w.video_id
       WHERE w.user_uuid = ${sqlite ? '?' : '$1'}${scoped}
-      ORDER BY w.watched_at DESC, w.video_id LIMIT ${sqlite ? '?' : '$2'}`;
+      ORDER BY w.watched_at DESC, p.updated_at IS NULL, p.updated_at, w.video_id LIMIT ${sqlite ? '?' : '$2'}`;
     const params = profile === null ? [userUUID, limit] : sqlite ? [userUUID, profile, limit] : [userUUID, limit, profile];
     return (await this.allQuery(query, params)) || [];
   }

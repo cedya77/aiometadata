@@ -876,6 +876,7 @@ const metaMemo = new LRUCache<string, any>({
   ttl: envInt('JELLYFIN_META_MEMO_TTL', 60, 1) * 1000,
 });
 const metaInFlight = new Map<string, Promise<any | null>>();
+const NO_META = Symbol('no meta');
 
 function episodeKindExtension(video: any): any {
   const filler = (video.isFiller ?? video.filler) === true;
@@ -903,6 +904,7 @@ async function readMeta(
 ): Promise<any | null> {
   const key = `${userUUID}|${stremioType}|${id}${beforeArt ? '|raw' : ''}`;
   const held = metaMemo.get(key);
+  if (held === NO_META) return null;
   if (held) return held;
   const running = metaInFlight.get(key);
   if (running) return running;
@@ -921,6 +923,8 @@ async function readMeta(
       if (meta) {
         metaMemo.set(key, meta);
         if (stremioType === 'series' && !beforeArt) require('./episodeIndex').rememberSeriesIndex(userUUID, id, meta);
+      } else {
+        metaMemo.set(key, NO_META);
       }
       return meta;
     } catch (error: any) {
