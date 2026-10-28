@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.8.3](https://github.com/cedya77/aiometadata/compare/v3.8.2...v3.8.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **dashboard:** show a play under the id it was played with ([a585003](https://github.com/cedya77/aiometadata/commit/a5850036f4e47d99dacc488bfc34864f9c4ad354))
+* **jellyfin:** build the episodes of a show whose Kitsu entries are all films or specials ([674126b](https://github.com/cedya77/aiometadata/commit/674126bd21a6c1e1ee3a0e962cefd5529d787498))
+* **jellyfin:** count an ONA season of a show as one of its seasons ([57a8c69](https://github.com/cedya77/aiometadata/commit/57a8c694453196277cbec9991c3d0e43477631e9))
+* **jellyfin:** date Next Up items by the show's latest activity ([d8e6938](https://github.com/cedya77/aiometadata/commit/d8e693818564cc35c3dd2f00f5c16d056fdf69c3))
+* **jellyfin:** leave out a resume point another id of the title has since marked watched ([80240f5](https://github.com/cedya77/aiometadata/commit/80240f56683bbf5a8edcd678fdb1cb4fde8f9f2a))
+* **jellyfin:** name a tracker's anime episode after the page it is watched on ([71c6ec9](https://github.com/cedya77/aiometadata/commit/71c6ec993c5bb8f47da984d90c46437974d6aaee))
+* **jellyfin:** open an anime entry's episode on a show page that numbers it by IMDb id ([625bb70](https://github.com/cedya77/aiometadata/commit/625bb70821c74f524b81063eaabafdac93fdde38))
+* **jellyfin:** remember for a minute that a title has no metadata ([5a8967b](https://github.com/cedya77/aiometadata/commit/5a8967b5245109f1978cf584fe8e066bf3316276))
+* **jellyfin:** show Next Up under the id a show was marked with ([1fff044](https://github.com/cedya77/aiometadata/commit/1fff044ee5f3783042f7b0ea6f3917b553ac0a06))
+
 ## [3.8.2](https://github.com/cedya77/aiometadata/compare/v3.8.1...v3.8.2) (2026-10-27)
 
 
