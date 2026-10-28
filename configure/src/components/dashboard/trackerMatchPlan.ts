@@ -1,6 +1,6 @@
 export type Ref = { season: number; episode: number };
 export type OurEpisode = { number: number; name: string | null; airsAt: number | null };
-export type TheirEpisode = { season: number; number: number; title: string | null; airedAt: number | null; norm: string; words: Set<string> };
+export type TheirEpisode = { season: number; number: number; title: string | null; airedAt: number | null; sends: Ref; norm: string; words: Set<string> };
 export type Status = "same" | "part" | "close" | "shift" | "number" | "missing" | "none" | "later" | "chosen";
 export type Row = { key: string; ours: OurEpisode; target: TheirEpisode | null; status: Status; part: number };
 export type SeasonPlan = { season: number; theirs: number; rows: Row[] };
@@ -9,6 +9,8 @@ export const LOOK: ReadonlySet<Status> = new Set(["close", "shift", "missing"]);
 export const GUESSED: ReadonlySet<Status> = new Set(["close", "shift", "missing", "number"]);
 const STOP = new Set(["the", "a", "an", "and", "of"]);
 export const keyOf = (season: number, episode: number) => `${season}:${episode}`;
+export const sentKey = (target: TheirEpisode) => keyOf(target.sends.season, target.sends.episode);
+export const seasonName = (season: number) => (season === 0 ? "Specials" : `Season ${season}`);
 
 export function norm(title: string | null | undefined): string {
   return String(title ?? "")
@@ -44,7 +46,7 @@ export function planSeason(season: number, episodes: OurEpisode[], theirs: Their
       for (const t of theirs) if (t.norm === normed) votes.set(t.season, (votes.get(t.season) ?? 0) + 1);
     }
     const best = [...votes.entries()].sort((a, b) => b[1] - a[1] || Math.abs(a[0] - season) - Math.abs(b[0] - season))[0];
-    linked = best ? best[0] : numbers.includes(season) ? season : numbers[0] ?? season;
+    linked = best ? best[0] : numbers.includes(season) ? season : numbers.find((number) => number > 0) ?? numbers[0] ?? season;
   }
   const inLinked = theirs.filter((t) => t.season === linked);
   const byNumber = new Map(inLinked.map((t) => [t.number, t]));
@@ -111,7 +113,7 @@ export function planSeason(season: number, episodes: OurEpisode[], theirs: Their
     for (const row of rows) if (row.status === "shift") row.status = "number";
   }
   const sharing = new Map<string, Row[]>();
-  for (const row of rows) if (row.target) sharing.set(keyOf(row.target.season, row.target.number), [...(sharing.get(keyOf(row.target.season, row.target.number)) ?? []), row]);
+  for (const row of rows) if (row.target) sharing.set(sentKey(row.target), [...(sharing.get(sentKey(row.target)) ?? []), row]);
   for (const group of sharing.values()) {
     if (group.length < 2) continue;
     group.forEach((row, index) => {
@@ -137,4 +139,32 @@ export function strayEpisodes(plans: SeasonPlan[], theirs: TheirEpisode[], now: 
     out.set(season, theirs.filter((t) => t.season === season && !used.has(t) && (t.number <= (top.get(season) ?? 0) || (t.airedAt !== null && t.airedAt <= now))));
   }
   return out;
+}
+
+export function heldIn(theirs: TheirEpisode[], held: Record<string, Ref | null>): Record<string, Ref | null> {
+  const out: Record<string, Ref | null> = {};
+  for (const [key, ref] of Object.entries(held)) {
+    if (!ref) {
+      out[key] = null;
+      continue;
+    }
+    const hits = theirs.filter((t) => t.sends.season === ref.season && t.sends.episode === ref.episode);
+    const hit = hits.find((t) => keyOf(t.season, t.number) === key) ?? hits[0];
+    if (hit) out[key] = { season: hit.season, episode: hit.number };
+  }
+  return out;
+}
+
+export function seasonLink(plan: SeasonPlan, theirs: TheirEpisode[]): { season: number; offset: number } {
+  const rows = plan.rows
+    .filter((row) => row.status !== "later" && row.target?.season === plan.theirs)
+    .map((row) => ({ sends: (row.target as TheirEpisode).sends, number: row.ours.number }));
+  const pool = rows.length ? rows : theirs.filter((t) => t.season === plan.theirs).map((t) => ({ sends: t.sends, number: t.number }));
+  if (!pool.length) return { season: plan.theirs, offset: 0 };
+  const votes = new Map<number, number>();
+  for (const entry of pool) votes.set(entry.sends.season, (votes.get(entry.sends.season) ?? 0) + 1);
+  const season = [...votes.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const inSeason = pool.filter((entry) => entry.sends.season === season);
+  const anchor = rows.length ? inSeason[inSeason.length - 1] : inSeason[0];
+  return { season, offset: anchor.sends.episode - anchor.number };
 }

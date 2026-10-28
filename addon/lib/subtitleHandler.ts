@@ -321,6 +321,7 @@ async function inTmdbNumbers(resolution: ResolvedSeriesIds, config: any, provide
   const { withEpisodeOrder } = require('../utils/episodeOrder');
   if ((withEpisodeOrder(config, tvdb).tvdbSeasonType || 'default') !== 'default') return resolution;
   const moved = await require('../utils/mdbList').tmdbEpisodeFromTvdb(tmdb, resolution.season, resolution.episode, apiKey).catch(() => null);
+  if (moved?.showTmdb) return { ...resolution, ids: { tmdb: moved.showTmdb }, season: moved.season, episode: moved.episode };
   return moved ? { ...resolution, ids: { ...resolution.ids, tmdb }, season: moved.season, episode: moved.episode } : resolution;
 }
 

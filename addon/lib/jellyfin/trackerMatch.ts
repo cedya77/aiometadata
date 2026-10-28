@@ -46,7 +46,7 @@ export interface MatchCandidate {
 
 export interface TargetSeason {
   number: number;
-  episodes: Array<{ number: number; title: string | null; airedAt: number | null }>;
+  episodes: Array<{ number: number; title: string | null; airedAt: number | null; sends?: EpisodeRef }>;
 }
 
 interface Index {
@@ -269,7 +269,7 @@ export async function searchTargets(service: string, credential: string, query: 
       },
       title: String(item.title ?? ''),
       year: Number(item.year) || null,
-      posterUrl: null,
+      posterUrl: /^tt\d+$/.test(String(item.ids?.imdbid ?? '')) ? `https://images.metahub.space/poster/small/${item.ids.imdbid}/img` : null,
       kind: item.type === 'movie' ? 'movie' : 'tv',
       episodes: null,
     })).filter((item: MatchCandidate) => Object.keys(item.ids).length > 0);
@@ -277,7 +277,7 @@ export async function searchTargets(service: string, credential: string, query: 
   return [];
 }
 
-export async function targetDetail(service: string, credential: string, candidate: MatchCandidate, config: any): Promise<{ ids: Record<string, string | number>; seasons: TargetSeason[] }> {
+export async function targetDetail(service: string, credential: string, candidate: MatchCandidate, config: any): Promise<{ ids: Record<string, string | number>; seasons: TargetSeason[]; tvdbSeasons?: TargetSeason[]; tvdbDefault?: boolean }> {
   if (service === 'simkl') {
     const { fetchSimklItemDetail, makeAuthenticatedSimklRequest } = require('../../utils/simklUtils');
     const token = await simklToken(credential);
@@ -305,12 +305,17 @@ export async function targetDetail(service: string, credential: string, candidat
     const ids = { ...candidate.ids };
     if (candidate.kind === 'movie' || !ids.tmdb) return { ids, seasons: [] };
     const { tvInfo, seasonInfo } = require('../getTmdb');
-    const show = await tvInfo({ id: ids.tmdb, language: 'en-US' }, config).catch(() => null);
+    const { mdblistTvdbEpisodes } = require('../../utils/mdbList');
+    const [show, map] = await Promise.all([
+      tvInfo({ id: ids.tmdb, language: 'en-US' }, config).catch(() => null),
+      credential ? mdblistTvdbEpisodes(Number(ids.tmdb), credential).catch(() => null) : null,
+    ]);
     const numbers: number[] = (Array.isArray(show?.seasons) ? show.seasons : [])
       .map((season: any) => Number(season?.season_number))
-      .filter((number: number) => Number.isFinite(number) && number > 0)
+      .filter((number: number) => Number.isInteger(number) && number >= 0)
+      .sort((a: number, b: number) => (a === 0 ? 1 : b === 0 ? -1 : a - b))
       .slice(0, 40);
-    const seasons = await Promise.all(numbers.map(async (number) => {
+    const seasons: TargetSeason[] = await Promise.all(numbers.map(async (number) => {
       const detail = await seasonInfo({ id: ids.tmdb, season_number: number, language: 'en-US' }, config).catch(() => null);
       return {
         number,
@@ -321,7 +326,21 @@ export async function targetDetail(service: string, credential: string, candidat
         })),
       };
     }));
-    return { ids, seasons };
+    if (!map) return { ids, seasons };
+    const known = new Map(seasons.flatMap((season) => season.episodes.map((episode) => [`${season.number}:${episode.number}`, episode] as const)));
+    const tvdb = new Map<number, TargetSeason>();
+    for (const entry of map.episodes) {
+      if (entry.showTmdb) continue;
+      const episode = known.get(`${entry.tmdbSeason}:${entry.tmdbEpisode}`);
+      if (!episode) continue;
+      const season = tvdb.get(entry.season) ?? { number: entry.season, episodes: [] };
+      if (season.episodes.some((listed) => listed.number === entry.episode)) continue;
+      season.episodes.push({ number: entry.episode, title: episode.title, airedAt: episode.airedAt, sends: { season: entry.tmdbSeason, episode: entry.tmdbEpisode } });
+      tvdb.set(entry.season, season);
+    }
+    for (const season of tvdb.values()) season.episodes.sort((a, b) => a.number - b.number);
+    const tvdbSeasons = [...tvdb.values()].sort((a, b) => (a.number === 0 ? 1 : b.number === 0 ? -1 : a.number - b.number));
+    return tvdbSeasons.length ? { ids, seasons, tvdbSeasons, tvdbDefault: map.tvdbDefault } : { ids, seasons };
   }
   return { ids: { ...candidate.ids }, seasons: [] };
 }

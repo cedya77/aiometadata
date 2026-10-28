@@ -8590,6 +8590,30 @@ addon.post("/api/dashboard/jellyfin/:userUUID/title/action", requireDashboardAdm
   }
 });
 
+addon.post("/api/dashboard/jellyfin/:userUUID/progress/remove", requireDashboardAdmin, async (req, res) => {
+  try {
+    const videoId = typeof req.body?.videoId === 'string' && req.body.videoId.length <= 300 ? req.body.videoId : '';
+    const profileKey = typeof req.body?.profileKey === 'string' && req.body.profileKey.length <= 200 ? req.body.profileKey : '';
+    if (!videoId) {
+      res.status(400).json({ error: 'Name the episode or film to remove' });
+      return;
+    }
+    const done = await require('./lib/jellyfin/dashboard').dashboardClearResume(String(req.params.userUUID), profileKey, videoId);
+    if (done === null) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (!done) {
+      res.status(400).json({ error: 'That play could not be removed' });
+      return;
+    }
+    res.json({ done });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to remove it from Continue Watching' });
+  }
+});
+
 addon.post("/api/dashboard/jellyfin/:userUUID/title/watch-date", requireDashboardAdmin, async (req, res) => {
   try {
     const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : '';

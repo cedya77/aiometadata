@@ -8,6 +8,7 @@ import { seenConfigurations } from './context';
 import { seriesIndex } from './episodeIndex';
 import { fetchMeta, isBoxSetMeta, parseRuntimeTicks, seriesStatus } from './items';
 import { groupBySpelling } from './aliases';
+import { itemIdForVideo } from './history';
 import { defaultUserName, listProfiles, profileKey, scopeConfigToProfile } from './profiles';
 import { CAPABLE, credentialFor } from './trackerSource';
 import { sourceKeyFor } from './trackerMirror';
@@ -18,7 +19,9 @@ const database: any = require('../database');
 
 export interface PlayRow {
   profile: string;
+  profileKey: string;
   videoId: string;
+  itemId: string;
   imageUrl: string | null;
   posterUrl: string | null;
   backdropUrl: string | null;
@@ -192,7 +195,9 @@ async function playRows(userUUID: string, rows: any[], names: Map<string, string
     const positionMs = Number(row.position_ms) || 0;
     const entry: PlayRow = {
       profile: profileLabel(names, String(row.profile ?? '')),
+      profileKey: String(row.profile ?? ''),
       videoId,
+      itemId: itemIdForVideo(videoId),
       imageUrl: named.imageUrl,
       posterUrl: named.posterUrl,
       backdropUrl: named.backdropUrl,
@@ -756,7 +761,21 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
 
   let sendsAs: any = null;
   let sendError: string | null = null;
-  if (side === 'behind' && source.service !== 'anilist' && source.service !== 'mal') {
+  if (side === 'behind' && (source.service === 'anilist' || source.service === 'mal')) {
+    const { parseMediaId } = require('../subtitleHandler');
+    const media = parseMediaId(video);
+    try {
+      const target: any = media
+        ? await withDeadline(source.service === 'anilist' ? require('../anilistTracker').resolveAniListId(media) : require('../malTracker').resolveMalId(media), 'slow')
+        : null;
+      const entry = target && target !== 'slow' ? Number(source.service === 'anilist' ? target.anilistId : target.malId) : null;
+      if (target === 'slow') sendError = 'Working out the ids took too long; open this again';
+      else if (entry) sendsAs = { ids: { [source.service]: entry }, season: null, episode: Number(target.episode) || null };
+      else sendError = media ? `No ${source.service === 'anilist' ? 'AniList' : 'MAL'} entry is mapped to ${video}` : `${video} is not an id trackers take`;
+    } catch (error: any) {
+      sendError = String(error?.message || error).slice(0, 200);
+    }
+  } else if (side === 'behind') {
     const { parseMediaId, historyTarget } = require('../subtitleHandler');
     const media = parseMediaId(video);
     try {
@@ -1838,6 +1857,21 @@ export async function dashboardTitleAction(userUUID: string, profile: string | n
     }
     forgetMemos(userUUID);
     return true;
+  });
+}
+
+export async function dashboardClearResume(userUUID: string, profileKey: string, videoId: string): Promise<boolean | null> {
+  const config = await database.getUserConfig(userUUID).catch(() => null);
+  if (!config) return null;
+  const { parseStremioId } = require('./idsCodec');
+  if (!parseStremioId(videoId)) return false;
+  if (profileKey && !listProfiles(config, userUUID).some((p) => p.id === profileKey)) return false;
+  const { runInViewerScope } = require('./viewer');
+  return runInViewerScope(false, async () => {
+    const req = { params: { userUUID }, jellyfin: { userUUID, profileId: profileKey || null }, query: {}, headers: {} };
+    const done = await require('./playstate').recordUserData(req, { ItemId: itemIdForVideo(videoId), PlaybackPositionTicks: 0 });
+    forgetMemos(userUUID);
+    return Boolean(done);
   });
 }
 

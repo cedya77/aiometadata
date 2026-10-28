@@ -1,21 +1,75 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2, Repeat } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleCheck, CircleDashed, CircleX, Film, Layers, Loader2, MoreHorizontal, Play, Repeat, ThumbsDown, Tv } from "lucide-react";
 import { type JellyfinPlayRow } from "@/hooks/useDashboardQueries";
-import { Art, Sentinel } from "./JellyfinShared";
+import { ActionMenu, Art, Sentinel, type MenuItem } from "./JellyfinShared";
 import { when, clock, percentOf, duration, useOpenTitle, titleRefOf } from "./jellyfinUtils";
 
-export function ProgressCard({ row }: { row: JellyfinPlayRow }) {
+export type ProgressAction = "played" | "unplayed" | "clear" | "drop";
+
+export function ProgressCard({ row, onAction, onPlayOn }: { row: JellyfinPlayRow; onAction?: (action: ProgressAction) => Promise<void>; onPlayOn?: (at: { x: number; y: number }) => void }) {
   const pct = percentOf(row);
   const left = row.runtimeMs > row.positionMs ? duration(row.runtimeMs - row.positionMs) : "";
   const code = episodeCode(row, true);
   const subtitle = code ? `${code}${row.episodeTitle ? ` · ${row.episodeTitle}` : ""}` : row.episode;
   const open = useOpenTitle();
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const run = (action: ProgressAction) => {
+    if (!onAction) return;
+    setBusy(true);
+    void onAction(action).finally(() => setBusy(false));
+  };
+  const isEpisode = row.seriesId !== null;
+  const items: MenuItem[] = menu ? [
+    ...(onPlayOn ? [{ icon: <Play className="size-4" />, label: "Play on a device", onSelect: () => onPlayOn(menu) }] : []),
+    ...(open ? [{ icon: isEpisode ? <Tv className="size-4" /> : <Film className="size-4" />, label: isEpisode ? "Go to series" : "Go to film", onSelect: () => open(titleRefOf(row)) }] : []),
+    ...(open && isEpisode && row.season !== null ? [{ icon: <Layers className="size-4" />, label: row.season === 0 ? "Go to specials" : "Go to season", onSelect: () => open(titleRefOf(row), row.season) }] : []),
+    ...(onAction ? [
+      { icon: <CircleCheck className="size-4" />, label: "Mark as watched", onSelect: () => run("played"), divider: true },
+      { icon: <CircleDashed className="size-4" />, label: "Mark unwatched and reset progress", onSelect: () => run("unplayed") },
+      { icon: <CircleX className="size-4" />, label: "Clear resume position", onSelect: () => run("clear") },
+      ...(isEpisode ? [{ icon: <ThumbsDown className="size-4" />, label: "Drop show", onSelect: () => run("drop") }] : []),
+    ] : []),
+  ] : [];
+  const showMenu = (at: { x: number; y: number }) => { if (onAction || onPlayOn) setMenu(at); };
   return (
-    <div role={open ? "button" : undefined} tabIndex={open ? 0 : undefined} onClick={open ? () => open(titleRefOf(row)) : undefined} onKeyDown={open ? (event) => { if (event.key === "Enter") open(titleRefOf(row)); } : undefined} className={`group relative overflow-hidden rounded-lg bg-muted/40 ring-1 ring-white/[0.06] transition hover:ring-white/20 ${open ? "cursor-pointer" : ""}`} title={`${row.title}${row.episode ? ` · ${row.episode}` : ""}`}>
+    <div role={open ? "button" : undefined} tabIndex={open ? 0 : undefined} onClick={open ? () => open(titleRefOf(row)) : undefined} onKeyDown={open ? (event) => { if (event.key === "Enter") open(titleRefOf(row)); } : undefined} onContextMenu={onAction || onPlayOn ? (event) => { event.preventDefault(); showMenu({ x: event.clientX, y: event.clientY }); } : undefined} className={`group relative overflow-hidden rounded-lg bg-muted/40 ring-1 ring-white/[0.06] transition hover:ring-white/20 ${open ? "cursor-pointer" : ""}`} title={`${row.title}${row.episode ? ` · ${row.episode}` : ""}`}>
       <div className="transition-transform duration-500 group-hover:scale-[1.03]"><Art src={row.backdropUrl && !row.seriesId ? row.backdropUrl : row.imageUrl ?? row.backdropUrl} title="" wide /></div>
       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/45 to-black/0" />
       <span className="glass absolute top-2 left-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] text-white/85">{row.rewatch && <><Repeat className="size-2.5" /> Rewatching ·</>} {row.profile} · {when(row.lastPlayedAt ?? row.updatedAt)}</span>
+      {(onAction || onPlayOn) && (
+        <button
+          type="button"
+          disabled={busy}
+          onMouseDown={(event) => { if (menu) event.stopPropagation(); }}
+          onClick={(event) => { event.stopPropagation(); const box = event.currentTarget.getBoundingClientRect(); if (menu) setMenu(null); else showMenu({ x: box.right - 224, y: box.bottom + 4 }); }}
+          onKeyDown={(event) => event.stopPropagation()}
+          aria-label="More"
+          className={`glass absolute top-2 right-2 z-10 flex size-7 items-center justify-center rounded-full text-white/90 transition hover:bg-black/70 focus-visible:opacity-100 ${menu || busy ? "opacity-100" : "md:opacity-0 md:group-hover:opacity-100"}`}
+        >
+          {busy ? <Loader2 className="size-3.5 animate-spin" /> : <MoreHorizontal className="size-4" />}
+        </button>
+      )}
+      {menu && (
+        <span className="contents" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()}>
+        <ActionMenu
+          at={menu}
+          onClose={closeMenu}
+          items={items}
+          header={(
+            <div className="flex max-w-72 items-center gap-3">
+              <div className="w-20 shrink-0 overflow-hidden rounded-md"><Art src={row.imageUrl ?? row.backdropUrl} title="" wide /></div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{row.title}</p>
+                {(subtitle || left) && <p className="truncate text-xs text-muted-foreground">{subtitle || `${left} left`}</p>}
+              </div>
+            </div>
+          )}
+        />
+        </span>
+      )}
       <div className="absolute inset-x-0 bottom-0 space-y-1.5 p-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold leading-tight text-white">{row.title}</p>

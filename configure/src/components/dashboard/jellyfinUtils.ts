@@ -131,9 +131,9 @@ export function usePagedPlays(userUUID: string, profile: string | null, kind: Je
   return { rows, more, loading, loadMore, failed, retry: () => void refetch() };
 }
 
-export const OpenTitleContext = createContext<((ref: JellyfinTitleRef) => void) | null>(null);
+export const OpenTitleContext = createContext<((ref: JellyfinTitleRef, season?: number | null) => void) | null>(null);
 
-export function useOpenTitle(): ((ref: JellyfinTitleRef) => void) | null {
+export function useOpenTitle(): ((ref: JellyfinTitleRef, season?: number | null) => void) | null {
   return useContext(OpenTitleContext);
 }
 

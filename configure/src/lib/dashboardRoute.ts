@@ -1,7 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import type { DashboardTab, JellyfinTitlePerson, JellyfinTitleRef } from '@/hooks/useDashboardQueries';
 
-export type DashboardPage = { kind: 'title'; ref: JellyfinTitleRef } | { kind: 'person'; person: JellyfinTitlePerson };
+export type DashboardPage = { kind: 'title'; ref: JellyfinTitleRef; season?: number | null } | { kind: 'person'; person: JellyfinTitlePerson };
 
 export type JellyfinSection = 'overview' | 'library' | 'shows' | 'calendar' | 'history' | 'trackers';
 

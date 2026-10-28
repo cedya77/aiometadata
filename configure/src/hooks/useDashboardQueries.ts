@@ -1518,7 +1518,9 @@ export interface JellyfinSessionRow {
 
 export interface JellyfinPlayRow {
   profile: string;
+  profileKey: string;
   videoId: string;
+  itemId: string;
   imageUrl: string | null;
   posterUrl: string | null;
   backdropUrl: string | null;
@@ -1970,6 +1972,18 @@ export function useJellyfinTitleAction() {
   };
 }
 
+export function useJellyfinClearResume() {
+  const getHeaders = useApiHeaders();
+  return async (userUUID: string, profileKey: string, videoId: string): Promise<void> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/progress/remove`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileKey, videoId }),
+    });
+    if (!response.ok) throw new Error(`Could not remove it (${response.status})`);
+  };
+}
+
 export type JellyfinSyncKind = 'read' | 'readFailed' | 'sent' | 'retry' | 'failed' | 'dropped';
 
 export interface JellyfinSyncPulse {
@@ -2070,7 +2084,14 @@ export interface JellyfinMatchCandidate {
 
 export interface JellyfinMatchSeason {
   number: number;
-  episodes: Array<{ number: number; title: string | null; airedAt: number | null }>;
+  episodes: Array<{ number: number; title: string | null; airedAt: number | null; sends?: { season: number; episode: number } }>;
+}
+
+export interface JellyfinMatchDetail {
+  ids: Record<string, string | number>;
+  seasons: JellyfinMatchSeason[];
+  tvdbSeasons?: JellyfinMatchSeason[];
+  tvdbDefault?: boolean;
 }
 
 export interface JellyfinTrackerMatch {
@@ -2229,7 +2250,7 @@ function syncActions(getHeaders: () => Record<string, string>) {
       if (!response.ok) throw new Error(data?.error || `The search failed (${response.status})`);
       return Array.isArray(data?.results) ? data.results : [];
     },
-    matchDetail: (userUUID: string, key: string, candidate: JellyfinMatchCandidate) => post<{ ids: Record<string, string | number>; seasons: JellyfinMatchSeason[] }>(userUUID, 'match/detail', { key, candidate }),
+    matchDetail: (userUUID: string, key: string, candidate: JellyfinMatchCandidate) => post<JellyfinMatchDetail>(userUUID, 'match/detail', { key, candidate }),
     matchSave: (userUUID: string, body: { key: string; item: string | null; bases: string[]; kind: 'movie' | 'series'; title: string | null; open: { id: string; type: 'movie' | 'series' } | null; target: JellyfinMatchCandidate; seasons: Record<string, { season: number; offset: number }>; episodes?: Record<string, { season: number; episode: number } | null> }) => post<{ match: JellyfinTrackerMatch; sent: number }>(userUUID, 'match', body),
     matchRemove: (userUUID: string, key: string, group: string) => post<{ ok: boolean }>(userUUID, 'match/remove', { key, group }),
   };

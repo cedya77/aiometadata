@@ -9,11 +9,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Activity as ActivityIcon, Bookmark, CalendarDays, History, LayoutGrid, Loader2, Network, Search, TableProperties, Tv, Upload, X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
+  useJellyfinClearResume,
   useJellyfinConfiguration,
   useJellyfinExport,
   useJellyfinOverview,
   useJellyfinSearch,
+  useJellyfinTitleAction,
   type DashboardTab,
   type JellyfinPlayRow,
   type JellyfinTitleRef,
@@ -21,7 +24,8 @@ import {
 import { ActivityMap, Hero } from "./JellyfinHero";
 import { TRACKER_NAMES } from "./trackerNames";
 import JellyfinSync from "./JellyfinSync";
-import { MoreFooter, PlayTable, PlayedByDay, ProgressCard, Row } from "./JellyfinPlays";
+import { MoreFooter, PlayTable, PlayedByDay, ProgressCard, Row, type ProgressAction } from "./JellyfinPlays";
+import RemoteSheet, { type RemoteTarget } from "./JellyfinRemote";
 import { Sentinel, Shelf, Stat } from "./JellyfinShared";
 import { Shows } from "./JellyfinShows";
 import { when, useRemembered, activityOf, usePagedPlays, OpenTitleContext, titleRefOf, recall, remember, SELECTED_KEY, profileKey } from "./jellyfinUtils";
@@ -115,7 +119,36 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   const [allProgress, setAllProgress] = useRemembered<boolean>("jellyfin.allProgress", false);
   const exportJson = useJellyfinExport();
   const { data, isLoading, isError, isFetching, isPlaceholderData } = useJellyfinConfiguration(userUUID, profile, null, { activeTab });
-  const progress = usePagedPlays(userUUID, profile, "progress", data?.inProgress ?? EMPTY_PLAYS, data?.totals?.progress ?? 0, activeTab);
+  const pagedProgress = usePagedPlays(userUUID, profile, "progress", data?.inProgress ?? EMPTY_PLAYS, data?.totals?.progress ?? 0, activeTab);
+  const clearResume = useJellyfinClearResume();
+  const queryClient = useQueryClient();
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(() => new Set());
+  const progress = useMemo(() => (removed.size ? { ...pagedProgress, rows: pagedProgress.rows.filter((row) => !removed.has(`${row.profileKey}|${row.videoId}`)) } : pagedProgress), [pagedProgress, removed]);
+  const titleAction = useJellyfinTitleAction();
+  const [remote, setRemote] = useState<{ target: RemoteTarget; at: { x: number; y: number } } | null>(null);
+  const closeRemote = useCallback(() => setRemote(null), []);
+  const progressAction = useCallback(async (row: JellyfinPlayRow, action: ProgressAction) => {
+    try {
+      if (action === "clear") await clearResume(userUUID, row.profileKey, row.videoId);
+      else await titleAction(userUUID, row.profileKey || null, action, [row.itemId]);
+      if (action !== "drop") setRemoved((prev) => new Set(prev).add(`${row.profileKey}|${row.videoId}`));
+      toast.success(action === "played" ? `Marked ${row.title} watched` : action === "unplayed" ? `Marked ${row.title} unwatched` : action === "clear" ? `Cleared the resume position of ${row.title}` : `Dropped ${row.title}`);
+      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "dashboard" && q.queryKey[1] === "jellyfin" && q.queryKey[2] !== "title" });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save the change");
+    }
+  }, [clearResume, titleAction, userUUID, queryClient]);
+  const playOn = useCallback((row: JellyfinPlayRow, at: { x: number; y: number }) => setRemote({
+    at,
+    target: {
+      itemId: row.itemId,
+      itemType: row.seriesId ? "Episode" : "Movie",
+      itemName: row.episodeTitle ?? row.title,
+      heading: row.seriesId ? row.episodeTitle || row.episode || row.title : row.title,
+      sub: row.seriesId ? [row.title, row.episode].filter(Boolean).join(" · ") : null,
+      still: row.imageUrl ?? row.backdropUrl,
+    },
+  }), []);
   const played = usePagedPlays(userUUID, profile, "played", data?.recentlyPlayed ?? EMPTY_PLAYS, data?.totals?.played ?? 0, activeTab);
   const localTitles = useMemo<LocalTitle[]>(() => {
     const out = new Map<string, LocalTitle>();
@@ -126,7 +159,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
     }
     return [...out.values()];
   }, [progress.rows, played.rows]);
-  const openTitle = useCallback((ref: JellyfinTitleRef) => navigateDashboard({ tab: "jellyfin", config: userUUID, profile, page: { kind: "title", ref } }), [userUUID, profile]);
+  const openTitle = useCallback((ref: JellyfinTitleRef, season?: number | null) => navigateDashboard({ tab: "jellyfin", config: userUUID, profile, page: season === undefined ? { kind: "title", ref } : { kind: "title", ref, season } }), [userUUID, profile]);
   const openStack = useCallback((stack: DashboardPage[]) => navigateDashboard({ tab: "jellyfin", config: userUUID, profile, page: stack[stack.length - 1] }, { stack }), [userUUID, profile]);
 
   const runExport = async () => {
@@ -170,6 +203,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   return (
     <OpenTitleContext.Provider value={openTitle}>
     <div className="border-t border-white/[0.06]">
+      {remote && <RemoteSheet userUUID={userUUID} profile={profile} profileName={profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
       {route.stack.length > 0 && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} trackers={trackers} stack={route.stack} activeTab={activeTab} onOpen={openStack} />}
       <Hero data={data} profile={profile} onProfile={setProfile} activity={activity} controls={controls} switching={switching} />
       <div ref={sectionsTop} />
@@ -199,11 +233,11 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
                 : view === "table"
                   ? <><PlayTable rows={progress.rows} kind="progress" /><Sentinel key={progress.rows.length} onVisible={progress.loadMore} /><MoreFooter paged={progress} /></>
                   : allProgress
-                    ? <><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{progress.rows.map((row) => <ProgressCard key={`${row.profile}|${row.videoId}`} row={row} />)}</div><Sentinel key={progress.rows.length} onVisible={progress.loadMore} /><MoreFooter paged={progress} /></>
+                    ? <><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{progress.rows.map((row) => <ProgressCard key={`${row.profile}|${row.videoId}`} row={row} onAction={(action) => progressAction(row, action)} onPlayOn={(at) => playOn(row, at)} />)}</div><Sentinel key={progress.rows.length} onVisible={progress.loadMore} /><MoreFooter paged={progress} /></>
                     : (
                       <>
                         <Row onEnd={progress.more && !progress.failed ? progress.loadMore : undefined} loading={progress.loading}>
-                          {progress.rows.map((row) => <div key={`${row.profile}|${row.videoId}`} className="w-64 shrink-0 snap-start sm:w-80"><ProgressCard row={row} /></div>)}
+                          {progress.rows.map((row) => <div key={`${row.profile}|${row.videoId}`} className="w-64 shrink-0 snap-start sm:w-80"><ProgressCard row={row} onAction={(action) => progressAction(row, action)} onPlayOn={(at) => playOn(row, at)} /></div>)}
                         </Row>
                         {progress.failed && <MoreFooter paged={progress} />}
                       </>

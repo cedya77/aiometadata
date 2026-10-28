@@ -832,7 +832,7 @@ function resolveTvdbEpisodeFromAnidbEpisode(anidbId, anidbSeason, anidbEpisode) 
         return null;
       }
 
-      if (nextOffset !== undefined && anidbEpisode >= nextOffset) {
+      if (nextOffset !== undefined && anidbEpisode + currentOffset > nextOffset) {
         // logger.debug(
         //   `AniDB episode ${anidbEpisode} falls beyond range for this entry (next offset ${nextOffset})`
         // );

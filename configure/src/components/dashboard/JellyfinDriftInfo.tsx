@@ -115,6 +115,7 @@ function Detail({ userUUID, laneKey, service, side: shown, item, activeTab, open
                 <div className="flex flex-wrap items-center gap-1">
                   {Object.entries(data.sendsAs.ids).map(([kind, value]) => <Chip key={kind} label={ID_LABELS[kind] ?? kind} text={String(value)} />)}
                   {data.sendsAs.season !== null && data.sendsAs.episode !== null && <span className="pl-1 text-[11px] text-muted-foreground">as S{data.sendsAs.season}E{data.sendsAs.episode}</span>}
+                  {data.sendsAs.season === null && data.sendsAs.episode !== null && <span className="pl-1 text-[11px] text-muted-foreground">as episode {data.sendsAs.episode}</span>}
                 </div>
               ) : (
                 <p className="text-xs text-amber-200/90">{data.sendError ?? `Nothing ${name} can take`}</p>

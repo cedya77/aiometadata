@@ -2910,6 +2910,9 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       const aired = malData.aired?.from || null;
       episodeData = Array.from({ length: Number(malData.episodes) }, (_, i) => ({ mal_id: i + 1, title: null, synopsis: '', aired }));
     }
+    if (stremioType === 'series' && malData.status === 'Finished Airing' && Number(malData.episodes) > 0 && episodeData?.length > Number(malData.episodes)) {
+      episodeData = episodeData.filter((ep) => Number(ep.mal_id) <= Number(malData.episodes));
+    }
 
     // Process episodes while API calls are running
     const premiered = Date.parse(malData.aired?.from || '') <= Date.now();

@@ -129,7 +129,7 @@ export default function RemoteSheet({ userUUID, profile, profileName, target, at
           <div className="flex flex-col items-center gap-2 px-6 pb-5 pt-4 text-center">
             <span className="flex size-12 items-center justify-center rounded-full bg-white/[0.07] ring-1 ring-white/10"><Cast className="size-5 text-muted-foreground" /></span>
             <p className="text-sm font-semibold">Nothing connected</p>
-            <p className="text-xs leading-relaxed text-muted-foreground">Open Pelagica or another Jellyfin app signed in as <span className="font-medium text-foreground">{profileName}</span> and it shows up here.</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">Open a Jellyfin app signed in as <span className="font-medium text-foreground">{profileName}</span> and it shows up here.</p>
           </div>
         ) : (
           devices.map((device) => {

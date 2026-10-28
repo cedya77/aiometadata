@@ -1,4 +1,5 @@
-import React, { memo, useEffect, useRef, useState } from "react";
+import React, { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { sizedArt } from "./art";
 import { ChevronDown } from "lucide-react";
 import { duration } from "./jellyfinUtils";
@@ -89,3 +90,44 @@ export const Ambient = memo(({ src }: { src: string | null }) => {
   );
 });
 Ambient.displayName = "Ambient";
+
+export type MenuItem = { icon: React.ReactNode; label: string; onSelect: () => void; divider?: boolean };
+
+export function ActionMenu({ at, items, header, onClose }: { at: { x: number; y: number }; items: MenuItem[]; header?: React.ReactNode; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState(at);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    setPlace({ x: Math.max(8, Math.min(at.x, window.innerWidth - width - 8)), y: at.y + height + 8 > window.innerHeight ? Math.max(8, at.y - height) : at.y });
+  }, [at]);
+  useEffect(() => {
+    const away = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } };
+    const moved = (event: Event) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", key, true);
+    window.addEventListener("scroll", moved, true);
+    window.addEventListener("resize", onClose);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", key, true);
+      window.removeEventListener("scroll", moved, true);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [onClose]);
+  const item = "flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm hover:bg-white/10 [&>svg]:shrink-0";
+  return createPortal(
+    <div ref={ref} onClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()} style={{ left: place.x, top: place.y }} className="fixed z-[120] min-w-56 max-w-[calc(100vw-1rem)] rounded-xl bg-popover/95 p-1 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl animate-fade-in">
+      {header && <div className="border-b border-white/10 px-2 pt-1.5 pb-2.5 mb-1">{header}</div>}
+      {items.map((entry) => (
+        <React.Fragment key={entry.label}>
+          {entry.divider && <div className="mx-2 my-1 h-px bg-white/10" />}
+          <button type="button" className={item} onClick={() => { onClose(); entry.onSelect(); }}>{entry.icon} {entry.label}</button>
+        </React.Fragment>
+      ))}
+    </div>,
+    document.body,
+  );
+}

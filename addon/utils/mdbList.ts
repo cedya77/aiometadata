@@ -1057,7 +1057,7 @@ function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
 /**
  * Wrapper for proxy endpoints - makes a rate-limited GET request to MDBList
  */
-async function fetchTvdbMap(tmdbId: number, apiKey: string): Promise<{ episodes: any[] }> {
+async function fetchTvdbMap(tmdbId: number, apiKey: string): Promise<{ episodes: any[]; tvdbDefault?: boolean }> {
   const { envInt } = require('./envNumber');
   const { classifyResultAllowEmpty } = require('../lib/getCache');
   return cacheWrapGlobal(`mdblist:tvdb-map:${tmdbId}`, async () => {
@@ -1067,7 +1067,7 @@ async function fetchTvdbMap(tmdbId: number, apiKey: string): Promise<{ episodes:
         apiKey,
         `MDBList tvdb-map ${tmdbId}`
       );
-      return { episodes: Array.isArray(response?.data?.episodes) ? response.data.episodes : [] };
+      return { episodes: Array.isArray(response?.data?.episodes) ? response.data.episodes : [], tvdbDefault: response?.data?.tvdb_default === true };
     } catch (error: any) {
       if (error?.response?.status === 404) return { episodes: [] };
       throw error;
@@ -1075,26 +1075,47 @@ async function fetchTvdbMap(tmdbId: number, apiKey: string): Promise<{ episodes:
   }, envInt('MDBLIST_TVDB_MAP_TTL', 7 * 24 * 60 * 60, 60), { upstream: true, resultClassifier: classifyResultAllowEmpty });
 }
 
+interface TvdbMapEpisode {
+  season: number;
+  episode: number;
+  tmdbSeason: number;
+  tmdbEpisode: number;
+  showTmdb?: number;
+}
+
+async function mdblistTvdbEpisodes(tmdbId: number, apiKey: string): Promise<{ tvdbDefault: boolean; episodes: TvdbMapEpisode[] } | null> {
+  const map = await fetchTvdbMap(tmdbId, apiKey).catch(() => ({ episodes: [] as any[], tvdbDefault: false }));
+  if (!map.episodes.length || map.episodes.some((entry: any) => Number(entry?.season) >= 1900)) return null;
+  const episodes: TvdbMapEpisode[] = map.episodes
+    .map((entry: any) => {
+      const other = Number(entry?.show_tmdb);
+      return {
+        season: Number(entry?.season),
+        episode: Number(entry?.episode),
+        tmdbSeason: Number(entry?.tmdb_season),
+        tmdbEpisode: Number(entry?.tmdb_episode),
+        ...(Number.isInteger(other) && other > 0 && other !== tmdbId ? { showTmdb: other } : {}),
+      };
+    })
+    .filter((entry: TvdbMapEpisode) => [entry.season, entry.episode, entry.tmdbSeason, entry.tmdbEpisode].every(Number.isInteger));
+  return episodes.length ? { tvdbDefault: map.tvdbDefault === true, episodes } : null;
+}
+
 async function mdblistTvdbOrder(tmdbId: number, apiKey: string): Promise<Map<string, Array<{ season: number; episode: number }>> | null> {
-  const { episodes } = await fetchTvdbMap(tmdbId, apiKey).catch(() => ({ episodes: [] as any[] }));
-  if (!episodes.length || episodes.some((entry: any) => Number(entry?.season) >= 1900)) return null;
+  const map = await mdblistTvdbEpisodes(tmdbId, apiKey);
   const order = new Map<string, Array<{ season: number; episode: number }>>();
-  for (const entry of episodes) {
-    const numbers = [entry?.tmdb_season, entry?.tmdb_episode, entry?.season, entry?.episode].map(Number);
-    if (!numbers.every(Number.isFinite)) continue;
-    const key = `${numbers[0]}:${numbers[1]}`;
-    order.set(key, [...(order.get(key) ?? []), { season: numbers[2], episode: numbers[3] }]);
+  for (const entry of map?.episodes ?? []) {
+    if (entry.showTmdb) continue;
+    const key = `${entry.tmdbSeason}:${entry.tmdbEpisode}`;
+    order.set(key, [...(order.get(key) ?? []), { season: entry.season, episode: entry.episode }]);
   }
   return order.size ? order : null;
 }
 
-async function tmdbEpisodeFromTvdb(tmdbId: number, season: number, episode: number, apiKey: string): Promise<{ season: number; episode: number } | null> {
-  const { episodes } = await fetchTvdbMap(tmdbId, apiKey);
-  if (!episodes.length || episodes.some((entry: any) => Number(entry?.season) >= 1900)) return null;
-  const hit = episodes.find((entry: any) => Number(entry?.season) === season && Number(entry?.episode) === episode);
-  return hit && Number.isFinite(Number(hit.tmdb_season)) && Number.isFinite(Number(hit.tmdb_episode))
-    ? { season: Number(hit.tmdb_season), episode: Number(hit.tmdb_episode) }
-    : null;
+async function tmdbEpisodeFromTvdb(tmdbId: number, season: number, episode: number, apiKey: string): Promise<{ season: number; episode: number; showTmdb?: number } | null> {
+  const map = await mdblistTvdbEpisodes(tmdbId, apiKey);
+  const hit = map?.episodes.find((entry) => entry.season === season && entry.episode === episode);
+  return hit ? { season: hit.tmdbSeason, episode: hit.tmdbEpisode, ...(hit.showTmdb ? { showTmdb: hit.showTmdb } : {}) } : null;
 }
 
 async function makeRateLimitedMDBListRequest(url: string, apiKey: string, context: string = 'MDBList Proxy'): Promise<any> {
@@ -1792,6 +1813,7 @@ export {
   makeRateLimitedMDBListRequest,
   tmdbEpisodeFromTvdb,
   mdblistTvdbOrder,
+  mdblistTvdbEpisodes,
   mdblistCallsLeft,
   makeRateLimitedMDBListPost,
   testMdblistKey,

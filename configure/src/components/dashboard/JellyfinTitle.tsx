@@ -6,6 +6,7 @@ import { ArrowLeft, Bookmark, BookmarkCheck, CalendarPlus, Cast, Check, CheckChe
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinTitle, useJellyfinTitleAction, useJellyfinWatchDate, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitlePerson, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
+import { ActionMenu } from "./JellyfinShared";
 import JellyfinPersonView, { CastRow } from "./JellyfinPerson";
 import RemoteSheet, { type RemoteTarget } from "./JellyfinRemote";
 import WatchDateSheet, { type WatchDateAnchor, type WatchDateTarget } from "./JellyfinWatchDate";
@@ -83,41 +84,6 @@ function RatePicker({ value, onPick, onClose }: { value: number | null; onPick: 
         </span>
       </div>
     </div>
-  );
-}
-
-type MenuItem = { icon: React.ReactNode; label: string; onSelect: () => void };
-
-function ActionMenu({ at, items, onClose }: { at: { x: number; y: number }; items: MenuItem[]; onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [place, setPlace] = useState(at);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    setPlace({ x: Math.max(8, Math.min(at.x, window.innerWidth - width - 8)), y: at.y + height + 8 > window.innerHeight ? Math.max(8, at.y - height) : at.y });
-  }, [at]);
-  useEffect(() => {
-    const away = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
-    const key = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } };
-    const moved = (event: Event) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
-    document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", key, true);
-    window.addEventListener("scroll", moved, true);
-    window.addEventListener("resize", onClose);
-    return () => {
-      document.removeEventListener("mousedown", away);
-      document.removeEventListener("keydown", key, true);
-      window.removeEventListener("scroll", moved, true);
-      window.removeEventListener("resize", onClose);
-    };
-  }, [onClose]);
-  const item = "flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm hover:bg-white/10 [&>svg]:shrink-0";
-  return createPortal(
-    <div ref={ref} onClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()} style={{ left: place.x, top: place.y }} className="fixed z-[120] min-w-56 max-w-[calc(100vw-1rem)] rounded-xl bg-popover/95 p-1 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl animate-fade-in">
-      {items.map((entry) => <button key={entry.label} type="button" className={item} onClick={() => { onClose(); entry.onSelect(); }}>{entry.icon} {entry.label}</button>)}
-    </div>,
-    document.body,
   );
 }
 
@@ -456,12 +422,13 @@ function Details({ title }: { title: JellyfinTitle }) {
   );
 }
 
-function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeTab, shown, onBack, onCloseAll, onPerson }: {
+function TitleView({ userUUID, profile, profileName, trackers, titleRef, initialSeason, activeTab, shown, onBack, onCloseAll, onPerson }: {
   userUUID: string;
   profile: string | null;
   profileName: string;
   trackers: string[];
   titleRef: JellyfinTitleRef;
+  initialSeason?: number | null;
   activeTab: DashboardTab;
   shown: boolean;
   onBack: () => void;
@@ -472,7 +439,7 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, activeT
   const act = useJellyfinTitleAction();
   const moveDate = useJellyfinWatchDate();
   const { data, isLoading, isError, isFetching, refetch } = useJellyfinTitle(userUUID, profile, titleRef, { activeTab });
-  const [season, setSeason] = useState<number | null | undefined>(undefined);
+  const [season, setSeason] = useState<number | null | undefined>(initialSeason);
   const [busy, setBusy] = useState<string | null>(null);
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [seasonMenu, setSeasonMenu] = useState<{ season: SeasonItem; at: { x: number; y: number } } | null>(null);
@@ -866,7 +833,7 @@ export default function JellyfinTitlePage({ userUUID, profile, profileName, trac
   return (
     <>
       {stack.map((entry, index) => entry.kind === "title" ? (
-        <TitleView key={index} userUUID={userUUID} profile={profile} profileName={profileName} trackers={trackers} titleRef={entry.ref} activeTab={activeTab} shown={index === stack.length - 1} onBack={back} onCloseAll={closeAll} onPerson={openPerson} />
+        <TitleView key={index} userUUID={userUUID} profile={profile} profileName={profileName} trackers={trackers} titleRef={entry.ref} initialSeason={entry.season} activeTab={activeTab} shown={index === stack.length - 1} onBack={back} onCloseAll={closeAll} onPerson={openPerson} />
       ) : (
         <JellyfinPersonView key={index} userUUID={userUUID} profile={profile} profileName={profileName} person={entry.person} activeTab={activeTab} shown={index === stack.length - 1} onBack={back} onCloseAll={closeAll} onOpenTitle={openTitle} />
       ))}

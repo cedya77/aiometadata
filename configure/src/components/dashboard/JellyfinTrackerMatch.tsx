@@ -5,10 +5,10 @@ import { Check, ChevronDown, Film, Loader2, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useJellyfinSyncActions, useJellyfinTitle, type DashboardTab, type JellyfinMatchCandidate, type JellyfinMatchSeason, type JellyfinTrackerMatch } from "@/hooks/useDashboardQueries";
+import { useJellyfinSyncActions, useJellyfinTitle, type DashboardTab, type JellyfinMatchCandidate, type JellyfinMatchDetail, type JellyfinMatchSeason, type JellyfinTrackerMatch } from "@/hooks/useDashboardQueries";
 import { Eyebrow } from "./TrackerParts";
 import { nameOf } from "./trackerNames";
-import { GUESSED, LOOK, keyOf, norm, planSeason, strayEpisodes, wordsOf, type OurEpisode, type Ref, type Row, type SeasonPlan, type Status, type TheirEpisode } from "./trackerMatchPlan";
+import { GUESSED, LOOK, heldIn, keyOf, norm, planSeason, seasonLink, seasonName, sentKey, strayEpisodes, wordsOf, type OurEpisode, type Ref, type Row, type SeasonPlan, type Status, type TheirEpisode } from "./trackerMatchPlan";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
@@ -30,6 +30,21 @@ export function Poster({ src }: { src: string | null }) {
 }
 
 const KIND_LABEL: Record<string, string> = { tv: "Show", anime: "Anime", movie: "Film" };
+
+type Order = "tmdb" | "tvdb";
+
+const sentAs = (target: TheirEpisode) => (sentKey(target) === keyOf(target.season, target.number) ? null : target.sends.season === 0 ? `Special ${target.sends.episode}` : `S${target.sends.season}E${target.sends.episode}`);
+
+function viewOf(seasons: JellyfinMatchSeason[]) {
+  return {
+    seasons,
+    numbers: seasons.map((s) => s.number),
+    theirs: seasons.flatMap((s) => s.episodes.map((e): TheirEpisode => {
+      const normed = norm(e.title);
+      return { season: s.number, number: e.number, title: e.title, airedAt: e.airedAt, sends: e.sends ?? { season: s.number, episode: e.number }, norm: normed, words: wordsOf(normed) };
+    })),
+  };
+}
 
 const MARK: Record<Status, { label: string; tone: string }> = {
   same: { label: "✓", tone: "bg-emerald-400/10 text-emerald-300" },
@@ -61,7 +76,8 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
   const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState<JellyfinMatchCandidate | null>(subject.existing?.target ?? null);
   const [changing, setChanging] = useState(!subject.existing);
-  const [detail, setDetail] = useState<{ ids: Record<string, string | number>; seasons: JellyfinMatchSeason[] } | null>(null);
+  const [detail, setDetail] = useState<JellyfinMatchDetail | null>(null);
+  const [order, setOrder] = useState<Order | null>(null);
   const [reading, setReading] = useState(false);
   const [chosen, setChosen] = useState<Record<string, Ref | null>>({});
   const [prefer, setPrefer] = useState<Record<number, number>>({});
@@ -87,21 +103,47 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
     return new Map([...out.entries()].sort((a, b) => a[0] - b[0]));
   }, [title, subject.seasons]);
 
-  const theirs = useMemo<TheirEpisode[]>(() => (detail?.seasons ?? []).flatMap((s) => s.episodes.map((e) => {
-    const normed = norm(e.title);
-    return { season: s.number, number: e.number, title: e.title, airedAt: e.airedAt, norm: normed, words: wordsOf(normed) };
-  })), [detail]);
-  const theirNumbers = useMemo(() => (detail?.seasons ?? []).map((s) => s.number), [detail]);
+  const views = useMemo(() => ({
+    tmdb: viewOf(detail?.seasons ?? []),
+    tvdb: detail?.tvdbSeasons?.length ? viewOf(detail.tvdbSeasons) : null,
+  }), [detail]);
 
   const sameTarget = Boolean(subject.existing && picked && JSON.stringify(subject.existing.target.ids) === JSON.stringify(picked.ids));
   const held = sameTarget ? subject.existing?.episodes ?? null : null;
-  const plans = useMemo(() => {
-    if (!series || !detail?.seasons.length) return [] as SeasonPlan[];
+  const links = useMemo(() => (sameTarget && !held ? subject.existing?.seasons ?? {} : {}), [sameTarget, held, subject.existing]);
+  const heldBy = useMemo(() => ({
+    tmdb: held,
+    tvdb: held && views.tvdb ? heldIn(views.tvdb.theirs, held) : null,
+  }), [held, views]);
+
+  const auto = useMemo<Order>(() => {
+    if (!series || !views.tvdb) return "tmdb";
     const now = Date.now();
-    const links = sameTarget && !held ? subject.existing?.seasons ?? {} : {};
+    const score = (which: Order) => {
+      const view = which === "tvdb" ? views.tvdb ?? views.tmdb : views.tmdb;
+      const rows = [...ours.entries()].flatMap(([season, episodes]) =>
+        planSeason(season, episodes, view.theirs, view.numbers, which === "tmdb" ? links[String(season)]?.season : undefined, {}, heldBy[which], now).rows);
+      return {
+        missing: rows.filter((r) => r.status === "missing").length,
+        look: rows.filter((r) => LOOK.has(r.status)).length,
+        aligned: rows.filter((r) => r.target && r.key === keyOf(r.target.season, r.target.number)).length,
+      };
+    };
+    const tvdb = score("tvdb");
+    const tmdb = score("tmdb");
+    const gap = tvdb.missing - tmdb.missing || tvdb.look - tmdb.look || tmdb.aligned - tvdb.aligned;
+    return gap < 0 || (gap === 0 && detail?.tvdbDefault) ? "tvdb" : "tmdb";
+  }, [series, views, ours, links, heldBy, detail]);
+  const shownOrder: Order = views.tvdb ? order ?? auto : "tmdb";
+  const view = shownOrder === "tvdb" && views.tvdb ? views.tvdb : views.tmdb;
+  const theirs = view.theirs;
+
+  const plans = useMemo(() => {
+    if (!series || !view.seasons.length) return [] as SeasonPlan[];
+    const now = Date.now();
     return [...ours.entries()].map(([season, episodes]) =>
-      planSeason(season, episodes, theirs, theirNumbers, prefer[season] ?? links[String(season)]?.season, chosen, held, now));
-  }, [series, detail, ours, theirs, theirNumbers, prefer, chosen, held, sameTarget, subject.existing]);
+      planSeason(season, episodes, view.theirs, view.numbers, prefer[season] ?? (shownOrder === "tmdb" ? links[String(season)]?.season : undefined), chosen, heldBy[shownOrder], now));
+  }, [series, view, ours, prefer, chosen, links, heldBy, shownOrder]);
 
   const plan = plans.find((p) => p.season === shown) ?? plans[0] ?? null;
   const strays = useMemo(() => strayEpisodes(plans, theirs, Date.now()), [plans, theirs]);
@@ -132,6 +174,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
     let stale = false;
     setReading(true);
     setDetail(null);
+    setOrder(null);
     setChosen({});
     setPrefer({});
     setOpenRow(null);
@@ -177,6 +220,15 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
     setOpenRow(null);
   };
 
+  const switchOrder = (next: Order) => {
+    if (next === shownOrder) return;
+    setOrder(next);
+    setChosen({});
+    setPrefer({});
+    setOpenRow(null);
+    setPickerSeason(null);
+  };
+
   const linkSeason = (season: number, theirSeason: number) => {
     setPrefer({ ...prefer, [season]: theirSeason });
     setChosen(Object.fromEntries(Object.entries(chosen).filter(([key]) => !key.startsWith(`${season}:`))));
@@ -190,13 +242,11 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
       const seasons: Record<string, { season: number; offset: number }> = {};
       const episodes: Record<string, Ref | null> = {};
       for (const p of plans) {
-        let offset = 0;
         for (const row of p.rows) {
           if (row.status === "later") continue;
-          episodes[row.key] = row.target ? { season: row.target.season, episode: row.target.number } : null;
-          if (row.target && row.target.season === p.theirs) offset = row.target.number - row.ours.number;
+          episodes[row.key] = row.target ? { ...row.target.sends } : null;
         }
-        seasons[String(p.season)] = { season: p.theirs, offset };
+        seasons[String(p.season)] = seasonLink(p, theirs);
       }
       const { sent } = await actions.matchSave(userUUID, {
         key: laneKey,
@@ -228,7 +278,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
     later: plan.rows.filter((r) => r.status === "later").length,
   } : null;
   const visible = plan ? plan.rows.filter((r) => !onlyLook || LOOK.has(r.status) || r.key === openRow) : [];
-  const theirCount = (season: number) => detail?.seasons.find((s) => s.number === season)?.episodes.length ?? 0;
+  const theirCount = (season: number) => view.seasons.find((s) => s.number === season)?.episodes.length ?? 0;
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -246,7 +296,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
               <Poster src={picked.posterUrl} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold">{picked.title}{picked.year ? <span className="font-normal text-muted-foreground"> ({picked.year})</span> : null}</span>
-                <span className="block text-xs text-muted-foreground">{[KIND_LABEL[picked.kind] ?? picked.kind, detail?.seasons.length ? `${detail.seasons.length} ${detail.seasons.length === 1 ? "season" : "seasons"}` : null, theirs.length ? `${theirs.length} episodes` : null].filter(Boolean).join(" · ")}</span>
+                <span className="block text-xs text-muted-foreground">{[KIND_LABEL[picked.kind] ?? picked.kind, view.seasons.length ? `${view.seasons.length} ${view.seasons.length === 1 ? "season" : "seasons"}` : null, theirs.length ? `${theirs.length} episodes` : null].filter(Boolean).join(" · ")}</span>
               </span>
               <button type="button" onClick={() => setChanging(true)} className="h-8 shrink-0 rounded-full px-3.5 text-xs font-medium ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/10">Change</button>
             </div>
@@ -286,12 +336,26 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
           {picked && series && !changing && (
             reading || titleLoading ? (
               <Skeleton className="h-64 rounded-xl" />
-            ) : !detail?.seasons.length ? (
+            ) : !view.seasons.length ? (
               <p className="text-xs text-muted-foreground">{name} lists no episodes for {picked.title}, so episodes keep their numbers.</p>
             ) : plan && (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Eyebrow>Seasons</Eyebrow>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Eyebrow>Seasons</Eyebrow>
+                    {views.tvdb && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">{name}'s order</span>
+                        <div className="flex gap-1 rounded-full bg-white/[0.05] p-0.5" role="group" aria-label={`${name} episode order`}>
+                          {(["tvdb", "tmdb"] as const).map((which) => (
+                            <button key={which} type="button" aria-pressed={shownOrder === which} onClick={() => switchOrder(which)} className={cx("h-7 rounded-full px-3 text-xs", shownOrder === which ? "bg-white/10 font-medium text-foreground" : "text-muted-foreground")}>
+                              {which === "tvdb" ? "TVDB" : "TMDB"}{which === auto && order !== null && order !== auto ? " · lines up better" : ""}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {plans.map((p) => {
                       const { look } = counts(p);
@@ -324,7 +388,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                       aria-label={`${name} season for season ${plan.season}`}
                       className="h-8 rounded-lg border border-white/[0.12] bg-background px-2 text-xs"
                     >
-                      {detail.seasons.map((s) => <option key={s.number} value={s.number}>Season {s.number} ({s.episodes.length} episodes)</option>)}
+                      {view.seasons.map((s) => <option key={s.number} value={s.number}>{seasonName(s.number)} ({s.episodes.length} episodes)</option>)}
                     </select>
                   </div>
                   <div className="flex gap-1 rounded-full bg-white/[0.05] p-0.5" role="group" aria-label="Rows shown">
@@ -336,7 +400,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                 {tally && (
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     {tally.same > 0 && <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-emerald-400" />{tally.same} line up</span>}
-                    {tally.parts > 0 && <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-blue-400" />{tally.parts} parts of {new Set(plan.rows.filter((r) => r.status === "part").map((r) => r.target && keyOf(r.target.season, r.target.number))).size} {name} episodes, each sent once</span>}
+                    {tally.parts > 0 && <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-blue-400" />{tally.parts} parts of {new Set(plan.rows.filter((r) => r.status === "part").map((r) => r.target && sentKey(r.target))).size} {name} episodes, each sent once</span>}
                     {tally.look > 0 && <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-400" />{tally.look} to check</span>}
                     {tally.none > 0 && <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-white/30" />{tally.none} not sent</span>}
                     {tally.later > 0 && <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-white/20" />{tally.later} not aired yet</span>}
@@ -355,6 +419,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                     const open = openRow === row.key;
                     const moving = open ? later(row).length : 0;
                     const listed = open ? theirs.filter((t) => t.season === (pickerSeason ?? plan.theirs)) : [];
+                    const sent = row.target ? sentAs(row.target) : null;
                     return (
                       <div key={row.key} className={cx("border-t border-white/[0.05]", look && "bg-amber-400/[0.04]")}>
                         <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_28px] items-center gap-x-2.5 gap-y-1.5 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)] sm:py-1">
@@ -369,10 +434,16 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                               onClick={() => openPicker(row)}
                               aria-expanded={open}
                               aria-label={`${name} episode for E${row.ours.number}`}
-                              className={cx("flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 text-left text-[13px] ring-1 ring-inset transition-colors", look ? "ring-amber-300/50" : "ring-white/[0.08] hover:ring-white/20", open && "bg-white/[0.06]")}
+                              className={cx("flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1 text-left text-[13px] ring-1 ring-inset transition-colors", look ? "ring-amber-300/50" : "ring-white/[0.08] hover:ring-white/20", open && "bg-white/[0.06]")}
                             >
                               {row.target
-                                ? <><span className="shrink-0 tabular-nums text-muted-foreground">{row.target.season !== plan.theirs ? `S${row.target.season} ` : ""}E{row.target.number}</span><span className="truncate">{row.target.title ?? ""}</span></>
+                                ? <>
+                                    <span className="shrink-0 self-start tabular-nums leading-7 text-muted-foreground">{row.target.season !== plan.theirs ? `S${row.target.season} ` : ""}E{row.target.number}</span>
+                                    <span className="min-w-0">
+                                      <span className="block truncate leading-7">{row.target.title ?? ""}</span>
+                                      {sent && <span className="-mt-1 block text-[11px] tabular-nums text-muted-foreground">sent as TMDB {sent}</span>}
+                                    </span>
+                                  </>
                                 : <span className={cx("truncate", row.status === "missing" ? "text-amber-200" : "text-muted-foreground")}>{row.status === "none" ? "Not sent" : row.status === "later" ? "Follows the season once it airs" : "Pick an episode"}</span>}
                               <ChevronDown className="ml-auto size-3.5 shrink-0 text-muted-foreground" />
                             </button>
@@ -385,19 +456,20 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                         </div>
                         {open && (
                           <div className="mx-3 mb-3 space-y-1 rounded-xl bg-background p-1.5 ring-1 ring-inset ring-white/[0.12] sm:ml-[calc(50%+20px)]">
-                            {detail.seasons.length > 1 && (
+                            {view.seasons.length > 1 && (
                               <select
                                 value={pickerSeason ?? plan.theirs}
                                 onChange={(event) => setPickerSeason(Number(event.target.value))}
                                 aria-label={`${name} season to pick from`}
                                 className="h-8 w-full rounded-lg border border-white/[0.12] bg-background px-2 text-xs"
                               >
-                                {detail.seasons.map((s) => <option key={s.number} value={s.number}>Season {s.number}</option>)}
+                                {view.seasons.map((s) => <option key={s.number} value={s.number}>{seasonName(s.number)}</option>)}
                               </select>
                             )}
                             <div ref={listRef} className="relative max-h-56 overflow-y-auto">
                               {listed.map((t) => {
                                 const current = row.target === t;
+                                const as = sentAs(t);
                                 return (
                                   <button
                                     key={keyOf(t.season, t.number)}
@@ -408,7 +480,8 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                                   >
                                     <span className="w-8 shrink-0 tabular-nums text-muted-foreground">E{t.number}</span>
                                     <span className="truncate">{t.title ?? ""}</span>
-                                    {current && <Check className="ml-auto size-3.5 shrink-0 text-blue-300" />}
+                                    {as && <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">sent as TMDB {as}</span>}
+                                    {current && <Check className={cx("size-3.5 shrink-0 text-blue-300", !as && "ml-auto")} />}
                                   </button>
                                 );
                               })}
@@ -430,10 +503,10 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
 
                 {stray.length > 0 && (
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    Nothing here points at {stray.slice(0, 4).map((t) => `E${t.number}${t.title ? ` ${t.title}` : ""}`).join(", ")}{stray.length > 4 ? ` and ${stray.length - 4} more` : ""} in {name}'s season {plan.theirs}, so {stray.length === 1 ? "it isn't" : "they aren't"} marked from here.
+                    Nothing here points at {stray.slice(0, 4).map((t) => `E${t.number}${t.title ? ` ${t.title}` : ""}`).join(", ")}{stray.length > 4 ? ` and ${stray.length - 4} more` : ""} in {name}'s {plan.theirs === 0 ? "specials" : `season ${plan.theirs}`}, so {stray.length === 1 ? "it isn't" : "they aren't"} marked from here.
                   </p>
                 )}
-                <p className="text-xs leading-relaxed text-muted-foreground">Episodes are matched by title. When {name} has one episode for two parts here, part 1 sends it and part 2 sends nothing.</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">Episodes are matched by title. When {name} has one episode for two parts here, part 1 sends it and part 2 sends nothing.{shownOrder === "tvdb" ? ` In TVDB order, each episode is still sent as the TMDB episode ${name} links it to.` : ""}</p>
               </div>
             )
           )}
