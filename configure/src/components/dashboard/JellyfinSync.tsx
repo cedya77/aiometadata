@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowDownToLine, ArrowLeftRight, CheckCircle2, ChevronRight, Film, History, LayoutList, Link2, Loader2, MoreHorizontal, Network, Pencil, RefreshCw, RotateCcw, Send, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, CheckCircle2, ChevronRight, Film, History, LayoutList, Link2, Loader2, Merge, MoreHorizontal, Network, Pencil, RefreshCw, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinSync, useJellyfinSyncActions, useJellyfinSyncDrift, useJellyfinTrackerMatches, type DashboardTab, type JellyfinDriftItem, type JellyfinDriftLane, type JellyfinSyncFeedItem, type JellyfinSyncLane, type JellyfinSyncRow, type JellyfinSyncWrite, type JellyfinTrackerMatch } from "@/hooks/useDashboardQueries";
@@ -190,7 +190,17 @@ function datesOf(item: JellyfinDriftItem): string {
   return first === last ? first : `${first} to ${last}`;
 }
 
-function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, service, onMatch, info, note }: {
+type RowPhase = "same" | "push" | "pull" | "leaving";
+
+function theirsOf(item: JellyfinDriftItem): string | null {
+  const dates = item.views.filter((v) => v.theirs && v.video).map((v) => v.theirs as number);
+  if (!dates.length) return null;
+  const first = shortDay(Math.min(...dates));
+  const last = shortDay(Math.max(...dates));
+  return first === last ? first : `${first} to ${last}`;
+}
+
+function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, service, onMatch, onSame, phaseOf, info, note }: {
   title: string;
   items: JellyfinDriftItem[];
   all: string;
@@ -202,6 +212,8 @@ function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, se
   onGo: (items: string[] | null) => void;
   service?: string;
   onMatch?: (item: JellyfinDriftItem) => void;
+  onSame?: (item: JellyfinDriftItem) => void;
+  phaseOf?: (item: JellyfinDriftItem) => RowPhase | undefined;
   info?: { userUUID: string; laneKey: string; side: "behind" | "ahead" | "again"; activeTab: DashboardTab };
   note?: string;
 }) {
@@ -221,15 +233,27 @@ function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, se
       </div>
       {note && <p className="text-xs leading-relaxed text-muted-foreground">{note}</p>}
       <div className="space-y-1">
-        {items.map((item) => (
-          <div key={item.id} className="group flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-white/[0.04]">
-            {withInfo(item, <button type="button" disabled={!openTitle} onClick={() => openTitle?.(item.open)} aria-label={`Open ${item.title ?? "this title"}`} className="flex min-w-0 flex-1 items-center gap-3.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
+        {items.map((item) => {
+          const phase = phaseOf?.(item);
+          const working = phase !== undefined && phase !== "leaving";
+          const svc = nameOf(service ?? "");
+          return (
+          <div key={item.id} className={cx("grid transition-[grid-template-rows,opacity] duration-[450ms] ease-out", phase === "leaving" ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100")}>
+          <div className="min-h-0 overflow-hidden">
+          <div aria-busy={working || undefined} className={cx("group flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-white/[0.04]", working && "animate-shimmer")}>
+            {withInfo(item, <button type="button" disabled={!openTitle} onClick={() => openTitle?.(item.open)} aria-label={`Open ${item.title ?? "this title"}`} className={cx("flex min-w-0 flex-1 items-center gap-3.5 rounded-lg text-left transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60", working && "opacity-60")}>
               <span className="overflow-hidden rounded-lg"><Still src={item.imageUrl} className="w-20 rounded-lg transition-transform duration-500 group-hover:scale-105 sm:w-28" /></span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold underline-offset-4 group-hover:underline">{item.title ?? "Unknown title"}</span>
                 <span className="block text-xs text-muted-foreground">{spanOf(item)}<span className="max-sm:block"><span className="max-sm:hidden"> · </span>{where} {datesOf(item)}</span></span>
                 {onMatch && item.unmatched && !item.matchedTo && <span className="mt-0.5 block text-xs text-amber-200/90">{nameOf(service ?? "")} can't find this title</span>}
                 {onMatch && item.matchedTo && <span className="mt-0.5 block truncate text-xs text-muted-foreground">Matched to {item.matchedTo}</span>}
+                {onSame && theirsOf(item) && <span className="mt-0.5 block truncate text-xs text-muted-foreground">{nameOf(service ?? "")} has it from {theirsOf(item)}</span>}
+                {working && (
+                  <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-blue-200/90">
+                    <Loader2 className="size-3 shrink-0 animate-spin" /> {phase === "same" ? `Counting it as the viewing ${svc} has` : phase === "push" ? `Sending to ${svc}` : `Bringing it in from ${svc}`}
+                  </span>
+                )}
               </span>
             </button>)}
             {onMatch && (
@@ -237,11 +261,19 @@ function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, se
                 <Link2 className="size-3.5" /> <span className="hidden sm:inline">{item.matchedTo ? "Edit match" : "Match"}</span>
               </button>
             )}
-            {!note && <button type="button" onClick={() => onGo([item.id])} disabled={busy !== null} aria-label={`${one}: ${item.title ?? "this title"}`} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.12] px-3 text-xs font-medium text-foreground/90 transition-colors hover:bg-white/10 disabled:opacity-50">
+            {onSame && theirsOf(item) && (
+              <button type="button" onClick={() => onSame(item)} disabled={busy !== null || phase !== undefined} title={`Not a rewatch: count it as the viewing ${nameOf(service ?? "")} has from ${theirsOf(item)}`} aria-label={`Same viewing as on ${nameOf(service ?? "")}: ${item.title ?? "this title"}`} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.12] px-3 text-xs font-medium text-foreground/90 transition-colors hover:bg-white/10 disabled:opacity-50">
+                {busy === `same:${item.id}` ? <Loader2 className="size-3.5 animate-spin" /> : <Merge className="size-3.5" />} <span className="hidden sm:inline">Same viewing</span>
+              </button>
+            )}
+            {!note && <button type="button" onClick={() => onGo([item.id])} disabled={busy !== null || phase !== undefined} aria-label={`${one}: ${item.title ?? "this title"}`} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.12] px-3 text-xs font-medium text-foreground/90 transition-colors hover:bg-white/10 disabled:opacity-50">
               {busy === `${prefix}${item.id}` ? <Loader2 className="size-3.5 animate-spin" /> : icon} <span className="hidden sm:inline">{one}</span>
             </button>}
           </div>
-        ))}
+          </div>
+          </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -267,29 +299,72 @@ function Waiting({ write, now, onOutbox }: { write: JellyfinSyncWrite; now: numb
   );
 }
 
+function listed(numbers: number[]): string {
+  return numbers.length > 1 ? `${numbers.slice(0, -1).join(", ")} and ${numbers[numbers.length - 1]}` : String(numbers[0]);
+}
+
+function seasonWord(season: number, plural: boolean): string {
+  return season === 0 ? (plural ? "specials" : "special") : `season ${season} ${plural ? "episodes" : "episode"}`;
+}
+
+function matchSummary(match: JellyfinTrackerMatch): string {
+  const episodes = Object.entries(match.episodes ?? {}).map(([ours, theirs]) => ({ season: Number(ours.split(":")[0]), episode: Number(ours.split(":")[1]), theirs }));
+  const ours = [...new Set([...Object.keys(match.seasons).map(Number), ...episodes.map((e) => e.season)])].sort((a, b) => a - b);
+  const single = ours.length === 1;
+  const pieces: string[] = [];
+  let unchanged = 0;
+  for (const season of ours) {
+    const own = episodes.filter((e) => e.season === season);
+    const counts = new Map<string, number>();
+    for (const e of own) if (e.theirs) counts.set(`${e.theirs.season}:${e.theirs.episode - e.episode}`, (counts.get(`${e.theirs.season}:${e.theirs.episode - e.episode}`) ?? 0) + 1);
+    const link = match.seasons[String(season)];
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const [target, shift] = top ? top.split(":").map(Number) : [link?.season ?? season, link?.offset ?? 0];
+    const odd = own.filter((e) => !e.theirs || e.theirs.season !== target || e.theirs.episode - e.episode !== shift);
+    const prefix = single ? "" : `season ${season} `;
+    const moved = target !== season || shift !== 0;
+    if (moved) pieces.push(`${single ? "" : `season ${season} as `}${target === 0 ? "specials" : `season ${target}`}${shift > 0 ? ` from episode ${shift + 1}` : ""}`);
+    if (!odd.length) {
+      if (!moved) unchanged += 1;
+      continue;
+    }
+    const skipped = odd.filter((e) => !e.theirs);
+    const placed = odd.filter((e) => e.theirs);
+    const oneTarget = placed.length > 0 && placed.every((e) => e.theirs!.season === placed[0].theirs!.season);
+    if (odd.length > 3 || (placed.length && !oneTarget)) {
+      pieces.push(`${prefix}matched episode by episode`);
+      continue;
+    }
+    if (placed.length) pieces.push(`${prefix}${placed.length > 1 ? "episodes" : "episode"} ${listed(placed.map((e) => e.episode))} as ${seasonWord(placed[0].theirs!.season, placed.length > 1)} ${listed(placed.map((e) => e.theirs!.episode))}`);
+    if (skipped.length) pieces.push(`${prefix}${skipped.length > 1 ? "episodes" : "episode"} ${listed(skipped.map((e) => e.episode))} not sent`);
+  }
+  if (!pieces.length) return "same seasons";
+  return unchanged ? `same seasons, ${pieces.join(", ")}` : pieces.join(", ");
+}
+
 function MatchRow({ match, service, onEdit, onRemove }: { match: JellyfinTrackerMatch; service: string; onEdit: () => void; onRemove: () => void }) {
-  const byEpisode = [...new Set(Object.entries(match.episodes ?? {})
-    .filter(([ours, theirs]) => !theirs || ours !== `${theirs.season}:${theirs.episode}`)
-    .map(([ours]) => Number(ours.split(":")[0])))].sort((a, b) => a - b);
-  const moved = Object.entries(match.seasons).filter(([ours, link]) => !byEpisode.includes(Number(ours)) && (Number(ours) !== link.season || (!match.episodes && link.offset !== 0)));
-  const seasons = [
-    ...moved.map(([ours, link]) => `season ${ours} is ${link.offset && !match.episodes ? `season ${link.season} from episode ${link.offset + 1}` : `season ${link.season}`}`),
-    ...(byEpisode.length ? [`${byEpisode.length === 1 ? "season" : "seasons"} ${byEpisode.join(", ")} matched episode by episode`] : []),
-  ].join(", ");
   return (
     <div className="flex items-center gap-3 rounded-xl p-1.5">
       <Poster src={match.target.posterUrl} />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold">{match.title ?? "A title"} <span className="font-normal text-muted-foreground">is</span> {match.target.title}{match.target.year ? <span className="font-normal text-muted-foreground"> ({match.target.year})</span> : null}</p>
-        <p className="truncate text-xs text-muted-foreground">{seasons ? `On ${nameOf(service)}, ${seasons}` : `Same seasons on ${nameOf(service)}`}</p>
+        <p className="truncate text-sm font-medium text-foreground/90">{match.title ?? "A title"}</p>
+        <p className="text-xs text-muted-foreground">Sent to {nameOf(service)} as {match.target.title}{match.target.year ? ` (${match.target.year})` : ""}, {matchSummary(match)}</p>
       </div>
-      <button type="button" onClick={onEdit} aria-label="Edit match" title="Edit match" className="flex size-8 shrink-0 items-center justify-center rounded-full text-foreground/80 transition hover:bg-white/10"><Pencil className="size-4" /></button>
-      <button type="button" onClick={onRemove} aria-label="Remove match" title="Remove match" className="flex size-8 shrink-0 items-center justify-center rounded-full text-foreground/60 transition hover:bg-white/10 hover:text-red-300"><Trash2 className="size-4" /></button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" aria-label={`Options for the match of ${match.title ?? "this title"}`} className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"><MoreHorizontal className="size-4" /></button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onSelect={onEdit}><Pencil className="size-4" /> Edit match</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={onRemove} className="text-red-300 focus:text-red-200"><Trash2 className="size-4" /> Remove match</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
 
-function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, events, now, reading, busy, onRun, onOutbox, onDrift, onChanged }: {
+function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, events, now, reading, busy, phases, onRun, onOutbox, onDrift, onSame, onChanged }: {
   userUUID: string;
   profile: string | null;
   activeTab: DashboardTab;
@@ -301,16 +376,20 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
   now: number;
   reading: boolean;
   busy: string | null;
+  phases: Map<string, RowPhase>;
   onRun: (full: boolean) => void;
   onOutbox: (action: "retry" | "drop", ids: number[]) => Promise<void>;
   onDrift: (action: "push" | "pull", items: string[] | null) => void;
+  onSame: (item: JellyfinDriftItem) => void;
   onChanged: () => void;
 }) {
   const name = nameOf(lane.service);
   const matchable = MATCHABLE.has(lane.service);
+  const phaseOf = (item: JellyfinDriftItem) => phases.get(`${lane.key}|${item.id}`);
   const actions = useJellyfinSyncActions();
   const { data: matchData, refetch: refetchMatches } = useJellyfinTrackerMatches(userUUID, lane.key, matchable, { activeTab });
   const [matching, setMatching] = useState<MatchSubject | null>(null);
+  const [showMatches, setShowMatches] = useState(false);
   const matches = matchData?.matches ?? [];
   const matchItem = (item: JellyfinDriftItem) => {
     const existing = matches.find((m) => m.bases.some((base) => item.bases?.includes(base))) ?? null;
@@ -374,9 +453,9 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
         <p className="flex items-center gap-2 text-sm text-emerald-200/90"><CheckCircle2 className="size-4 shrink-0" /> {name} has every watch made here{ANIME_ONLY.has(lane.service) ? "" : `, and nothing it got in the last ${days} days is missing here`}.</p>
       ) : (
         <>
-          {drift.behind.length > 0 && <DriftList title={`Missing on ${name}`} items={drift.behind} all="Send all" one="Send" icon={<Send className="size-3.5" />} busy={busy} prefix="push:" where="watched here" onGo={(items) => onDrift("push", items)} service={lane.service} onMatch={matchable ? matchItem : undefined} info={{ userUUID, laneKey: lane.key, side: "behind", activeTab }} />}
-          {(drift.rewatched?.length ?? 0) > 0 && <DriftList title={`Rewatched here, not on ${name}`} items={drift.rewatched ?? []} all="Send all" one="Send" icon={<Send className="size-3.5" />} busy={busy} prefix="push:" where="rewatched here" onGo={(items) => onDrift("push", items)} service={lane.service} onMatch={matchable ? matchItem : undefined} info={{ userUUID, laneKey: lane.key, side: "again", activeTab }} note={drift.rewatchNote === "free" ? `${name} keeps only the first watch of an episode or film on free accounts, so these can't be sent there. PRO and VIP accounts log them as rewatches.` : undefined} />}
-          {drift.ahead.length > 0 && <DriftList title={`Only on ${name}`} items={drift.ahead} all="Bring all in" one="Bring in" icon={<ArrowDownToLine className="size-3.5" />} busy={busy} prefix="pull:" where="watched" onGo={(items) => onDrift("pull", items)} service={lane.service} info={{ userUUID, laneKey: lane.key, side: "ahead", activeTab }} />}
+          {drift.behind.length > 0 && <DriftList title={`Missing on ${name}`} items={drift.behind} all="Send all" one="Send" icon={<Send className="size-3.5" />} busy={busy} prefix="push:" where="watched here" onGo={(items) => onDrift("push", items)} service={lane.service} onMatch={matchable ? matchItem : undefined} phaseOf={phaseOf} info={{ userUUID, laneKey: lane.key, side: "behind", activeTab }} />}
+          {(drift.rewatched?.length ?? 0) > 0 && <DriftList title={`Rewatched here, not on ${name}`} items={drift.rewatched ?? []} all="Send all" one="Send" icon={<Send className="size-3.5" />} busy={busy} prefix="push:" where="rewatched here" onGo={(items) => onDrift("push", items)} service={lane.service} onMatch={matchable ? matchItem : undefined} onSame={onSame} phaseOf={phaseOf} info={{ userUUID, laneKey: lane.key, side: "again", activeTab }} note={drift.rewatchNote === "free" ? `${name} keeps only the first watch of an episode or film on free accounts, so these can't be sent there. PRO and VIP accounts log them as rewatches.` : undefined} />}
+          {drift.ahead.length > 0 && <DriftList title={`Only on ${name}`} items={drift.ahead} all="Bring all in" one="Bring in" icon={<ArrowDownToLine className="size-3.5" />} busy={busy} prefix="pull:" where="watched" onGo={(items) => onDrift("pull", items)} service={lane.service} phaseOf={phaseOf} info={{ userUUID, laneKey: lane.key, side: "ahead", activeTab }} />}
         </>
       )}
 
@@ -384,13 +463,6 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
         <div className="space-y-1">
           <Eyebrow>Waiting to send <span className="tabular-nums opacity-70">({queue.length})</span></Eyebrow>
           {queue.map((write) => <Waiting key={write.id} write={write} now={now} onOutbox={onOutbox} />)}
-        </div>
-      )}
-
-      {matches.length > 0 && (
-        <div className="space-y-1">
-          <Eyebrow>Matched by hand <span className="tabular-nums opacity-70">({matches.length})</span></Eyebrow>
-          {matches.map((match) => <MatchRow key={match.group} match={match} service={lane.service} onEdit={() => editMatch(match)} onRemove={() => void removeMatch(match)} />)}
         </div>
       )}
 
@@ -411,6 +483,20 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
         <div>
           <div className="pb-1"><Eyebrow>Lately</Eyebrow></div>
           {bursts.map((burst, i) => <BurstRow key={`${burst.until}-${i}`} burst={burst} showServices={false} />)}
+        </div>
+      )}
+
+      {matches.length > 0 && (
+        <div>
+          <button type="button" onClick={() => setShowMatches((open) => !open)} aria-expanded={showMatches} className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
+            <ChevronRight className={cx("size-3.5 transition-transform duration-200", showMatches && "rotate-90")} />
+            {matches.length === 1 ? "1 title" : `${matches.length} titles`} matched by hand
+          </button>
+          {showMatches && (
+            <div className="mt-1.5 space-y-0.5 animate-fade-in">
+              {matches.map((match) => <MatchRow key={match.group} match={match} service={lane.service} onEdit={() => editMatch(match)} onRemove={() => void removeMatch(match)} />)}
+            </div>
+          )}
         </div>
       )}
 
@@ -608,7 +694,23 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
   }, [folded, waiting, refetch]);
 
   const lanes = useMemo(() => data?.lanes ?? [], [data]);
-  const drifts = useMemo(() => new Map((driftData?.lanes ?? []).map((lane) => [lane.key, lane])), [driftData]);
+  const [joined, setJoined] = useState<Set<string>>(() => new Set());
+  const [phases, setPhases] = useState<Map<string, RowPhase>>(() => new Map());
+  const driftGeneration = useRef(0);
+  useEffect(() => {
+    driftGeneration.current += 1;
+    setJoined(new Set());
+    setPhases(new Map());
+  }, [driftData]);
+  const markRows = (keys: string[], phase: RowPhase | null) => setPhases((held) => {
+    const next = new Map(held);
+    for (const key of keys) {
+      if (phase) next.set(key, phase);
+      else next.delete(key);
+    }
+    return next;
+  });
+  const drifts = useMemo(() => new Map((driftData?.lanes ?? []).map((lane) => [lane.key, joined.size && lane.rewatched ? { ...lane, rewatched: lane.rewatched.filter((item) => !joined.has(`${lane.key}|${item.id}`)) } : lane])), [driftData, joined]);
   const states = useMemo(() => new Map(lanes.map((lane) => [lane.key, laneState(lane, now, drifts.get(lane.key))])), [lanes, now, drifts]);
   const rank: Tone[] = ["failing", "paused", "waiting", "drift", "ahead"];
   const selected = lanes.find((lane) => lane.key === chosen)
@@ -688,13 +790,39 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
     const name = nameOf(lane.service);
     const drift = drifts.get(lane.key);
     const picked = (action === "push" ? [...(drift?.behind ?? []), ...(drift?.rewatchNote ? [] : drift?.rewatched ?? [])] : drift?.ahead)?.filter((item) => !items || items.includes(item.id)) ?? [];
+    const rows = picked.map((item) => `${lane.key}|${item.id}`);
     setBusy(`${action}:${items ? items[0] : "*"}`);
+    markRows(rows, action);
     try {
       const { count } = await actions.drift(userUUID, lane.key, action, items);
       if (action === "push") toast[count ? "success" : "info"](count ? `Sending ${watches(watchesIn(picked))} to ${name}` : `${name} already has ${picked.length === 1 ? "it" : "them"}`);
       else toast.success(`Brought ${watches(watchesIn(picked))} in from ${name}`);
     } catch (error) {
+      markRows(rows, null);
       toast.error(error instanceof Error ? error.message : `Could not settle the difference with ${name}`);
+    } finally {
+      setBusy(null);
+      refresh();
+    }
+  };
+
+  const sameViewing = async (lane: JellyfinSyncLane, item: JellyfinDriftItem) => {
+    const name = nameOf(lane.service);
+    const views = item.views.filter((v): v is typeof v & { video: string; theirs: number } => Boolean(v.video && v.theirs));
+    const row = `${lane.key}|${item.id}`;
+    setBusy(`same:${item.id}`);
+    markRows([row], "same");
+    try {
+      for (const view of views) await actions.sameViewing(userUUID, { profile: item.id.split("|")[0], video: view.video, at: view.at, theirs: view.theirs });
+      markRows([row], "leaving");
+      const generation = driftGeneration.current;
+      window.setTimeout(() => {
+        if (driftGeneration.current === generation) setJoined((held) => new Set(held).add(row));
+      }, 450);
+      toast.success(`${item.title ?? "It"} now counts as the viewing ${name} has`);
+    } catch (error) {
+      markRows([row], null);
+      toast.error(error instanceof Error ? error.message : "Could not join the play to the earlier viewing");
     } finally {
       setBusy(null);
       refresh();
@@ -761,6 +889,8 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
       onRun={(full) => void runLane(lane, full)}
       onOutbox={outbox}
       onDrift={(action, items) => void settle(lane, action, items)}
+      phases={phases}
+      onSame={(item) => void sameViewing(lane, item)}
       onChanged={refresh}
     />
   );

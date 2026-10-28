@@ -2064,7 +2064,7 @@ export interface JellyfinDriftItem {
   title: string | null;
   imageUrl: string | null;
   open: { id: string; type: 'movie' | 'series' };
-  views: Array<{ at: number; season: number | null; episode: number | null }>;
+  views: Array<{ at: number; season: number | null; episode: number | null; video?: string; theirs?: number }>;
   lastAt: number;
   video?: string;
   bases?: string[];
@@ -2239,6 +2239,7 @@ function syncActions(getHeaders: () => Record<string, string>) {
     run: (userUUID: string, key: string, full = false) => post<{ ms: number; changed: boolean }>(userUUID, 'run', { key, full }),
     outbox: (userUUID: string, action: 'retry' | 'drop', ids: number[]) => post<{ count: number }>(userUUID, 'outbox', { action, ids }),
     drift: (userUUID: string, key: string, action: 'push' | 'pull', items: string[] | null) => post<{ count: number }>(userUUID, 'drift', { key, action, items }),
+    sameViewing: (userUUID: string, body: { profile: string; video: string; at: number; theirs: number }) => post<{ done: boolean }>(userUUID, 'same-viewing', body),
     copyPreview: (userUUID: string, body: { profile: string | null; from: string; to: string; since: number; what: JellyfinCopyWhat; retry: boolean }) => post<JellyfinCopyPreview>(userUUID, 'copy/preview', body),
     copyDescribe: (userUUID: string, videos: string[]) => post<Record<string, JellyfinCopyNamed>>(userUUID, 'copy/describe', { videos }),
     copyStart: (userUUID: string, body: { profile: string | null; from: string; to: string; since: number; titles: string[] | null; what: JellyfinCopyWhat; retry: boolean }) => post<{ id: number }>(userUUID, 'copy', body),

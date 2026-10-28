@@ -370,6 +370,10 @@ async function setWatchedDate(apiKey: string, playId: string, watchedAt: string)
   return makeRequest(`/api/external/watched/${encodeURIComponent(playId)}`, apiKey, 'PATCH', { watched_at: watchedAt });
 }
 
+async function removePlay(apiKey: string, playId: string): Promise<any> {
+  return makeRequest(`/api/external/watched/${encodeURIComponent(playId)}`, apiKey, 'DELETE');
+}
+
 // --- Parse functions for catalog ---
 
 async function parseResumeItems(
@@ -730,6 +734,7 @@ export {
   fetchDropped,
   fetchWatched,
   setWatchedDate,
+  removePlay,
   saveResume,
   clearResume,
   tmdbIdFrom,

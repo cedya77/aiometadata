@@ -8668,6 +8668,36 @@ addon.post("/api/dashboard/jellyfin/:userUUID/progress/remove", requireDashboard
   }
 });
 
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/same-viewing", requireDashboardAdmin, async (req, res) => {
+  try {
+    const video = typeof req.body?.video === 'string' && req.body.video.length <= 300 ? req.body.video : '';
+    const profileKey = typeof req.body?.profile === 'string' && req.body.profile.length <= 200 ? req.body.profile : '';
+    const at = Number(req.body?.at);
+    const theirs = Number(req.body?.theirs);
+    if (!video || !Number.isFinite(at) || !Number.isFinite(theirs)) {
+      res.status(400).json({ error: 'Name the play and the date the tracker has' });
+      return;
+    }
+    const done = await require('./lib/jellyfin/dashboard').dashboardSameViewing(String(req.params.userUUID), profileKey, video, at, theirs);
+    if (done === null) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (done === 'invalid') {
+      res.status(400).json({ error: 'That play or profile does not match a rewatch' });
+      return;
+    }
+    if (!done) {
+      res.status(409).json({ error: 'That play is no longer in the history' });
+      return;
+    }
+    res.json({ done });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to join the play to the earlier viewing' });
+  }
+});
+
 addon.post("/api/dashboard/jellyfin/:userUUID/title/watch-date", requireDashboardAdmin, async (req, res) => {
   try {
     const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : '';

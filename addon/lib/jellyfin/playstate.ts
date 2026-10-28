@@ -744,7 +744,7 @@ export async function recordUnplayed(req: any, body: any): Promise<void> {
   await markEach(req, body, 'unplayed');
 }
 
-export async function recordWatchDate(req: any, itemId: string, from: number | null, to: number): Promise<boolean> {
+export async function recordWatchDate(req: any, itemId: string, from: number | null, to: number, merge = false): Promise<boolean> {
   const userUUID = req.params?.userUUID;
   if (!userUUID) return false;
   const { loadConfig } = require('./context');
@@ -760,7 +760,7 @@ export async function recordWatchDate(req: any, itemId: string, from: number | n
   const runtimeMs = session.runtimeMs ?? 0;
   const sameViewing = runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
   const database: any = require('../database');
-  const { moved, latestBefore, latestAfter } = await database.redateWatch(userUUID, profile, spellings, from, to, Math.max(sameViewing, 60_000));
+  const { moved, latestBefore, latestAfter } = await database.redateWatch(userUUID, profile, spellings, from, to, Math.max(sameViewing, 60_000), merge);
   if (!moved) return false;
 
   const { invalidateResume } = require('./resume');

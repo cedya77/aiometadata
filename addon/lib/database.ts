@@ -1639,7 +1639,7 @@ class Database {
     await this.runQuery(query, [userUUID, profile, videoId]);
   }
 
-  async redateWatch(userUUID: string, profile: string, videoIds: string[], from: number | null, to: number, withinMs: number): Promise<{ moved: number; latestBefore: number | null; latestAfter: number | null }> {
+  async redateWatch(userUUID: string, profile: string, videoIds: string[], from: number | null, to: number, withinMs: number, merge = false): Promise<{ moved: number; latestBefore: number | null; latestAfter: number | null }> {
     const sqlite = this.type === 'sqlite';
     const ids = [...new Set(videoIds)];
     const latestOf = (rows: Array<{ watched_at: number }>) => (rows.length ? Math.max(...rows.map((row) => row.watched_at)) : null);
@@ -1657,6 +1657,24 @@ class Database {
           .filter((row) => Math.abs(row.watched_at - from) <= withinMs)
           .sort((a, b) => Math.abs(a.watched_at - from) - Math.abs(b.watched_at - from))[0];
         if (!pick || pick.watched_at === Math.round(to)) continue;
+        if (merge && own.some((row) => row !== pick && Math.abs(row.watched_at - to) <= withinMs)) {
+          const removed = await this.runQuery(
+            sqlite
+              ? 'DELETE FROM jellyfin_watches WHERE user_uuid = ? AND profile = ? AND video_id = ? AND watched_at = ?'
+              : 'DELETE FROM jellyfin_watches WHERE user_uuid = $1 AND profile = $2 AND video_id = $3 AND watched_at = $4',
+            [userUUID, profile, id, pick.watched_at]
+          );
+          if (Number(removed?.changes ?? removed?.rowCount ?? 0) > 0) {
+            await this.runQuery(
+              sqlite
+                ? 'UPDATE jellyfin_playstate SET play_count = MAX(play_count - 1, 1) WHERE user_uuid = ? AND profile = ? AND video_id = ? AND played = 1'
+                : 'UPDATE jellyfin_playstate SET play_count = GREATEST(play_count - 1, 1) WHERE user_uuid = $1 AND profile = $2 AND video_id = $3 AND played = 1',
+              [userUUID, profile, id]
+            );
+            moved += 1;
+          }
+          continue;
+        }
         // Another viewing already at that moment keeps its own row, one millisecond apart.
         let at = Math.round(to);
         while (own.some((row) => row !== pick && row.watched_at === at)) at += 1;

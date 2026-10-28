@@ -699,7 +699,7 @@ export async function dashboardDrift(userUUID: string, viewer: string | null): P
               ? { id: list[0].ids.find((id: string) => id.startsWith('tt')) ?? list[0].metaId, type: 'movie' }
               : { id: named?.seriesId ?? list[0].metaId, type: 'series' },
             imageUrl: named?.backdropUrl ?? named?.imageUrl ?? named?.posterUrl ?? null,
-            views: list.map((v: any) => ({ at: v.at, season: v.season, episode: v.episode })),
+            views: list.map((v: any) => ({ at: v.at, season: v.season, episode: v.episode, video: v.ids[0], ...(v.theirs ? { theirs: v.theirs } : {}) })),
             lastAt: Math.max(...list.map((v: any) => v.at)),
           };
         });
@@ -1889,6 +1889,28 @@ export async function dashboardWatchDate(userUUID: string, profile: string | nul
     const moved = await require('./playstate').recordWatchDate(req, itemId, from, to);
     forgetMemos(userUUID);
     return moved;
+  });
+}
+
+export async function dashboardSameViewing(userUUID: string, profileKey: string, video: string, at: number, theirs: number): Promise<boolean | 'invalid' | null> {
+  const config = await database.getUserConfig(userUUID).catch(() => null);
+  if (!config) return null;
+  if (!parseStremioId(video) || !(theirs > 0) || !(at > theirs)) return 'invalid';
+  if (profileKey && !listProfiles(config, userUUID).some((p) => p.id === profileKey)) return 'invalid';
+  const { videoIdAliases } = require('./aliases');
+  const spellings = [video, ...(await videoIdAliases(video).catch(() => [] as string[]))];
+  const gap = envInt('JELLYFIN_TRACKER_REWATCH_GAP_HOURS', 48, 48) * 60 * 60 * 1000;
+  const own: number[] = ((await database.listWatchesFor(userUUID, profileKey, spellings)) as any[]).map((row) => Number(row.watched_at));
+  const kept = own
+    .filter((when) => Math.abs(when - at) > gap && Math.abs(when - theirs) <= gap)
+    .sort((a, b) => Math.abs(a - theirs) - Math.abs(b - theirs))[0];
+  const { runInViewerScope } = require('./viewer');
+  return runInViewerScope(false, async () => {
+    const req = { params: { userUUID }, jellyfin: { userUUID, profileId: profileKey || null }, query: {}, headers: {} };
+    const done = await require('./playstate').recordWatchDate(req, itemIdForVideo(video), at, kept ?? theirs, kept !== undefined);
+    forgetMemos(userUUID);
+    forgetDrift(userUUID);
+    return Boolean(done);
   });
 }
 

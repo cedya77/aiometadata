@@ -625,7 +625,7 @@ async function redatePublicMetaDb(
 ): Promise<void> {
   const apiKey = config.apiKeys?.publicmetadb;
   if (!apiKey) return;
-  const { tmdbIdFrom, fetchWatched, setWatchedDate } = require('../utils/publicmetadbUtils');
+  const { tmdbIdFrom, fetchWatched, setWatchedDate, removePlay } = require('../utils/publicmetadbUtils');
   const tmdbId = await tmdbIdFrom(ids, mediaType);
   if (!tmdbId) return;
   const kind = mediaType === 'movie' ? 'movie' : 'tv';
@@ -655,6 +655,13 @@ async function redatePublicMetaDb(
   // The viewing being moved is found first, so a destination near it can never stand in for it.
   const old = nearestPlay(plays, change.from, (play) => play.watched_at, within);
   if (!old?.id) return;
+  const placed = nearestPlay(plays.filter((play) => play !== old), change.to, (play) => play.watched_at, SAME_PLAY_MS);
+  if (placed) {
+    await removePlay(apiKey, String(old.id));
+    await database.deleteTrackerMirror(mirrorKey, [`play:${old.id}`]).catch(() => undefined);
+    await database.bumpTrackerSyncVersion(mirrorKey).catch(() => undefined);
+    return;
+  }
   const answer = await setWatchedDate(apiKey, String(old.id), new Date(change.to).toISOString());
   const moved = answer?.item ?? { ...old, watched_at: new Date(change.to).toISOString() };
   await database.upsertTrackerMirror(mirrorKey, [{ key: `play:${old.id}`, group, data: moved }]).catch(() => undefined);

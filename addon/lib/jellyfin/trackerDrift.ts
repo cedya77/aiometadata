@@ -28,6 +28,7 @@ export interface Viewing {
   metaId: string;
   season: number | null;
   episode: number | null;
+  theirs?: number;
 }
 
 export interface Drift {
@@ -184,7 +185,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
       if (missing.has(v) || v.ids.some((id) => waiting.has(id) || (sentAt.get(id) ?? 0) >= v.at)) return false;
       const at = heldAt(v);
       return at > 0 && v.at - at > gap;
-    });
+    }).map((v) => ({ ...v, theirs: heldAt(v) }));
     const again = await statesFor(userUUID, rewatched);
     rewatched = rewatched.filter((v) => v.ids.some((id) => Number(again.get(`${v.profile}|${id}`)?.played) === 1));
   }
