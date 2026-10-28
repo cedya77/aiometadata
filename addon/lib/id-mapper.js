@@ -2324,7 +2324,7 @@ async function tmdbEpisodePosition(tmdbId, seasonNumber, episodeNumber, config =
 }
 
 // The Kitsu-to-TMDB walk in reverse.
-async function resolveKitsuEpisodeFromTmdb(tmdbId, seasonNumber, episodeNumber, config = {}) {
+async function resolveKitsuEpisodeFromTmdb(tmdbId, seasonNumber, episodeNumber, config = {}, strict = false) {
   if (!isInitialized) return null;
   const franchiseInfo = await getFranchiseInfoFromTmdbId(tmdbId);
   if (!franchiseInfo) return null;
@@ -2342,6 +2342,7 @@ async function resolveKitsuEpisodeFromTmdb(tmdbId, seasonNumber, episodeNumber, 
 
   const held = entryHoldingEpisode(kitsuEntries, absolute);
   if (held) return { kitsuId: held.entry.id, episodeNumber: held.episodeNumber, absoluteEpisodeNumber: absolute };
+  if (strict) return null;
   const last = kitsuEntries[kitsuEntries.length - 1];
   const before = kitsuEntries.slice(0, -1).reduce((total, entry) => total + (entry.episodeCount || 0), 0);
   return { kitsuId: last.id, episodeNumber: absolute - before, absoluteEpisodeNumber: absolute };
