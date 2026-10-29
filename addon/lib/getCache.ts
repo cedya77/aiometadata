@@ -65,6 +65,7 @@ function parsePositiveIntEnv(envValue: any, defaultValue: number, minValue: numb
 
 const { withEpoch, withGlobalEpoch }: any = require('./cacheEpoch');
 const { clampTtlToWarmWindow }: any = require('./catalogWarmWindow');
+const { endPageTtlSeconds }: any = require('./catalogPagination');
 const { clampMetaTtlToAirWindow }: any = require('./metaAirWindow');
 const {
   isRefreshAheadEnabled,
@@ -832,6 +833,7 @@ function getCatalogContentScope(idOnly: string, catalogType: string, config: any
   // Mixed, not series: the row can carry anime too, so the anime providers have to
   // reach the config hash or a provider change would serve stale episode numbers.
   if (idOnly === 'simkl.upnext') return 'mixed';
+  if (idOnly.startsWith('simkl.watchlist.all.')) return 'mixed';
 
   if (idOnly === 'mdblist.upnext') return 'series';
   if (idOnly === 'mdblist.watchlist') return 'mixed';
@@ -1723,6 +1725,17 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
   if (writeTTL !== cacheTTL) {
     cacheLogger.debug(`[Catalog] Holding ${idOnly} to ${writeTTL}s so it lapses before the next warm run (configured ${cacheTTL}s)`);
   }
+  const classifyPage = options.resultClassifier || classifyResult;
+  const endTtl = Math.min(writeTTL, endPageTtlSeconds());
+  options = {
+    ...options,
+    resultClassifier: (result: any, error: any, cacheKey: string) => {
+      if (!error && result?.endOfList === true && Array.isArray(result.metas) && result.metas.length === 0) {
+        return { type: 'EMPTY_RESULT', ttl: endTtl };
+      }
+      return classifyPage(result, error, cacheKey);
+    },
+  };
 
   const result = cachingDisabled
     ? normalizeReleaseAvailabilityInPayload(await method())
@@ -1733,6 +1746,7 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
   normalizeCreditsInPayload(result);
 
   const projected = projectRatingsInPayload(result, config, true);
+  if (projected && typeof projected === 'object') delete projected.endOfList;
 
   await applyImdbRatingProjectionToList(projected?.metas);
 

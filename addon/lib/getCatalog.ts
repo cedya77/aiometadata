@@ -5,11 +5,12 @@ import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems, usesMdblistExternalItemsEndpoint, supportsMdblistScoreFilters } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken, fetchTraktUpNextEpisodes, fetchTraktUnwatchedEpisodes, fetchTraktTrendingItems, fetchTraktPopularItems, fetchTraktAnticipatedItems } from "../utils/traktUtils.js";
-import { fetchSimklTrendingItems, fetchSimklRecipeItems, fetchSimklWatchlistItems, fetchSimklUpNextItems, parseSimklItems, parseSimklUpNextItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases, fetchSimklListPage } from "../utils/simklUtils.js";
+import { fetchSimklTrendingItems, fetchSimklRecipeItems, fetchSimklWatchlistItems, sortSimklItemsByRelease, sortSimklItemsByActivity, fetchSimklUpNextItems, parseSimklItems, parseSimklUpNextItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases, fetchSimklListPage } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
 import { fetchResume, parseResumeItems, fetchListItems, parseListItems, fetchPickItems, parsePickItems, publicMetaDBListType, publicMetaDBListId, WATCHLIST_CATALOG_ID } from "../utils/publicmetadbUtils.js";
 import { mapWithLimit } from "../utils/concurrency.js";
+import { envInt } from '../utils/envNumber';
 const anilist = require('./anilist');
 const idMapper = require('./id-mapper');
 import { createHash } from 'crypto';
@@ -22,7 +23,8 @@ import * as tvdb from './tvdb.js';
 import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
 import { cacheWrapTvdbApi, cacheWrap, cacheWrapCatalog, cacheWrapAniListCatalog, cacheWrapJikanApi, cacheWrapGlobal, classifyResultAllowEmpty, stableStringify, CATALOG_TTL } from './getCache.js';
-import { isDiscoverCatalogId, applyDiscoverSignature } from './discoverCatalogSignature.js';
+import { applyCatalogKeyArgs, applyCatalogKeyStamps, hiddenCatalogGenre } from './catalogKeyArgs.js';
+import { endOfList } from './catalogPagination';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 import { fetchLumiereList, lumiereApiBase, lumiereListOf } from '../utils/lumiereLists.js';
@@ -962,6 +964,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         catalogConfig?.cacheTTL
       );
 
+      if (response.hasMore === false && response.items.length === 0) return endOfList();
       let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
 
       return metas;
@@ -1034,9 +1037,9 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       logger.debug(`MDBList watchlist pagination - page ${page}, ${itemInfo}, ${statusInfo}`);
       
       // Early exit for empty pages beyond list end
-      if (!response.hasMore && response.items.length === 0) {
+      if (response.hasMore === false && response.items.length === 0) {
         logger.debug(`MDBList watchlist early exit - no more items at page ${page}`);
-        return [];
+        return endOfList();
       }
     } else if (response.totalItems !== undefined && response.totalPages !== undefined) {
       const pageInfo = `page ${page}/${response.totalPages}`;
@@ -1047,9 +1050,9 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       logger.debug(`MDBList smart pagination - ${pageInfo}, ${itemInfo}, ${totalInfo}, ${statusInfo}`);
       
       // Early exit for empty pages beyond list end
-      if (!response.hasMore && response.items.length === 0) {
+      if (response.hasMore === false && response.items.length === 0) {
         logger.debug(`MDBList early exit - no more items for list ${listId} at page ${page}`);
-        return [];
+        return endOfList();
       }
       
       // Performance warning for large offsets
@@ -1132,38 +1135,27 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     }
 
     try {
-      const response = mediaType === 'movie'
-        ? await moviedb.discoverMovie(parameters, config)
-        : await moviedb.discoverTv(parameters, config);
+      let results: any[];
+      if (runtimeGte === null && runtimeLte === null) {
+        const response = mediaType === 'movie'
+          ? await moviedb.discoverMovie(parameters, config)
+          : await moviedb.discoverTv(parameters, config);
 
-      if (!response?.results || !Array.isArray(response.results) || response.results.length === 0) {
-        logger.info(`[TMDB Discover] No results for ${id} at page ${discoverPage}`);
-        return [];
-      }
-
-      let results = response.results;
-      if (runtimeGte !== null || runtimeLte !== null) {
-        const checked = await mapWithLimit(results, async (item: any) => {
-          try {
-            const details = await moviedb.tvInfo({ id: item.id, language }, config);
-            const runtime = [
-              details?.episode_run_time?.[0],
-              details?.last_episode_to_air?.runtime,
-              details?.next_episode_to_air?.runtime,
-            ].find((r: any) => typeof r === 'number' && r > 0);
-            if (runtime === undefined) return item; // runtime unknown → keep
-            if (runtimeGte !== null && runtime < runtimeGte) return null;
-            if (runtimeLte !== null && runtime > runtimeLte) return null;
-            return item;
-          } catch {
-            return item;
-          }
-        });
-        results = checked.filter((item: any) => item !== null);
-        if (results.length < response.results.length) {
-          logger.info(`[TMDB Discover] Runtime filter kept ${results.length}/${response.results.length} items for ${id} at page ${discoverPage}`);
+        if (!response?.results || !Array.isArray(response.results) || response.results.length === 0) {
+          logger.info(`[TMDB Discover] No results for ${id} at page ${discoverPage}`);
+          return Array.isArray(response?.results) && discoverPage > (response.total_pages ?? 0) ? endOfList() : [];
         }
-        if (results.length === 0) return [];
+        results = response.results;
+      } else {
+        const filtered = await runtimeFilteredDiscoverPage({
+          parameters, page: discoverPage, runtimeGte, runtimeLte, language, config,
+          ttl: catalogConfig?.cacheTTL || CATALOG_TTL(),
+        });
+        if (filtered.items.length === 0) {
+          logger.info(`[TMDB Discover] No results within the runtime range for ${id} at page ${discoverPage}`);
+          return filtered.ended ? endOfList() : [];
+        }
+        results = filtered.items;
       }
 
       const metaType = mediaType === 'movie' ? 'movie' : 'series';
@@ -1439,6 +1431,58 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   } else {
     return [];
   }
+}
+
+const TMDB_DISCOVER_PAGE_SIZE = 20;
+
+async function runtimeFilteredDiscoverPage(opts: {
+  parameters: Record<string, any>;
+  page: number;
+  runtimeGte: number | null;
+  runtimeLte: number | null;
+  language: string;
+  config: UserConfig;
+  ttl: number;
+}): Promise<{ items: any[]; ended: boolean }> {
+  const { parameters, page, runtimeGte, runtimeLte, language, config, ttl } = opts;
+  const { page: _page, ...shape } = parameters;
+  const signature = createHash('md5').update(JSON.stringify([shape, runtimeGte, runtimeLte])).digest('hex').slice(0, 16);
+  const wanted = page * TMDB_DISCOVER_PAGE_SIZE;
+  const lastScanned = page + envInt('TMDB_RUNTIME_FILTER_EXTRA_PAGES', 20, 0);
+
+  const kept: number[] = [];
+  let ended = false;
+  for (let tmdbPage = 1; kept.length < wanted && tmdbPage <= lastScanned; tmdbPage++) {
+    const chunk = await cacheWrapGlobal(`tmdb-discover-runtime:v1:${signature}:${tmdbPage}`, async () => {
+      const response = await moviedb.discoverTv({ ...parameters, page: tmdbPage }, config);
+      if (!response || !Array.isArray(response.results)) throw new Error(`TMDB discover page ${tmdbPage} came back without results`);
+      const checked = await mapWithLimit(response.results, async (item: any) => {
+        try {
+          const details = await moviedb.tvInfo({ id: item.id, language }, config);
+          const runtime = [
+            details?.episode_run_time?.[0],
+            details?.last_episode_to_air?.runtime,
+            details?.next_episode_to_air?.runtime,
+          ].find((r: any) => typeof r === 'number' && r > 0);
+          if (runtime === undefined) return item.id;
+          if (runtimeGte !== null && runtime < runtimeGte) return null;
+          if (runtimeLte !== null && runtime > runtimeLte) return null;
+          return item.id;
+        } catch {
+          return item.id;
+        }
+      });
+      return { ids: checked.filter((tmdbId: any) => tmdbId !== null), totalPages: Number(response.total_pages) || 0 };
+    }, ttl, { resultClassifier: classifyResultAllowEmpty });
+    kept.push(...(chunk?.ids || []));
+    if (tmdbPage >= (chunk?.totalPages || 0)) {
+      ended = true;
+      break;
+    }
+  }
+
+  const items = kept.slice((page - 1) * TMDB_DISCOVER_PAGE_SIZE, wanted).map((tmdbId) => ({ id: tmdbId }));
+  return { items, ended: ended && items.length === 0 };
 }
 
 async function buildParameters(type: string, language: string, page: number, id: string, genre: string, genreList: any[], config: UserConfig): Promise<any> {
@@ -2099,9 +2143,17 @@ async function getTraktCatalog(
         
         const totalTime = Date.now() - upNextStart;
         logger.info(`Up Next: Total catalog fetch time: ${totalTime}ms`);
-        
+
+        const airedAt = (item: any) => {
+          const at = item?.upNextEpisode?.first_aired ? new Date(item.upNextEpisode.first_aired).getTime() : NaN;
+          return Number.isFinite(at) ? at : 0;
+        };
+        const ordered = catalogConfig?.metadata?.upNextSort === 'aired'
+          ? allItems.map((item, index) => ({ item, index })).sort((a, b) => (airedAt(b.item) - airedAt(a.item)) || (a.index - b.index)).map(({ item }) => item)
+          : allItems;
+
         response = { 
-          items: allItems, 
+          items: ordered.slice(0, 50),
           hasMore: false
         };
       }
@@ -3040,7 +3092,7 @@ async function getSimklCatalog(
         : (catalogConfig?.metadata?.includeAnimeInUpNext !== false ? ['shows', 'anime'] : ['shows']);
       // No TTL override: the shared watching blob is invalidated by the activity
       // check, and this catalog's short TTL would shrink it for the watchlist too.
-      const allItems = await fetchSimklUpNextItems(accessToken, config, buckets);
+      const allItems = await fetchSimklUpNextItems(accessToken, config, buckets, catalogConfig?.metadata?.upNextSort === 'aired' ? 'aired' : 'watched');
 
       const startIndex = (page - 1) * pageSize;
       const pageItems = allItems.slice(startIndex, startIndex + pageSize);
@@ -3186,7 +3238,9 @@ async function getSimklCatalog(
     else if (catalogId.startsWith('simkl.watchlist.')) {
       const parts = catalogId.split('.');
       if (parts.length === 4) {
-        const watchlistType = parts[2] as 'movies' | 'shows' | 'anime';
+        const listTypes: Array<'movies' | 'shows' | 'anime'> = parts[2] === 'all'
+          ? ['movies', 'shows', 'anime']
+          : [parts[2] as 'movies' | 'shows' | 'anime'];
         const status = parts[3] as 'watching' | 'plantowatch' | 'hold' | 'completed' | 'dropped';
         
         const tokenId = (config.apiKeys as any)?.simklTokenId;
@@ -3202,17 +3256,20 @@ async function getSimklCatalog(
           return [];
         }
         
-        logger.debug(`[Simkl] Fetching watchlist ${watchlistType}/${status} (all items, local pagination)`);
+        logger.debug(`[Simkl] Fetching watchlist ${parts[2]}/${status} (all items, local pagination)`);
 
         // No TTL override: this blob is shared across every catalog on the same status
         // and is invalidated by the activity check, so a catalog's own (much shorter)
         // TTL would expire it early and force a full re-sync instead of a delta.
-        const result = await fetchSimklWatchlistItems(accessToken, watchlistType, status, undefined, config);
+        const fetched = await Promise.all(listTypes.map(async (watchlistType) => {
+          const result = await fetchSimklWatchlistItems(accessToken, watchlistType, status, undefined, config);
+          return result.items.map((item: any) => ({ watchlistType, item }));
+        }));
         
         // Filter and map items
-        let allItems = result.items
-          .map((item: any) => {
-            const media = item.show || item.movie || item;
+        let allItems = fetched.flat()
+          .map(({ watchlistType, item }: { watchlistType: 'movies' | 'shows' | 'anime'; item: any }) => {
+            const media = item.show || item.movie || item.anime || item;
             const ids = media.ids || {};
             
             const hasValidId = watchlistType === 'anime'
@@ -3232,10 +3289,12 @@ async function getSimklCatalog(
             return {
               type: itemType,
               ...media,
+              simkl_list_type: watchlistType,
               simkl_status: item.status,
               simkl_added_to_watchlist_at: item.added_to_watchlist_at,
               simkl_rating: item.user_rating,
               simkl_last_watched: item.last_watched,
+              simkl_last_watched_at: item.last_watched_at,
               simkl_next_to_watch: item.next_to_watch,
               simkl_watched_episodes_count: item.watched_episodes_count,
               simkl_total_episodes_count: item.total_episodes_count,
@@ -3244,7 +3303,7 @@ async function getSimklCatalog(
           })
           .filter((item: any) => item !== null); // Remove null items
 
-        if (status === 'watching' && (watchlistType === 'shows' || watchlistType === 'anime')) {
+        if (status === 'watching' && listTypes.some(t => t !== 'movies')) {
           const beforeCount = allItems.length;
           allItems = allItems.filter((item: any) => {
             if (item.simkl_next_to_watch) return true;
@@ -3263,6 +3322,13 @@ async function getSimklCatalog(
           if (beforeCount !== allItems.length) {
             logger.debug(`[Simkl] Filtered ${beforeCount - allItems.length} fully caught-up shows from watching list (${allItems.length} remaining with unwatched episodes)`);
           }
+        }
+
+        const watchlistSort = catalogConfig?.metadata?.watchlistSort;
+        if (watchlistSort === 'released' || watchlistSort === 'released_asc') {
+          allItems = await sortSimklItemsByRelease(allItems, watchlistSort === 'released_asc');
+        } else if (watchlistSort === 'added' || listTypes.length > 1) {
+          allItems = sortSimklItemsByActivity(allItems, watchlistSort === 'added' || status === 'plantowatch' || status === 'hold' ? 'added' : 'watched');
         }
         
         const globalItemIndex = (page - 1) * pageSize;
@@ -3324,7 +3390,9 @@ async function getSimklCatalog(
       || (catalogId.startsWith('simkl.recipe.') && catalogId.endsWith('.anime'))
       || listMediaType === 'anime';
     const parseStart = Date.now();
-    let metas = await parseSimklItems(response.items, type as 'movie' | 'series', config, userUUID, includeVideos, isAnimeCatalog);
+    let metas = catalogId.startsWith('simkl.watchlist.all.')
+      ? (await Promise.all(response.items.map((item: any) => parseSimklItems([item], item.type, config, userUUID, includeVideos, item.simkl_list_type === 'anime')))).flat()
+      : await parseSimklItems(response.items, type as 'movie' | 'series', config, userUUID, includeVideos, isAnimeCatalog);
     metas = stampListedAt(metas, response.items, (item: any) => item?.ids ?? {}, (item: any) => item?.simkl_added_to_watchlist_at);
     const parseTime = Date.now() - parseStart;
     logger.info(`[Simkl] parseSimklItems took ${parseTime}ms for ${response.items.length} items`);
@@ -3500,49 +3568,19 @@ async function getPublicMetaDBCatalog(
   }
 }
 
-function buildCatalogCacheArgs(
+async function buildCatalogCacheArgs(
   catalogId: string,
   catalogType: string,
   page: number,
   genre: string | null,
   config: UserConfig
-): Record<string, any> {
+): Promise<Record<string, any>> {
   const args: Record<string, any> = {};
-  if (page > 1) args.page = page;
   if (genre) args.genre = genre;
-
   const catCfg = (config.catalogs as any[])?.find((c: any) => c.id === catalogId && c.type === catalogType);
-
-  // Claimed before the provider prefixes; anilist.discover would otherwise match anilist.
-  if (isDiscoverCatalogId(catalogId)) {
-    applyDiscoverSignature(args, catCfg);
-  } else if (catalogId.startsWith('trakt.') || catalogId.startsWith('anilist.') || catalogId.startsWith('streaming.') || catalogId.startsWith('tmdb.year') || catalogId.startsWith('tmdb.language')) {
-    if (catCfg?.sort) args.sort = catCfg.sort;
-    if (catCfg?.sortDirection) args.sortDirection = catCfg.sortDirection;
-  } else if (catalogId.startsWith('mdblist.')) {
-    if (catCfg?.sort) args.sort = catCfg.sort;
-    if (catCfg?.order) args.order = catCfg.order;
-    if (supportsMdblistScoreFilters(catCfg)) {
-      if (typeof catCfg.filter_score_min === 'number') args.filter_score_min = catCfg.filter_score_min;
-      if (typeof catCfg.filter_score_max === 'number') args.filter_score_max = catCfg.filter_score_max;
-    }
-  }
-
-  if (catalogId === 'trakt.calendar' || catalogId.startsWith('simkl.calendar')) {
-    const tz = (config as any).timezone || process.env.TZ || 'UTC';
-    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
-    args.date = fmt.format(new Date());
-    args.days = typeof catCfg?.metadata?.airingSoonDays === 'number' ? catCfg.metadata.airingSoonDays : 1;
-  }
-
-  if (catalogId === 'tvmaze.schedule') {
-    const tz = (config as any).timezone || process.env.TZ || 'UTC';
-    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
-    args.date = fmt.format(new Date());
-    args.genre = !args.genre || args.genre === 'None' ? '' : args.genre.toUpperCase();
-  }
-
-  return args;
+  applyCatalogKeyArgs(args, catalogId, catCfg, config);
+  if (page > 1) args.page = page;
+  return applyCatalogKeyStamps(args, catalogId, catCfg, config);
 }
 
 async function getMergedCatalog(
@@ -3624,41 +3662,11 @@ async function getMergedCatalog(
 
   const seenIds = new Set<string>(cursor?.seenIds || []);
 
-  const resolveDefaultGenre = async (srcId: string, srcType: string): Promise<string | null> => {
-    const srcCfg = (config.catalogs as any[])?.find((c: any) => c.id === srcId && c.type === srcType);
-    if (!srcCfg || srcCfg.showInHome !== false) return null;
-
-    if (srcId === 'tmdb.trending') return 'Day';
-    if (srcId === 'mal.schedule') return 'Monday';
-    if (srcId === 'mal.seasons') {
-      const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
-      const d = new Date();
-      const m = d.getMonth();
-      const idx = m <= 2 ? 0 : m <= 5 ? 1 : m <= 8 ? 2 : 3;
-      return `${seasons[idx]} ${d.getFullYear()}`;
-    }
-    if (srcId === 'tvdb.genres' || srcId === 'tvdb.trending') {
-      try {
-        const genres = await getGenreList('tvdb', language, srcType as 'movie' | 'series', config);
-        const names = genres.map((g: any) => g.name).sort();
-        if (names.length > 0) return names[0];
-      } catch {}
-    }
-    if (srcId === 'mal.studios') {
-      try {
-        const studios = await cacheWrapJikanApi('mal-studios', async () => await jikan.getStudios(100), 30 * 24 * 60 * 60);
-        const names = studios.map((s: any) => { const t = s.titles.find((x: any) => x.type === 'Default'); return t?.title; }).filter(Boolean);
-        if (names.length > 0) return names[0];
-      } catch {}
-    }
-    return 'None';
-  };
-
   const fetchSourcePage = async (src: any, srcPage: number): Promise<{ items: any[]; rawLength: number }> => {
     try {
-      const effectiveGenre = genre || await resolveDefaultGenre(src.catalogId, src.catalogType) || '';
+      const effectiveGenre = genre || await hiddenCatalogGenre(config, userUUID, src.catalogId, src.catalogType) || '';
       const srcConfig = viewerConfigFor(config, owner, src.catalogId);
-      const cacheArgs = buildCatalogCacheArgs(src.catalogId, src.catalogType, srcPage, effectiveGenre, srcConfig);
+      const cacheArgs = await buildCatalogCacheArgs(src.catalogId, src.catalogType, srcPage, effectiveGenre, srcConfig);
       const catalogKey = `${src.catalogId}:${src.catalogType}:${stableStringify(cacheArgs)}`;
 
       const result = await cacheWrapCatalog(userUUID, catalogKey, async () => {

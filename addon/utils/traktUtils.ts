@@ -605,8 +605,7 @@ async function fetchTraktUpNextEpisodes(
         const timeA = a.last_watched_at ? new Date(a.last_watched_at).getTime() : 0;
         const timeB = b.last_watched_at ? new Date(b.last_watched_at).getTime() : 0;
         return timeB - timeA; 
-      })
-      .slice(0, 50);
+      });
 
     return { items, watched_at: userWatchedAt };
   }
@@ -779,8 +778,7 @@ async function fetchTraktUpNextEpisodes(
       const titleA = (a.show?.title || '').toLowerCase();
       const titleB = (b.show?.title || '').toLowerCase();
       return titleA.localeCompare(titleB);
-    })
-    .slice(0, 50);
+    });
 
   const duration = Date.now() - startTime;
   logger.info(`[Up Next] Sync complete in ${duration}ms. Returning ${finalItems.length} items.`);

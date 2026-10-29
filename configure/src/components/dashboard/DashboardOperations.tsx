@@ -89,6 +89,8 @@ const MEDIA_ID_RE = [
   /^(?:tmdb|tvdb|tvdbc|kitsu|mal|anilist|anidb):[A-Za-z0-9._-]+$/i,
   /^tun_[A-Za-z0-9._:-]+$/i,
 ];
+const totalTasks = (stats: any): number => (stats?.totalCatalogs || 0) + (stats?.totalPinned || 0);
+const warmedTasks = (stats: any): number => (stats?.catalogsWarmed || 0) + (stats?.pinnedWarmed || 0);
 const looksLikeMediaId = (token: string) => MEDIA_ID_RE.some((re) => re.test(token.trim()));
 
 const COLD_TIER_LABELS: Record<string, string> = {
@@ -1510,12 +1512,17 @@ export function DashboardOperations({ data, loading, activeTab }: { data: any; l
                             </div>
                             <span className="text-xs tabular-nums">
                               <AnimatedNumber value={task.warmingDetail.catalogsWarmed} /> / {task.warmingDetail.totalCatalogs} catalogs
+                              {task.warmingDetail.totalPinned > 0 && (
+                                <span className="text-muted-foreground">
+                                  {' · '}<AnimatedNumber value={task.warmingDetail.pinnedWarmed} /> / {task.warmingDetail.totalPinned} collection genres
+                                </span>
+                              )}
                             </span>
                           </div>
                           <div className="relative h-2 w-full overflow-hidden rounded-full bg-black/20">
                             <div
                               className="h-full rounded-full transition-all duration-700 ease-out bg-gradient-to-r from-blue-500 to-cyan-400"
-                              style={{ width: `${(task.warmingDetail.catalogsWarmed / task.warmingDetail.totalCatalogs) * 100}%` }}
+                              style={{ width: `${(warmedTasks(task.warmingDetail) / totalTasks(task.warmingDetail)) * 100}%` }}
                             />
                           </div>
                         </div>
@@ -1524,10 +1531,12 @@ export function DashboardOperations({ data, loading, activeTab }: { data: any; l
                       {/* Per-UUID live cards */}
                       <div className="grid gap-2">
                         {task.warmingDetail.uuids.map((u: any) => {
-                          const isComplete = u.totalCatalogs > 0 && u.catalogsWarmed >= u.totalCatalogs;
-                          const isActive = !isComplete && u.totalCatalogs > 0 && u.catalogsWarmed < u.totalCatalogs;
-                          const isPending = !isComplete && u.catalogsWarmed === 0 && (!u.totalCatalogs || u.totalCatalogs === 0);
-                          const progress = u.totalCatalogs > 0 ? (u.catalogsWarmed / u.totalCatalogs) * 100 : 0;
+                          const total = totalTasks(u);
+                          const warmed = warmedTasks(u);
+                          const isComplete = total > 0 && warmed >= total;
+                          const isActive = !isComplete && total > 0 && warmed < total;
+                          const isPending = !isComplete && warmed === 0 && total === 0;
+                          const progress = total > 0 ? (warmed / total) * 100 : 0;
                           return (
                             <div
                               key={u.uuid}
@@ -1551,6 +1560,7 @@ export function DashboardOperations({ data, loading, activeTab }: { data: any; l
                                 {u.totalCatalogs > 0 && (
                                   <span className="text-xs tabular-nums text-muted-foreground whitespace-nowrap">
                                     <AnimatedNumber value={u.catalogsWarmed} />/{u.totalCatalogs}
+                                    {u.totalPinned > 0 && <> · <AnimatedNumber value={u.pinnedWarmed || 0} />/{u.totalPinned} genres</>}
                                     {u.duration && !isActive && <span className="hidden sm:inline"> · {u.duration}</span>}
                                   </span>
                                 )}
@@ -1584,7 +1594,7 @@ export function DashboardOperations({ data, loading, activeTab }: { data: any; l
                             <code className="font-mono">{u.uuid}</code>
                             {u.totalCatalogs > 0 && (
                               <span className="ml-auto tabular-nums whitespace-nowrap">
-                                {u.catalogsWarmed}/{u.totalCatalogs} catalogs{u.duration && <> · {u.duration}</>}
+                                {u.catalogsWarmed}/{u.totalCatalogs} catalogs{u.totalPinned > 0 && <> · {u.pinnedWarmed || 0}/{u.totalPinned} collection genres</>}{u.duration && <> · {u.duration}</>}
                               </span>
                             )}
                           </div>

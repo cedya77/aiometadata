@@ -439,14 +439,14 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
   };
 
   // Handlers to add watchlist catalogs
-  const handleAddWatchlistCatalog = (type: 'movies' | 'shows' | 'anime', status: 'watching' | 'plantowatch' | 'hold' | 'completed' | 'dropped') => {
+  const handleAddWatchlistCatalog = (type: 'movies' | 'shows' | 'anime' | 'all', status: 'watching' | 'plantowatch' | 'hold' | 'completed' | 'dropped') => {
     const id = `simkl.watchlist.${type}.${status}`;
     if (config.catalogs.some(c => c.id === id)) {
       toast.info(`Watchlist ${type} ${status} catalog already added.`);
       return;
     }
-    const catalogType = type === 'movies' ? 'movie' : type === 'anime' ? 'anime' : 'series';
-    const displayType = getDisplayTypeOverride(catalogType, config.displayTypeOverrides);
+    const catalogType = type === 'all' ? 'all' : type === 'movies' ? 'movie' : type === 'anime' ? 'anime' : 'series';
+    const displayType = type === 'all' ? undefined : getDisplayTypeOverride(catalogType, config.displayTypeOverrides);
     const statusDisplayNames: Record<string, string> = {
       'watching': 'Watching',
       'plantowatch': 'Plan to Watch',
@@ -457,7 +457,7 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
     const newCatalog: CatalogConfig = {
       id,
       type: catalogType,
-      name: `Simkl ${statusDisplayNames[status]} ${type.charAt(0).toUpperCase() + type.slice(1)}`,
+      name: type === 'all' ? `Simkl ${statusDisplayNames[status]}` : `Simkl ${statusDisplayNames[status]} ${type.charAt(0).toUpperCase() + type.slice(1)}`,
       enabled: true,
       showInHome: true,
       source: 'simkl' as any,
@@ -465,7 +465,7 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
       ...(displayType && { displayType })
     };
     setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
-    toast.success(`Added Simkl ${statusDisplayNames[status]} ${type}`);
+    toast.success(type === 'all' ? `Added Simkl ${statusDisplayNames[status]}` : `Added Simkl ${statusDisplayNames[status]} ${type}`);
   };
 
   const handleAddUpNext = () => {
@@ -919,6 +919,20 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="space-y-3">
+                        <div>
+                          <p className="text-sm font-medium mb-2">All types</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('all', 'plantowatch')}
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.all.plantowatch')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Plan to Watch
+                            </Button>
+                          </div>
+                        </div>
                         <div>
                           <p className="text-sm font-medium mb-2">Movies</p>
                           <div className="grid grid-cols-2 gap-2">

@@ -11,6 +11,22 @@ export interface CatalogCursor {
   pageOffset: number;
 }
 
+const END_OF_LIST = Symbol('endOfList');
+
+export function endOfList(): any[] {
+  const metas: any = [];
+  metas[END_OF_LIST] = true;
+  return metas;
+}
+
+export function isEndOfList(metas: unknown): boolean {
+  return Array.isArray(metas) && metas.length === 0 && (metas as any)[END_OF_LIST] === true;
+}
+
+export function endPageTtlSeconds(): number {
+  return envInt('CATALOG_END_PAGE_TTL', 24 * 60 * 60, 60);
+}
+
 export function fillMaxPages(): number {
   return envInt('CATALOG_FILTER_FILL_MAX_PAGES', 5, 1);
 }

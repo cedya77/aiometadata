@@ -48,6 +48,7 @@ const SIMKL_TYPES: Record<string, CatalogConfig['type']> = {
   movies: 'movie',
   shows: 'series',
   anime: 'anime',
+  all: 'all',
 };
 
 function simklPersonal(catalogId: string): PersonalCatalog | undefined {
@@ -71,7 +72,7 @@ function simklPersonal(catalogId: string): PersonalCatalog | undefined {
     };
   }
 
-  const match = /^simkl\.watchlist\.(movies|shows|anime)\.([a-z]+)$/.exec(catalogId);
+  const match = /^simkl\.watchlist\.(movies|shows|anime|all)\.([a-z]+)$/.exec(catalogId);
   if (!match) return undefined;
 
   const [, listType, status] = match;
@@ -80,7 +81,7 @@ function simklPersonal(catalogId: string): PersonalCatalog | undefined {
 
   return {
     type: SIMKL_TYPES[listType],
-    name: `Simkl ${statusName} ${listType.charAt(0).toUpperCase()}${listType.slice(1)}`,
+    name: listType === 'all' ? `Simkl ${statusName}` : `Simkl ${statusName} ${listType.charAt(0).toUpperCase()}${listType.slice(1)}`,
     source: 'simkl',
     metadata: { status: status as any },
   };

@@ -1402,12 +1402,20 @@ class Database {
   ): Promise<void> {
     if (!rows.length) return;
 
-    const query = this.type === 'sqlite'
-      ? 'INSERT OR IGNORE INTO jellyfin_ids (id, payload, codec_version) VALUES (?, ?, ?)'
-      : 'INSERT INTO jellyfin_ids (id, payload, codec_version) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING';
-
-    for (const row of rows) {
-      await this.runQuery(query, [row.id, JSON.stringify(row.payload), row.codecVersion]);
+    // One statement per chunk, so a page of new ids is a few commits rather than hundreds.
+    const size = this.type === 'sqlite' ? 150 : 500;
+    for (let i = 0; i < rows.length; i += size) {
+      const chunk = rows.slice(i, i + size);
+      const params: any[] = [];
+      const values = chunk.map((row) => {
+        params.push(row.id, JSON.stringify(row.payload), row.codecVersion);
+        const at = params.length - 3;
+        return this.type === 'sqlite' ? '(?, ?, ?)' : `($${at + 1}, $${at + 2}, $${at + 3})`;
+      });
+      const query = this.type === 'sqlite'
+        ? `INSERT OR IGNORE INTO jellyfin_ids (id, payload, codec_version) VALUES ${values.join(', ')}`
+        : `INSERT INTO jellyfin_ids (id, payload, codec_version) VALUES ${values.join(', ')} ON CONFLICT (id) DO NOTHING`;
+      await this.runQuery(query, params);
     }
   }
 

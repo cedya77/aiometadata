@@ -2054,6 +2054,8 @@ class DashboardAPI {
             isRunning: catalogStats.isRunning,
             catalogsWarmed: catalogStats.catalogsWarmed || 0,
             totalCatalogs: catalogStats.totalCatalogs || 0,
+            pinnedWarmed: catalogStats.pinnedWarmed || 0,
+            totalPinned: catalogStats.totalPinned || 0,
             totalItems: catalogStats.totalItems || 0,
             uuids: (catalogStats.config?.uuids || []).map(uuid => ({
               uuid: uuid.slice(0, 8),

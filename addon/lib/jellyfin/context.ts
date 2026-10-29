@@ -3,7 +3,7 @@ import { readTokenSession, revokeToken } from './tokens';
 import { listProfiles, profileKey, scopeConfigToProfile } from './profiles';
 import { normaliseJellyfinId } from './idsCodec';
 import { LRUCache } from 'lru-cache';
-import { noteAccountOwner, noteMarksUnaired, noteProfile, runInViewerScope, viewerOwnsWatchlist } from './viewer';
+import { noteAccountOwner, noteMarksUnaired, noteProfile, noteWantsPeople, runInViewerScope, viewerOwnsWatchlist } from './viewer';
 import { accountOwner } from '../accounts';
 
 const redis: any = require('../redisClient');
@@ -122,7 +122,16 @@ const EXTENSION_CLIENT = /^(aiostreams|pelagica)\b/i;
 
 export function runWithClient<T>(req: any, fn: () => T): T {
   const { client } = clientInfo(req);
-  return runInViewerScope(OWN_WATCHLIST_CLIENT.test(client), fn, EXTENSION_CLIENT.test(client));
+  return runInViewerScope(OWN_WATCHLIST_CLIENT.test(client), () => {
+    noteWantsPeople(requestsField(req, 'people'));
+    return fn();
+  }, EXTENSION_CLIENT.test(client));
+}
+
+/** Whether Fields names a field, however a client spells or repeats the parameter. */
+function requestsField(req: any, field: string): boolean {
+  const raw = [req.query?.Fields, req.query?.fields].flat().filter((value) => value != null);
+  return raw.some((value) => String(value).split(',').some((name) => name.trim().toLowerCase() === field));
 }
 
 /** Whether the client asking keeps a watchlist apart from favourites. */

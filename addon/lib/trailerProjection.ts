@@ -102,7 +102,7 @@ async function fetchAddonTrailers(manifestUrl: string, type: string, id: string)
   return streams.map(toStream).filter((s: TrailerStream | null): s is TrailerStream => s !== null);
 }
 
-async function addonTrailers(meta: any, config: any): Promise<TrailerStream[] | null> {
+function addonTarget(meta: any, config: any): { manifestUrl: string; type: string; id: string; key: string } | null {
   if (!meta || config?.trailerProvider !== 'addon') return null;
   const manifestUrl = typeof config?.trailerAddonUrl === 'string' ? config.trailerAddonUrl.trim() : '';
   if (!manifestUrl) return null;
@@ -111,19 +111,52 @@ async function addonTrailers(meta: any, config: any): Promise<TrailerStream[] | 
   const id = imdbIdOf(meta);
   if (!id) return null;
 
-  const { readGlobalCache, writeGlobalCache } = require('./getCache');
   const addonHash = createHash('sha256').update(manifestUrl).digest('hex').slice(0, 12);
-  const key = `trailer_addon:v1:${addonHash}:${type}:${id}`;
-  let streams: TrailerStream[] | null = await readGlobalCache(key);
-  if (!Array.isArray(streams)) {
-    try {
-      streams = await inflight(key, () => fetchAddonTrailers(manifestUrl, type, id));
-    } catch {
-      return null;
-    }
-    await writeGlobalCache(key, streams, streams.length ? ttlFor(streams) : envInt('TRAILER_ADDON_EMPTY_TTL', 60 * 60, 60));
+  return { manifestUrl, type, id, key: `trailer_addon:v1:${addonHash}:${type}:${id}` };
+}
+
+async function fetchAndStore(target: { manifestUrl: string; type: string; id: string; key: string }): Promise<TrailerStream[] | null> {
+  const { writeGlobalCache } = require('./getCache');
+  let streams: TrailerStream[];
+  try {
+    streams = await inflight(target.key, () => fetchAddonTrailers(target.manifestUrl, target.type, target.id));
+  } catch {
+    return null;
   }
-  return Array.isArray(streams) ? streams : null;
+  await writeGlobalCache(target.key, streams, streams.length ? ttlFor(streams) : envInt('TRAILER_ADDON_EMPTY_TTL', 24 * 60 * 60, 60));
+  return streams;
+}
+
+async function addonTrailers(meta: any, config: any): Promise<TrailerStream[] | null> {
+  const target = addonTarget(meta, config);
+  if (!target) return null;
+
+  const { readGlobalCache } = require('./getCache');
+  const cached: TrailerStream[] | null = await readGlobalCache(target.key);
+  if (Array.isArray(cached)) return cached;
+  return fetchAndStore(target);
+}
+
+export async function warmTrailerAddon(metas: any[], config: any, refreshWithinSeconds: number): Promise<number> {
+  if (config?.trailerProvider !== 'addon' || !Array.isArray(metas) || !metas.length) return 0;
+  const redis = require('./redisClient');
+  const { withGlobalEpoch } = require('./cacheEpoch');
+  const { mapWithConcurrency } = require('../utils/concurrency');
+  const targets = metas.map((meta) => addonTarget(meta, config)).filter((t): t is NonNullable<typeof t> => t !== null);
+  if (!targets.length || !redis) return 0;
+
+  let remaining: any[] | null = null;
+  try {
+    remaining = await redis.pipeline(targets.map((t) => ['pttl', withGlobalEpoch(t.key)])).exec();
+  } catch {
+    return 0;
+  }
+  const due = targets.filter((_, i) => {
+    const pttl = remaining?.[i]?.[1];
+    return typeof pttl !== 'number' || pttl < refreshWithinSeconds * 1000;
+  });
+  const fetched = await mapWithConcurrency(due, envInt('TRAILER_ADDON_WARM_CONCURRENCY', 4, 1), (t: any) => fetchAndStore(t));
+  return fetched.filter(Array.isArray).length;
 }
 
 function attachTrailers(meta: any, streams: TrailerStream[] | null): any {

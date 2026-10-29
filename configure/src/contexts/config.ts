@@ -112,6 +112,7 @@ export interface CatalogConfig {
     useUpstreamArt?: boolean;
     // Trakt Up Next metadata
     useShowPosterForUpNext?: boolean;
+    upNextSort?: 'watched' | 'aired';
     includeAnimeInUpNext?: boolean;
     // Trakt Calendar metadata
     airingSoonDays?: number;
@@ -148,6 +149,7 @@ export interface CatalogConfig {
     interval?: 'today' | 'week' | 'month';
     pageSize?: number; // Results per page for Simkl trending and watchlist catalogs (default: 50)
     status?: 'watching' | 'plantowatch' | 'hold' | 'completed' | 'dropped'; // Status for Simkl watchlist catalogs
+    watchlistSort?: 'added' | 'released' | 'released_asc';
     /** Source references for merged catalogs (id starts with 'merged.') */
     mergedSources?: Array<{
       catalogId: string;       // source catalog id, e.g. "tmdb.top"

@@ -11,9 +11,8 @@ const addon = express();
 
 const { getCatalog } = require("./lib/getCatalog");
 const { applyCatalogFilters, catalogFiltersActive } = require("./utils/catalogFilters");
-const { cursorKey, resolveStartPage, fillFilteredPage, fillOnce } = require("./lib/catalogPagination");
+const { cursorKey, resolveStartPage, fillFilteredPage, fillOnce, isEndOfList } = require("./lib/catalogPagination");
 const { registerInProcessRoute } = require("./lib/inProcessRoutes");
-const { defaultsToNoneGenre } = require("./lib/genreNoneDefault");
 const anilist = require("./lib/anilist");
 const { getSearch } = require("./lib/getSearch");
 const { getManifest, resolveManifestTags, DEFAULT_LANGUAGE } = require("./lib/getManifest");
@@ -34,8 +33,6 @@ const consola = require('consola');
 const aiCatalogLogger = consola.withTag('AICatalog');
 const { stripReleaseAvailabilityForResponse } = require('./utils/releaseAvailability');
 
-const { supportsMdblistScoreFilters } = require("./utils/mdbList");
-
 const configApi = require('./lib/configApi');
 const database = require('./lib/database');
 const { loadConfigFromDatabase, loadRouteConfig } = require('./lib/configApi');
@@ -52,7 +49,7 @@ const { shuffleMetas } = require("./utils/mergedCatalog");
 const { isLandscapeCatalogConfig } = require("./utils/catalogPosterShape");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { resolveDynamicTmdbDiscoverParams } = require('./lib/tmdbDiscoverDateTokens');
-const { isDiscoverCatalogId, applyDiscoverSignature } = require('./lib/discoverCatalogSignature');
+const { applyCatalogKeyArgs, applyCatalogKeyStamps, hiddenCatalogGenre } = require('./lib/catalogKeyArgs');
 const { blurImage, convertBannerToBackground } = require('./utils/imageProcessor');
 const { getAiTriggerKeyword, applyAiTrigger } = require('./utils/aiSearchTrigger');
 const { TraktClient } = require('./lib/trakt');
@@ -5156,114 +5153,13 @@ const catalogRoute = async function (req, res) {
   const cacheWrapper = cacheWrapCatalog;
 
   extraArgs = extraArgs || {};
-  // A client following the manifest sends the 'None' it leads with; one that
+  // A client following the manifest sends the genre it leads with; one that
   // leaves the genre out gets the same page, and the entry the warmer wrote.
-  if (!extraArgs.genre && catalogConfig?.showInHome === false && defaultsToNoneGenre(cleanId)) {
-    extraArgs.genre = 'None';
+  if (!extraArgs.genre && catalogConfig?.showInHome === false) {
+    const hidden = await hiddenCatalogGenre(config, userUUID, cleanId, actualType);
+    if (hidden) extraArgs.genre = hidden;
   }
-  // Ensure sort options are included in cache key
-  // Claimed before the provider prefixes; anilist.discover would otherwise match anilist.
-  if (isDiscoverCatalogId(cleanId)) {
-    applyDiscoverSignature(extraArgs, catalogConfig);
-  }
-  // Trakt uses: sort, sortDirection
-  else if (cleanId.startsWith('trakt.')) {
-    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
-    if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
-  }
-  // MDBList uses: sort, order
-  else if (cleanId.startsWith('mdblist.')) {
-    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
-    if (catalogConfig?.order) extraArgs.order = catalogConfig.order;
-    if (supportsMdblistScoreFilters(catalogConfig)) {
-      if (typeof catalogConfig.filter_score_min === 'number') {
-        extraArgs.filter_score_min = catalogConfig.filter_score_min;
-      }
-      if (typeof catalogConfig.filter_score_max === 'number') {
-        extraArgs.filter_score_max = catalogConfig.filter_score_max;
-      }
-    }
-  }
-  // Streaming uses: sort
-  else if (cleanId.startsWith('streaming.') || cleanId.startsWith('tmdb.year') || cleanId.startsWith('tmdb.language')) {
-    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
-    if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
-    if (cleanId.startsWith('tmdb.year') && typeof catalogConfig?.minVotes === 'number') {
-      extraArgs.minVotes = catalogConfig.minVotes;
-    }
-  }
-  // AniList uses: sort, sortDirection
-  else if (cleanId.startsWith('anilist.')) {
-    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
-    if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
-  }
-  // MAL user lists use: sort
-  else if (cleanId.startsWith('mal.userlist.')) {
-    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
-  }
-  // MovieLens uses: sortBy, sortDirection, tags, minYear, maxYear, minPop, maxDaysAgo, maxFutureDays
-  else if (cleanId.startsWith('movielens.')) {
-    const mlMeta: any = catalogConfig?.metadata || {};
-    if (mlMeta.sortBy) extraArgs.sort = mlMeta.sortBy;
-    if (mlMeta.sortDirection) extraArgs.sortDirection = mlMeta.sortDirection;
-    if (mlMeta.tags) extraArgs.tags = mlMeta.tags;
-    if (mlMeta.minYear) extraArgs.minYear = mlMeta.minYear;
-    if (mlMeta.maxYear) extraArgs.maxYear = mlMeta.maxYear;
-    if (mlMeta.minPop) extraArgs.minPop = mlMeta.minPop;
-    if (mlMeta.maxDaysAgo) extraArgs.maxDaysAgo = mlMeta.maxDaysAgo;
-    if (mlMeta.maxFutureDays !== undefined) extraArgs.maxFutureDays = mlMeta.maxFutureDays;
-    if (mlMeta.includeRated) extraArgs.includeRated = true;
-  }
-  // Up next catalogs need poster preference and filter settings in cache key
-  if (cleanId === 'trakt.upnext' || cleanId === 'mdblist.upnext' || cleanId.startsWith('simkl.upnext')) {
-      extraArgs.useShowPoster = typeof catalogConfig?.metadata?.useShowPosterForUpNext === 'boolean'
-        ? catalogConfig.metadata.useShowPosterForUpNext
-        : false;
-  }
-  if (cleanId === 'simkl.upnext') {
-      extraArgs.includeAnime = catalogConfig?.metadata?.includeAnimeInUpNext !== false;
-  }
-  if (cleanId === 'mdblist.upnext') {
-      if (catalogConfig?.metadata?.hideUnreleased !== undefined) {
-        extraArgs.hideUnreleased = catalogConfig.metadata.hideUnreleased;
-      }
-  }
-  // Trakt calendar needs today's date and days in cache key
-  if (cleanId === 'trakt.calendar') {
-    const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
-    const getTodayInTimezone = (tz) => {
-      const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
-      return formatter.format(new Date());
-    };
-    extraArgs.date = getTodayInTimezone(getUserTimezone());
-    extraArgs.days = typeof catalogConfig?.metadata?.airingSoonDays === 'number' 
-      ? catalogConfig.metadata.airingSoonDays 
-      : 1;
-  }
-  // Simkl calendar needs today's date and days in cache key
-  if (cleanId.startsWith('simkl.calendar')) {
-    const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
-    const getTodayInTimezone = (tz) => {
-      const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
-      return formatter.format(new Date());
-    };
-    extraArgs.date = getTodayInTimezone(getUserTimezone());
-    extraArgs.days = typeof catalogConfig?.metadata?.airingSoonDays === 'number' 
-      ? catalogConfig.metadata.airingSoonDays 
-      : 1;
-  }
-  if (cleanId === 'tvmaze.schedule') {
-    // Format date in user's configured timezone (or server timezone as fallback)
-    const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
-    const getTodayInTimezone = (tz) => {
-      const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
-      return formatter.format(new Date());
-    };
-    
-    const dateString = extraArgs.date || getTodayInTimezone(getUserTimezone());
-    extraArgs.date = dateString;
-    extraArgs.genre = !extraArgs.genre || extraArgs.genre === 'None' ? '' : extraArgs.genre.toUpperCase();
-  }
+  applyCatalogKeyArgs(extraArgs, cleanId, catalogConfig, config);
 
   // Compute pageSize and derive page from skip BEFORE building the cache key.
   // This normalizes skip values so that different skip values mapping to the same
@@ -5294,57 +5190,7 @@ const catalogRoute = async function (req, res) {
   delete cacheExtraArgs.skip;
   if (catalogPage > 1) cacheExtraArgs.page = catalogPage;
 
-  if (cleanId.startsWith('simkl.watchlist.') || cleanId.startsWith('simkl.upnext')) {
-    try {
-      const { getSimklToken, getSimklActivityFingerprint } = require('./utils/simklUtils');
-      const tokenId = config.apiKeys?.simklTokenId;
-      if (tokenId) {
-        const token = await getSimklToken(tokenId);
-        if (token?.access_token) {
-          // Up Next reads whichever buckets it renders, so its key has to move when
-          // any of them does, not just when the shows bucket does.
-          let pairs;
-          if (cleanId === 'simkl.upnext.anime') {
-            pairs = [['anime', 'watching']];
-          } else if (cleanId === 'simkl.upnext') {
-            pairs = extraArgs.includeAnime === false
-              ? [['shows', 'watching']]
-              : [['shows', 'watching'], ['anime', 'watching']];
-          } else {
-            const parts = cleanId.split('.');
-            pairs = [[parts[2], parts[3]]];
-          }
-          const fps = await Promise.all(
-            pairs.map(([t, s]) => getSimklActivityFingerprint(token.access_token, t, s, config))
-          );
-          const fp = fps.filter(Boolean).join('+');
-          if (fp) cacheExtraArgs._simklAct = fp;
-        }
-      }
-    } catch (e) {
-      consola.warn(`[Catalog] Simkl activity fingerprint failed for ${cleanId}: ${e.message}`);
-    }
-  }
-
-  if (cleanId.startsWith('movielens.explore')) {
-    try {
-      const credId = config.apiKeys?.movieLensCredId;
-      const catCfg = config.catalogs?.find(c => c.id === cleanId);
-      const explicitTags = String(catCfg?.metadata?.tags || '')
-        .split(',').map(s => s.trim()).filter(Boolean).join(',');
-      if (credId && !explicitTags) {
-        const metaTtl = parseInt(
-          process.env.MOVIELENS_USERMETA_TTL_SECONDS || process.env.MOVIELENS_GROUPTAGS_TTL_SECONDS || '43200', 10);
-        const userMeta = await cacheWrapGlobal(`movielens-usermeta:${credId}`,
-          async () => movielens.getUserMeta(credId), metaTtl);
-        if (userMeta?.engineId === 'bard' && Array.isArray(userMeta.groupTags) && userMeta.groupTags.length) {
-          cacheExtraArgs._mlTags = userMeta.groupTags.map(t => t.trim()).filter(Boolean).join(',');
-        }
-      }
-    } catch (e) {
-      consola.warn(`[Catalog] MovieLens group tags failed for ${cleanId}: ${e.message}`);
-    }
-  }
+  await applyCatalogKeyStamps(cacheExtraArgs, cleanId, catalogConfig, config);
 
   const cacheOptions = {
     enableErrorCaching: true,
@@ -5482,6 +5328,7 @@ const catalogRoute = async function (req, res) {
       const { genre: genreName, type_filter } = extraArgs;
       const runCatalogPage = async (page, skipOverride) => {
         let metas = [];
+        let ended = false;
         const args = [actualType, language, page];
         switch (cleanId) {
           case "tmdb.trending":
@@ -5530,10 +5377,11 @@ const catalogRoute = async function (req, res) {
           }
           default: {
             metas = (await getCatalog(actualType, language, page, cleanId, genreName, config, userUUID, false, skipOverride)).metas;
+            ended = isEndOfList(metas);
             break;
           }
       }
-      return { metas: metas || [] };
+      return { metas: metas || [], ...(ended ? { endOfList: true } : {}) };
     };
 
     const keyForPage = (page) => {

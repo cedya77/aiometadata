@@ -2487,10 +2487,6 @@ function buildTmdbEpisodeMapFromContext(context, kitsuId, kitsuEpisodeNumbers, o
     const relativeEpisodeNumber = absoluteEpisodeNumber - cumulativeEpisodes;
     const tmdbEpisodeNumber = relativeEpisodeNumber;
 
-    if (logSingleEpisode) {
-      logger.debug(`[ID Mapper] Kitsu ${kitsuId} Ep ${entry.episodeNumber} (Absolute: ${absoluteEpisodeNumber}) -> TMDB ${tmdbId} S${tmdbSeasonNumber}E${tmdbEpisodeNumber}`);
-    }
-
     resolvedByIndex.set(entry.index, {
       tmdbId: tmdbId,
       seasonNumber: tmdbSeasonNumber,
@@ -2544,8 +2540,6 @@ async function resolveTmdbEpisodesFromKitsu(kitsuId, kitsuEpisodeNumbers, config
  * @returns {Promise<{tmdbId: number, seasonNumber: number, episodeNumber: number}|null>} - The TMDB ID, season, and episode number
  */
 async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber, config = {}) {
-  logger.debug(`[ID Mapper] Resolving TMDB episode from Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber}`);
-
   try {
     const context = await getTmdbEpisodeResolutionContext(kitsuId, config);
     if (!context) {

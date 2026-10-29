@@ -1,4 +1,6 @@
+import { LRUCache } from 'lru-cache';
 import { parseStremioId } from './ids';
+import { envInt } from '../../utils/envNumber';
 
 const idMapper: any = require('../id-mapper');
 const animeList: any = require('../anime-list-mapper');
@@ -59,7 +61,21 @@ function filmAliases(videoId: string, parsed: any): string[] {
   return [...out];
 }
 
-export async function videoIdAliases(videoId: string): Promise<string[]> {
+const aliasMemo = new LRUCache<string, Promise<string[]>>({
+  max: envInt('JELLYFIN_ALIAS_MEMO_MAX', 20000, 1),
+  ttl: envInt('JELLYFIN_ALIAS_MEMO_TTL', 600, 1) * 1000,
+});
+
+export function videoIdAliases(videoId: string): Promise<string[]> {
+  let held = aliasMemo.get(videoId);
+  if (!held) {
+    held = computeVideoIdAliases(videoId);
+    aliasMemo.set(videoId, held);
+  }
+  return held.then((aliases) => [...aliases]);
+}
+
+async function computeVideoIdAliases(videoId: string): Promise<string[]> {
   const parsed = parseStremioId(videoId);
   if (!parsed) return [];
   if (parsed.episode === null || parsed.episode === undefined) {

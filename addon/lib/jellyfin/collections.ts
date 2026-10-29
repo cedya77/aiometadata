@@ -4,8 +4,8 @@ import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId } from './ids';
 import { collectionFolder, EMPTY_USER_DATA } from './dto';
 import { fetchWindow, includeTypesFilter, isLandscapeCatalog, knownCatalogLength, metaToBaseItem, rememberImages, showLandscape, warmCatalogLengths } from './items';
-import { getCatalogs, type CatalogRef } from './views';
-import { viewerAccountOwner } from './viewer';
+import { getCatalogs, requiresGenre, viewIdFor, viewTypeFor, type CatalogRef } from './views';
+import { viewerAccountOwner, viewerReadsExtensions } from './viewer';
 import { profileTags } from './profiles';
 import { findFolder, subFolders, type CollectionDraft, type FolderDraft, type SourceDraft } from '../collectionBuilder/types';
 
@@ -123,12 +123,33 @@ async function countScope(userUUID: string, config: any, catalogs: CatalogRef[],
   return { userUUID, tags };
 }
 
-function boxSetItem(serverId: string, collection: CollectionDraft, folder: FolderDraft, childCount: number | null, parentId: string): any {
+function sourceRows(catalogs: CatalogRef[], folder: FolderDraft): Array<{ id: string; name: string; genre?: string; collectionType?: string }> {
+  return visibleSources(catalogs, folder).map(({ source, catalog }) => {
+    const pinned = pinnedGenre(source);
+    const name = source.name?.trim() || catalog.name;
+    const options = catalogGenres(catalog);
+    const genre = pinned ?? (requiresGenre(catalog) ? (catalogOffersNone(catalog) ? 'None' : options[0]) : undefined);
+    const collectionType = viewTypeFor(catalog);
+    return {
+      id: viewIdFor(catalog),
+      name: pinned ? `${name} · ${pinned}` : name,
+      ...(genre ? { genre } : {}),
+      ...(collectionType ? { collectionType } : {}),
+    };
+  });
+}
+
+function boxSetItem(serverId: string, catalogs: CatalogRef[], collection: CollectionDraft, folder: FolderDraft, childCount: number | null, parentId: string): any {
   const id = boxSetId(collection, folder);
   const cover = imageOf(folder.coverImageUrl);
   const backdrop = imageOf(folder.heroBackdropUrl);
   const logo = imageOf(folder.titleLogoUrl);
   const animated = animatedPosterOf(folder);
+  const sources = viewerReadsExtensions() ? sourceRows(catalogs, folder) : [];
+  const extensions = {
+    ...(animated ? { animatedPoster: animated } : {}),
+    ...(sources.length ? { sources } : {}),
+  };
   if (cover || backdrop || logo) rememberImages(serverId, id, { primary: cover, backdrop, logo });
 
   return {
@@ -167,7 +188,7 @@ function boxSetItem(serverId: string, collection: CollectionDraft, folder: Folde
     MediaType: 'Unknown',
     LockedFields: [],
     LockData: false,
-    ...(animated ? { aiostreams: { animatedPoster: animated } } : {}),
+    ...(Object.keys(extensions).length ? { aiostreams: extensions } : {}),
   };
 }
 
@@ -175,7 +196,7 @@ function boxSetsOf(scope: CountScope, catalogs: CatalogRef[], serverId: string, 
   const out: any[] = [];
   for (const folder of folders) {
     if (!folder?.id || typeof folder.title !== 'string') continue;
-    const set = boxSetItem(serverId, collection, folder, childCount(scope, catalogs, folder), parentId);
+    const set = boxSetItem(serverId, catalogs, collection, folder, childCount(scope, catalogs, folder), parentId);
     out.push(set);
     if (deep) out.push(...boxSetsOf(scope, catalogs, serverId, collection, subFolders(folder), set.Id, true));
   }
@@ -236,6 +257,11 @@ const memberCursors = new LRUCache<string, MemberCursor>({
   ttl: envInt('JELLYFIN_FOLDER_CURSOR_TTL', 600, 30) * 1000,
 });
 const MEMBER_CURSOR_MAX_IDS = 25000;
+
+function catalogOffersNone(catalog: CatalogRef): boolean {
+  const extra = (catalog.extra ?? []).find((e: any) => e?.name === 'genre');
+  return Array.isArray(extra?.options) && extra.options.includes('None');
+}
 
 function catalogGenres(catalog: CatalogRef): string[] {
   const extra = (catalog.extra ?? []).find((e: any) => e?.name === 'genre');
