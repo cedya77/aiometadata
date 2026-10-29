@@ -1,7 +1,7 @@
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
 import { decodeJellyfinId, normaliseJellyfinId } from './ids';
-import { showIdentity } from './canonicalIds';
+import { isAnimeId, showIdentity } from './canonicalIds';
 
 const logger = consola.withTag('Jellyfin');
 const database: any = require('../database');
@@ -15,8 +15,11 @@ let prunedAt = 0;
 
 async function episodeOf(itemId: unknown, config: any): Promise<{ series: string; season: number; episode: number } | null> {
   const descriptor = await decodeJellyfinId(normaliseJellyfinId(String(itemId ?? '')));
-  if (!descriptor || descriptor.k !== 'episode' || !Number.isInteger(descriptor.s) || !Number.isInteger(descriptor.e)) return null;
-  return { series: await showIdentity(String(descriptor.i), config), season: Number(descriptor.s), episode: Number(descriptor.e) };
+  if (!descriptor || descriptor.k !== 'episode' || !Number.isInteger(descriptor.e)) return null;
+  // An anime entry numbers its episodes without a season and is one season of its own.
+  const season = Number.isInteger(descriptor.s) ? Number(descriptor.s) : descriptor.s == null && isAnimeId(String(descriptor.i)) ? 1 : null;
+  if (season === null) return null;
+  return { series: await showIdentity(String(descriptor.i), config), season, episode: Number(descriptor.e) };
 }
 
 function kindOf(value: unknown): string | null {
