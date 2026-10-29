@@ -21,6 +21,8 @@ export interface HistorySource {
   id: string;
   about: string;
   sameViewingMs(): number;
+  // How close a title's state here must be to count as the same viewing and stay as it is; sameViewingMs when absent.
+  sameStateMs?(): number;
   detects(upload: Upload): boolean;
   read(upload: Upload, context: { userUUID: string; config: any; picks: Record<string, number> }): Promise<SourceRead | SourceProgress | string>;
 }

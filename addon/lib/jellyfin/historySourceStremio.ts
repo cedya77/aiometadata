@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { envInt } from '../../utils/envNumber';
 import { videoIdAliases } from './aliases';
 import {
@@ -12,7 +13,7 @@ import {
   type HistorySource,
   type SectionRule,
 } from './historySources';
-import { filmWatched, imdbOfItem, isAnimeId, isStremioLibrary, readStremioLibrary, reallyPlayed, resumeOf, type StremioItem } from './stremioLibrary';
+import { filmWatched, imdbOfItem, isAnimeId, isStremioLibrary, lastSessionFinished, readStremioLibrary, reallyPlayed, resumeOf, type StremioItem } from './stremioLibrary';
 import { anchorWatched, decodeWatched, parseWatched, sortedVideoIds, type VideoRef, type WatchedField } from './stremioWatched';
 
 const idMapper: any = require('../id-mapper');
@@ -40,6 +41,12 @@ const videoRefs = (videos: unknown): VideoRef[] =>
 
 const imdbOfAnchor = (anchor: string): string | null => /^tt\d+/.exec(anchor)?.[0] ?? null;
 
+const marksDigest = (fields: WatchedField[]): string =>
+  createHash('sha1')
+    .update(fields.map((field) => `${field.anchor}\u0000${field.anchorLength}\u0000${field.bits.toString('base64')}`).sort().join('\n'))
+    .digest('hex')
+    .slice(0, 16);
+
 // This server's list first, as most Stremio users watch through AIOMetadata; Cinemeta when it cannot place a show's marks.
 async function episodeLists(userUUID: string, title: Title): Promise<Lists> {
   let own: string[] | null = null;
@@ -58,21 +65,35 @@ async function episodeLists(userUUID: string, title: Title): Promise<Lists> {
 function watchedEpisodes(item: StremioItem, lists: Lists | undefined, miss: (name: string, reason: string) => void): { episodes: string[]; last: string | null } {
   const field = parseWatched(item.state.watched);
   let episodes: string[] = [];
+  let order: string[] | null = null;
   if (field) {
-    const placed = [lists?.own, lists?.cinemeta].map((ids) => (ids ? decodeWatched(field, ids) : null)).find((found) => found !== null);
-    if (placed) episodes = placed;
-    else if (anchorWatched(field)) {
+    for (const ids of [lists?.own, lists?.cinemeta]) {
+      const placed = ids ? decodeWatched(field, ids) : null;
+      if (placed) {
+        episodes = placed;
+        order = ids!;
+        break;
+      }
+    }
+    if (!order && anchorWatched(field)) {
       episodes = [field.anchor];
       miss(item.name, ONLY_ANCHOR);
     }
   }
-  let last = field && episodes.includes(field.anchor) ? field.anchor : episodes[episodes.length - 1] ?? null;
-  const current = item.state.videoId;
+  const latestMark = field && episodes.includes(field.anchor) ? field.anchor : episodes[episodes.length - 1] ?? null;
+  const { videoId: current, timeOffset } = item.state;
   // The episode Stremio was playing at lastWatched crossed the watched mark before its bit was set.
-  if (item.state.flaggedWatched && current && !episodes.includes(current)) {
-    episodes = [...episodes, current];
-    last = current;
-  }
+  if (item.state.flaggedWatched && current && !episodes.includes(current)) episodes = [...episodes, current];
+  const watched = (id: string | null | undefined): id is string => Boolean(id) && episodes.includes(id!);
+
+  // lastWatched dates Stremio's latest session: on the current episode while it is under way, on the one it
+  // just moved on from when the position is 1, and otherwise on the current episode or the latest mark.
+  let last: string | null;
+  if (timeOffset > 1) last = watched(current) ? current : null;
+  else if (timeOffset === 1) {
+    const at = order && current ? order.indexOf(current) : -1;
+    last = at > 0 ? (watched(order![at - 1]) ? order![at - 1] : null) : latestMark;
+  } else last = watched(current) ? current : latestMark;
   return { episodes: episodes.filter((id) => USABLE_VIDEO.test(id)), last };
 }
 
@@ -82,6 +103,9 @@ export const stremioHistorySource: HistorySource = {
   about: 'Watched films and episodes, where you stopped, and the Stremio library as the watchlist come over from each Stremio profile. Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers.',
 
   sameViewingMs: () => envInt('JELLYFIN_HISTORY_IMPORT_STREMIO_SAME_WATCH_MINUTES', 180, 0) * 60 * 1000,
+
+  // Stremio never records a play made here, so a state here is the same viewing only at the same moment; a newer one wins.
+  sameStateMs: () => envInt('JELLYFIN_HISTORY_IMPORT_SAME_WATCH_SECONDS', 60, 0) * 1000,
 
   detects: (upload) => isStremioLibrary(upload.json),
 
@@ -98,7 +122,10 @@ export const stremioHistorySource: HistorySource = {
         titles.set(item.id, title);
       }
     }
-    const looked = titles.size ? await lookupAll('stremio', userUUID, titles, (title) => episodeLists(userUUID, title)) : { values: new Map<string, Lists>() };
+    // A title's marks decide whether Cinemeta is asked, so lookups held for a later request are keyed by them too.
+    const keys = new Map([...titles.values()].map((title) => [title.id, `${title.id}\u0000${marksDigest(title.fields)}`]));
+    const lookups = new Map([...titles.values()].map((title) => [keys.get(title.id)!, title]));
+    const looked = lookups.size ? await lookupAll('stremio', userUUID, lookups, (title) => episodeLists(userUUID, title)) : { values: new Map<string, Lists>() };
     if (!('values' in looked)) return { matching: { ...looked, label: 'Checking episode lists' } };
 
     const { miss, done } = unmatchedList();
@@ -127,14 +154,14 @@ export const stremioHistorySource: HistorySource = {
           const row = { spellings, kind, asOf: item.mtime };
           if (filmWatched(state)) {
             const plays = Math.min(MAX_PLAYS, Math.max(1, Math.round(state.timesWatched)));
-            const dated = reallyPlayed(state) && state.lastWatched ? 1 : 0;
+            const dated = reallyPlayed(state) && lastSessionFinished(state) && state.lastWatched ? 1 : 0;
             if (dated) rows.viewings.push({ ...row, at: state.lastWatched });
             for (let i = dated; i < plays; i++) rows.viewings.push({ ...row, at: null });
             if (!dated) rows.marked.push({ ...row, at: state.lastWatched });
           }
           if (resume) rows.progress.push({ ...row, at: state.lastWatched, progress: resume });
         } else {
-          const { episodes, last } = watchedEpisodes(item, looked.values.get(item.id), miss);
+          const { episodes, last } = watchedEpisodes(item, looked.values.get(keys.get(item.id) ?? ''), miss);
           for (const episode of episodes) {
             const spellings = await withAliases(episode);
             if (spellings.length) rows.marked.push({ spellings, kind, at: episode === last ? state.lastWatched : null, asOf: item.mtime });

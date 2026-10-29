@@ -100,6 +100,10 @@ export const filmWatched = (state: StremioState): boolean => state.timesWatched 
 
 export const reallyPlayed = (state: StremioState): boolean => state.duration > 0 && state.overallTimeWatched >= WATCHED_SHARE * state.duration;
 
+// lastWatched dates the latest session; it is a finished viewing only if that session reached the watched mark
+// (Stremio rewinds to 0 past the credits) rather than reopening a film watched before.
+export const lastSessionFinished = (state: StremioState): boolean => state.timeOffset <= 1 || state.timeOffset >= WATCHED_SHARE * state.duration;
+
 // Stremio rewinds a title past its credits; a position there is a film it never cleared, not one to resume.
 export function resumeOf(state: StremioState): { positionMs: number; runtimeMs: number } | null {
   return state.duration > 0 && state.timeOffset > 1 && state.timeOffset < CREDITS_SHARE * state.duration ? { positionMs: state.timeOffset, runtimeMs: state.duration } : null;

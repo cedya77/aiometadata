@@ -271,7 +271,7 @@ const keyOf = (profile: string, id: string) => `${profile}\u0000${id}`;
 
 const nativeSameWatchMs = () => envInt('JELLYFIN_HISTORY_IMPORT_SAME_WATCH_SECONDS', 60, 0) * 1000;
 
-export async function planHistoryImport(userUUID: string, file: HistoryFile, mapping: Record<string, string | null>, sameWatchMs = nativeSameWatchMs()): Promise<Plan> {
+export async function planHistoryImport(userUUID: string, file: HistoryFile, mapping: Record<string, string | null>, sameWatchMs = nativeSameWatchMs(), sameStateMs = sameWatchMs): Promise<Plan> {
   const counts = emptyCounts();
   const writes: Write[] = [];
   const target = (profile: string): string | null => (Object.prototype.hasOwnProperty.call(mapping, profile) && typeof mapping[profile] === 'string' ? mapping[profile] : null);
@@ -301,7 +301,7 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     titles.get(title)!.push({ key, ...entry });
   }
   const sameViewing = (held: State, state: State): State =>
-    held.lastPlayedAt && state.lastPlayedAt && Math.abs(held.lastPlayedAt - state.lastPlayedAt) <= sameWatchMs
+    held.lastPlayedAt && state.lastPlayedAt && Math.abs(held.lastPlayedAt - state.lastPlayedAt) <= sameStateMs
       ? { ...state, lastPlayedAt: held.lastPlayedAt, updatedAt: Math.min(state.updatedAt, held.updatedAt) }
       : state;
   const mergedInto = (held: State, state: State) => mergeState(held, sameViewing(held, state));
@@ -623,7 +623,7 @@ export async function receiveHistoryImport(userUUID: string, config: any, body: 
     }
   }
 
-  const plan = await planHistoryImport(userUUID, file, mapping, upload.source.sameViewingMs());
+  const plan = await planHistoryImport(userUUID, file, mapping, upload.source.sameViewingMs(), upload.source.sameStateMs?.() ?? upload.source.sameViewingMs());
   const summary = {
     source: upload.source.id,
     about: upload.source.about,
