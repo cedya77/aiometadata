@@ -356,6 +356,7 @@ const sharesId = (a: Record<string, any> = {}, b: Record<string, any> = {}): boo
 
 function mdblistMissed(write: any, missed: any): boolean {
   const list = (key: string): any[] => (Array.isArray(missed?.[key]) ? missed[key] : []);
+  if (write.episodeIds) return list('episodes').some((entry) => sharesId(entry?.ids, write.episodeIds));
   if (write.season == null || write.episode == null) return list('movies').some((entry) => sharesId(entry?.ids, write.ids));
   if (list('shows').some((entry) => sharesId(entry?.ids, write.ids))) return true;
   return list('episodes').some((entry) => Number(entry?.season) === Number(write.season) && Number(entry?.number) === Number(write.episode) && sharesId(entry?.show?.ids, write.ids));
