@@ -16,12 +16,28 @@ function wholeTmdbSeason(mapping: any): number | null {
   return sharing.length === 1 ? season : null;
 }
 
-async function kitsuForTmdb(tmdbId: number, season: number, episode: number): Promise<{ kitsuId: number; episodeNumber: number } | null> {
+export async function kitsuForTmdb(tmdbId: number, season: number, episode: number): Promise<{ kitsuId: number; episodeNumber: number } | null> {
   const found = await idMapper.resolveKitsuEpisodeFromTmdb(tmdbId, season, episode, {}, true).catch(() => null);
   if (!found?.kitsuId) return null;
   const back = await idMapper.resolveTmdbEpisodeFromKitsu(found.kitsuId, found.episodeNumber, {}).catch(() => null);
   const same = Number(back?.tmdbId) === tmdbId && Number(back?.seasonNumber) === season && Number(back?.episodeNumber) === episode;
   return same ? { kitsuId: Number(found.kitsuId), episodeNumber: Number(found.episodeNumber) } : null;
+}
+
+async function animeAtTvdb(tvdbId: number, season: number, episode: number): Promise<{ anime: any; episode: number } | null> {
+  const anidb = await animeList.resolveAnidbEpisodeFromTvdbEpisode(tvdbId, season, episode);
+  const byAnidb = anidb?.anidbId ? idMapper.getMappingByAnidbId(anidb.anidbId) : null;
+  const listed = byAnidb?.kitsu_id || byAnidb?.mal_id ? null : idMapper.resolveKitsuEpisodeFromTvdbMapping(tvdbId, season, episode);
+  const anime = listed ? idMapper.getMappingByKitsuId(listed.kitsuId) : byAnidb;
+  return anime ? { anime, episode: Number(listed ? listed.episodeNumber : anidb.anidbEpisode) } : null;
+}
+
+async function tvdbOfPart(mapping: any, episode: number): Promise<{ tvdbId: number; tvdbSeason: number; tvdbEpisode: number } | null> {
+  const season = Number(mapping?.season?.tvdb);
+  if (mapping?.anidb_id || !mapping?.tvdb_id || !mapping?.kitsu_id || !Number.isInteger(season) || season < 1) return null;
+  const tvdbEpisode = episode + (Number(mapping.episode_offset?.tvdb) || 0);
+  const back = await animeAtTvdb(Number(mapping.tvdb_id), season, tvdbEpisode);
+  return back?.anime?.kitsu_id === mapping.kitsu_id && back.episode === episode ? { tvdbId: Number(mapping.tvdb_id), tvdbSeason: season, tvdbEpisode } : null;
 }
 
 async function tmdbSpelling(mapping: any, episode: number): Promise<string | null> {
@@ -105,7 +121,7 @@ async function computeVideoIdAliases(videoId: string): Promise<string[]> {
       if (mapping.kitsu_id) add(`kitsu:${mapping.kitsu_id}:${episode}`);
       if (mapping.mal_id) add(`mal:${mapping.mal_id}:${episode}`);
 
-      const tvdb = mapping.anidb_id ? animeList.resolveTvdbEpisodeFromAnidbEpisode(mapping.anidb_id, 1, episode) : null;
+      const tvdb = mapping.anidb_id ? animeList.resolveTvdbEpisodeFromAnidbEpisode(mapping.anidb_id, 1, episode) : await tvdbOfPart(mapping, episode);
       if (tvdb?.tvdbId) {
         add(`tvdb:${tvdb.tvdbId}:${tvdb.tvdbSeason}:${tvdb.tvdbEpisode}`);
         if (mapping.imdb_id) add(`${mapping.imdb_id}:${tvdb.tvdbSeason}:${tvdb.tvdbEpisode}`);
@@ -147,10 +163,9 @@ async function computeVideoIdAliases(videoId: string): Promise<string[]> {
       let animeFound = false;
       if (tvdbId) {
         if (parsed.idType === 'imdb') add(`tvdb:${tvdbId}:${season}:${episode}`);
-        const anidb = await animeList.resolveAnidbEpisodeFromTvdbEpisode(tvdbId, season, episode);
-        const listed = anidb?.anidbId ? null : idMapper.resolveKitsuEpisodeFromTvdbMapping(tvdbId, season, episode);
-        const anime = anidb?.anidbId ? idMapper.getMappingByAnidbId(anidb.anidbId) : listed ? idMapper.getMappingByKitsuId(listed.kitsuId) : null;
-        const animeEpisode = anidb?.anidbId ? anidb.anidbEpisode : listed?.episodeNumber;
+        const found = await animeAtTvdb(tvdbId, season, episode);
+        const anime = found?.anime;
+        const animeEpisode = found?.episode;
         animeFound = Boolean(anime);
         if (anime?.kitsu_id) add(`kitsu:${anime.kitsu_id}:${animeEpisode}`);
         if (anime?.mal_id) add(`mal:${anime.mal_id}:${animeEpisode}`);

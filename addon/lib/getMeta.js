@@ -2481,6 +2481,11 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
                   episodeId = `kitsu:${kitsuMapping.kitsu_id}:${anidbEpisodeInfo.anidbEpisode}`;
                 }
               }
+              if (!episodeId) {
+                const listed = idMapper.resolveKitsuEpisodeFromTvdbMapping(tvdbId, episode.seasonNumber, episode.number);
+                const listedAnidb = listed ? idMapper.getMappingByKitsuId(listed.kitsuId)?.anidb_id : null;
+                if (listed && (!listedAnidb || !anidbEpisodeInfo?.anidbId || Number(listedAnidb) === Number(anidbEpisodeInfo.anidbId))) episodeId = `kitsu:${listed.kitsuId}:${listed.episodeNumber}`;
+              }
             } else if (config.tvdbSeasonType === 'absolute') {
               const seasonalInfo = absoluteToSeasonalMap.get(episode.number);
               if (seasonalInfo) {
@@ -2500,6 +2505,12 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
                 if (malMapping?.mal_id) {
                   episodeId = `mal:${malMapping.mal_id}:${anidbEpisodeInfo.anidbEpisode}`;
                 }
+              }
+              if (!episodeId) {
+                const listed = idMapper.resolveKitsuEpisodeFromTvdbMapping(tvdbId, episode.seasonNumber, episode.number);
+                const listedMapping = listed ? idMapper.getMappingByKitsuId(listed.kitsuId) : null;
+                const sameAnidb = !listedMapping?.anidb_id || !anidbEpisodeInfo?.anidbId || Number(listedMapping.anidb_id) === Number(anidbEpisodeInfo.anidbId);
+                if (listedMapping?.mal_id && sameAnidb) episodeId = `mal:${listedMapping.mal_id}:${listed.episodeNumber}`;
               }
             } else if (config.tvdbSeasonType === 'absolute') {
               const seasonalInfo = absoluteToSeasonalMap.get(episode.number);
