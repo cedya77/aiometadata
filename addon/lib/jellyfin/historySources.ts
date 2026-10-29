@@ -281,77 +281,114 @@ export function unmatchedList(): { miss: (name: string, reason: string) => void;
   };
 }
 
-type Viewed = { spellings: string[]; at: number | null };
-type Marked = { spellings: string[]; at: number | null };
+type Viewed = { spellings: string[]; at: number | null; asOf?: number | null };
+type Marked = { spellings: string[]; at: number | null; asOf?: number | null };
+type Resume = { positionMs: number; runtimeMs: number };
+type Resumed = Marked & Resume;
 type Rated = Marked & { rating: number; metaType: 'movie' | 'series' };
-type Listed = Marked & { mediaType: 'movie' | 'series'; metaType: 'movie' | 'series' };
+type Listed = Marked & { mediaType: 'movie' | 'series' | 'anime'; metaType: 'movie' | 'series' };
 
-export type Found = { spellings: string[]; kind: 'movie' | 'series' };
+export type Found = { spellings: string[]; kind: 'movie' | 'series'; mediaType?: 'movie' | 'series' | 'anime' };
 
 export type SectionRule<R> = {
-  into: 'viewings' | 'marked' | 'ratings' | 'watchlist' | 'dropped';
+  into: 'viewings' | 'marked' | 'ratings' | 'watchlist' | 'dropped' | 'progress';
   rows: R[];
   at: (row: R) => number | null;
   keep?: (row: R) => boolean;
   rating?: (row: R) => number | null;
+  progress?: (row: R) => Resume | null;
+  // The state's own date when it is not a play: it moves updatedAt but not lastPlayedAt.
+  asOf?: (row: R) => number | null;
 };
 
-export async function historyFromSections<R>(origin: string, profileName: string, sameViewingMs: number, find: (row: R) => Promise<Found | null>, rules: SectionRule<R>[]): Promise<any> {
-  const rows = { viewings: [] as Viewed[], marked: [] as Marked[], ratings: [] as Rated[], watchlist: [] as Listed[], dropped: [] as Marked[] };
+export async function historyFromSections<R>(origin: string, profileName: string, sameViewingMs: number, find: (row: R) => Promise<Found | null>, rules: SectionRule<R>[], profileKey = ''): Promise<any> {
+  const rows = { viewings: [] as Viewed[], marked: [] as Marked[], progress: [] as Resumed[], ratings: [] as Rated[], watchlist: [] as Listed[], dropped: [] as Marked[] };
   for (const rule of rules) {
     for (const row of rule.rows) {
       if (rule.keep && !rule.keep(row)) continue;
       const rating = rule.into === 'ratings' ? rule.rating?.(row) ?? null : null;
       if (rule.into === 'ratings' && rating === null) continue;
+      const resume = rule.into === 'progress' ? rule.progress?.(row) ?? null : null;
+      if (rule.into === 'progress' && !resume) continue;
       const found = await find(row);
       if (!found?.spellings.length) continue;
-      const base = { spellings: found.spellings, at: rule.at(row) };
+      const base = { spellings: found.spellings, at: rule.at(row), asOf: rule.asOf?.(row) ?? null };
       if (rule.into === 'ratings') rows.ratings.push({ ...base, rating: rating!, metaType: found.kind });
-      else if (rule.into === 'watchlist') rows.watchlist.push({ ...base, mediaType: found.kind, metaType: found.kind });
+      else if (rule.into === 'watchlist') rows.watchlist.push({ ...base, mediaType: found.mediaType ?? found.kind, metaType: found.kind });
+      else if (rule.into === 'progress') rows.progress.push({ ...base, ...resume! });
       else rows[rule.into].push(base);
     }
   }
-  return historyBody(origin, profileName, sameViewingMs, rows);
+  return historyBody(origin, profileName, sameViewingMs, rows, profileKey);
 }
 
-function historyBody(origin: string, profileName: string, sameViewingMs: number, rows: { viewings: Viewed[]; marked?: Marked[]; ratings?: Rated[]; watchlist?: Listed[]; dropped?: Marked[] }): any {
-  const titles = new Map<string, { spellings: string[]; dated: number[]; undated: number; marked: number | null }>();
-  const note = (spellings: string[]) => {
-    const held = titles.get(spellings[0]) ?? { spellings, dated: [], undated: 0, marked: null };
+const BODY_SECTIONS = ['playstate', 'watches', 'ratings', 'watchlist', 'dropped', 'matches'] as const;
+
+export function combineHistoryBodies(bodies: any[]): any {
+  const out: any = { format: 'aiometadata-history', version: 1, profiles: [] };
+  for (const section of BODY_SECTIONS) out[section] = [];
+  for (const body of bodies) {
+    out.profiles = out.profiles.concat(body.profiles);
+    for (const section of BODY_SECTIONS) out[section] = out[section].concat(body[section]);
+  }
+  return out;
+}
+
+type HeldTitle = { spellings: string[]; dated: number[]; undated: number; marked: number | null; played: boolean; asOf: number; resume: (Resume & { at: number }) | null };
+
+function historyBody(
+  origin: string,
+  profileName: string,
+  sameViewingMs: number,
+  rows: { viewings: Viewed[]; marked?: Marked[]; progress?: Resumed[]; ratings?: Rated[]; watchlist?: Listed[]; dropped?: Marked[] },
+  profile = '',
+): any {
+  const titles = new Map<string, HeldTitle>();
+  const note = (spellings: string[], asOf: number | null | undefined) => {
+    const held = titles.get(spellings[0]) ?? { spellings, dated: [], undated: 0, marked: null, played: false, asOf: 0, resume: null };
+    if (asOf && asOf > held.asOf) held.asOf = asOf;
     titles.set(spellings[0], held);
     return held;
   };
-  for (const { spellings, at } of rows.viewings) {
+  for (const { spellings, at, asOf } of rows.viewings) {
     if (!spellings.length) continue;
-    const held = note(spellings);
+    const held = note(spellings, asOf);
+    held.played = true;
     if (at) held.dated.push(at);
     else held.undated += 1;
   }
-  for (const { spellings, at } of rows.marked ?? []) {
+  for (const { spellings, at, asOf } of rows.marked ?? []) {
     if (!spellings.length) continue;
-    const held = note(spellings);
+    const held = note(spellings, asOf);
+    held.played = true;
     if (at && at > (held.marked ?? 0)) held.marked = at;
+  }
+  for (const { spellings, at, asOf, positionMs, runtimeMs } of rows.progress ?? []) {
+    if (!spellings.length) continue;
+    const held = note(spellings, asOf);
+    if (!held.resume || (at ?? 0) >= held.resume.at) held.resume = { positionMs, runtimeMs, at: at ?? 0 };
   }
   const playstate: any[] = [];
   const watches: any[] = [];
-  for (const [title, { spellings, dated, undated, marked }] of titles) {
+  for (const [title, { spellings, dated, undated, marked, played, asOf, resume }] of titles) {
     const viewings: number[] = [];
     for (const at of dated.sort((a, b) => a - b)) if (!viewings.length || at - viewings[viewings.length - 1] > sameViewingMs) viewings.push(at);
     const count = viewings.length + undated;
     const last = viewings.length ? viewings[viewings.length - 1] : null;
-    for (const at of viewings) for (const videoId of spellings) watches.push({ profile: '', videoId, title, watchedAt: isoAt(at), origin });
+    const lastPlayed = Math.max(last ?? marked ?? 0, resume?.at ?? 0) || null;
+    for (const at of viewings) for (const videoId of spellings) watches.push({ profile, videoId, title, watchedAt: isoAt(at), origin });
     for (const videoId of spellings) {
       playstate.push({
-        profile: '', videoId, title, positionMs: 0, runtimeMs: 0, played: true, playCount: Math.max(1, count),
-        lastPlayedAt: isoAt(last ?? marked), updatedAt: isoAt(Math.max(last ?? 0, marked ?? 0) || 1), origin,
+        profile, videoId, title, positionMs: resume?.positionMs ?? 0, runtimeMs: resume?.runtimeMs ?? 0, played, playCount: played ? Math.max(1, count) : 0,
+        lastPlayedAt: isoAt(lastPlayed), updatedAt: isoAt(Math.max(last ?? 0, marked ?? 0, resume?.at ?? 0, asOf) || 1), origin,
       });
     }
   }
-  const mark = ({ spellings, at }: Marked) => ({ profile: '', metaId: spellings[0], also: spellings.slice(1), updatedAt: isoAt(at ?? 1) });
+  const mark = ({ spellings, at }: Marked) => ({ profile, metaId: spellings[0], also: spellings.slice(1), updatedAt: isoAt(at ?? 1) });
   return {
     format: 'aiometadata-history',
     version: 1,
-    profiles: [{ key: '', name: profileName }],
+    profiles: [{ key: profile, name: profileName }],
     playstate,
     watches,
     ratings: (rows.ratings ?? []).filter((row) => row.spellings.length).map((row) => ({ ...mark(row), rating: row.rating, metaType: row.metaType })),
