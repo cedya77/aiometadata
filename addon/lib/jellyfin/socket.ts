@@ -429,6 +429,14 @@ export function attachJellyfinSocket(server: any): void {
       send('KeepAlive');
       if (!socket.destroyed) socket.write(Buffer.from([0x89, 0x00]));
       markListening(scope, listener.deviceId);
+      // Another replica may since have learnt which device this token belongs to.
+      if (!listener.deviceId && token) {
+        void tokenDevice(token).then((found) => {
+          if (!found || listener.deviceId || socket.destroyed) return;
+          listener.deviceId = found;
+          markListening(scope, found);
+        });
+      }
     }, pingMs());
 
     const maxPending = maxFrameBytes();

@@ -635,6 +635,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   const signIn = async (req: any, res: any, userUUID: string, config: any, profile: Profile): Promise<void> => {
     const serverId = serverIdFor(userUUID);
     const token = await mintToken(userUUID, profile.id);
+    // Known before the client can open a socket with only this token.
+    rememberTokenDevice(token, clientInfo(req));
 
     res.json({
       User: userFor(profile, serverId),
