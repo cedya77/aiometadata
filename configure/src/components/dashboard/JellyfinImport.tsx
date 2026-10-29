@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, Download, Film, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, Download, Film, Loader2, Tv } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DASHBOARD_QUERY_KEYS, useJellyfinHistoryImport, useJellyfinHistoryImportJob, type HistoryImportJob, type HistoryImportPreview, type HistoryImportSection } from "@/hooks/useDashboardQueries";
+import { STREMIO_FILE_NAME } from "@/lib/stremioAccount";
+import StremioImport from "./StremioImport";
 
 const SECTION_LABELS: Array<[HistoryImportSection, string]> = [
   ["playstate", "Watched and in progress"],
@@ -19,10 +21,16 @@ const SKIP = "__skip__";
 
 const progressOf = (job: HistoryImportJob) => `${job.done.toLocaleString()} of ${job.total.toLocaleString()}`;
 
+const fromStremio = (fileName: string | null | undefined) => fileName === STREMIO_FILE_NAME;
+
+const sourceName = (fileName: string | null | undefined) => (fromStremio(fileName) ? "Stremio" : fileName);
+
 function stoppedText(job: HistoryImportJob): string {
-  const file = job.fileName ? `The import of ${job.fileName}` : "The last import";
   const how = job.status === "interrupted" ? "was interrupted" : "stopped";
-  return `${file} ${how} after ${progressOf(job)} changes${job.error ? `: ${job.error}` : ""}. Import the same file again to finish it.`;
+  const error = job.error ? `: ${job.error}` : "";
+  if (fromStremio(job.fileName)) return `The import from Stremio ${how} after ${progressOf(job)} changes${error}. Import from Stremio again to finish it.`;
+  const file = job.fileName ? `The import of ${job.fileName}` : "The last import";
+  return `${file} ${how} after ${progressOf(job)} changes${error}. Import the same file again to finish it.`;
 }
 
 export default function JellyfinImport({ userUUID, notice = false }: { userUUID: string; notice?: boolean }) {
@@ -37,6 +45,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
   const [started, setStarted] = useState(false);
   const [matching, setMatching] = useState<{ done: number; total: number; label: string } | null>(null);
   const [picks, setPicks] = useState<Record<string, number>>({});
+  const [stremioOpen, setStremioOpen] = useState(false);
   const watching = useRef<string | null>(null);
 
   const running = job?.status === "running";
@@ -137,33 +146,45 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
     job && job.status !== "done" && !(running && file) ? (
       <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-white/[0.06] px-4 py-2.5 text-xs sm:px-6 ${running ? "text-muted-foreground" : "bg-amber-500/[0.06] text-amber-200"}`}>
         {running ? <Loader2 className="size-3.5 shrink-0 animate-spin" /> : <AlertTriangle className="size-3.5 shrink-0" />}
-        <span className="min-w-0 flex-[1_1_16rem] [overflow-wrap:anywhere]">{running ? `Importing watch history${job.fileName ? ` from ${job.fileName}` : ""}: ${progressOf(job)}` : stoppedText(job)}</span>
+        <span className="min-w-0 flex-[1_1_16rem] [overflow-wrap:anywhere]">{running ? `Importing watch history${job.fileName ? ` from ${sourceName(job.fileName)}` : ""}: ${progressOf(job)}` : stoppedText(job)}</span>
         {!running && (
           <span className="ml-auto flex items-center gap-1">
-            <Button size="sm" variant="ghost" className="glass h-7 gap-1 rounded-full px-3 text-xs" onClick={() => input.current?.click()}>
-              <Download className="h-3.5 w-3.5" /> Import file
-            </Button>
+            {fromStremio(job.fileName) ? (
+              <Button size="sm" variant="ghost" className="glass h-7 gap-1 rounded-full px-3 text-xs" onClick={() => setStremioOpen(true)}>
+                <Tv className="h-3.5 w-3.5" /> Import from Stremio
+              </Button>
+            ) : (
+              <Button size="sm" variant="ghost" className="glass h-7 gap-1 rounded-full px-3 text-xs" onClick={() => input.current?.click()}>
+                <Download className="h-3.5 w-3.5" /> Import file
+              </Button>
+            )}
             <Button size="sm" variant="ghost" className="h-7 rounded-full px-3 text-xs text-muted-foreground" onClick={() => void clear()}>Dismiss</Button>
           </span>
         )}
       </div>
     ) : null
   ) : (
-    <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" onClick={() => input.current?.click()} disabled={running} title="Import a watch history export">
-      {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Import
-    </Button>
+    <>
+      <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" onClick={() => input.current?.click()} disabled={running} title="Import a watch history export">
+        {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Import
+      </Button>
+      <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" onClick={() => setStremioOpen(true)} disabled={running} title="Import watch history from a Stremio account">
+        <Tv className="h-3.5 w-3.5" /> Stremio
+      </Button>
+    </>
   );
 
   return (
     <>
       {picker}
       {trigger}
+      <StremioImport open={stremioOpen} onOpenChange={setStremioOpen} onLibrary={(library) => { setStremioOpen(false); pick(library); }} />
       <Dialog open={Boolean(file)} onOpenChange={(open) => { if (!open) close(); }}>
         <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Import watch history</DialogTitle>
             <DialogDescription className="[overflow-wrap:anywhere]">
-              {file?.name}.{preview ? ` ${preview.about}` : ""}
+              {sourceName(file?.name)}.{preview ? ` ${preview.about}` : ""}
             </DialogDescription>
           </DialogHeader>
 
