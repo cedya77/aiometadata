@@ -88,7 +88,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
   const [moveRest, setMoveRest] = useState(true);
   const [saving, setSaving] = useState(false);
   const series = subject.kind === "series";
-  const { data: title, isLoading: titleLoading } = useJellyfinTitle(userUUID, profile, series ? subject.open : null, { activeTab });
+  const { data: title, isLoading: titleLoading, isFetching: titleFetching, refetch: readTitle } = useJellyfinTitle(userUUID, profile, series ? subject.open : null, { activeTab });
   const pickedRef = useRef<HTMLButtonElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -153,7 +153,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
     missing: p.rows.filter((r) => r.status === "missing").length,
   });
   const missingTotal = plans.reduce((sum, p) => sum + counts(p).missing, 0);
-  const ready = Boolean(picked && detail && !reading && (!series || !titleLoading) && missingTotal === 0);
+  const ready = Boolean(picked && detail && !reading && (!series || title) && missingTotal === 0);
 
   useEffect(() => {
     const text = query.trim();
@@ -336,6 +336,11 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
           {picked && series && !changing && (
             reading || titleLoading ? (
               <Skeleton className="h-64 rounded-xl" />
+            ) : !title ? (
+              <p className="text-xs text-muted-foreground">
+                Could not read the episodes here, so they can't be lined up with {name}'s.{" "}
+                <button type="button" onClick={() => void readTitle()} disabled={titleFetching} className="font-medium text-foreground underline-offset-4 hover:underline disabled:opacity-50">Try again</button>
+              </p>
             ) : !view.seasons.length ? (
               <p className="text-xs text-muted-foreground">{name} lists no episodes for {picked.title}, so episodes keep their numbers.</p>
             ) : plan && (
