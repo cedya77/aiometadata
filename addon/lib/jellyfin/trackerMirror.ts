@@ -97,8 +97,8 @@ async function runSync(service: MirrorService, key: string, credential: string, 
     : service === 'mdblist'
       ? await syncMdblist(key, credential, watermark, fresh)
       : service === 'publicmetadb'
-        ? await syncPmdb(key, credential, watermark)
-        : await syncAnimeList(service, key, credential, watermark);
+        ? await syncPmdb(key, credential, watermark, fresh)
+        : await syncAnimeList(service, key, credential, watermark, fresh);
 
   version = await database.setTrackerSync(key, service, {
     watermark: JSON.stringify(outcome.watermark ?? null),
@@ -426,11 +426,13 @@ function parseHead(value: string): PmdbHead {
   return { total: Number(total) || 0, firstId: firstId ?? '', firstAt: firstAt ?? '', droppedTotal: Number(droppedTotal) || 0 };
 }
 
-async function pmdbHead(apiKey: string): Promise<string> {
-  const { cacheWrapGlobal, classifyResultAllowEmpty } = require('../getCache');
+async function pmdbHead(apiKey: string, fresh = false): Promise<string> {
+  const { cacheWrapGlobal, classifyResultAllowEmpty, redis } = require('../getCache');
+  const cacheKey = `pmdb_watched_head:${credentialHash(apiKey)}`;
+  if (fresh) await redis?.del(`global:${cacheKey}`).catch(() => undefined);
   // The same cache the watched digest reads, which a watch recorded here clears.
   return cacheWrapGlobal(
-    `pmdb_watched_head:${credentialHash(apiKey)}`,
+    cacheKey,
     async () => {
       const { fetchWatched, fetchDropped } = require('../../utils/publicmetadbUtils');
       const [page, dropped] = await Promise.all([
@@ -459,8 +461,8 @@ async function pmdbAllPlays(key: string, apiKey: string): Promise<void> {
   await replaceMirror(key, plays.map(pmdbPlayRow).filter(Boolean) as MirrorRow[], (itemKey) => itemKey.startsWith('play:'));
 }
 
-async function syncPmdb(key: string, apiKey: string, watermark: any): Promise<SyncOutcome> {
-  const headValue = await pmdbHead(apiKey);
+async function syncPmdb(key: string, apiKey: string, watermark: any, fresh = false): Promise<SyncOutcome> {
+  const headValue = await pmdbHead(apiKey, fresh);
   const head = parseHead(headValue);
   const { fetchPmdbDropped } = require('./watched');
 
@@ -527,10 +529,12 @@ export function animeListCacheKey(service: 'anilist' | 'mal', tokenId: string): 
   return `${service}_list:${credentialHash(tokenId)}`;
 }
 
-async function readAnimeList(service: 'anilist' | 'mal', tokenId: string): Promise<any[]> {
-  const { cacheWrapGlobal, classifyResultAllowEmpty } = require('../getCache');
+async function readAnimeList(service: 'anilist' | 'mal', tokenId: string, fresh = false): Promise<any[]> {
+  const { cacheWrapGlobal, classifyResultAllowEmpty, redis } = require('../getCache');
+  const cacheKey = animeListCacheKey(service, tokenId);
+  if (fresh) await redis?.del(`global:${cacheKey}`).catch(() => undefined);
   return cacheWrapGlobal(
-    animeListCacheKey(service, tokenId),
+    cacheKey,
     async () => {
       const tracker: any = service === 'anilist' ? require('../anilistTracker') : require('../malTracker');
       const accessToken = await tracker.getAccessTokenById(tokenId);
@@ -542,8 +546,8 @@ async function readAnimeList(service: 'anilist' | 'mal', tokenId: string): Promi
   );
 }
 
-async function syncAnimeList(service: 'anilist' | 'mal', key: string, tokenId: string, watermark: any): Promise<SyncOutcome> {
-  const entries = await readAnimeList(service, tokenId);
+async function syncAnimeList(service: 'anilist' | 'mal', key: string, tokenId: string, watermark: any, fresh = false): Promise<SyncOutcome> {
+  const entries = await readAnimeList(service, tokenId, fresh);
   if (!Array.isArray(entries)) throw new Error(`${service} list could not be read`);
   const digest = createHash('sha256').update(JSON.stringify(entries)).digest('hex').substring(0, 32);
   if (watermark?.digest === digest) return { changed: false, watermark, full: false };
