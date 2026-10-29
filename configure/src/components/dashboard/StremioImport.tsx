@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Check, Loader2, Lock } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { libraryFile, openProfile, readAccount, readLibrary, signIn, signOut, stremioMessage, type StremioProfileInfo } from "@/lib/stremioAccount";
+import { libraryFile, openProfile, readAccount, readLibrary, sessionKeeper, signIn, stremioMessage, type StremioProfileInfo } from "@/lib/stremioAccount";
 
 type ProfileRead = { status: "reading" | "done" | "failed"; items?: unknown[]; error?: string };
 
@@ -22,14 +22,10 @@ export default function StremioImport({ open, onOpenChange, onLibrary }: { open:
   const [reads, setReads] = useState<Record<string, ProfileRead>>({});
   const accountKey = useRef<string | null>(null);
   const profileKeys = useRef<Record<string, string>>({});
-  const minted = useRef<string[]>([]);
-  // Bumped on every reset, so a key that arrives after the dialog closed is signed out at once.
-  const session = useRef(0);
+  const [sessions] = useState(() => sessionKeeper());
 
-  const forget = () => {
-    session.current += 1;
-    for (const key of minted.current) void signOut(key);
-    minted.current = [];
+  const forget = useCallback(() => {
+    sessions.endAll();
     accountKey.current = null;
     profileKeys.current = {};
     setPassword("");
@@ -40,24 +36,13 @@ export default function StremioImport({ open, onOpenChange, onLibrary }: { open:
     setReads({});
     setError(null);
     setBusy(false);
-  };
+  }, [sessions]);
 
   useEffect(() => {
     if (!open) forget();
-  }, [open]);
+  }, [open, forget]);
 
-  useEffect(() => () => {
-    for (const key of minted.current) void signOut(key);
-  }, []);
-
-  const keep = (key: string, mine: number): boolean => {
-    if (session.current !== mine) {
-      void signOut(key);
-      return false;
-    }
-    minted.current.push(key);
-    return true;
-  };
+  useEffect(() => () => sessions.endAll(), [sessions]);
 
   const finish = (parts: Array<{ key: string; name: string; items: unknown[] }>) => {
     onLibrary(libraryFile(parts));
@@ -68,7 +53,7 @@ export default function StremioImport({ open, onOpenChange, onLibrary }: { open:
 
   const start = async (event: FormEvent) => {
     event.preventDefault();
-    const mine = session.current;
+    const mine = sessions.current();
     setBusy(true);
     setError(null);
     try {
@@ -76,15 +61,15 @@ export default function StremioImport({ open, onOpenChange, onLibrary }: { open:
       if (useKey) key = pasted.trim();
       else {
         key = await signIn(email.trim(), password);
-        if (!keep(key, mine)) return;
+        if (!sessions.keep(key, mine)) return;
       }
       accountKey.current = key;
       const account = await readAccount(key);
-      if (session.current !== mine) return;
+      if (sessions.current() !== mine) return;
       if (account.profiles.length === 1) {
         const [only] = account.profiles;
         const items = await readLibrary(key);
-        if (session.current !== mine) return;
+        if (sessions.current() !== mine) return;
         if (!items.length) {
           setError("This Stremio library is empty.");
           return;
@@ -95,9 +80,9 @@ export default function StremioImport({ open, onOpenChange, onLibrary }: { open:
       setProfiles(account.profiles);
       setTicked(Object.fromEntries(account.profiles.map((profile) => [profile.id, true])));
     } catch (failure) {
-      if (session.current === mine) setError(stremioMessage(failure));
+      if (sessions.current() === mine) setError(stremioMessage(failure));
     } finally {
-      if (session.current === mine) setBusy(false);
+      if (sessions.current() === mine) setBusy(false);
     }
   };
 
@@ -107,21 +92,21 @@ export default function StremioImport({ open, onOpenChange, onLibrary }: { open:
       let key = profile.main ? accountKey.current! : profileKeys.current[profile.id];
       if (!key) {
         key = await openProfile(accountKey.current!, profile.id, profile.hasPin ? pins[profile.id].trim() : "");
-        if (!keep(key, mine)) return;
+        if (!sessions.keep(key, mine)) return;
         profileKeys.current[profile.id] = key;
       }
       const items = await readLibrary(key);
-      if (session.current === mine) setReads((held) => ({ ...held, [profile.id]: { status: "done", items } }));
+      if (sessions.current() === mine) setReads((held) => ({ ...held, [profile.id]: { status: "done", items } }));
     } catch (failure) {
-      if (session.current === mine) setReads((held) => ({ ...held, [profile.id]: { status: "failed", error: stremioMessage(failure) } }));
+      if (sessions.current() === mine) setReads((held) => ({ ...held, [profile.id]: { status: "failed", error: stremioMessage(failure) } }));
     }
   };
 
   const readAll = async () => {
-    const mine = session.current;
+    const mine = sessions.current();
     setBusy(true);
     await Promise.all((profiles ?? []).filter((profile) => included(profile) && reads[profile.id]?.status !== "done").map((profile) => readOne(profile, mine)));
-    if (session.current === mine) setBusy(false);
+    if (sessions.current() === mine) setBusy(false);
   };
 
   const chosen = (profiles ?? []).filter(included);

@@ -72,6 +72,29 @@ export async function signOut(authKey: string): Promise<void> {
   }
 }
 
+// The sessions one sign-in opened. endAll() signs them out and ends the generation, so a key that arrives
+// later (a login or profile still in flight) is signed out at once instead of kept.
+export function sessionKeeper(end: (key: string) => Promise<void> = signOut) {
+  let generation = 0;
+  let minted: string[] = [];
+  return {
+    current: () => generation,
+    keep(key: string, mine: number): boolean {
+      if (mine !== generation) {
+        void end(key);
+        return false;
+      }
+      minted.push(key);
+      return true;
+    },
+    endAll(): void {
+      generation += 1;
+      for (const key of minted) void end(key);
+      minted = [];
+    },
+  };
+}
+
 export function stremioMessage(error: unknown): string {
   if (error instanceof StremioError) {
     if (error.code === 1) return 'Stremio signed this session out. Sign in again.';
