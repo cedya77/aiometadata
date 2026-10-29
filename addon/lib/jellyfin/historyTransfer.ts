@@ -6,6 +6,7 @@ import { ratingFrom } from './ratings';
 import { openUpload, positive, type Ambiguous, type HistorySource, type Unmatched } from './historySources';
 import { traktHistorySource } from './historySourceTrakt';
 import { letterboxdHistorySource } from './historySourceLetterboxd';
+import { stremioHistorySource } from './historySourceStremio';
 
 const logger = consola.withTag('Jellyfin');
 const database: any = require('../database');
@@ -551,7 +552,7 @@ const nativeHistorySource: HistorySource = {
   read: async (upload) => ({ body: upload.json, unmatched: [], unmatchedCount: 0 }),
 };
 
-const HISTORY_SOURCES: HistorySource[] = [traktHistorySource, letterboxdHistorySource, nativeHistorySource];
+const HISTORY_SOURCES: HistorySource[] = [traktHistorySource, letterboxdHistorySource, stremioHistorySource, nativeHistorySource];
 
 type Received = { file: HistoryFile; source: HistorySource; unmatched: Unmatched[]; unmatchedCount: number; ambiguous: Ambiguous[] };
 
