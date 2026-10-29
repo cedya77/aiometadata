@@ -52,7 +52,7 @@ export function summariseJob(op: string, payload: any, item: string | null = nul
       const videos = (Array.isArray(p.videos) ? p.videos : []).map(videoOf).filter(Boolean) as string[];
       const n = videos.length;
       const noun = n === 1 ? 'episode' : `${n} episodes`;
-      return { verb: p.method === 'removeFromHistory' ? `Marked ${noun} unwatched` : `Marked ${noun} watched`, video: videos[0] ?? item, count: n };
+      return { verb: p.method === 'removeFromHistory' ? `Marked ${noun} unwatched` : `Marked ${noun} watched`, video: videos[0] ?? item, count: n, videos };
     }
     case 'dropped': return one(p.dropped ? 'Dropped' : 'Picked back up', item);
     case 'watchlist': return one(p.listed ? 'Added to the watchlist' : 'Removed from the watchlist', item);

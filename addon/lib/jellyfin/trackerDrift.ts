@@ -124,7 +124,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
     if (row.kind !== 'sent' || !row.video || !WATCH_OPS.has(String(row.op))) continue;
     if (row.op === 'scrobble' && !String(row.detail ?? '').includes('"verb":"Watched"')) continue;
     let listed: string[] = [];
-    if (row.op === 'catchUps') {
+    if (row.op === 'catchUps' || row.op === 'episodes') {
       try {
         listed = JSON.parse(row.detail ?? '{}').videos ?? [];
       } catch {}
@@ -173,7 +173,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
       if (source.service === 'simkl' && detail.rewatch !== true) continue;
       if (row.op === 'scrobble' && detail.verb !== 'Watched') continue;
       noteSent(String(row.video), Number(row.at) || 0);
-      if (row.op === 'catchUps') for (const video of detail.videos ?? []) noteSent(String(video), Number(row.at) || 0);
+      if (row.op === 'catchUps' || row.op === 'episodes') for (const video of detail.videos ?? []) noteSent(String(video), Number(row.at) || 0);
     }
     const missing = new Set(behind);
     const heldAt = (v: Viewing) => Math.max(0, ...v.ids.flatMap((id) => [
