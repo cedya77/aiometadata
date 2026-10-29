@@ -365,6 +365,12 @@ async function writeSimkl(what: Mark, items: MarkItem[], tokenId: string): Promi
   }
 }
 
+/** The ids a title's rating is kept under here. */
+export function ratingKeys(item: MarkItem): string[] {
+  const { imdb, tvdb, tmdb, kitsu, mal } = item.ids;
+  return [imdb, tvdb && item.kind === 'series' ? `tvdb:${tvdb}` : null, tmdb ? `tmdb:${tmdb}` : null, kitsu ? `kitsu:${kitsu}` : null, mal ? `mal:${mal}` : null].filter(Boolean) as string[];
+}
+
 const pmdbSelves = new Map<string, string>();
 
 async function pmdbRatingsOn(side: MarkSide, kind: MarkItem['kind'], tmdb: number, season: number | null, episode: number | null): Promise<any[]> {
@@ -409,7 +415,15 @@ async function writeOne(what: Mark, service: string, entry: MarkItem, side: Mark
         const own = (await pmdbRatingsOn(side, entry.kind, Number(tmdb), entry.season, entry.episode).catch(() => [])).find((rating: any) => String(rating?.id) === String(id));
         if (own?.contributor) pmdbSelves.set(side.credential, String(own.contributor));
       }
-      return id ? 'sent' : 'failed';
+      if (!id) return 'failed';
+      // Linked to the rating the copy brought home, so clearing that one clears this too.
+      const keys = entry.kind === 'movie' || entry.kind === 'series' ? ratingKeys(entry) : [];
+      const { profileKey } = require('./profiles');
+      if (keys.length && !(await require('../database').setRatingRemoteId(userUUID, profileKey(side.scoped), keys, id))) {
+        await pmdb.deleteRating(side.credential, id);
+        return 'skipped';
+      }
+      return 'sent';
     }
     if (what === 'dropped') {
       await pmdb.setDropped(side.credential, tmdb, true);

@@ -6,7 +6,7 @@ import { videoIdAliases } from './aliases';
 import { scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
 import { asListed, belongsOn, pullDrift, spellingFor, spellingsFor, viewingOf, type Viewing } from './trackerDrift';
-import { MARKS, markBatchSize, markVideo, planMarks, writeMarks, type Mark, type MarkItem } from './trackerMarks';
+import { MARKS, markBatchSize, markVideo, planMarks, ratingKeys, writeMarks, type Mark, type MarkItem } from './trackerMarks';
 
 const logger = consola.withTag('Trackers');
 const database: any = require('../database');
@@ -528,8 +528,7 @@ async function bringHome(userUUID: string, job: any, items: CopyItem[], config: 
 async function bringRatingsHome(userUUID: string, profile: string, items: MarkItem[]): Promise<void> {
   for (const item of items) {
     if ((item.kind !== 'movie' && item.kind !== 'series') || item.later || !item.rating) continue;
-    const { imdb, tvdb, tmdb, kitsu, mal } = item.ids;
-    const keys = [imdb, tvdb && item.kind === 'series' ? `tvdb:${tvdb}` : null, tmdb ? `tmdb:${tmdb}` : null, kitsu ? `kitsu:${kitsu}` : null, mal ? `mal:${mal}` : null].filter(Boolean) as string[];
+    const keys = ratingKeys(item);
     if (!keys.length) continue;
     const held: any[] = await database.listRatings(userUUID, profile, keys).catch(() => []);
     if (held.length) continue;
