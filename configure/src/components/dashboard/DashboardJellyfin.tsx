@@ -4,6 +4,7 @@ import JellyfinCalendar from "./JellyfinCalendar";
 import JellyfinLibrary from "./JellyfinLibrary";
 import JellyfinTitlePage from "./JellyfinTitle";
 import JellyfinSearch, { type LocalTitle } from "./JellyfinSearch";
+import JellyfinImport from "./JellyfinImport";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -192,8 +193,9 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
       </div>}
       {isFetching && !isLoading && !switching && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
       <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" onClick={runExport} disabled={exporting}>
-        {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Export JSON
+        {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Export
       </Button>
+      <JellyfinImport userUUID={userUUID} />
       <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onClose} aria-label="Close"><X className="h-3.5 w-3.5" /></Button>
     </>
   );
@@ -206,6 +208,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
       {remote && <RemoteSheet userUUID={userUUID} profile={profile} profileName={profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
       {route.stack.length > 0 && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} trackers={trackers} stack={route.stack} activeTab={activeTab} onOpen={openStack} />}
       <Hero data={data} profile={profile} onProfile={setProfile} activity={activity} controls={controls} switching={switching} />
+      <JellyfinImport userUUID={userUUID} notice />
       <div ref={sectionsTop} />
       <SectionBar section={section} onSection={setSection} />
       {switching ? (

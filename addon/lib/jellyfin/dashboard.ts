@@ -351,6 +351,13 @@ async function computeStats(userUUID: string, offsetMinutes: number, fingerprint
   return stats;
 }
 
+export async function forgetDashboardStats(userUUID: string): Promise<void> {
+  for (const key of [...statsMemo.keys()]) if (key.startsWith(`${userUUID}:`)) statsMemo.delete(key);
+  if (!redis) return;
+  const keys = Array.from({ length: 14 * 60 * 2 + 1 }, (_, i) => statsStoreKey(`${userUUID}:${i - 14 * 60}`));
+  await redis.del(...keys).catch(() => undefined);
+}
+
 function profileStats(userUUID: string, offsetMinutes: number, summary: any[]): Promise<Map<string, ProfileStats>> {
   const key = `${userUUID}:${offsetMinutes}`;
   const fingerprint = statsFingerprint(summary);
@@ -1153,35 +1160,6 @@ export async function dashboardPlays(userUUID: string, profile: string | null, k
 }
 
 /** Every row the table holds for a configuration, as stored. */
-export async function dashboardExport(userUUID: string): Promise<any> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
-  const names = config ? profileNames(config, userUUID) : new Map<string, string>();
-  const rows: any[] = await database.listPlaystateFor(userUUID);
-  const watches: any[] = await database.listWatchesForConfiguration(userUUID).catch(() => []);
-  return {
-    userUUID,
-    label: config ? defaultUserName(config, userUUID) : userUUID.slice(0, 8),
-    exportedAt: new Date().toISOString(),
-    profiles: [...names.entries()].map(([key, name]) => ({ key, name })),
-    rows: rows.map((row) => ({
-      profile: String(row.profile ?? ''),
-      videoId: String(row.video_id),
-      positionMs: Number(row.position_ms) || 0,
-      runtimeMs: Number(row.runtime_ms) || 0,
-      played: Boolean(row.played),
-      playCount: Number(row.play_count) || 0,
-      lastPlayedAt: row.last_played_at ? new Date(Number(row.last_played_at)).toISOString() : null,
-      updatedAt: new Date(Number(row.updated_at)).toISOString(),
-    })),
-    watches: watches.map((row) => ({
-      profile: String(row.profile ?? ''),
-      videoId: String(row.video_id),
-      watchedAt: new Date(Number(row.watched_at)).toISOString(),
-      origin: row.origin ?? null,
-    })),
-  };
-}
-
 const TITLE_KEY = /^(tt\d+|[a-z]+:[^:#]+)$/;
 
 const keyKind = (key: string) => (key.startsWith('tt') ? 'imdb' : key.split(':')[0]);

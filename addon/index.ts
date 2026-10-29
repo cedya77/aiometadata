@@ -8218,12 +8218,49 @@ addon.get("/api/dashboard/jellyfin/search", requireDashboardAdmin, async (req, r
 
 addon.get("/api/dashboard/jellyfin/:userUUID/export", requireDashboardAdmin, async (req, res) => {
   try {
-    const payload = await require('./lib/jellyfin/dashboard').dashboardExport(String(req.params.userUUID));
-    res.setHeader('Content-Disposition', `attachment; filename="jellyfin-playback-${String(req.params.userUUID).slice(0, 8)}.json"`);
+    const userUUID = String(req.params.userUUID);
+    const config = await database.getUserConfig(userUUID).catch(() => null);
+    const payload = await require('./lib/jellyfin/historyTransfer').buildHistoryExport(userUUID, config);
+    res.setHeader('Content-Disposition', `attachment; filename="aiometadata-history-${userUUID.slice(0, 8)}-${payload.exportedAt.slice(0, 10)}.json"`);
     res.json(payload);
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
-    res.status(500).json({ error: 'Failed to export Jellyfin playback' });
+    res.status(500).json({ error: 'Failed to export the watch history' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/import", requireDashboardAdmin, (req, res, next) => require('./lib/jellyfin/historyTransfer').historyImportBody()(req, res, next), async (req, res) => {
+  try {
+    const userUUID = String(req.params.userUUID);
+    const config = await database.getUserConfig(userUUID).catch(() => null);
+    if (!config) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    const outcome = await require('./lib/jellyfin/historyTransfer').receiveHistoryImport(userUUID, config, req.body, req.query);
+    res.status(outcome.status).json(outcome.body);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to import the watch history' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/import", requireDashboardAdmin, async (req, res) => {
+  try {
+    res.json({ job: await require('./lib/jellyfin/historyTransfer').historyImportStatus(String(req.params.userUUID)) });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the import' });
+  }
+});
+
+addon.delete("/api/dashboard/jellyfin/:userUUID/import", requireDashboardAdmin, async (req, res) => {
+  try {
+    const dismissed = await require('./lib/jellyfin/historyTransfer').dismissHistoryImport(String(req.params.userUUID));
+    res.status(dismissed ? 200 : 409).json(dismissed ? { ok: true } : { error: 'The import is still running' });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to clear the import' });
   }
 });
 

@@ -2336,6 +2336,69 @@ export function useJellyfinPlays(userUUID: string | null, profile: string | null
   );
 }
 
+export type HistoryImportSection = 'playstate' | 'watches' | 'ratings' | 'watchlist' | 'dropped' | 'matches';
+
+export interface HistoryImportPreview {
+  sources: Array<{ key: string; name: string }>;
+  targets: Array<{ key: string; name: string }>;
+  mapping: Record<string, string | null>;
+  counts: Record<HistoryImportSection, { added: number; updated: number; unchanged: number }>;
+  writes: number;
+}
+
+export interface HistoryImportJob {
+  status: 'running' | 'done' | 'failed' | 'interrupted';
+  fileName: string | null;
+  done: number;
+  total: number;
+  counts: HistoryImportPreview['counts'] | null;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export function useJellyfinHistoryImport() {
+  const getHeaders = useApiHeaders();
+  const send = useCallback(async (userUUID: string, file: File, mapping: Record<string, string | null> | null, apply: boolean): Promise<HistoryImportPreview & { job?: HistoryImportJob }> => {
+    const params = new URLSearchParams();
+    if (mapping) params.set('map', JSON.stringify(mapping));
+    if (apply) {
+      params.set('apply', '1');
+      params.set('name', file.name);
+    }
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/import?${params}`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/octet-stream' },
+      body: file,
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(result?.error || (response.status === 413 ? 'This file is larger than the import limit' : `Import failed (${response.status})`));
+    return result;
+  }, [getHeaders]);
+  const status = useCallback(async (userUUID: string): Promise<HistoryImportJob | null> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/import`, { headers: getHeaders() });
+    if (!response.ok) throw new Error(`Could not read the import (${response.status})`);
+    return (await response.json())?.job ?? null;
+  }, [getHeaders]);
+  const dismiss = useCallback(async (userUUID: string): Promise<void> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/import`, { method: 'DELETE', headers: getHeaders() });
+    if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || `Could not clear the import (${response.status})`);
+  }, [getHeaders]);
+  return { send, status, dismiss };
+}
+
+export function useJellyfinHistoryImportJob(userUUID: string) {
+  const { isAdmin } = useAdmin();
+  const { status } = useJellyfinHistoryImport();
+  const isVisible = usePageVisibility();
+  return useQuery({
+    queryKey: [...DASHBOARD_QUERY_KEYS.jellyfin, 'import', userUUID],
+    queryFn: () => status(userUUID),
+    enabled: isAdmin && Boolean(userUUID),
+    refetchInterval: (query) => (isVisible && query.state.data?.status === 'running' ? 1000 : false),
+  });
+}
+
 export function useJellyfinExport() {
   const getHeaders = useApiHeaders();
   return async (userUUID: string): Promise<void> => {
@@ -2345,7 +2408,7 @@ export function useJellyfinExport() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `jellyfin-playback-${userUUID.slice(0, 8)}.json`;
+    link.download = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? `aiometadata-history-${userUUID.slice(0, 8)}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();
