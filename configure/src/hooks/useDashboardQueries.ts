@@ -2339,11 +2339,21 @@ export function useJellyfinPlays(userUUID: string | null, profile: string | null
 export type HistoryImportSection = 'playstate' | 'watches' | 'ratings' | 'watchlist' | 'dropped' | 'matches';
 
 export interface HistoryImportPreview {
+  source: string;
+  about: string;
   sources: Array<{ key: string; name: string }>;
   targets: Array<{ key: string; name: string }>;
   mapping: Record<string, string | null>;
   counts: Record<HistoryImportSection, { added: number; updated: number; unchanged: number }>;
   writes: number;
+  unmatched: Array<{ name: string; reason: string }>;
+  unmatchedCount: number;
+  ambiguous?: Array<{
+    key: string;
+    name: string;
+    options: Array<{ tmdb: number; title: string; originalTitle: string | null; year: number | null; poster: string | null; overview: string }>;
+    picked: number | null;
+  }>;
 }
 
 export interface HistoryImportJob {
@@ -2359,21 +2369,31 @@ export interface HistoryImportJob {
 
 export function useJellyfinHistoryImport() {
   const getHeaders = useApiHeaders();
-  const send = useCallback(async (userUUID: string, file: File, mapping: Record<string, string | null> | null, apply: boolean): Promise<HistoryImportPreview & { job?: HistoryImportJob }> => {
+  const send = useCallback(async (
+    userUUID: string,
+    file: File,
+    mapping: Record<string, string | null> | null,
+    picks: Record<string, number>,
+    apply: boolean,
+    onMatching?: (progress: { done: number; total: number; label: string }) => void,
+  ): Promise<HistoryImportPreview & { job?: HistoryImportJob }> => {
     const params = new URLSearchParams();
     if (mapping) params.set('map', JSON.stringify(mapping));
-    if (apply) {
-      params.set('apply', '1');
-      params.set('name', file.name);
+    if (Object.keys(picks).length) params.set('picks', JSON.stringify(picks));
+    if (apply) params.set('apply', '1');
+    params.set('name', file.name);
+    for (;;) {
+      const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/import?${params}`, {
+        method: 'POST',
+        headers: { ...getHeaders(), 'Content-Type': 'application/octet-stream' },
+        body: file,
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error || (response.status === 413 ? 'This file is larger than the import limit' : `Import failed (${response.status})`));
+      if (!result?.matching) return result;
+      onMatching?.(result.matching);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/import?${params}`, {
-      method: 'POST',
-      headers: { ...getHeaders(), 'Content-Type': 'application/octet-stream' },
-      body: file,
-    });
-    const result = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(result?.error || (response.status === 413 ? 'This file is larger than the import limit' : `Import failed (${response.status})`));
-    return result;
   }, [getHeaders]);
   const status = useCallback(async (userUUID: string): Promise<HistoryImportJob | null> => {
     const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/import`, { headers: getHeaders() });

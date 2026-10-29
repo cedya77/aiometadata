@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Download, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, Download, Film, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DASHBOARD_QUERY_KEYS, useJellyfinHistoryImport, useJellyfinHistoryImportJob, type HistoryImportJob, type HistoryImportPreview, type HistoryImportSection } from "@/hooks/useDashboardQueries";
@@ -35,6 +35,8 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState(false);
   const [started, setStarted] = useState(false);
+  const [matching, setMatching] = useState<{ done: number; total: number; label: string } | null>(null);
+  const [picks, setPicks] = useState<Record<string, number>>({});
   const watching = useRef<string | null>(null);
 
   const running = job?.status === "running";
@@ -63,10 +65,10 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
     setStarted(false);
   };
 
-  const load = async (picked: File, map: Record<string, string | null> | null) => {
+  const load = async (picked: File, map: Record<string, string | null> | null, chosen: Record<string, number>) => {
     setLoading(true);
     try {
-      const result = await send(userUUID, picked, map, false);
+      const result = await send(userUUID, picked, map, chosen, false, setMatching);
       setPreview(result);
       setMapping(result.mapping);
     } catch (error) {
@@ -74,6 +76,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
       if (!map) setFile(null);
     } finally {
       setLoading(false);
+      setMatching(null);
     }
   };
 
@@ -83,27 +86,38 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
     setFile(picked);
     setPreview(null);
     setStarted(false);
-    void load(picked, null);
+    setPicks({});
+    void load(picked, null, {});
   };
 
   const choose = (source: string, target: string) => {
     if (!file) return;
     const next = { ...mapping, [source]: target === SKIP ? null : target };
     setMapping(next);
-    void load(file, next);
+    void load(file, next, picks);
+  };
+
+  const choosePick = (key: string, tmdb: number | null) => {
+    if (!file) return;
+    const next = { ...picks };
+    if (tmdb) next[key] = tmdb;
+    else delete next[key];
+    setPicks(next);
+    void load(file, mapping, next);
   };
 
   const start = async () => {
     if (!file) return;
     setLoading(true);
     try {
-      const result = await send(userUUID, file, mapping, true);
+      const result = await send(userUUID, file, mapping, picks, true, setMatching);
       if (result.job) queryClient.setQueryData([...DASHBOARD_QUERY_KEYS.jellyfin, "import", userUUID], result.job);
       setStarted(true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Import failed");
     } finally {
       setLoading(false);
+      setMatching(null);
     }
   };
 
@@ -117,7 +131,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
   };
 
   const total = preview ? SECTION_LABELS.reduce((sum, [key]) => sum + preview.counts[key].added + preview.counts[key].updated, 0) : 0;
-  const picker = <input ref={input} type="file" accept="application/json,.json" className="hidden" onChange={(event) => pick(event.target.files?.[0])} />;
+  const picker = <input ref={input} type="file" accept="application/json,application/zip,text/csv,.json,.zip,.csv" className="hidden" onChange={(event) => pick(event.target.files?.[0])} />;
 
   const trigger = notice ? (
     job && job.status !== "done" && !(running && file) ? (
@@ -135,7 +149,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
       </div>
     ) : null
   ) : (
-    <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" onClick={() => input.current?.click()} disabled={running}>
+    <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" onClick={() => input.current?.click()} disabled={running} title="Import a watch history export">
       {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Import
     </Button>
   );
@@ -148,13 +162,22 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
         <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Import watch history</DialogTitle>
-            <DialogDescription>
-              {file?.name}. Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers; what they lack shows up in the Trackers section.
+            <DialogDescription className="[overflow-wrap:anywhere]">
+              {file?.name}.{preview ? ` ${preview.about}` : ""}
             </DialogDescription>
           </DialogHeader>
 
           {!preview ? (
-            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Reading the file</div>
+            matching ? (
+              <div className="space-y-2 py-6">
+                <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> {matching.label}: {matching.done.toLocaleString()} of {matching.total.toLocaleString()}</p>
+                <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-blue-500 transition-[width] duration-500" style={{ width: `${matching.total ? (matching.done / matching.total) * 100 : 0}%` }} />
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Reading the file</div>
+            )
           ) : (
             <div className="space-y-5">
               <div className="space-y-2">
@@ -198,6 +221,65 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
                   </tbody>
                 </table>
               </div>
+
+              {Boolean(preview.ambiguous?.length) && (
+                <div className="space-y-3 rounded-xl bg-white/[0.03] p-3 ring-1 ring-inset ring-white/10">
+                  <p className="text-xs text-muted-foreground">
+                    {preview.ambiguous!.length === 1 ? "This film shares its name and year with another film." : `${preview.ambiguous!.length} films share their name and year with another film.`} Pick the one you watched, or it is left out.
+                  </p>
+                  {preview.ambiguous!.map((item) => (
+                    <div key={item.key} className="space-y-1.5">
+                      <p className="text-sm font-medium [overflow-wrap:anywhere]">{item.name}</p>
+                      <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1">
+                        {item.options.map((option) => {
+                          const on = (picks[item.key] ?? item.picked) === option.tmdb;
+                          return (
+                            <button
+                              type="button"
+                              key={option.tmdb}
+                              aria-pressed={on}
+                              disabled={loading || started}
+                              onClick={() => choosePick(item.key, on ? null : option.tmdb)}
+                              className={`relative flex w-64 shrink-0 snap-start gap-2.5 rounded-lg p-2 text-left ring-1 ring-inset transition disabled:opacity-60 ${on ? "bg-blue-500/15 ring-blue-500" : "bg-white/[0.04] ring-white/10 hover:ring-white/25"}`}
+                            >
+                              {option.poster ? (
+                                <img src={option.poster} alt="" loading="lazy" className="h-[84px] w-14 shrink-0 rounded object-cover" />
+                              ) : (
+                                <span className="flex h-[84px] w-14 shrink-0 items-center justify-center rounded bg-white/[0.06] text-muted-foreground"><Film className="size-4" /></span>
+                              )}
+                              <span className="min-w-0 flex-1 space-y-0.5">
+                                <span className="block truncate pr-5 text-xs font-medium">{option.title}</span>
+                                <span className="block truncate text-[11px] text-muted-foreground">{[option.year ?? "Year unknown", option.originalTitle].filter(Boolean).join(" · ")}</span>
+                                <span className="line-clamp-3 text-[11px] leading-snug text-muted-foreground">{option.overview || "No description on TMDB."}</span>
+                              </span>
+                              {on && <Check className="absolute right-2 top-2 size-3.5 text-blue-400" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {preview.unmatchedCount > 0 && (
+                <details className="rounded-xl bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-200 ring-1 ring-inset ring-amber-500/20">
+                  <summary className="cursor-pointer select-none">
+                    {preview.unmatchedCount.toLocaleString()} {preview.unmatchedCount === 1 ? "title" : "titles"} could not be matched and will be left out
+                  </summary>
+                  <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1 text-muted-foreground">
+                    {preview.unmatched.map((item, index) => (
+                      <li key={`${item.name}-${index}`} className="flex flex-wrap justify-between gap-x-3 [overflow-wrap:anywhere]">
+                        <span className="text-foreground/80">{item.name}</span>
+                        <span>{item.reason}</span>
+                      </li>
+                    ))}
+                    {preview.unmatchedCount > preview.unmatched.length && (
+                      <li>and {(preview.unmatchedCount - preview.unmatched.length).toLocaleString()} more</li>
+                    )}
+                  </ul>
+                </details>
+              )}
 
               {!started && running && (
                 <p className="text-xs text-amber-200">Another import into this configuration is running. Wait for it to finish first.</p>

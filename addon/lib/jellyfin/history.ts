@@ -5,7 +5,7 @@ import { createHash } from 'crypto';
 
 const ANIME_IDS = /^(kitsu|mal|anilist|anidb):/;
 // The tracker an imported row came from, by the origin it was written with.
-const TRACKER_NAMES: Record<string, string> = { mdblist: 'MDBList', simkl: 'Simkl', publicmetadb: 'PublicMetaDB', anilist: 'AniList', mal: 'MyAnimeList' };
+const TRACKER_NAMES: Record<string, string> = { mdblist: 'MDBList', simkl: 'Simkl', publicmetadb: 'PublicMetaDB', anilist: 'AniList', mal: 'MyAnimeList', trakt: 'Trakt', letterboxd: 'Letterboxd' };
 
 export interface HistoryUser {
   profile: Profile;

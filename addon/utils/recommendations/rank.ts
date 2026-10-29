@@ -2,6 +2,7 @@ import consola from 'consola';
 import type { TasteProfile } from './profile';
 import { collectWatchedRows, rowKind, titleKeys, watchedIndex, type WatchedRow } from './history';
 import { envInt } from '../envNumber';
+import { matchTitle } from '../titleMatch';
 
 const logger = consola.withTag('Recommendations');
 
@@ -310,78 +311,10 @@ function isAnimeTitle(hit: any, kind: 'movie' | 'series', genres: Genres): boole
   return isAnime(hit, kind === 'series' ? genres.series : genres.movie);
 }
 
-function closestYear<T>(entries: T[], yearOf: (entry: T) => number, year?: number): T | undefined {
-  if (!year) return entries[0];
-  return entries.find((entry) => yearOf(entry) === year)
-    ?? entries.find((entry) => yearOf(entry) && Math.abs(yearOf(entry) - year) <= 1);
-}
-
-function comparable(title: string): string {
-  return title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-}
-
-async function matchOnLumiere(pick: Suggestion, config: any): Promise<any | null> {
-  const { lumiereApiBase }: any = require('../lumiereLists');
-  const base = lumiereApiBase();
-  if (!base) return null;
-  const { getSetting }: any = require('../../lib/settingsService');
-  const { fetchLumiereSearch }: any = require('../lumiereSearch');
-  const { cacheWrapGlobal }: any = require('../../lib/getCache');
-  const type = pick.kind === 'series' ? 'series' : 'movie';
-  const timeoutMs = parseInt(getSetting('LUMIERE_SEARCH_TIMEOUT_MS'), 10) || 5000;
-  const ttl = parseInt(getSetting('LUMIERE_SEARCH_TTL_SECONDS'), 10);
-  const search = () => fetchLumiereSearch(base, type, pick.title, 10, timeoutMs);
-  const results: Array<{ imdbId: string; year: number | null; title?: string; originalTitle?: string; akas?: string[] }> = (ttl > 0
-    ? await cacheWrapGlobal(`recommendations:lumiere:v2:${type}:${pick.title.toLowerCase().trim()}`, search, ttl)
-    : await search()) || [];
-  const wanted = comparable(pick.title);
-  const yearOf = (entry: (typeof results)[number]) => entry.year || 0;
-  const named = results.filter((entry) => [entry.title, entry.originalTitle, ...(entry.akas ?? [])].some((title) => title && comparable(title) === wanted));
-  const match = closestYear(named, yearOf, pick.year)
-    ?? named.find((entry) => (entry.akas ?? []).some((title) => comparable(title) === wanted))
-    ?? closestYear(results, yearOf, pick.year);
-  if (!match) return null;
-
-  const { find }: any = require('../../lib/getTmdb');
-  const found = await cacheWrapGlobal(
-    `recommendations:find:${match.imdbId}`,
-    () => find({ id: match.imdbId, external_source: 'imdb_id' }, config),
-    envInt('RECOMMENDATION_FACT_TTL', 30 * 24 * 60 * 60, 60),
-    {
-      resultClassifier: (result: any) => (result?.movie_results?.length || result?.tv_results?.length
-        ? { type: 'SUCCESS', ttl: null }
-        : { type: 'EMPTY_RESULT', ttl: 60 * 60 }),
-    },
-  );
-  const hit = (pick.kind === 'series' ? found?.tv_results : found?.movie_results)?.[0];
-  return hit?.id ? { hit, imdbId: match.imdbId } : null;
-}
-
-async function searchTmdb(pick: Suggestion, config: any): Promise<any | null> {
-  const { searchMovie, searchTv }: any = require('../../lib/getTmdb');
-  const params: any = { query: pick.title, include_adult: false };
-  if (pick.year) params[pick.kind === 'series' ? 'first_air_date_year' : 'year'] = pick.year;
-
-  const response = pick.kind === 'series'
-    ? await searchTv(params, config)
-    : await searchMovie(params, config);
-
-  const hit = (response?.results || [])[0];
-  if (hit?.id || !pick.year) return hit?.id ? hit : null;
-  const loose = pick.kind === 'series'
-    ? await searchTv({ query: pick.title, include_adult: false }, config)
-    : await searchMovie({ query: pick.title, include_adult: false }, config);
-  const yearOf = (entry: any) => Number(String(entry.release_date || entry.first_air_date || '').slice(0, 4));
-  return closestYear((loose?.results || []).filter((entry: any) => entry?.id), yearOf, pick.year) ?? null;
-}
-
 async function resolveSuggestion(pick: Suggestion, config: any, genres: Genres): Promise<any | null> {
   try {
-    const lumiere = await matchOnLumiere(pick, config).catch((error: any) => {
-      logger.debug(`LumiereDB could not match "${pick.title}": ${error.message}`);
-      return null;
-    });
-    const hit = lumiere?.hit ?? await searchTmdb(pick, config);
+    const matched = await matchTitle(pick, config);
+    const hit = matched?.hit;
     if (!hit?.id) {
       logger.debug(`No match for "${pick.title}" (${pick.year ?? 'no year'}, ${pick.kind})`);
       return null;
@@ -389,8 +322,8 @@ async function resolveSuggestion(pick: Suggestion, config: any, genres: Genres):
 
     return {
       tmdbId: hit.id,
-      imdbId: lumiere?.imdbId,
-      matchedBy: lumiere ? 'lumiere' : 'tmdb',
+      imdbId: matched?.imdbId,
+      matchedBy: matched?.matchedBy,
       kind: pick.kind,
       anime: isAnimeTitle(hit, pick.kind, genres),
       // Kept from the search we already ran. TMDB counts are a fraction of

@@ -3,6 +3,9 @@ import express from 'express';
 import { envInt } from '../../utils/envNumber';
 import { listProfiles } from './profiles';
 import { ratingFrom } from './ratings';
+import { openUpload, positive, type Ambiguous, type HistorySource, type Unmatched } from './historySources';
+import { traktHistorySource } from './historySourceTrakt';
+import { letterboxdHistorySource } from './historySourceLetterboxd';
 
 const logger = consola.withTag('Jellyfin');
 const database: any = require('../database');
@@ -11,11 +14,11 @@ export const HISTORY_FORMAT = 'aiometadata-history';
 export const HISTORY_VERSION = 1;
 
 type State = { positionMs: number; runtimeMs: number; played: boolean; playCount: number; lastPlayedAt: number | null; updatedAt: number; origin: string | null };
-type PlaystateRow = State & { profile: string; videoId: string };
-type WatchRow = { profile: string; videoId: string; watchedAt: number; origin: string | null };
-type RatingRow = { profile: string; metaId: string; rating: number; metaType: string | null; updatedAt: number };
-type WatchlistRow = { profile: string; metaId: string; mediaType: string; metaType: string | null; listed: boolean; updatedAt: number };
-type DroppedRow = { profile: string; metaId: string; updatedAt: number };
+type PlaystateRow = State & { profile: string; videoId: string; title?: string };
+type WatchRow = { profile: string; videoId: string; watchedAt: number; origin: string | null; title?: string };
+type RatingRow = { profile: string; metaId: string; also?: string[]; rating: number; metaType: string | null; updatedAt: number };
+type WatchlistRow = { profile: string; metaId: string; also?: string[]; mediaType: string; metaType: string | null; listed: boolean; updatedAt: number };
+type DroppedRow = { profile: string; metaId: string; also?: string[]; updatedAt: number };
 type MatchRow = { service: string; base: string; group: string; data: string };
 
 export type HistoryFile = {
@@ -40,6 +43,7 @@ const MAX_NAME = 100;
 const MAX_MATCH_DATA = 65536;
 const MAX_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_PLAYS = 10000;
+const MAX_SPELLINGS = 16;
 const TOKEN = /^[A-Za-z0-9_-]{1,32}$/;
 const PRINTABLE = /^[^\u0000-\u001f\u007f]*$/;
 
@@ -57,6 +61,14 @@ const profileOf = (value: unknown): string | null =>
   value === undefined || value === null ? '' : typeof value === 'string' && value.length <= MAX_PROFILE && PRINTABLE.test(value) ? value : null;
 
 const tokenOf = (value: unknown): string | null => (typeof value === 'string' && TOKEN.test(value) ? value : null);
+
+const titleOf = (value: unknown): string | undefined => idOf(value) ?? undefined;
+
+const alsoOf = (value: unknown, metaId: string): string[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const ids = [...new Set(value.map(idOf).filter((id): id is string => Boolean(id) && id !== metaId))].slice(0, MAX_SPELLINGS);
+  return ids.length ? ids : undefined;
+};
 
 const amount = (value: unknown, max: number): number => {
   const n = Number(value);
@@ -181,14 +193,14 @@ export function readHistoryFile(body: any): HistoryFile | string {
     out.playstate.push({
       profile, videoId, updatedAt,
       positionMs: amount(row.positionMs, MAX_MS), runtimeMs: amount(runtimeOf(row), MAX_MS), played: row.played === true,
-      playCount: amount(row.playCount, MAX_PLAYS), lastPlayedAt: epoch(row.lastPlayedAt), origin: originOf(row),
+      playCount: amount(row.playCount, MAX_PLAYS), lastPlayedAt: epoch(row.lastPlayedAt), origin: originOf(row), title: titleOf(row.title),
     });
   }
   for (const row of list(body.watches)) {
     const profile = profileOf(row?.profile);
     const videoId = idOf(row?.videoId);
     const watchedAt = epoch(row?.watchedAt);
-    if (profile !== null && videoId && watchedAt) out.watches.push({ profile, videoId, watchedAt, origin: tokenOf(row.origin) });
+    if (profile !== null && videoId && watchedAt) out.watches.push({ profile, videoId, watchedAt, origin: tokenOf(row.origin), title: titleOf(row.title) });
   }
   for (const row of list(body.ratings)) {
     const profile = profileOf(row?.profile);
@@ -196,7 +208,7 @@ export function readHistoryFile(body: any): HistoryFile | string {
     const rating = ratingFrom(row?.rating);
     const updatedAt = epoch(row?.updatedAt);
     if (profile !== null && metaId && rating !== null && updatedAt) {
-      out.ratings.push({ profile, metaId, rating, metaType: META_TYPES.has(row.metaType) ? row.metaType : null, updatedAt });
+      out.ratings.push({ profile, metaId, also: alsoOf(row.also, metaId), rating, metaType: META_TYPES.has(row.metaType) ? row.metaType : null, updatedAt });
     }
   }
   for (const row of list(body.watchlist)) {
@@ -204,14 +216,14 @@ export function readHistoryFile(body: any): HistoryFile | string {
     const metaId = idOf(row?.metaId);
     const updatedAt = epoch(row?.updatedAt);
     if (profile !== null && metaId && MEDIA_TYPES.has(row.mediaType) && updatedAt) {
-      out.watchlist.push({ profile, metaId, mediaType: row.mediaType, metaType: META_TYPES.has(row.metaType) ? row.metaType : null, listed: row.listed !== false, updatedAt });
+      out.watchlist.push({ profile, metaId, also: alsoOf(row.also, metaId), mediaType: row.mediaType, metaType: META_TYPES.has(row.metaType) ? row.metaType : null, listed: row.listed !== false, updatedAt });
     }
   }
   for (const row of list(body.dropped)) {
     const profile = profileOf(row?.profile);
     const metaId = idOf(row?.metaId);
     const updatedAt = epoch(row?.updatedAt);
-    if (profile !== null && metaId && updatedAt) out.dropped.push({ profile, metaId, updatedAt });
+    if (profile !== null && metaId && updatedAt) out.dropped.push({ profile, metaId, also: alsoOf(row.also, metaId), updatedAt });
   }
   for (const row of list(body.matches)) {
     const service = tokenOf(row?.service);
@@ -256,7 +268,9 @@ const emptyCounts = (): Counts => Object.fromEntries(SECTIONS.map((section) => [
 
 const keyOf = (profile: string, id: string) => `${profile}\u0000${id}`;
 
-export async function planHistoryImport(userUUID: string, file: HistoryFile, mapping: Record<string, string | null>): Promise<Plan> {
+const nativeSameWatchMs = () => envInt('JELLYFIN_HISTORY_IMPORT_SAME_WATCH_SECONDS', 60, 0) * 1000;
+
+export async function planHistoryImport(userUUID: string, file: HistoryFile, mapping: Record<string, string | null>, sameWatchMs = nativeSameWatchMs()): Promise<Plan> {
   const counts = emptyCounts();
   const writes: Write[] = [];
   const target = (profile: string): string | null => (Object.prototype.hasOwnProperty.call(mapping, profile) && typeof mapping[profile] === 'string' ? mapping[profile] : null);
@@ -270,53 +284,73 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     database.listTrackerMatchesForConfiguration(userUUID),
   ]);
 
-  const incomingStates = new Map<string, { profile: string; videoId: string; state: State }>();
+  const incomingStates = new Map<string, { profile: string; videoId: string; title: string; state: State }>();
   for (const row of file.playstate) {
     const profile = target(row.profile);
     if (profile === null) continue;
     const key = keyOf(profile, row.videoId);
-    const { profile: _profile, videoId, ...state } = row;
+    const { profile: _profile, videoId, title, ...state } = row;
     const prior = incomingStates.get(key);
-    incomingStates.set(key, { profile, videoId, state: prior ? mergeState(prior.state, state) : state });
+    incomingStates.set(key, { profile, videoId, title: keyOf(profile, title ?? videoId), state: prior ? mergeState(prior.state, state) : state });
   }
   const heldStates = new Map<string, State>(playstate.map((row: any) => [keyOf(String(row.profile ?? ''), String(row.video_id)), stateOf(row)]));
-  for (const [key, { profile, videoId, state }] of incomingStates) {
-    const held = heldStates.get(key);
-    if (held && sameState(mergeState(held, state), held)) {
+  const titles = new Map<string, Array<{ key: string; profile: string; videoId: string; state: State }>>();
+  for (const [key, { title, ...entry }] of incomingStates) {
+    if (!titles.has(title)) titles.set(title, []);
+    titles.get(title)!.push({ key, ...entry });
+  }
+  const sameViewing = (held: State, state: State): State =>
+    held.lastPlayedAt && state.lastPlayedAt && Math.abs(held.lastPlayedAt - state.lastPlayedAt) <= sameWatchMs
+      ? { ...state, lastPlayedAt: held.lastPlayedAt, updatedAt: Math.min(state.updatedAt, held.updatedAt) }
+      : state;
+  const mergedInto = (held: State, state: State) => mergeState(held, sameViewing(held, state));
+  for (const spellings of titles.values()) {
+    const held = spellings.filter((spelling) => heldStates.has(spelling.key));
+    const due = held.length ? held.filter((spelling) => !sameState(mergedInto(heldStates.get(spelling.key)!, spelling.state), heldStates.get(spelling.key)!)) : spellings;
+    if (!due.length) {
       counts.playstate.unchanged += 1;
       continue;
     }
-    counts.playstate[held ? 'updated' : 'added'] += 1;
-    writes.push(async () => {
-      const current = await database.currentPlaystate(userUUID, profile, videoId);
-      const next = current ? mergeState(stateOf(current), state) : state;
-      if (current && sameState(next, stateOf(current))) return;
-      await database.writePlaystateRow(userUUID, profile, videoId, next);
-    });
+    counts.playstate[held.length ? 'updated' : 'added'] += 1;
+    for (const { profile, videoId, state } of due) {
+      writes.push(async () => {
+        const current = await database.currentPlaystate(userUUID, profile, videoId);
+        const next = current ? mergedInto(stateOf(current), state) : state;
+        if (current && sameState(next, stateOf(current))) return;
+        await database.writePlaystateRow(userUUID, profile, videoId, next);
+      });
+    }
   }
 
-  const sameWatchMs = envInt('JELLYFIN_HISTORY_IMPORT_SAME_WATCH_SECONDS', 60, 0) * 1000;
   const viewings = new Map<string, number[]>();
   for (const row of watches) {
     const key = keyOf(String(row.profile ?? ''), String(row.video_id));
     if (!viewings.has(key)) viewings.set(key, []);
     viewings.get(key)!.push(Number(row.watched_at));
   }
+  const moments = new Map<string, { profile: string; watchedAt: number; origin: string | null; videoIds: string[] }>();
   for (const row of file.watches) {
     const profile = target(row.profile);
     if (profile === null) continue;
-    const key = keyOf(profile, row.videoId);
-    const held = viewings.get(key) ?? [];
-    if (held.some((at) => Math.abs(at - row.watchedAt) <= sameWatchMs)) {
+    const key = `${keyOf(profile, row.title ?? row.videoId)}\u0000${row.watchedAt}`;
+    const moment = moments.get(key) ?? { profile, watchedAt: row.watchedAt, origin: row.origin, videoIds: [] };
+    if (!moment.videoIds.includes(row.videoId)) moment.videoIds.push(row.videoId);
+    moments.set(key, moment);
+  }
+  for (const { profile, watchedAt, origin, videoIds } of moments.values()) {
+    const near = videoIds.some((videoId) => (viewings.get(keyOf(profile, videoId)) ?? []).some((at) => Math.abs(at - watchedAt) <= sameWatchMs));
+    if (near) {
       counts.watches.unchanged += 1;
       continue;
     }
-    held.push(row.watchedAt);
-    viewings.set(key, held);
+    for (const videoId of videoIds) {
+      const key = keyOf(profile, videoId);
+      viewings.set(key, [...(viewings.get(key) ?? []), watchedAt]);
+    }
     counts.watches.added += 1;
     writes.push(async () => {
-      if (await database.hasWatchNear(userUUID, profile, row.videoId, row.watchedAt, sameWatchMs)) return;
-      await database.insertWatch(userUUID, profile, row.videoId, row.watchedAt, row.origin);
+      for (const videoId of videoIds) if (await database.hasWatchNear(userUUID, profile, videoId, watchedAt, sameWatchMs)) return;
+      for (const videoId of videoIds) await database.insertWatch(userUUID, profile, videoId, watchedAt, origin);
     });
   }
 
@@ -332,48 +366,57 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     return out;
   };
 
+  const spellingsOf = (row: { metaId: string; also?: string[] }) => [row.metaId, ...(row.also ?? [])];
+
   const heldRatings = new Map<string, any>(ratings.map((row: any) => [keyOf(String(row.profile ?? ''), String(row.meta_id)), row]));
   const ratingKept = (held: any, row: RatingRow) => Number(held.rating) === row.rating || Number(held.updated_at) >= row.updatedAt;
-  for (const [key, row] of newestPer(file.ratings)) {
-    const held = heldRatings.get(key);
-    if (held && ratingKept(held, row)) {
+  for (const row of newestPer(file.ratings).values()) {
+    const ids = spellingsOf(row);
+    const held = ids.map((id) => heldRatings.get(keyOf(row.target, id))).filter(Boolean);
+    if (held.some((mark) => ratingKept(mark, row))) {
       counts.ratings.unchanged += 1;
       continue;
     }
-    counts.ratings[held ? 'updated' : 'added'] += 1;
+    counts.ratings[held.length ? 'updated' : 'added'] += 1;
     writes.push(async () => {
-      const current = await database.currentMark('jellyfin_ratings', userUUID, row.target, row.metaId);
-      if (current && ratingKept(current, row)) return;
-      await database.setRating(userUUID, row.target, [row.metaId], row.rating, row.metaType, row.updatedAt);
+      for (const id of ids) {
+        const current = await database.currentMark('jellyfin_ratings', userUUID, row.target, id);
+        if (current && ratingKept(current, row)) return;
+      }
+      await database.setRating(userUUID, row.target, ids, row.rating, row.metaType, row.updatedAt);
     });
   }
 
   const heldListed = new Map<string, any>(watchlist.map((row: any) => [keyOf(String(row.profile ?? ''), String(row.meta_id)), row]));
   const listingKept = (held: any, row: WatchlistRow) => (held ? Boolean(Number(held.listed)) === row.listed || Number(held.updated_at) >= row.updatedAt : !row.listed);
-  for (const [key, row] of newestPer(file.watchlist)) {
-    const held = heldListed.get(key);
+  for (const row of newestPer(file.watchlist).values()) {
+    const heldId = spellingsOf(row).find((id) => heldListed.has(keyOf(row.target, id)));
+    const held = heldId ? heldListed.get(keyOf(row.target, heldId)) : undefined;
     if (listingKept(held, row)) {
       counts.watchlist.unchanged += 1;
       continue;
     }
     counts.watchlist[held ? 'updated' : 'added'] += 1;
+    const metaId = heldId ?? row.metaId;
     writes.push(async () => {
-      const current = await database.currentMark('jellyfin_watchlist', userUUID, row.target, row.metaId);
+      const current = await database.currentMark('jellyfin_watchlist', userUUID, row.target, metaId);
       if (listingKept(current, row)) return;
-      await database.setWatchlisted(userUUID, row.target, row.metaId, row.mediaType, row.listed, row.metaType, row.updatedAt);
+      await database.setWatchlisted(userUUID, row.target, metaId, row.mediaType, row.listed, row.metaType, row.updatedAt);
     });
   }
 
   const heldDrops = new Set<string>(dropped.map((row: any) => keyOf(String(row.profile ?? ''), String(row.meta_id))));
-  for (const [key, row] of newestPer(file.dropped)) {
-    if (heldDrops.has(key)) {
+  for (const row of newestPer(file.dropped).values()) {
+    const ids = spellingsOf(row);
+    if (ids.some((id) => heldDrops.has(keyOf(row.target, id)))) {
       counts.dropped.unchanged += 1;
       continue;
     }
+    for (const id of ids) heldDrops.add(keyOf(row.target, id));
     counts.dropped.added += 1;
     writes.push(async () => {
-      if (await database.currentMark('jellyfin_dropped', userUUID, row.target, row.metaId)) return;
-      await database.setDropped(userUUID, row.target, [row.metaId], true, row.updatedAt);
+      for (const id of ids) if (await database.currentMark('jellyfin_dropped', userUUID, row.target, id)) return;
+      await database.setDropped(userUUID, row.target, ids, true, row.updatedAt);
     });
   }
 
@@ -500,15 +543,57 @@ export function historyImportBody(): any {
   return parser;
 }
 
-export async function receiveHistoryImport(userUUID: string, config: any, body: unknown, query: any): Promise<{ status: number; body: any }> {
-  let parsed: any;
+const nativeHistorySource: HistorySource = {
+  id: 'aiometadata',
+  about: 'Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers; what they lack shows up in the Trackers section.',
+  sameViewingMs: nativeSameWatchMs,
+  detects: (upload) => upload.json !== undefined,
+  read: async (upload) => ({ body: upload.json, unmatched: [], unmatchedCount: 0 }),
+};
+
+const HISTORY_SOURCES: HistorySource[] = [traktHistorySource, letterboxdHistorySource, nativeHistorySource];
+
+type Received = { file: HistoryFile; source: HistorySource; unmatched: Unmatched[]; unmatchedCount: number; ambiguous: Ambiguous[] };
+
+const MAX_PICKS = 500;
+
+function picksOf(value: unknown): Record<string, number> | null {
+  if (value === undefined) return Object.create(null);
+  let asked: any;
   try {
-    parsed = JSON.parse(Buffer.isBuffer(body) ? body.toString('utf8') : '');
+    asked = JSON.parse(String(value));
   } catch {
-    return { status: 400, body: { error: 'This file is not valid JSON' } };
+    return null;
   }
-  const file = readHistoryFile(parsed);
-  if (typeof file === 'string') return { status: 400, body: { error: file } };
+  const picks: Record<string, number> = Object.create(null);
+  if (!asked || typeof asked !== 'object' || Array.isArray(asked)) return picks;
+  for (const [key, tmdb] of Object.entries(asked).slice(0, MAX_PICKS)) {
+    if (/^[0-9a-f]{16}$/.test(key) && positive(tmdb)) picks[key] = positive(tmdb)!;
+  }
+  return picks;
+}
+
+const refused = (error: string) => ({ status: 400, body: { error } });
+
+async function readUpload(userUUID: string, config: any, buffer: Buffer, fileName: string | null, picks: Record<string, number>): Promise<Received | { status: number; body: any }> {
+  const upload = openUpload(buffer, fileName);
+  if (typeof upload === 'string') return refused(upload);
+  const source = HISTORY_SOURCES.find((candidate) => candidate.detects(upload));
+  if (!source) return refused(upload.files.size > 1 ? 'This zip file is not a watch history export this server can read' : 'This file is not valid JSON');
+  const read = await source.read(upload, { userUUID, config, picks });
+  if (typeof read === 'string') return refused(read);
+  if ('matching' in read) return { status: 202, body: read };
+  const file = readHistoryFile(read.body);
+  return typeof file === 'string' ? refused(file) : { file, source, unmatched: read.unmatched, unmatchedCount: read.unmatchedCount, ambiguous: read.ambiguous ?? [] };
+}
+
+export async function receiveHistoryImport(userUUID: string, config: any, body: unknown, query: any): Promise<{ status: number; body: any }> {
+  const fileName = typeof query?.name === 'string' && PRINTABLE.test(query.name) ? query.name.slice(0, 200) : null;
+  const picks = picksOf(query?.picks);
+  if (!picks) return { status: 400, body: { error: 'The film choices could not be read' } };
+  const upload = await readUpload(userUUID, config, Buffer.isBuffer(body) ? body : Buffer.alloc(0), fileName, picks);
+  if ('status' in upload) return upload;
+  const { file } = upload;
 
   const targets = historyProfiles(config, userUUID);
   const sources = new Map<string, string>(file.profiles.map((profile) => [profile.key, profile.name]));
@@ -537,16 +622,20 @@ export async function receiveHistoryImport(userUUID: string, config: any, body: 
     }
   }
 
-  const plan = await planHistoryImport(userUUID, file, mapping);
+  const plan = await planHistoryImport(userUUID, file, mapping, upload.source.sameViewingMs());
   const summary = {
+    source: upload.source.id,
+    about: upload.source.about,
     sources: [...sources].map(([key, name]) => ({ key, name })),
     targets,
     mapping,
     counts: plan.counts,
     writes: plan.writes.length,
+    unmatched: upload.unmatched,
+    unmatchedCount: upload.unmatchedCount,
+    ambiguous: upload.ambiguous,
   };
   if (query?.apply !== '1') return { status: 200, body: summary };
-  const fileName = typeof query?.name === 'string' && PRINTABLE.test(query.name) ? query.name.slice(0, 200) : null;
   if (!(await startHistoryImport(userUUID, plan, fileName))) return { status: 409, body: { error: 'An import is already running for this configuration' } };
   return { status: 202, body: { ...summary, job: await historyImportStatus(userUUID) } };
 }
