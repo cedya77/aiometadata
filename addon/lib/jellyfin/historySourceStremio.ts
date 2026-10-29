@@ -13,15 +13,17 @@ import {
   type SectionRule,
 } from './historySources';
 import { filmWatched, imdbOfItem, isAnimeId, isStremioLibrary, readStremioLibrary, reallyPlayed, resumeOf, type StremioItem } from './stremioLibrary';
-import { anchorWatched, decodeWatched, parseWatched, sortedVideoIds, type VideoRef } from './stremioWatched';
+import { anchorWatched, decodeWatched, parseWatched, sortedVideoIds, type VideoRef, type WatchedField } from './stremioWatched';
 
 const idMapper: any = require('../id-mapper');
 
 const USABLE_VIDEO = /^(tt\d+|(tmdb|tvdb|kitsu|mal|anilist|anidb):\d+)(:\d+)*$/;
 const ONLY_ANCHOR = 'Only the last watched episode could be placed';
+// readHistoryFile keeps no more plays than this.
+const MAX_PLAYS = 10000;
 
 type Lists = { own: string[] | null; cinemeta: string[] | null };
-type Title = { id: string; anchors: Set<string> };
+type Title = { id: string; fields: WatchedField[] };
 type Row = Found & { at: number | null; asOf?: number | null; progress?: { positionMs: number; runtimeMs: number } };
 
 const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
@@ -38,7 +40,7 @@ const videoRefs = (videos: unknown): VideoRef[] =>
 
 const imdbOfAnchor = (anchor: string): string | null => /^tt\d+/.exec(anchor)?.[0] ?? null;
 
-// This server's list first, as most Stremio users watch through AIOMetadata; Cinemeta when it cannot place an anchor.
+// This server's list first, as most Stremio users watch through AIOMetadata; Cinemeta when it cannot place a show's marks.
 async function episodeLists(userUUID: string, title: Title): Promise<Lists> {
   let own: string[] | null = null;
   try {
@@ -47,9 +49,9 @@ async function episodeLists(userUUID: string, title: Title): Promise<Lists> {
   } catch {
     own = null;
   }
-  const unplaced = [...title.anchors].find((anchor) => imdbOfAnchor(anchor) && !own?.includes(anchor));
+  const unplaced = title.fields.find((field) => imdbOfAnchor(field.anchor) && !(own && decodeWatched(field, own)));
   if (!unplaced) return { own, cinemeta: null };
-  const videos = await idMapper.getCinemetaVideosForImdbSeries(imdbOfAnchor(unplaced)).catch(() => null);
+  const videos = await idMapper.getCinemetaVideosForImdbSeries(imdbOfAnchor(unplaced.anchor)).catch(() => null);
   return { own, cinemeta: Array.isArray(videos) ? sortedVideoIds(videoRefs(videos)) : null };
 }
 
@@ -91,8 +93,8 @@ export const stremioHistorySource: HistorySource = {
       for (const item of items) {
         const field = item.type === 'series' ? parseWatched(item.state.watched) : null;
         if (!field) continue;
-        const title = titles.get(item.id) ?? { id: item.id, anchors: new Set<string>() };
-        title.anchors.add(field.anchor);
+        const title = titles.get(item.id) ?? { id: item.id, fields: [] };
+        title.fields.push(field);
         titles.set(item.id, title);
       }
     }
@@ -124,7 +126,7 @@ export const stremioHistorySource: HistorySource = {
           if (!spellings.length) continue;
           const row = { spellings, kind, asOf: item.mtime };
           if (filmWatched(state)) {
-            const plays = Math.max(1, Math.round(state.timesWatched));
+            const plays = Math.min(MAX_PLAYS, Math.max(1, Math.round(state.timesWatched)));
             const dated = reallyPlayed(state) && state.lastWatched ? 1 : 0;
             if (dated) rows.viewings.push({ ...row, at: state.lastWatched });
             for (let i = dated; i < plays; i++) rows.viewings.push({ ...row, at: null });
