@@ -237,7 +237,10 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
   const { indexedSnapshot, watchedAmong, movieSpellings } = require('./watched');
   if (TMDB_NUMBERED.has(from.service) && TMDB_NUMBERED.has(to.service)) {
     const target = await indexedSnapshot(to.service, to.credential, to.scoped);
-    const entries = (await nativeEntries(from.service, from.credential, from.scoped)).filter((item) => !since || (item.at ?? 0) >= since);
+    const { shouldTrackServiceMediaType } = require('../watchTracking');
+    const recent = (await nativeEntries(from.service, from.credential, from.scoped)).filter((item) => !since || (item.at ?? 0) >= since);
+    // The target's own tracking settings hold here as on the general path.
+    const entries = recent.filter((item) => shouldTrackServiceMediaType(to.scoped, to.service, item.kind === 'movie' ? 'movie' : 'series'));
     const held = await nativeHeld(to.service, to.credential);
     const present = new Set<string>();
     const all = [...new Set(entries.flatMap((item) => item.ids))];
@@ -250,7 +253,7 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
     const left = entries.filter((item) => !held.has(nativeKey(item.kind, item.native!.tmdb, item.native!.season, item.native!.episode)) && !item.ids.some((id) => present.has(id) || waiting.has(id)));
     const plan: CopyPlan = {
       items: left.filter((item) => !tried.has(copyKey(item))),
-      excluded: 0,
+      excluded: recent.length - entries.length,
       blocked: { noId: 0, refused: left.filter((item) => tried.has(copyKey(item))).length },
       checkedAt: Date.now(),
     };
