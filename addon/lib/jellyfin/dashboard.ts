@@ -1284,7 +1284,7 @@ export interface DeviceRow {
 export function dashboardDevices(userUUID: string, profile: string | null): Promise<DeviceRow[] | null> {
   return asProfile(userUUID, profile, async (config) => {
     const { liveDevices } = require('./socket');
-    const devices: Array<{ deviceId: string; client: string; device: string; version: string; lastSeen: number; playableMediaTypes?: string[]; supportedCommands: string[] }> =
+    const devices: Array<{ deviceId: string; client: string; device: string; version: string; lastSeen: number; playableMediaTypes?: string[]; supportedCommands: string[]; supportsMediaControl?: boolean }> =
       await liveDevices(userUUID, profileKey(config));
     return devices.map((device) => ({
       deviceId: device.deviceId,
@@ -1293,7 +1293,8 @@ export function dashboardDevices(userUUID: string, profile: string | null): Prom
       version: device.version,
       lastSeen: device.lastSeen,
       canOpen: device.supportedCommands.includes('DisplayContent'),
-      canPlay: (device.playableMediaTypes ?? []).includes('Video'),
+      // A client that turns remote control off ignores Play, as the server's own session list already says.
+      canPlay: device.supportsMediaControl !== false && (device.playableMediaTypes ?? []).includes('Video'),
     }));
   });
 }
