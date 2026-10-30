@@ -7,6 +7,7 @@ import { scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
 import { asListed, belongsOn, furthestPerEntry, pullDrift, spellingFor, spellingsFor, viewingOf, type Viewing } from './trackerDrift';
 import { MARKS, markBatchSize, markVideo, planMarks, ratingKeys, writeMarks, type Mark, type MarkItem } from './trackerMarks';
+import type { SimklMissed } from '../../utils/simklUtils';
 
 const logger = consola.withTag('Trackers');
 const database: any = require('../database');
@@ -442,8 +443,9 @@ export async function writeSimkl(items: CopyItem[], tokenId: string, config: any
   if (writes.length) {
     try {
       const first = await addHistoryBatch(writes.map(({ fallback, ...write }) => write), accessToken, rewatch);
-      const missed = new Set(first.missed.map((ids) => JSON.stringify(ids)));
-      const firstMissed = (write: any) => missed.has(JSON.stringify(write.ids)) || first.missed.some((ids) => sharesId(ids, write.ids));
+      const missed = new Set(first.missed.map((entry: SimklMissed) => JSON.stringify(entry.ids)));
+      const kindOf = (write: any) => write.season == null && write.episode == null;
+      const firstMissed = (write: any) => missed.has(JSON.stringify(write.ids)) || first.missed.some((entry: SimklMissed) => (entry.movie === null || entry.movie === kindOf(write)) && sharesId(entry.ids, write.ids));
       const retry = writes.filter((write) => write.fallback && missed.has(JSON.stringify(write.ids)));
       if (!retry.length) {
         for (const [w, write] of writes.entries()) if (firstMissed(write)) lost.push(from[w]);
@@ -452,7 +454,7 @@ export async function writeSimkl(items: CopyItem[], tokenId: string, config: any
       const second = await addHistoryBatch(retry.map((write) => ({ ...write.fallback, watchedAt: write.watchedAt })), accessToken, rewatch);
       const recovered = retry.length - second.notFound;
       for (const [w, write] of writes.entries()) {
-        if (firstMissed(write) && (!write.fallback || second.missed.some((ids) => sharesId(ids, write.fallback.ids)))) lost.push(from[w]);
+        if (firstMissed(write) && (!write.fallback || second.missed.some((entry: SimklMissed) => (entry.movie === null || entry.movie === kindOf(write.fallback)) && sharesId(entry.ids, write.fallback.ids)))) lost.push(from[w]);
       }
       return { done: items.length, sent: writes.length - first.notFound + recovered, failed: failed + first.notFound - recovered, lost };
     } catch (error: any) {

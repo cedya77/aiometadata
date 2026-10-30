@@ -946,7 +946,10 @@ function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
   return Object.keys(ids).length > 0 ? ids : null;
 }
 
-export async function addHistoryBatch(writes: HistoryWrite[], accessToken: string, rewatch = false): Promise<{ notFound: number; missed: Array<Record<string, any>> }> {
+// Whether a missed entry was a film: TMDB numbers films and shows apart, so ids match only within one kind. Anime holds both.
+export type SimklMissed = { ids: Record<string, any>; movie: boolean | null };
+
+export async function addHistoryBatch(writes: HistoryWrite[], accessToken: string, rewatch = false): Promise<{ notFound: number; missed: SimklMissed[] }> {
   const response: any = await makeAuthenticatedSimklRequest(
     `${SIMKL_BASE_URL}/sync/history${rewatch ? '?allow_rewatch=yes' : ''}`, accessToken, `Simkl history batch of ${writes.length}`, 'POST', historyBatchPayload(writes), 60000
   );
@@ -956,9 +959,13 @@ export async function addHistoryBatch(writes: HistoryWrite[], accessToken: strin
     throw error;
   }
   const missed = response?.data?.not_found;
-  const items = ['movies', 'shows', 'anime', 'episodes'].flatMap((key) => (Array.isArray(missed?.[key]) ? missed[key] : []));
+  const sections = ['movies', 'shows', 'anime', 'episodes'].map((key) => ({ key, items: Array.isArray(missed?.[key]) ? missed[key] : [] }));
+  const items = sections.flatMap(({ items: listed }) => listed);
   const episodes = items.reduce((n, item: any) => n + (Array.isArray(item?.seasons) ? item.seasons.reduce((m: number, s: any) => m + (Array.isArray(s?.episodes) ? s.episodes.length : 0), 0) : 1), 0);
-  return { notFound: episodes, missed: items.map((item: any) => item?.ids ?? {}) };
+  return {
+    notFound: episodes,
+    missed: sections.flatMap(({ key, items: listed }) => listed.map((item: any) => ({ ids: item?.ids ?? {}, movie: key === 'movies' ? true : key === 'anime' ? null : false }))),
+  };
 }
 
 function unmatched(url: string, data: any): boolean {
