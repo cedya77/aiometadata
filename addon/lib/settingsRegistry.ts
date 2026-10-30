@@ -1649,6 +1649,15 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     default: 'infuse',
   },
   {
+    key: 'JELLYFIN_RASTER_LOGO_CLIENTS',
+    envVar: 'JELLYFIN_RASTER_LOGO_CLIENTS',
+    label: 'Jellyfin PNG Logo Clients',
+    description: 'Comma-separated client names, matched against the client name and user agent, that get TMDB\'s PNG rendition of a logo TMDB stores as SVG, because they cannot draw SVG. Every other client gets the SVG.',
+    category: 'Features',
+    type: 'string',
+    default: 'infuse',
+  },
+  {
     key: 'JELLYFIN_IMAGE_RELAY_CONCURRENCY',
     envVar: 'JELLYFIN_IMAGE_RELAY_CONCURRENCY',
     label: 'Jellyfin Images Relayed at Once',

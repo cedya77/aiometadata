@@ -2436,7 +2436,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return;
     }
     const maxWidth = qInt(req, 'MaxWidth', 0) || qInt(req, 'FillWidth', 0) || qInt(req, 'Width', 0);
-    url = sourceSized(url, kind, maxWidth);
+    url = sourceSized(url, kind, maxWidth, clientListed(req, 'JELLYFIN_RASTER_LOGO_CLIENTS'));
     const descriptor = await decodeJellyfinId(String(req.params.itemId));
     const collectionArt = descriptor?.k === 'collection' || descriptor?.k === 'boxset';
 
@@ -2502,8 +2502,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   const hasRenditions = (url: string): boolean =>
     url.startsWith('https://image.tmdb.org/t/p/') || METAHUB.test(url) || url.startsWith(FANART_PREVIEW);
 
+  const TMDB_SVG = /(image\.tmdb\.org\/t\/p\/[^/]+\/[^/?#]+)\.svg(?=$|[?#])/i;
+
   /** The source's own smallest rendition at least as wide as asked, never larger than the link names. */
-  const sourceSized = (url: string, kind: string, maxWidth: number): string => {
+  const sourceSized = (url: string, kind: string, maxWidth: number, raster = false): string => {
+    if (raster) url = url.replace(TMDB_SVG, '$1.png');
     if (url.includes(TMDB_ORIGINAL)) {
       const bucket = kind === 'logo' ? 'logo' : kind === 'backdrop' || kind === 'thumb' ? 'backdrop' : 'poster';
       const widths = TMDB_WIDTHS[bucket];
@@ -2563,18 +2566,22 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       });
     });
 
-  const relaysImages = (req: any): boolean => {
-    const { getSetting } = require('../settingsService');
-    const mode = String(getSetting('JELLYFIN_IMAGE_DELIVERY') || 'auto').trim().toLowerCase();
-    if (mode === 'relay') return true;
-    if (mode === 'redirect') return false;
-    const names = String(getSetting('JELLYFIN_IMAGE_RELAY_CLIENTS') || '')
+  const clientListed = (req: any, key: string): boolean => {
+    const names = String(require('../settingsService').getSetting(key) || '')
       .split(',')
       .map((name) => name.trim().toLowerCase())
       .filter(Boolean);
     if (!names.length) return false;
     const seen = `${clientInfo(req).client} ${req.get('user-agent') || ''}`.toLowerCase();
     return names.some((name) => seen.includes(name));
+  };
+
+  const relaysImages = (req: any): boolean => {
+    const { getSetting } = require('../settingsService');
+    const mode = String(getSetting('JELLYFIN_IMAGE_DELIVERY') || 'auto').trim().toLowerCase();
+    if (mode === 'relay') return true;
+    if (mode === 'redirect') return false;
+    return clientListed(req, 'JELLYFIN_IMAGE_RELAY_CLIENTS');
   };
 
   const imageSetting = (key: string, fallback: number, min: number): number => {
