@@ -31,8 +31,11 @@ const withTime = (day: number, hours: number, minutes: number) => { const d = ne
 const addDays = (day: number, days: number) => { const d = new Date(day); d.setDate(d.getDate() + days); return startOfDay(d.getTime()); };
 const timeOf = (at: number) => { const d = new Date(at); return { hours: d.getHours(), minutes: d.getMinutes() }; };
 
+// The server dates a release whose time is unknown at noon UTC; any other value is the moment it came out.
+const dateOnly = (at: number) => ((at % DAY) + DAY) % DAY === DAY / 2;
+
 function releaseDay(at: number): number {
-  if (at % DAY !== 0) return startOfDay(at);
+  if (!dateOnly(at)) return startOfDay(at);
   const d = new Date(at);
   return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getTime();
 }
@@ -129,7 +132,7 @@ export default function WatchDateSheet({ target, anchor, trackers, onSave, onClo
       { label: "Yesterday", at: () => withTime(yesterday, hours, minutes), is: (at) => sameDay(at, yesterday) && at !== withTime(yesterday, 21, 0) },
     ];
     if (released !== null) {
-      const exact = target.releasedAt && target.releasedAt % DAY !== 0 ? target.releasedAt : null;
+      const exact = target.releasedAt && !dateOnly(target.releasedAt) ? target.releasedAt : null;
       out.push({
         label: target.episode ? "Air date" : "Release day",
         at: () => Math.min(now, exact ?? withTime(released, hours, minutes)),
