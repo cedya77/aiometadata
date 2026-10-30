@@ -1259,12 +1259,15 @@ async function droppedShows(userUUID: string, profile: string, ids: string[], co
   return shows;
 }
 
+// An id no profile has any more scopes to the main one, so it is refused rather than acted on as that profile.
+const scopedTo = (config: any, profile: string | null): boolean => !profile || config?.jellyfinProfileId === profile;
+
 function asProfile<T>(userUUID: string, profile: string | null, work: (config: any) => Promise<T>): Promise<T | null> {
   const { runInViewerScope } = require('./viewer');
   const { loadConfig } = require('./context');
   return runInViewerScope(false, async () => {
     const config = await loadConfig({ jellyfin: { userUUID, profileId: profile || null } }).catch(() => null);
-    return config ? work(config) : null;
+    return config && scopedTo(config, profile) ? work(config) : null;
   });
 }
 
@@ -1867,7 +1870,7 @@ export async function dashboardTitleAction(userUUID: string, profile: string | n
     const req = { params: { userUUID }, jellyfin: { userUUID, profileId: profile || null }, query: {}, headers: {} };
     const { loadConfig } = require('./context');
     const config = await loadConfig(req).catch(() => null);
-    if (!config) return null;
+    if (!config || !scopedTo(config, profile)) return null;
     const { decodeJellyfinId } = require('./ids');
     const playstate = require('./playstate');
     // A watchlist or rating change that could not read its title says so; a drop that had nothing to change is no failure.
@@ -1922,7 +1925,8 @@ export async function dashboardWatchDate(userUUID: string, profile: string | nul
   return runInViewerScope(false, async () => {
     const req = { params: { userUUID }, jellyfin: { userUUID, profileId: profile || null }, query: {}, headers: {} };
     const { loadConfig } = require('./context');
-    if (!(await loadConfig(req).catch(() => null))) return null;
+    const config = await loadConfig(req).catch(() => null);
+    if (!config || !scopedTo(config, profile)) return null;
     const moved = await require('./playstate').recordWatchDate(req, itemId, from, to);
     forgetMemos(userUUID);
     return moved;
