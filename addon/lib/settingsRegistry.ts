@@ -1808,6 +1808,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 10,
   },
   {
+    key: 'JELLYFIN_YEAR_REVIEW_BATCH_PLAYS',
+    envVar: 'JELLYFIN_YEAR_REVIEW_BATCH_PLAYS',
+    label: 'Year in Review Catch-up Batch Size',
+    description: 'How many plays recorded at the same instant mark them as one catch-up batch. They still count toward the year\'s totals but are left out of its viewing rhythm.',
+    category: 'Features',
+    type: 'number',
+    default: 6,
+    min: 2,
+  },
+  {
     key: 'JELLYFIN_DASHBOARD_PROGRESS_MAX',
     envVar: 'JELLYFIN_DASHBOARD_PROGRESS_MAX',
     label: 'Jellyfin Dashboard Continue Watching Count Limit',

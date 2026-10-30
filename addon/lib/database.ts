@@ -1857,6 +1857,13 @@ class Database {
     }));
   }
 
+  async listWatchesBetween(userUUID: string, profile: string, from: number, to: number): Promise<Array<{ video_id: string; watched_at: number; origin: string | null }>> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = ? AND profile = ? AND watched_at >= ? AND watched_at < ?'
+      : 'SELECT video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = $1 AND profile = $2 AND watched_at >= $3 AND watched_at < $4';
+    return ((await this.allQuery(query, [userUUID, profile, from, to])) || []).map((row: any) => ({ video_id: String(row.video_id), watched_at: Number(row.watched_at), origin: row.origin ?? null }));
+  }
+
   async listWatchesSince(userUUID: string, since: number): Promise<Array<{ profile: string; video_id: string; watched_at: number; origin: string | null }>> {
     const query = this.type === 'sqlite'
       ? 'SELECT profile, video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = ? AND watched_at >= ?'
