@@ -1780,7 +1780,7 @@ class Database {
       );
       moved += 1;
     }
-    const after = moved ? await this.listWatchesFor(userUUID, profile, ids) : before;
+    const after = moved ? await this.listWatchesFor(userUUID, profile, ids, true) : before;
     if (moved) {
       const now = Date.now();
       for (const id of ids) {
