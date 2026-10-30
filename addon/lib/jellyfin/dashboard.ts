@@ -11,7 +11,7 @@ import { groupBySpelling } from './aliases';
 import { itemIdForVideo } from './history';
 import { defaultUserName, listProfiles, profileKey, scopeConfigToProfile } from './profiles';
 import { CAPABLE, credentialFor } from './trackerSource';
-import { trackerOf, type Mark } from '../trackers';
+import { isMatchable, trackerOf, type Mark } from '../trackers';
 import { sourceKeyFor } from './trackerMirror';
 import { mapWithConcurrency } from '../../utils/concurrency';
 import redis from '../redisClient';
@@ -675,7 +675,7 @@ async function driftOutcomes(key: string): Promise<Map<string, string | null>> {
 async function driftItems(userUUID: string, source: SyncSource, outcomes: Map<string, string | null>, viewings: any[]): Promise<any[]> {
   const { spellingFor } = require('./trackerDrift');
   const { parseStremioId } = require('./idsCodec');
-  const { MATCH_SERVICES, matchFor } = require('./trackerMatch');
+  const { matchFor } = require('./trackerMatch');
   const groups = new Map<string, any[]>();
   for (const v of viewings) {
     const id = `${v.profile}|${v.metaId}`;
@@ -687,7 +687,7 @@ async function driftItems(userUUID: string, source: SyncSource, outcomes: Map<st
     const spelling = spellingFor(source.service, list[list.length - 1].ids);
     const named = await withDeadline(describe(userUUID, spelling).catch(() => null));
     const bases = [...new Set(list.flatMap((v: any) => v.ids.map((video: string) => parseStremioId(video)?.base ?? video)))] as string[];
-    const matchable = MATCH_SERVICES.has(source.service);
+    const matchable = isMatchable(source.service);
     const matched = matchable ? (await Promise.all(bases.map((base) => matchFor(userUUID, source.service, base)))).find(Boolean) ?? null : null;
     return {
       id,
@@ -816,11 +816,11 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
   if (!source || !parsed || !shows.length) return null;
   const { driftWindowDays } = require('./trackerDrift');
   const { videoIdAliases } = require('./aliases');
-  const { matchFor, MATCH_SERVICES } = require('./trackerMatch');
+  const { matchFor } = require('./trackerMatch');
   const { indexedSnapshot, seriesCountsAmong, watchedAmong } = require('./watched');
   const { trackerConfig } = require('../accounts');
 
-  const match = MATCH_SERVICES.has(source.service)
+  const match = isMatchable(source.service)
     ? (await Promise.all(shows.map((base) => matchFor(userUUID, source.service, base)))).find(Boolean) ?? null
     : null;
   const aliases: string[] = await videoIdAliases(video).catch(() => []);
@@ -913,8 +913,7 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
 async function matchSource(userUUID: string, key: string): Promise<SyncSource | null> {
   const config = await database.getUserConfig(userUUID).catch(() => null);
   const source = config ? syncSources(config, userUUID).get(key) ?? null : null;
-  const { MATCH_SERVICES } = require('./trackerMatch');
-  return source && MATCH_SERVICES.has(source.service) ? source : null;
+  return source && isMatchable(source.service) ? source : null;
 }
 
 const MATCH_ID_KEYS = new Set(['simkl', 'imdb', 'tvdb', 'tmdb']);

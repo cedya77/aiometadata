@@ -15,6 +15,7 @@ export const TRACKERS: Record<AccountService, Tracker> = { simkl, mdblist, publi
 export const trackerOf = (id: string): Tracker | undefined => (TRACKERS as Record<string, Tracker>)[id];
 export const trackerName = (id: string): string => trackerOf(id)?.name ?? id;
 export const isAnimeList = (id: string): boolean => trackerOf(id)?.animeOnly === true;
+export const isMatchable = (id: string): boolean => Boolean(trackerOf(id)?.match);
 
 export function copyBatch(id: string, what: Mark | 'watches' = 'watches'): number {
   const tracker = trackerOf(id);

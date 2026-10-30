@@ -2,6 +2,7 @@ import { MARK_KINDS, type Mark, type Tracker } from './types';
 import { cleanIds, dateOf, iso, keysOf, markItem, markKeys, notFoundCount, scoreOf, type MarkItem, type MarkOutcome } from './marks';
 import { sharesId, targetsFor, type CopyItem, type CopyTarget, type WatchOutcome } from './watches';
 import type { SimklMissed } from '../../utils/simklUtils';
+import type { MatchCandidate, TargetSeason } from './match';
 
 async function simklEntries(credential: string): Promise<Array<{ type: string; data: any }>> {
   const { mirrorRows } = require('../jellyfin/trackerMirror');
@@ -137,6 +138,13 @@ async function writeWatches(items: CopyItem[], tokenId: string, config: any, rew
   return { done: items.length, sent: 0, failed, lost };
 }
 
+const poster = (path: unknown): string | null => (path ? `https://wsrv.nl/?url=https://simkl.in/posters/${path}_m.webp&q=90` : null);
+
+async function token(credential: string): Promise<string | null> {
+  const { getSimklToken } = require('../../utils/simklUtils');
+  return (await getSimklToken(credential).catch(() => null))?.access_token ?? null;
+}
+
 export const simkl: Tracker = {
   id: 'simkl',
   name: 'Simkl',
@@ -175,4 +183,46 @@ export const simkl: Tracker = {
   writeMarks: (what, items, side) => writeMarks(what, items, side.credential),
   watchesHeld: { read: watchesHeld, keys: heldKeys },
   writeWatches: { url: 'https://api.simkl.com/sync/history', write: writeWatches },
+  match: {
+    async search(credential, query, kind) {
+      const { fetchSimklSearchItems } = require('../../utils/simklUtils');
+      const access = await token(credential);
+      const types: Array<'movie' | 'tv' | 'anime'> = kind === 'movie' ? ['movie', 'anime'] : ['tv', 'anime'];
+      const found = (await Promise.all(types.map((type) => fetchSimklSearchItems(type, query, 10, 1, access).catch(() => [])))).flat();
+      return found
+        .filter((item: any) => item?.ids?.simkl_id ?? item?.ids?.simkl)
+        .map((item: any): MatchCandidate => ({
+          ids: { simkl: Number(item.ids.simkl_id ?? item.ids.simkl), ...(item.ids.tmdb ? { tmdb: Number(item.ids.tmdb) } : {}) },
+          title: String(item.title_en || item.title || ''),
+          year: Number(item.year) || null,
+          posterUrl: poster(item.poster),
+          kind: item.endpoint_type === 'anime' ? 'anime' : item.endpoint_type === 'movies' ? 'movie' : 'tv',
+          episodes: Number(item.ep_count) || null,
+        }));
+    },
+    async detail(credential, candidate) {
+      const { fetchSimklItemDetail, makeAuthenticatedSimklRequest } = require('../../utils/simklUtils');
+      const access = await token(credential);
+      const id = Number(candidate.ids.simkl);
+      const segment = candidate.kind === 'anime' ? 'anime' : candidate.kind === 'movie' ? 'movie' : 'tv';
+      const detail = await fetchSimklItemDetail(segment, id, access).catch(() => null);
+      const ids: Record<string, string | number> = { simkl: id };
+      if (detail?.ids?.imdb) ids.imdb = String(detail.ids.imdb);
+      if (detail?.ids?.tvdb) ids.tvdb = Number(detail.ids.tvdb);
+      if (detail?.ids?.tmdb ?? candidate.ids.tmdb) ids.tmdb = Number(detail?.ids?.tmdb ?? candidate.ids.tmdb);
+      if (candidate.kind === 'movie') return { ids, seasons: [] };
+      const response = await makeAuthenticatedSimklRequest(`https://api.simkl.com/${segment === 'anime' ? 'anime' : 'tv'}/episodes/${id}`, access, `Simkl episodes (${id})`, 'GET', undefined, 15000);
+      if (!response) throw new Error('Simkl did not list the episodes');
+      const seasons = new Map<number, TargetSeason>();
+      for (const entry of Array.isArray(response?.data) ? response.data : []) {
+        if (entry?.type !== 'episode' || !Number.isFinite(Number(entry.episode))) continue;
+        const number = segment === 'anime' ? 1 : Number(entry.season);
+        if (!Number.isFinite(number)) continue;
+        const season = seasons.get(number) ?? { number, episodes: [] };
+        season.episodes.push({ number: Number(entry.episode), title: entry.title ? String(entry.title) : null, airedAt: Date.parse(entry.date ?? '') || null });
+        seasons.set(number, season);
+      }
+      return { ids, seasons: [...seasons.values()].sort((a, b) => a.number - b.number) };
+    },
+  },
 };

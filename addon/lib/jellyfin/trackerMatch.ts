@@ -1,19 +1,17 @@
 import { LRUCache } from 'lru-cache';
 import { parseStremioId } from './idsCodec';
 import { videoIdAliases } from './aliases';
+import { isMatchable as matchable, trackerOf } from '../trackers';
+import type { EpisodeRef, MatchCandidate, MatchDetail, TargetSeason } from '../trackers/match';
 
 const database: any = require('../database');
 
-export const MATCH_SERVICES = new Set(['simkl', 'mdblist', 'publicmetadb']);
+export type { EpisodeRef, MatchCandidate, MatchDetail, TargetSeason } from '../trackers/match';
+
 
 export interface SeasonLink {
   season: number;
   offset: number;
-}
-
-export interface EpisodeRef {
-  season: number;
-  episode: number;
 }
 
 export interface MatchTarget {
@@ -34,20 +32,6 @@ export interface TrackerMatch {
   seasons: Record<string, SeasonLink>;
   episodes?: Record<string, EpisodeRef | null>;
   updatedAt: number;
-}
-
-export interface MatchCandidate {
-  ids: Record<string, string | number>;
-  title: string;
-  year: number | null;
-  posterUrl: string | null;
-  kind: string;
-  episodes: number | null;
-}
-
-export interface TargetSeason {
-  number: number;
-  episodes: Array<{ number: number; title: string | null; airedAt: number | null; sends?: EpisodeRef }>;
 }
 
 interface Index {
@@ -73,13 +57,8 @@ export function matchBases(match: TrackerMatch): string[] {
 }
 
 async function noteSpellings(service: string, match: TrackerMatch): Promise<void> {
-  const ids = match.target?.ids ?? {};
-  if (service !== 'publicmetadb' || !ids.tmdb || ids.imdb) return;
-  const { movieExternalIds, tvExternalIds } = require('../getTmdb');
-  const external = await (match.kind === 'movie' ? movieExternalIds : tvExternalIds)(String(ids.tmdb), {}).catch(() => null);
-  const out: string[] = [];
-  if (/^tt\d+$/.test(String(external?.imdb_id ?? ''))) out.push(String(external.imdb_id));
-  if (!ids.tvdb && Number(external?.tvdb_id) > 0) out.push(`tvdb:${Number(external.tvdb_id)}`);
+  const spellings = trackerOf(service)?.match?.spellings;
+  const out = spellings ? await spellings(match.target?.ids ?? {}, match.kind) : [];
   if (out.length) spelledToo.set(match, out);
 }
 
@@ -121,7 +100,7 @@ export async function listMatches(userUUID: string, service: string): Promise<Tr
 }
 
 export async function matchFor(userUUID: string | undefined, service: string, base: string): Promise<TrackerMatch | null> {
-  if (!userUUID || !MATCH_SERVICES.has(service)) return null;
+  if (!userUUID || !matchable(service)) return null;
   return (await indexFor(userUUID, service)).byBase.get(base) ?? null;
 }
 
@@ -248,7 +227,7 @@ export async function matchedTarget(userUUID: string | undefined, service: strin
 
 export async function unsentAmong(userUUID: string | undefined, service: string, ids: string[]): Promise<Set<string>> {
   const out = new Set<string>();
-  if (!userUUID || !MATCH_SERVICES.has(service)) return out;
+  if (!userUUID || !matchable(service)) return out;
   const index = await indexFor(userUUID, service);
   if (!index.byBase.size) return out;
   for (const id of ids) {
@@ -263,7 +242,7 @@ export async function unsentAmong(userUUID: string | undefined, service: string,
 
 export async function theirSpellings(userUUID: string, service: string, ids: string[]): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
-  if (!MATCH_SERVICES.has(service)) return out;
+  if (!matchable(service)) return out;
   const index = await indexFor(userUUID, service);
   if (!index.byBase.size) return out;
   for (const id of ids) {
@@ -283,7 +262,7 @@ export async function theirSpellings(userUUID: string, service: string, ids: str
 }
 
 export async function ourSpellings(userUUID: string, service: string, id: string): Promise<string[]> {
-  if (!MATCH_SERVICES.has(service)) return [];
+  if (!matchable(service)) return [];
   const index = await indexFor(userUUID, service);
   if (!index.byTheirs.size) return [];
   const parsed = parseStremioId(id);
@@ -300,149 +279,12 @@ export async function ourSpellings(userUUID: string, service: string, id: string
   return out;
 }
 
-const simklPoster = (poster: unknown): string | null => (poster ? `https://wsrv.nl/?url=https://simkl.in/posters/${poster}_m.webp&q=90` : null);
-
-async function simklToken(credential: string): Promise<string | null> {
-  const { getSimklToken } = require('../../utils/simklUtils');
-  return (await getSimklToken(credential).catch(() => null))?.access_token ?? null;
-}
-
 export async function searchTargets(service: string, credential: string, query: string, kind: 'movie' | 'series', config: any = {}): Promise<MatchCandidate[]> {
-  if (service === 'simkl') {
-    const { fetchSimklSearchItems } = require('../../utils/simklUtils');
-    const token = await simklToken(credential);
-    const types: Array<'movie' | 'tv' | 'anime'> = kind === 'movie' ? ['movie', 'anime'] : ['tv', 'anime'];
-    const found = (await Promise.all(types.map((type) => fetchSimklSearchItems(type, query, 10, 1, token).catch(() => [])))).flat();
-    return found
-      .filter((item: any) => item?.ids?.simkl_id ?? item?.ids?.simkl)
-      .map((item: any) => ({
-        ids: { simkl: Number(item.ids.simkl_id ?? item.ids.simkl), ...(item.ids.tmdb ? { tmdb: Number(item.ids.tmdb) } : {}) },
-        title: String(item.title_en || item.title || ''),
-        year: Number(item.year) || null,
-        posterUrl: simklPoster(item.poster),
-        kind: item.endpoint_type === 'anime' ? 'anime' : item.endpoint_type === 'movies' ? 'movie' : 'tv',
-        episodes: Number(item.ep_count) || null,
-      }));
-  }
-  if (service === 'mdblist') {
-    const { fetchMdbListSearchItems } = require('../../utils/mdbList');
-    const found: any[] = await fetchMdbListSearchItems(query, kind === 'movie' ? 'movie' : 'show', credential).catch(() => []);
-    return found.map((item: any) => ({
-      ids: {
-        ...(item.ids?.imdbid ? { imdb: String(item.ids.imdbid) } : {}),
-        ...(item.ids?.tmdbid ? { tmdb: Number(item.ids.tmdbid) } : {}),
-        ...(item.ids?.tvdbid ? { tvdb: Number(item.ids.tvdbid) } : {}),
-      },
-      title: String(item.title ?? ''),
-      year: Number(item.year) || null,
-      posterUrl: /^tt\d+$/.test(String(item.ids?.imdbid ?? '')) ? `https://images.metahub.space/poster/small/${item.ids.imdbid}/img` : null,
-      kind: item.type === 'movie' ? 'movie' : 'tv',
-      episodes: null,
-    })).filter((item: MatchCandidate) => Object.keys(item.ids).length > 0);
-  }
-  if (service === 'publicmetadb') {
-    const { searchMovie, searchTv } = require('../getTmdb');
-    const found = await (kind === 'movie' ? searchMovie : searchTv)({ query, language: 'en-US' }, config).catch(() => null);
-    return (Array.isArray(found?.results) ? found.results : [])
-      .filter((item: any) => Number(item?.id) > 0)
-      .slice(0, 20)
-      .map((item: any) => ({
-        ids: { tmdb: Number(item.id) },
-        title: String(item.title ?? item.name ?? ''),
-        year: Number(String(item.release_date ?? item.first_air_date ?? '').slice(0, 4)) || null,
-        posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w185${item.poster_path}` : null,
-        kind: kind === 'movie' ? 'movie' : 'tv',
-        episodes: null,
-      }));
-  }
-  return [];
+  const match = trackerOf(service)?.match;
+  return match ? match.search(credential, query, kind, config) : [];
 }
 
-async function tmdbSeasons(tmdb: number, config: any): Promise<TargetSeason[]> {
-  const { tvInfo, seasonInfo } = require('../getTmdb');
-  // A season that could not be read would save as one with nothing to send, so a failed read fails the detail.
-  const show = await tvInfo({ id: tmdb, language: 'en-US' }, config);
-  if (!show) throw new Error('TMDB did not answer');
-  const numbers: number[] = (Array.isArray(show?.seasons) ? show.seasons : [])
-    .map((season: any) => Number(season?.season_number))
-    .filter((number: number) => Number.isInteger(number) && number >= 0)
-    .sort((a: number, b: number) => (a === 0 ? 1 : b === 0 ? -1 : a - b))
-    .slice(0, 40);
-  return Promise.all(numbers.map(async (number) => {
-    const detail = await seasonInfo({ id: tmdb, season_number: number, language: 'en-US' }, config);
-    if (!detail) throw new Error(`TMDB did not answer for season ${number}`);
-    return {
-      number,
-      episodes: (Array.isArray(detail?.episodes) ? detail.episodes : []).map((episode: any) => ({
-        number: Number(episode.episode_number),
-        title: episode.name ? String(episode.name) : null,
-        airedAt: Date.parse(episode.air_date ?? '') || null,
-      })),
-    };
-  }));
-}
-
-export async function targetDetail(service: string, credential: string, candidate: MatchCandidate, config: any): Promise<{ ids: Record<string, string | number>; seasons: TargetSeason[]; tvdbSeasons?: TargetSeason[]; tvdbDefault?: boolean }> {
-  if (service === 'simkl') {
-    const { fetchSimklItemDetail, makeAuthenticatedSimklRequest } = require('../../utils/simklUtils');
-    const token = await simklToken(credential);
-    const simkl = Number(candidate.ids.simkl);
-    const segment = candidate.kind === 'anime' ? 'anime' : candidate.kind === 'movie' ? 'movie' : 'tv';
-    const detail = await fetchSimklItemDetail(segment, simkl, token).catch(() => null);
-    const ids: Record<string, string | number> = { simkl };
-    if (detail?.ids?.imdb) ids.imdb = String(detail.ids.imdb);
-    if (detail?.ids?.tvdb) ids.tvdb = Number(detail.ids.tvdb);
-    if (detail?.ids?.tmdb ?? candidate.ids.tmdb) ids.tmdb = Number(detail?.ids?.tmdb ?? candidate.ids.tmdb);
-    if (candidate.kind === 'movie') return { ids, seasons: [] };
-    const response = await makeAuthenticatedSimklRequest(`https://api.simkl.com/${segment === 'anime' ? 'anime' : 'tv'}/episodes/${simkl}`, token, `Simkl episodes (${simkl})`, 'GET', undefined, 15000);
-    if (!response) throw new Error('Simkl did not list the episodes');
-    const seasons = new Map<number, TargetSeason>();
-    for (const entry of Array.isArray(response?.data) ? response.data : []) {
-      if (entry?.type !== 'episode' || !Number.isFinite(Number(entry.episode))) continue;
-      const number = segment === 'anime' ? 1 : Number(entry.season);
-      if (!Number.isFinite(number)) continue;
-      const season = seasons.get(number) ?? { number, episodes: [] };
-      season.episodes.push({ number: Number(entry.episode), title: entry.title ? String(entry.title) : null, airedAt: Date.parse(entry.date ?? '') || null });
-      seasons.set(number, season);
-    }
-    return { ids, seasons: [...seasons.values()].sort((a, b) => a.number - b.number) };
-  }
-  if (service === 'mdblist') {
-    const ids = { ...candidate.ids };
-    if (candidate.kind === 'movie' || !ids.tmdb) return { ids, seasons: [] };
-    const { mdblistTvdbEpisodes } = require('../../utils/mdbList');
-    const [seasons, map] = await Promise.all([
-      tmdbSeasons(Number(ids.tmdb), config),
-      credential ? mdblistTvdbEpisodes(Number(ids.tmdb), credential).catch(() => null) : null,
-    ]);
-    if (!map) return { ids, seasons };
-    const known = new Map(seasons.flatMap((season) => season.episodes.map((episode) => [`${season.number}:${episode.number}`, episode] as const)));
-    const tvdb = new Map<number, TargetSeason>();
-    for (const entry of map.episodes) {
-      if (entry.showTmdb) continue;
-      const episode = known.get(`${entry.tmdbSeason}:${entry.tmdbEpisode}`);
-      if (!episode) continue;
-      const season = tvdb.get(entry.season) ?? { number: entry.season, episodes: [] };
-      if (season.episodes.some((listed) => listed.number === entry.episode)) continue;
-      season.episodes.push({ number: entry.episode, title: episode.title, airedAt: episode.airedAt, sends: { season: entry.tmdbSeason, episode: entry.tmdbEpisode } });
-      tvdb.set(entry.season, season);
-    }
-    for (const season of tvdb.values()) season.episodes.sort((a, b) => a.number - b.number);
-    const tvdbSeasons = [...tvdb.values()].sort((a, b) => (a.number === 0 ? 1 : b.number === 0 ? -1 : a.number - b.number));
-    return tvdbSeasons.length ? { ids, seasons, tvdbSeasons, tvdbDefault: map.tvdbDefault } : { ids, seasons };
-  }
-  if (service === 'publicmetadb') {
-    const ids = { ...candidate.ids };
-    if (!ids.tmdb) return { ids, seasons: [] };
-    const { movieExternalIds, tvExternalIds } = require('../getTmdb');
-    const movie = candidate.kind === 'movie';
-    const [external, seasons] = await Promise.all([
-      (movie ? movieExternalIds : tvExternalIds)(String(ids.tmdb), config).catch(() => null),
-      movie ? [] : tmdbSeasons(Number(ids.tmdb), config),
-    ]);
-    if (/^tt\d+$/.test(String(external?.imdb_id ?? ''))) ids.imdb = String(external.imdb_id);
-    if (Number(external?.tvdb_id) > 0) ids.tvdb = Number(external.tvdb_id);
-    return { ids, seasons };
-  }
-  return { ids: { ...candidate.ids }, seasons: [] };
+export async function targetDetail(service: string, credential: string, candidate: MatchCandidate, config: any): Promise<MatchDetail> {
+  const match = trackerOf(service)?.match;
+  return match ? match.detail(credential, candidate, config) : { ids: { ...candidate.ids }, seasons: [] };
 }

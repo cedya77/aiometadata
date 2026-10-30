@@ -2,6 +2,7 @@ import { envInt } from '../../utils/envNumber';
 import { MARK_KINDS, type Mark, type Tracker } from './types';
 import { TITLE_KEYS, cleanIds, dateOf, iso, markItem, mirrored, notFoundCount, scoreOf, titleIds, type MarkItem, type MarkOutcome } from './marks';
 import { sharesId, targetsFor, type CopyItem, type TmdbWatch, type WatchOutcome } from './watches';
+import { tmdbSeasons, type MatchCandidate, type TargetSeason } from './match';
 
 async function mdblistPages(apiKey: string, path: string, label: string, arrays: string[]): Promise<Record<string, any[]>> {
   const { makeRateLimitedMDBListRequest } = require('../../utils/mdbList');
@@ -138,4 +139,46 @@ export const mdblist: Tracker = {
   },
   takesEpisodeIds: true,
   writeWatches: { url: 'https://api.mdblist.com/sync/watched', write: (items, credential, config) => writeWatches(items, credential, config) },
+  match: {
+    async search(credential, query, kind) {
+      const { fetchMdbListSearchItems } = require('../../utils/mdbList');
+      const found: any[] = await fetchMdbListSearchItems(query, kind === 'movie' ? 'movie' : 'show', credential).catch(() => []);
+      return found.map((item: any): MatchCandidate => ({
+        ids: {
+          ...(item.ids?.imdbid ? { imdb: String(item.ids.imdbid) } : {}),
+          ...(item.ids?.tmdbid ? { tmdb: Number(item.ids.tmdbid) } : {}),
+          ...(item.ids?.tvdbid ? { tvdb: Number(item.ids.tvdbid) } : {}),
+        },
+        title: String(item.title ?? ''),
+        year: Number(item.year) || null,
+        posterUrl: /^tt\d+$/.test(String(item.ids?.imdbid ?? '')) ? `https://images.metahub.space/poster/small/${item.ids.imdbid}/img` : null,
+        kind: item.type === 'movie' ? 'movie' : 'tv',
+        episodes: null,
+      })).filter((item) => Object.keys(item.ids).length > 0);
+    },
+    async detail(credential, candidate, config) {
+      const ids = { ...candidate.ids };
+      if (candidate.kind === 'movie' || !ids.tmdb) return { ids, seasons: [] };
+      const { mdblistTvdbEpisodes } = require('../../utils/mdbList');
+      const [seasons, map] = await Promise.all([
+        tmdbSeasons(Number(ids.tmdb), config),
+        credential ? mdblistTvdbEpisodes(Number(ids.tmdb), credential).catch(() => null) : null,
+      ]);
+      if (!map) return { ids, seasons };
+      const known = new Map(seasons.flatMap((season) => season.episodes.map((episode) => [`${season.number}:${episode.number}`, episode] as const)));
+      const tvdb = new Map<number, TargetSeason>();
+      for (const entry of map.episodes) {
+        if (entry.showTmdb) continue;
+        const episode = known.get(`${entry.tmdbSeason}:${entry.tmdbEpisode}`);
+        if (!episode) continue;
+        const season = tvdb.get(entry.season) ?? { number: entry.season, episodes: [] };
+        if (season.episodes.some((listed) => listed.number === entry.episode)) continue;
+        season.episodes.push({ number: entry.episode, title: episode.title, airedAt: episode.airedAt, sends: { season: entry.tmdbSeason, episode: entry.tmdbEpisode } });
+        tvdb.set(entry.season, season);
+      }
+      for (const season of tvdb.values()) season.episodes.sort((a, b) => a.number - b.number);
+      const tvdbSeasons = [...tvdb.values()].sort((a, b) => (a.number === 0 ? 1 : b.number === 0 ? -1 : a.number - b.number));
+      return tvdbSeasons.length ? { ids, seasons, tvdbSeasons, tvdbDefault: map.tvdbDefault } : { ids, seasons };
+    },
+  },
 };

@@ -2,6 +2,7 @@ import { envInt } from '../../utils/envNumber';
 import { MARK_KINDS, type Tracker } from './types';
 import { dateOf, markItem, mirrored, ratingKeys, type MarkItem, type MarkSide } from './marks';
 import { copyTarget, isoAt, type TmdbWatch } from './watches';
+import { tmdbSeasons, type MatchCandidate } from './match';
 
 const pmdbItem = (row: any, extra: Partial<MarkItem> = {}) => {
   const tmdb = Number(row?.tmdb_id);
@@ -125,5 +126,44 @@ export const publicmetadb: Tracker = {
     const answer = await markWatched(credential, target.ids.tmdb, item.kind === 'movie' ? 'movie' : 'tv', target.season, target.episode, isoAt(item.at));
     const created = Date.parse(String(answer?.item?.created ?? '').replace(' ', 'T'));
     return Number.isFinite(created) && Date.now() - created > 60_000;
+  },
+  match: {
+    async search(_credential, query, kind, config) {
+      const { searchMovie, searchTv } = require('../getTmdb');
+      const found = await (kind === 'movie' ? searchMovie : searchTv)({ query, language: 'en-US' }, config).catch(() => null);
+      return (Array.isArray(found?.results) ? found.results : [])
+        .filter((item: any) => Number(item?.id) > 0)
+        .slice(0, 20)
+        .map((item: any): MatchCandidate => ({
+          ids: { tmdb: Number(item.id) },
+          title: String(item.title ?? item.name ?? ''),
+          year: Number(String(item.release_date ?? item.first_air_date ?? '').slice(0, 4)) || null,
+          posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w185${item.poster_path}` : null,
+          kind: kind === 'movie' ? 'movie' : 'tv',
+          episodes: null,
+        }));
+    },
+    async detail(_credential, candidate, config) {
+      const ids = { ...candidate.ids };
+      if (!ids.tmdb) return { ids, seasons: [] };
+      const { movieExternalIds, tvExternalIds } = require('../getTmdb');
+      const movie = candidate.kind === 'movie';
+      const [external, seasons] = await Promise.all([
+        (movie ? movieExternalIds : tvExternalIds)(String(ids.tmdb), config).catch(() => null),
+        movie ? [] : tmdbSeasons(Number(ids.tmdb), config),
+      ]);
+      if (/^tt\d+$/.test(String(external?.imdb_id ?? ''))) ids.imdb = String(external.imdb_id);
+      if (Number(external?.tvdb_id) > 0) ids.tvdb = Number(external.tvdb_id);
+      return { ids, seasons };
+    },
+    async spellings(ids, kind) {
+      if (!ids.tmdb || ids.imdb) return [];
+      const { movieExternalIds, tvExternalIds } = require('../getTmdb');
+      const external = await (kind === 'movie' ? movieExternalIds : tvExternalIds)(String(ids.tmdb), {}).catch(() => null);
+      const out: string[] = [];
+      if (/^tt\d+$/.test(String(external?.imdb_id ?? ''))) out.push(String(external.imdb_id));
+      if (!ids.tvdb && Number(external?.tvdb_id) > 0) out.push(`tvdb:${Number(external.tvdb_id)}`);
+      return out;
+    },
   },
 };
