@@ -763,7 +763,7 @@ export async function recordWatchDate(req: any, itemId: string, from: number | n
   const profile = profileKey(config);
   const spellings = [session.videoId, ...session.aliases, ...(await videoIdAliases(session.videoId).catch(() => [] as string[]))];
   const runtimeMs = session.runtimeMs ?? 0;
-  const sameViewing = runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
+  const sameViewing = runtimeMs > 0 ? runtimeMs : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
   const database: any = require('../database');
   const { moved, latestBefore, latestAfter } = await database.redateWatch(userUUID, profile, spellings, from, to, Math.max(sameViewing, 60_000), merge);
   if (!moved) return false;
