@@ -6,9 +6,9 @@ import { videoIdAliases } from './aliases';
 import { scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
 import { asListed, belongsOn, furthestPerEntry, pullDrift, spellingFor, spellingsFor, viewingOf, type Viewing } from './trackerDrift';
-import { MARKS, markBatchSize, markVideo, planMarks, ratingKeys, writeMarks, type Mark, type MarkItem } from './trackerMarks';
+import { MARKS, markVideo, planMarks, ratingKeys, writeMarks, type Mark, type MarkItem } from './trackerMarks';
 import type { SimklMissed } from '../../utils/simklUtils';
-import { isAnimeList, trackerName } from '../trackers';
+import { copyBatch, gapMs, isAnimeList, trackerName } from '../trackers';
 
 const logger = consola.withTag('Trackers');
 const database: any = require('../database');
@@ -387,7 +387,6 @@ const strikes = new Map<number, number>();
 const busy = new Set<number>();
 let timer: NodeJS.Timeout | null = null;
 
-const batchSize = (service: string): number => service === 'publicmetadb' || isAnimeList(service) ? 10 : envInt('JELLYFIN_COPY_BATCH_SIZE', 100, 1);
 const iso = (at: number | null) => (at ? new Date(at).toISOString() : null);
 
 function statusOf(calls: Array<{ status: number }>, error: any): number {
@@ -474,7 +473,7 @@ export async function writeSimkl(items: CopyItem[], tokenId: string, config: any
 
 async function writeOneByOne(service: string, items: CopyItem[], credential: string, config: any, userUUID: string): Promise<Outcome> {
   const { recordingTrackerCalls } = require('../../utils/trackerCalls');
-  const gap = Math.ceil(1000 / envInt('JELLYFIN_COPY_PMDB_PER_SECOND', 4, 1));
+  const gap = gapMs(service);
   const { assertSignedIn, refusesSignIn, signInRefused } = require('./trackerMarks');
   await assertSignedIn(service, credential);
   let done = 0;
@@ -509,7 +508,7 @@ async function writeOneByOne(service: string, items: CopyItem[], credential: str
     if (status >= 200 && status < 300 && existing) skipped += 1;
     else if (status >= 200 && status < 300) sent += 1;
     else failed += 1;
-    await new Promise((resolve) => setTimeout(resolve, isAnimeList(service) ? 1000 : gap));
+    await new Promise((resolve) => setTimeout(resolve, gap));
   }
   return { done, sent, failed, skipped };
 }
@@ -548,7 +547,7 @@ async function step(id: number): Promise<void> {
     return;
   }
   const what: CopyWhat = MARKS.has(job.what) ? job.what : 'watches';
-  const items: any[] = job.items.slice(job.cursor, job.cursor + (what === 'watches' ? batchSize(job.to_service) : markBatchSize(what, job.to_service)));
+  const items: any[] = job.items.slice(job.cursor, job.cursor + copyBatch(job.to_service, what));
   if (!items.length) {
     await finish(job);
     return;

@@ -11,6 +11,7 @@ import { groupBySpelling } from './aliases';
 import { itemIdForVideo } from './history';
 import { defaultUserName, listProfiles, profileKey, scopeConfigToProfile } from './profiles';
 import { CAPABLE, credentialFor } from './trackerSource';
+import { trackerOf, type Mark } from '../trackers';
 import { sourceKeyFor } from './trackerMirror';
 import { mapWithConcurrency } from '../../utils/concurrency';
 import redis from '../redisClient';
@@ -1031,9 +1032,9 @@ async function copyPair(userUUID: string, viewer: string | null, fromKey: string
   const to = sources.get(toKey);
   if (!from || !to) return null;
   const { COPY_SOURCES } = require('./trackerCopy');
-  const { MARK_SOURCES, MARK_TARGETS } = require('./trackerMarks');
+  const source = trackerOf(from.service);
   if (what === 'watches') return COPY_SOURCES.has(from.service) ? { from, to } : null;
-  return MARK_SOURCES[what]?.has(from.service) && MARK_TARGETS[what]?.has(to.service) ? { from, to } : null;
+  return source?.marks.from.includes(what as Mark) && trackerOf(to.service)?.marks.to.includes(what as Mark) ? { from, to } : null;
 }
 
 async function named(userUUID: string, videos: string[]): Promise<Record<string, { title: string | null; imageUrl: string | null; posterUrl: string | null }>> {
