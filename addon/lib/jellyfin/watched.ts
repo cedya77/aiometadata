@@ -703,6 +703,8 @@ type MirroredService = 'simkl' | 'mdblist' | 'publicmetadb' | 'anilist' | 'mal';
 
 // Raised to rebuild indexes written in an older spelling.
 const INDEX_FORMAT = 9;
+const SERVICE_FORMATS: Partial<Record<MirroredService, number>> = { publicmetadb: 10 };
+const formatOf = (service: MirroredService): number => SERVICE_FORMATS[service] ?? INDEX_FORMAT;
 
 interface SummaryData {
   format?: number;
@@ -874,9 +876,10 @@ async function writeIndex(source: string, raw: RawSnapshot): Promise<{ added: nu
 
 async function buildIndex(service: MirroredService, credential: string, config: any, source: string, version: number): Promise<WatchedSnapshot> {
   const database: any = require('../database');
-  const fingerprint = `store:${source}:v${version}:f${INDEX_FORMAT}`;
+  const format = formatOf(service);
+  const fingerprint = `store:${source}:v${version}:f${format}`;
   const stored = await database.getWatchSummary(source);
-  const current = stored?.data?.format === INDEX_FORMAT;
+  const current = stored?.data?.format === format;
   if (stored?.version === version && current) return viewOf(source, fingerprint, stored.data);
 
   const started = Date.now();
@@ -885,7 +888,7 @@ async function buildIndex(service: MirroredService, credential: string, config: 
   withPending(raw, await pendingWatches(service, credential).catch(() => []));
   const written = await writeIndex(source, raw);
   const data: SummaryData = {
-    format: INDEX_FORMAT,
+    format,
     nextUp: raw.nextUp ?? [],
     following: raw.following ?? [],
     dropped: raw.dropped ?? [],
@@ -925,7 +928,7 @@ export async function indexedSnapshot(service: MirroredService, credential: stri
 }
 
 function snapshotAt(service: MirroredService, credential: string, config: any, source: string, version: number): Promise<WatchedSnapshot> {
-  const key = `store:${source}:v${version}:f${INDEX_FORMAT}`;
+  const key = `store:${source}:v${version}:f${formatOf(service)}`;
   const memo = summaries.get(key);
   if (memo) return Promise.resolve(memo);
   const prior = indexBuilds.get(source) ?? Promise.resolve();
@@ -1104,13 +1107,39 @@ async function tmdbAiredEpisodes(tmdbId: number, config: any): Promise<number> {
   return before + (Number(last?.episode_number) || 0);
 }
 
+type EpisodePlace = { season: number; episode: number };
+
+async function pmdbTvdbOrders(rows: any[], config: any): Promise<Map<number, Map<string, EpisodePlace[]>>> {
+  const orders = new Map<number, Map<string, EpisodePlace[]>>();
+  const apiKey = require('../accounts').credentialOf(config, 'mdblist');
+  if (!apiKey || config?.providers?.series !== 'tvdb') return orders;
+  const { mdblistTvdbOrder } = require('../../utils/mdbList');
+  const { canonicalIds } = require('./canonicalIds');
+  const { withEpisodeOrder } = require('../../utils/episodeOrder');
+  const idMapper: any = require('../id-mapper');
+  const shows = new Set<number>(rows.filter((row: any) => row?.tmdb_id && row.media_type !== 'movie' && Number(row?.season) > 0).map((row: any) => Number(row.tmdb_id)));
+  for (const tmdb of shows) {
+    if (idMapper.getMappingByTmdbId(String(tmdb), 'series')) continue;
+    const ids = await canonicalIds({ tmdb }, 'series', config).catch(() => ({} as Record<string, any>));
+    if ((withEpisodeOrder(config, Number(ids.tvdb) || null).tvdbSeasonType || 'default') !== 'default') continue;
+    const order = await mdblistTvdbOrder(tmdb, apiKey).catch(() => null);
+    if (order) orders.set(tmdb, order);
+  }
+  return orders;
+}
+
 /** A user's PublicMetaDB plays and drops made into a snapshot; plays newest first. */
 export async function assemblePmdb(data: PmdbData, config: any): Promise<RawSnapshot> {
   const { rows, droppedItems, droppedUnread } = data;
   const { Resolutions } = require('./resolutions');
   const resolutions = new Resolutions();
+  const orders = await pmdbTvdbOrders(rows, config);
+  const placesOf = (row: any): EpisodePlace[] | null => orders.get(Number(row.tmdb_id))?.get(`${Number(row?.season)}:${Number(row?.episode)}`) ?? null;
   await resolutions.preload(
-    rows.filter((row: any) => row?.tmdb_id && row.media_type !== 'movie').map((row: any) => [{ tmdb: row.tmdb_id }, Number(row?.season), Number(row?.episode)]),
+    rows.filter((row: any) => row?.tmdb_id && row.media_type !== 'movie').flatMap((row: any) => {
+      const places = placesOf(row);
+      return places ? places.map((place) => [{ tmdb: row.tmdb_id }, place.season, place.episode, 'tvdb']) : [[{ tmdb: row.tmdb_id }, Number(row?.season), Number(row?.episode)]];
+    }),
     rows.filter((row: any) => row?.tmdb_id && row.media_type === 'movie').map((row: any) => row.tmdb_id)
   );
   if (!rows.length) logger.debug('No watched history on PublicMetaDB');
@@ -1138,27 +1167,32 @@ export async function assemblePmdb(data: PmdbData, config: any): Promise<RawSnap
       recordWatch(history, { kind: 'movie', id: base, mediaType: 'movie', at });
       continue;
     }
-    const season = Number(row?.season);
-    const episode = Number(row?.episode);
-    if (!Number.isFinite(season) || !Number.isFinite(episode)) continue;
-    const resolved = await resolutions.episode({ tmdb: row.tmdb_id }, season, episode, config);
-    if (!resolved) continue;
-    if (episodes.has(resolved.videoId)) continue;
-    episodes.add(resolved.videoId);
-    if (at) seen.set(resolved.videoId, at);
-    recordWatch(history, { kind: 'episode', id: resolved.videoId, metaId: resolved.metaId, mediaType: resolved.mediaType, at });
+    const played = Number(row?.season);
+    if (!Number.isFinite(played) || !Number.isFinite(Number(row?.episode))) continue;
+    const places = placesOf(row);
+    const targets = places ? places.map((place) => ({ ...place, numbering: 'tvdb' })) : [{ season: played, episode: Number(row.episode), numbering: 'tmdb' }];
+    let tallied = false;
+    for (const { season, episode, numbering } of targets) {
+      const resolved = await resolutions.episode({ tmdb: row.tmdb_id }, season, episode, config, numbering);
+      if (!resolved) continue;
+      if (episodes.has(resolved.videoId)) continue;
+      episodes.add(resolved.videoId);
+      if (at) seen.set(resolved.videoId, at);
+      recordWatch(history, { kind: 'episode', id: resolved.videoId, metaId: resolved.metaId, mediaType: resolved.mediaType, at });
 
-    const counts = series.get(resolved.metaId) ?? { watched: 0, total: 0 };
-    counts.watched += 1;
-    series.set(resolved.metaId, counts);
-    const show = byShow.get(Number(row.tmdb_id)) ?? { metaIds: new Set<string>(), anime: false, regular: 0 };
-    show.metaIds.add(resolved.metaId);
-    if (resolved.mediaType === 'anime') show.anime = true;
-    if (season > 0) show.regular += 1;
-    byShow.set(Number(row.tmdb_id), show);
+      const counts = series.get(resolved.metaId) ?? { watched: 0, total: 0 };
+      counts.watched += 1;
+      series.set(resolved.metaId, counts);
+      const show = byShow.get(Number(row.tmdb_id)) ?? { metaIds: new Set<string>(), anime: false, regular: 0 };
+      show.metaIds.add(resolved.metaId);
+      if (resolved.mediaType === 'anime') show.anime = true;
+      if (played > 0 && !tallied) show.regular += 1;
+      tallied = true;
+      byShow.set(Number(row.tmdb_id), show);
 
-    const held = latest.get(resolved.metaId);
-    if (!held || at > held.at) latest.set(resolved.metaId, { row: { ...resolved, season, episode }, at });
+      const held = latest.get(resolved.metaId);
+      if (!held || at > held.at) latest.set(resolved.metaId, { row: { ...resolved, season, episode }, at });
+    }
   }
 
   const { mapWithConcurrency } = require('../../utils/concurrency');
