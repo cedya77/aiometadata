@@ -637,7 +637,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const serverId = serverIdFor(userUUID);
     const token = await mintToken(userUUID, profile.id);
     // Known before the client can open a socket with only this token.
-    rememberTokenDevice(token, clientInfo(req));
+    rememberTokenDevice(userUUID, token, clientInfo(req));
 
     res.json({
       User: userFor(profile, serverId),
@@ -724,8 +724,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   // --- Authenticated surface ---
 
   router.use(requireAuth);
+  // Artwork passes requireAuth without a token check, so only a request that signed in is remembered.
   router.use((req: any, _res: any, next: any) => {
-    rememberTokenDevice(extractToken(req), clientInfo(req));
+    if (req.jellyfin?.authenticated) rememberTokenDevice(req.jellyfin.userUUID, extractToken(req), clientInfo(req));
     next();
   });
 

@@ -152,17 +152,19 @@ interface ClientNames {
   version: string;
 }
 
-function rememberDeviceNames(info: ClientNames): void {
+// Names are kept per account, as any client can claim any device id.
+function rememberDeviceNames(userUUID: string, info: ClientNames): void {
+  const key = `${userUUID}:${info.deviceId}`;
   const names = JSON.stringify({ client: info.client.slice(0, 128), device: info.device.slice(0, 128), version: info.version.slice(0, 32) });
-  if (deviceNames.get(info.deviceId) === names) return;
-  deviceNames.set(info.deviceId, names);
-  if (redis) redis.set(`${DEVICE_NAME}${info.deviceId}`, names, 'PX', detailsMs()).catch(() => undefined);
+  if (deviceNames.get(key) === names) return;
+  deviceNames.set(key, names);
+  if (redis) redis.set(`${DEVICE_NAME}${key}`, names, 'PX', detailsMs()).catch(() => undefined);
 }
 
-export function rememberTokenDevice(token: string | undefined, info: ClientNames): void {
+export function rememberTokenDevice(userUUID: string, token: string | undefined, info: ClientNames): void {
   const deviceId = info.deviceId;
   if (!token || !deviceId || deviceId === 'unknown') return;
-  if (info.client !== 'Unknown') rememberDeviceNames(info);
+  if (info.client !== 'Unknown') rememberDeviceNames(userUUID, info);
   const key = tokenKey(token);
   if (tokenDevices.get(key) === deviceId) return;
   tokenDevices.set(key, deviceId);
@@ -271,7 +273,7 @@ export async function liveDevices(userUUID: string, profile: string): Promise<Li
   if (redis && ids.length) {
     [stored, named] = await Promise.all([
       redis.mget(ids.map((id) => `${CAPABILITIES}${scope}:${id}`)).catch(() => []),
-      redis.mget(ids.map((id) => `${DEVICE_NAME}${id}`)).catch(() => []),
+      redis.mget(ids.map((id) => `${DEVICE_NAME}${userUUID}:${id}`)).catch(() => []),
     ]);
   }
   const parse = (value: string | null | undefined): any => {
@@ -283,7 +285,7 @@ export async function liveDevices(userUUID: string, profile: string): Promise<Li
   };
   return ids.map((deviceId, i) => {
     const capabilities: DeviceCapabilities | undefined = parse(stored[i]) ?? localCapabilities.get(`${scope}:${deviceId}`);
-    const names: Partial<ClientNames> | undefined = parse(named[i] ?? deviceNames.get(deviceId));
+    const names: Partial<ClientNames> | undefined = parse(named[i] ?? deviceNames.get(`${userUUID}:${deviceId}`));
     return {
       client: capabilities?.client ?? names?.client ?? 'Unknown',
       device: capabilities?.device ?? names?.device ?? 'Unknown',
