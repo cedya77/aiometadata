@@ -247,6 +247,8 @@ const stateOf = (row: any): State => ({
   origin: row.origin ?? null,
 });
 
+const LOCAL_ORIGINS = new Set(['server', 'play']);
+
 function mergeState(held: State, incoming: State): State {
   const newer = incoming.updatedAt > held.updatedAt ? incoming : held;
   return {
@@ -256,7 +258,8 @@ function mergeState(held: State, incoming: State): State {
     playCount: Math.max(held.playCount, incoming.playCount),
     lastPlayedAt: Math.max(held.lastPlayedAt ?? 0, incoming.lastPlayedAt ?? 0) || null,
     updatedAt: Math.max(held.updatedAt, incoming.updatedAt),
-    origin: newer.origin,
+    // A row holding a play made here stays this server's, or forgetting the import would take that play with it.
+    origin: LOCAL_ORIGINS.has(String(held.origin)) ? held.origin : newer.origin,
   };
 }
 
