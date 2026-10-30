@@ -1,4 +1,5 @@
 import { ACCOUNT_SERVICES, credentialOf, trackerConfig } from '../accounts';
+import { isAnimeList } from '../trackers';
 
 /** Services that store a playback position or a watch history we can read. */
 export const CAPABLE = ['mdblist', 'simkl', 'publicmetadb', 'anilist', 'mal'] as const;
@@ -43,5 +44,5 @@ export function resumeSourcesFor(config: any): Capable[] {
 
 export function keepsAnimeOnly(config: any): boolean {
   const service = sourceFor(config);
-  return service === 'anilist' || service === 'mal';
+  return service !== null && isAnimeList(service);
 }

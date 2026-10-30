@@ -8,13 +8,12 @@ import { credentialFor, type Capable } from './trackerSource';
 import { asListed, belongsOn, furthestPerEntry, pullDrift, spellingFor, spellingsFor, viewingOf, type Viewing } from './trackerDrift';
 import { MARKS, markBatchSize, markVideo, planMarks, ratingKeys, writeMarks, type Mark, type MarkItem } from './trackerMarks';
 import type { SimklMissed } from '../../utils/simklUtils';
+import { isAnimeList, trackerName } from '../trackers';
 
 const logger = consola.withTag('Trackers');
 const database: any = require('../database');
 
-const ANIME_LISTS = new Set<string>(['anilist', 'mal']);
 export const COPY_SOURCES = new Set<string>(['simkl', 'mdblist', 'publicmetadb']);
-const NAMES: Record<string, string> = { simkl: 'Simkl', mdblist: 'MDBList', publicmetadb: 'PublicMetaDB', anilist: 'AniList', mal: 'MyAnimeList' };
 const NOUNS: Record<string, [string, string]> = { watches: ['watch', 'watches'], ratings: ['rating', 'ratings'], watchlist: ['watchlist title', 'watchlist titles'], dropped: ['dropped show', 'dropped shows'] };
 export type CopyWhat = 'watches' | Mark;
 
@@ -286,7 +285,7 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
   }
   let missing = viewings.filter((v) => !v.ids.some((id) => present.has(id) || waiting.has(id)));
   const blocked = { noId: 0, refused: 0 };
-  if (!ANIME_LISTS.has(to.service)) {
+  if (!isAnimeList(to.service)) {
     const { mapWithConcurrency } = require('../../utils/concurrency');
     const held = TMDB_NUMBERED.has(to.service) ? await nativeHeld(to.service, to.credential) : to.service === 'simkl' ? await simklHeld(to.credential) : null;
     const keysOf = to.service === 'simkl' ? simklTargetKeys : targetKeys;
@@ -312,7 +311,7 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
       return true;
     });
   }
-  if (ANIME_LISTS.has(to.service)) missing = furthestPerEntry(to.service, missing);
+  if (isAnimeList(to.service)) missing = furthestPerEntry(to.service, missing);
   const plan: CopyPlan = {
     items: missing.map((v) => ({ ids: v.ids, kind: v.kind, metaId: v.metaId, season: v.season, episode: v.episode, at: v.at > 0 ? v.at : null })),
     excluded,
@@ -388,7 +387,7 @@ const strikes = new Map<number, number>();
 const busy = new Set<number>();
 let timer: NodeJS.Timeout | null = null;
 
-const batchSize = (service: string): number => service === 'publicmetadb' || ANIME_LISTS.has(service) ? 10 : envInt('JELLYFIN_COPY_BATCH_SIZE', 100, 1);
+const batchSize = (service: string): number => service === 'publicmetadb' || isAnimeList(service) ? 10 : envInt('JELLYFIN_COPY_BATCH_SIZE', 100, 1);
 const iso = (at: number | null) => (at ? new Date(at).toISOString() : null);
 
 function statusOf(calls: Array<{ status: number }>, error: any): number {
@@ -503,14 +502,14 @@ async function writeOneByOne(service: string, items: CopyItem[], credential: str
     }
     const status = statusOf(calls, error);
     if (status === 0 || status === 429 || status >= 500 || (status === 403 && /disabled/i.test(String(calls[calls.length - 1]?.body ?? '')))) {
-      return { done, sent, failed, skipped, wait: status === 429 ? 30_000 : 60_000, error: `${NAMES[service]} answered ${status || 'nothing'}`, stalled: status === 0 || status >= 500 };
+      return { done, sent, failed, skipped, wait: status === 429 ? 30_000 : 60_000, error: `${trackerName(service)} answered ${status || 'nothing'}`, stalled: status === 0 || status >= 500 };
     }
     if (refusesSignIn(status, calls[calls.length - 1]?.body)) return signInRefused(service, status, { done, sent, failed, skipped });
     done += 1;
     if (status >= 200 && status < 300 && existing) skipped += 1;
     else if (status >= 200 && status < 300) sent += 1;
     else failed += 1;
-    await new Promise((resolve) => setTimeout(resolve, ANIME_LISTS.has(service) ? 1000 : gap));
+    await new Promise((resolve) => setTimeout(resolve, isAnimeList(service) ? 1000 : gap));
   }
   return { done, sent, failed, skipped };
 }
@@ -545,7 +544,7 @@ async function step(id: number): Promise<void> {
   const credential = config ? credentialFor(config, job.to_service) : undefined;
   const { sourceKeyFor } = require('./trackerMirror');
   if (!credential || sourceKeyFor(job.to_service, credential) !== job.to_key) {
-    await database.updateCopyJob(id, { status: 'failed', lastError: `${NAMES[job.to_service]} is no longer connected`, finishedAt: Date.now() }, 'running');
+    await database.updateCopyJob(id, { status: 'failed', lastError: `${trackerName(job.to_service)} is no longer connected`, finishedAt: Date.now() }, 'running');
     return;
   }
   const what: CopyWhat = MARKS.has(job.what) ? job.what : 'watches';
@@ -606,7 +605,7 @@ async function step(id: number): Promise<void> {
       profile: job.profile,
       op: 'copy',
       video: what === 'watches' ? spellingFor(job.to_service, items[0].ids) : markVideo(items[0]),
-      detail: { verb: `Copied ${outcome.sent} ${outcome.sent === 1 ? one : many} from ${NAMES[job.from_service]}`, count: outcome.sent },
+      detail: { verb: `Copied ${outcome.sent} ${outcome.sent === 1 ? one : many} from ${trackerName(job.from_service)}`, count: outcome.sent },
     });
   }
   if (cursor >= job.total) await finish({ ...job, cursor });

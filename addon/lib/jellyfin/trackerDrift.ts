@@ -3,12 +3,12 @@ import { parseStremioId } from './idsCodec';
 import { groupBySpelling, getPlaystatesAcross, upsertPlaystateEverywhere, videoIdAliases } from './aliases';
 import { scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
+import { isAnimeList } from '../trackers';
 
 const database: any = require('../database');
 const idMappings: any = require('../id-mappings');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const ANIME_LISTS = new Set<string>(['anilist', 'mal']);
 const ANIME_SCHEMES = new Set<string>(['kitsu', 'mal', 'anilist', 'anidb']);
 const OWN_ORIGINS = new Set(['server', 'play']);
 const WATCH_OPS = new Set(['scrobble', 'credit', 'catchUp', 'catchUps', 'anime', 'episodes']);
@@ -64,7 +64,7 @@ export function viewingOf(profile: string, at: number, ids: string[]): Viewing |
 }
 
 export function spellingsFor(service: string, ids: string[]): string[] {
-  const order = ANIME_LISTS.has(service) ? ['kitsu:', 'mal:', 'anilist:', 'tt', 'tvdb:', 'tmdb:'] : ['kitsu:', 'mal:', 'tt', 'tvdb:', 'tmdb:'];
+  const order = isAnimeList(service) ? ['kitsu:', 'mal:', 'anilist:', 'tt', 'tvdb:', 'tmdb:'] : ['kitsu:', 'mal:', 'tt', 'tvdb:', 'tmdb:'];
   const ranked = order.flatMap((prefix) => ids.filter((id) => id.startsWith(prefix)));
   return ranked.length ? ranked : ids.slice(0, 1);
 }
@@ -197,7 +197,7 @@ async function importedViewings(userUUID: string, profiles: Set<string>, origins
 }
 
 export function asListed(service: string, viewing: Viewing): Viewing {
-  if (!ANIME_LISTS.has(service) || viewing.kind !== 'movie') return viewing;
+  if (!isAnimeList(service) || viewing.kind !== 'movie') return viewing;
   const imdb = viewing.ids.find((id) => id.startsWith('tt'));
   const film = imdb ? require('../id-mapper').filmMappingFor({ imdbId: imdb }) : null;
   const listed = [film?.mal_id && `mal:${film.mal_id}`, film?.anilist_id && `anilist:${film.anilist_id}`, film?.kitsu_id && `kitsu:${film.kitsu_id}`].filter(Boolean) as string[];
@@ -207,7 +207,7 @@ export function asListed(service: string, viewing: Viewing): Viewing {
 export function belongsOn(service: string, viewing: Viewing, config: any): boolean {
   const { shouldTrackServiceMediaType } = require('../watchTracking');
   if (!shouldTrackServiceMediaType(config, service, viewing.kind === 'movie' ? 'movie' : 'series')) return false;
-  return !ANIME_LISTS.has(service) || viewing.ids.some((id) => /^(kitsu|mal|anilist):/.test(id));
+  return !isAnimeList(service) || viewing.ids.some((id) => /^(kitsu|mal|anilist):/.test(id));
 }
 
 export async function driftFor(userUUID: string, source: DriftSource): Promise<Drift> {
@@ -241,12 +241,12 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
     }
     for (const video of [String(row.video), ...listed]) {
       const parsed = parseStremioId(video);
-      const reach = ANIME_LISTS.has(source.service) && parsed?.episode != null ? parsed.episode : Infinity;
-      const key = ANIME_LISTS.has(source.service) && parsed?.episode != null ? parsed.base : video;
+      const reach = isAnimeList(source.service) && parsed?.episode != null ? parsed.episode : Infinity;
+      const key = isAnimeList(source.service) && parsed?.episode != null ? parsed.base : video;
       sent.set(key, Math.max(sent.get(key) ?? 0, reach));
     }
   }
-  if (ANIME_LISTS.has(source.service)) {
+  if (isAnimeList(source.service)) {
     for (const id of waiting) {
       const parsed = parseStremioId(id);
       if (parsed?.episode != null) sent.set(parsed.base, Math.max(sent.get(parsed.base) ?? 0, parsed.episode));
@@ -271,7 +271,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
     return { judged, matched, held, spelled, heldElsewhere, missing: missing.filter((v) => !v.ids.some((id) => (spelled.get(id) ?? []).some((alias) => heldElsewhere.has(alias) || waiting.has(alias)))) };
   };
   const stillPlayed = async (viewings: Viewing[]) => {
-    if (ANIME_LISTS.has(source.service)) {
+    if (isAnimeList(source.service)) {
       const counts = await seriesCountsAmong(snapshot, [...new Set(viewings.flatMap((v) => v.ids.map((id) => parseStremioId(id)?.base ?? id)))]);
       viewings = viewings.filter((v) => !v.ids.some((id) => {
         const count = counts.get(parseStremioId(id)?.base ?? id);
@@ -331,7 +331,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
     ? (await stillPlayed((await missingFrom(brought)).missing)).filter((v) => !v.ids.some((id) => ownMissing.has(`${v.profile}|${id}`)))
     : [];
 
-  const ahead = ANIME_LISTS.has(source.service) ? [] : await aheadOf(userUUID, source, sourceKey, since, unmarking);
+  const ahead = isAnimeList(source.service) ? [] : await aheadOf(userUUID, source, sourceKey, since, unmarking);
   return { behind, imported, leftOut, ahead, rewatched, unread: mine.filter((v) => v.at > settled).length, since, readAt };
 }
 
@@ -398,7 +398,7 @@ export function pushDrift(userUUID: string, config: any, source: DriftSource, vi
 async function queueDrift(userUUID: string, config: any, source: DriftSource, viewings: Viewing[], again: Viewing[]): Promise<number> {
   const { enqueueTrackerWrites } = require('../trackerOutbox');
   const byProfile = new Map<string, Viewing[]>();
-  if (ANIME_LISTS.has(source.service)) viewings = furthestPerEntry(source.service, viewings, (v) => v.profile);
+  if (isAnimeList(source.service)) viewings = furthestPerEntry(source.service, viewings, (v) => v.profile);
   for (const v of viewings) byProfile.set(v.profile, [...(byProfile.get(v.profile) ?? []), v]);
   const rewatches = new Map<string, Viewing[]>();
   if (BATCHED.has(source.service)) {
@@ -534,7 +534,7 @@ export async function recoverFailed(sourceKey: string, service: Capable): Promis
       if (video === id) return true;
       const a = parseStremioId(video);
       const b = parseStremioId(id);
-      return ANIME_LISTS.has(service) && a?.episode != null && b?.episode != null && a.base === b.base && b.episode <= a.episode;
+      return isAnimeList(service) && a?.episode != null && b?.episode != null && a.base === b.base && b.episode <= a.episode;
     }));
     const wanted = reaches(rows.flatMap(videosOf));
     const rewatches = drift.rewatched.filter(wanted);
