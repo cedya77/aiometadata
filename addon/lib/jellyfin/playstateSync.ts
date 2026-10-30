@@ -1,7 +1,7 @@
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
 import { sourceFor } from './trackerSource';
-import { getPlaystatesAcross, upsertPlaystateEverywhere } from './aliases';
+import { filmsHeldElsewhere, getPlaystatesAcross, upsertPlaystateEverywhere } from './aliases';
 import { profileKey, scopeConfigToProfile } from './profiles';
 import { accountOwner } from '../accounts';
 import { runAsAccountOwner } from './viewer';
@@ -66,13 +66,15 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
   const watched = await allWatched(snapshot);
   const finished = [...watched.episodes, ...watched.movies];
   const known = await getPlaystatesAcross(userUUID, finished, profile);
+  for (const [videoId, row] of await filmsHeldElsewhere(userUUID, finished.filter((id: string) => !known.has(id)), profile)) known.set(videoId, row);
   const logged = await database.watchedVideoIds(userUUID, profile);
   for (const videoId of finished) {
     const row = known.get(videoId);
+    const heldAs = row && String(row.video_id) !== videoId ? [String(row.video_id)] : [];
     const trackerAt = watched.at.get(videoId);
     // An import written without a date takes the tracker's once it has one.
     if (row && row.played && !row.last_played_at && !Number(row.position_ms) && trackerAt) {
-      await upsertPlaystateEverywhere(userUUID, videoId, { lastPlayedAt: trackerAt, origin, watch: { at: trackerAt, kind: 'dated' } }, profile);
+      await upsertPlaystateEverywhere(userUUID, videoId, { lastPlayedAt: trackerAt, origin, watch: { at: trackerAt, kind: 'dated' } }, profile, heldAs);
       added += 1;
       continue;
     }
@@ -80,7 +82,7 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
     if (row && row.played && Number(row.position_ms) > 0 && !paused.has(videoId) && watchedAt > Number(row.updated_at)) {
       const runtimeMs = Number(row.runtime_ms) || 0;
       const gapMs = runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
-      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: watchedAt, origin, watch: { at: watchedAt, kind: 'finish', gapMs } }, profile);
+      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: watchedAt, origin, watch: { at: watchedAt, kind: 'finish', gapMs } }, profile, heldAs);
       added += 1;
       continue;
     }
@@ -102,7 +104,7 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
       continue;
     }
     const watch = trackerAt ? { watch: { at: trackerAt, kind: 'first' } } : {};
-    await upsertPlaystateEverywhere(userUUID, videoId, row ? { positionMs: 0, played: true, origin, ...watch } : { positionMs: 0, played: true, lastPlayedAt: trackerAt ?? null, origin, ...watch }, profile);
+    await upsertPlaystateEverywhere(userUUID, videoId, row ? { positionMs: 0, played: true, origin, ...watch } : { positionMs: 0, played: true, lastPlayedAt: trackerAt ?? null, origin, ...watch }, profile, heldAs);
     added += 1;
   }
 

@@ -217,6 +217,37 @@ export async function getPlaystatesAcross(userUUID: string, videoIds: string[], 
   return out;
 }
 
+function otherFilmSpelling(videoId: string): string | null {
+  const parsed = parseStremioId(videoId);
+  if (!parsed || (parsed.episode !== null && parsed.episode !== undefined)) return null;
+  if (parsed.idType === 'imdb') {
+    const tmdbId = idMappings.getByImdbId?.(parsed.base, 'movie')?.tmdbId;
+    return tmdbId ? `tmdb:${tmdbId}` : null;
+  }
+  if (parsed.idType === 'tmdb') return idMappings.getByTmdbId?.(String(parsed.base).split(':')[1], 'movie')?.imdbId ?? null;
+  return null;
+}
+
+export async function filmsHeldElsewhere(userUUID: string, videoIds: string[], profile = ''): Promise<Map<string, any>> {
+  const candidates = new Map<string, string>();
+  for (const videoId of videoIds) {
+    const other = otherFilmSpelling(videoId);
+    if (other && other !== videoId) candidates.set(videoId, other);
+  }
+  const out = new Map<string, any>();
+  if (!candidates.size) return out;
+  const rows: Map<string, any> = await database.getPlaystates(userUUID, [...new Set(candidates.values())], profile);
+  const { fetchMeta } = require('./items');
+  for (const [videoId, other] of candidates) {
+    const row = rows.get(other);
+    if (!row) continue;
+    const meta = await fetchMeta(userUUID, 'movie', videoId).catch(() => null);
+    const ids = [meta?._imdbId || meta?.imdb_id, meta?._tmdbId && `tmdb:${meta._tmdbId}`].filter(Boolean).map(String);
+    if (ids.includes(videoId) && ids.includes(other)) out.set(videoId, row);
+  }
+  return out;
+}
+
 /** One row per episode across its spellings; the first in the order given is kept. */
 export async function dedupeByAlias<T extends { videoId: string }>(rows: T[]): Promise<T[]> {
   const taken = new Set<string>();
