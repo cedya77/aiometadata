@@ -779,7 +779,7 @@ export async function recordWatchDate(req: any, itemId: string, from: number | n
   const services = ['mdblist', 'publicmetadb', ...(latest ? ['simkl'] : [])].filter((service) => hasCredential(config, service));
   await enqueueTrackerWrites(userUUID, config, services.map((service) => ({
     service, op: 'redate', item: session.descriptor.i,
-    payload: { type: session.stremioType, id: session.videoId, from, to, latest },
+    payload: { type: session.stremioType, id: session.videoId, from, to, latest, ...(merge ? { merge: true } : {}) },
   }))).catch((error: any) => logger.debug(`Moving the watch date on trackers failed for ${session.videoId}: ${error?.message || error}`));
   return true;
 }
