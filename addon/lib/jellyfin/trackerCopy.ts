@@ -471,6 +471,8 @@ export async function writeSimkl(items: CopyItem[], tokenId: string, config: any
 async function writeOneByOne(service: string, items: CopyItem[], credential: string, config: any, userUUID: string): Promise<Outcome> {
   const { recordingTrackerCalls } = require('../../utils/trackerCalls');
   const gap = Math.ceil(1000 / envInt('JELLYFIN_COPY_PMDB_PER_SECOND', 4, 1));
+  const { assertSignedIn, refusesSignIn, signInRefused } = require('./trackerMarks');
+  await assertSignedIn(service, credential);
   let done = 0;
   let sent = 0;
   let failed = 0;
@@ -498,6 +500,7 @@ async function writeOneByOne(service: string, items: CopyItem[], credential: str
     if (status === 0 || status === 429 || status >= 500 || (status === 403 && /disabled/i.test(String(calls[calls.length - 1]?.body ?? '')))) {
       return { done, sent, failed, skipped, wait: status === 429 ? 30_000 : 60_000, error: `${NAMES[service]} answered ${status || 'nothing'}`, stalled: status === 0 || status >= 500 };
     }
+    if (refusesSignIn(status, calls[calls.length - 1]?.body)) return signInRefused(service, status, { done, sent, failed, skipped });
     done += 1;
     if (status >= 200 && status < 300 && existing) skipped += 1;
     else if (status >= 200 && status < 300) sent += 1;

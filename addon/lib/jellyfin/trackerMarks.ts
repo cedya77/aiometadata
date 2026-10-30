@@ -458,9 +458,28 @@ export function markBatchSize(what: Mark, service: string): number {
   return service === 'publicmetadb' || service === 'anilist' || service === 'mal' ? 10 : envInt('JELLYFIN_COPY_BATCH_SIZE', 100, 1);
 }
 
+const ONE_BY_ONE_NAMES: Record<string, string> = { publicmetadb: 'PublicMetaDB', anilist: 'AniList', mal: 'MyAnimeList' };
+
+// A target that no longer takes the copy's sign-in would otherwise count every title as one it did not find.
+export async function assertSignedIn(service: string, credential: string): Promise<void> {
+  if (service !== 'anilist' && service !== 'mal') return;
+  const tracker = service === 'anilist' ? require('../anilistTracker') : require('../malTracker');
+  if (!(await tracker.getAccessTokenById(credential).catch(() => null))) throw new Error(`The ${ONE_BY_ONE_NAMES[service]} sign-in has expired; sign in again`);
+}
+
+export const refusesSignIn = (status: number, body: unknown): boolean => status === 401 || (status === 403 && !/disabled/i.test(String(body ?? '')));
+
+/** A refused sign-in stops the batch: before any title it fails the batch, after some it pauses on them. */
+export function signInRefused(service: string, status: number, progress: { done: number; sent: number; failed: number; skipped: number }): Outcome {
+  const message = `${ONE_BY_ONE_NAMES[service] ?? service} refused the sign-in (${status}); sign in again`;
+  if (!progress.done) throw new Error(message);
+  return { ...progress, wait: 60_000, error: message };
+}
+
 export async function writeMarks(what: Mark, items: MarkItem[], side: MarkSide, userUUID: string): Promise<Outcome> {
   if (side.service === 'mdblist') return writeMdblist(what, items, side.credential);
   if (side.service === 'simkl') return writeSimkl(what, items, side.credential);
+  await assertSignedIn(side.service, side.credential);
   const { recordingTrackerCalls } = require('../../utils/trackerCalls');
   const ratingGap = Math.ceil(3_600_000 / envInt('JELLYFIN_COPY_PMDB_RATINGS_PER_HOUR', 200, 1));
   const gap = side.service === 'publicmetadb' ? Math.ceil(1000 / envInt('JELLYFIN_COPY_PMDB_PER_SECOND', 4, 1)) : 1000;
@@ -476,6 +495,7 @@ export async function writeMarks(what: Mark, items: MarkItem[], side: MarkSide, 
     if (calls.length && (status === 0 || status === 429 || status >= 500)) {
       return { done, sent, failed, wait: status === 429 ? (what === 'ratings' ? 15 * 60_000 : 30_000) : 60_000, error: `${side.service === 'publicmetadb' ? 'PublicMetaDB' : side.service === 'anilist' ? 'AniList' : 'MyAnimeList'} answered ${status || 'nothing'}`, stalled: status !== 429 };
     }
+    if (calls.length && refusesSignIn(status, last?.body)) return signInRefused(side.service, status, { done, sent, failed, skipped });
     done += 1;
     const outcome: string = error ? 'failed' : landed;
     if (outcome === 'sent') sent += 1;
