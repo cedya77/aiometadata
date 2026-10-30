@@ -2730,13 +2730,16 @@ class Database {
     }
   }
 
-  async listRatings(userUUID: string, profile: string, metaIds: string[]): Promise<any[]> {
+  // tmdb:N names a film and a show alike, so a kind given keeps to rows of that kind or of none recorded.
+  async listRatings(userUUID: string, profile: string, metaIds: string[], metaType: 'movie' | 'series' | null = null): Promise<any[]> {
     if (!metaIds.length) return [];
-    const marks = metaIds.map((_, i) => (this.type === 'sqlite' ? '?' : `$${i + 3}`)).join(', ');
-    const query = this.type === 'sqlite'
-      ? `SELECT meta_id, rating, pmdb_id, updated_at FROM jellyfin_ratings WHERE user_uuid = ? AND profile = ? AND meta_id IN (${marks})`
-      : `SELECT meta_id, rating, pmdb_id, updated_at FROM jellyfin_ratings WHERE user_uuid = $1 AND profile = $2 AND meta_id IN (${marks})`;
-    return this.allQuery(query, [userUUID, profile, ...metaIds]);
+    const sqlite = this.type === 'sqlite';
+    const marks = metaIds.map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
+    const kind = metaType ? ` AND (meta_type IS NULL OR meta_type = ${sqlite ? '?' : `$${metaIds.length + 3}`})` : '';
+    const query = sqlite
+      ? `SELECT meta_id, rating, pmdb_id, updated_at FROM jellyfin_ratings WHERE user_uuid = ? AND profile = ? AND meta_id IN (${marks})${kind}`
+      : `SELECT meta_id, rating, pmdb_id, updated_at FROM jellyfin_ratings WHERE user_uuid = $1 AND profile = $2 AND meta_id IN (${marks})${kind}`;
+    return this.allQuery(query, [userUUID, profile, ...metaIds, ...(metaType ? [metaType] : [])]);
   }
 
   async listProfileRatings(userUUID: string, profile: string, limit: number): Promise<any[]> {
@@ -2802,13 +2805,15 @@ class Database {
     return (await this.allQuery(query, [userUUID, limit])) || [];
   }
 
-  async setRatingRemoteId(userUUID: string, profile: string, metaIds: string[], pmdbId: string): Promise<number> {
+  async setRatingRemoteId(userUUID: string, profile: string, metaIds: string[], pmdbId: string, metaType: 'movie' | 'series' | null = null): Promise<number> {
     if (!metaIds.length) return 0;
-    const marks = metaIds.map((_, i) => (this.type === 'sqlite' ? '?' : `$${i + 4}`)).join(', ');
-    const query = this.type === 'sqlite'
-      ? `UPDATE jellyfin_ratings SET pmdb_id = ? WHERE user_uuid = ? AND profile = ? AND meta_id IN (${marks})`
-      : `UPDATE jellyfin_ratings SET pmdb_id = $1 WHERE user_uuid = $2 AND profile = $3 AND meta_id IN (${marks})`;
-    const result: any = await this.runQuery(query, [pmdbId, userUUID, profile, ...metaIds]);
+    const sqlite = this.type === 'sqlite';
+    const marks = metaIds.map((_, i) => (sqlite ? '?' : `$${i + 4}`)).join(', ');
+    const kind = metaType ? ` AND (meta_type IS NULL OR meta_type = ${sqlite ? '?' : `$${metaIds.length + 4}`})` : '';
+    const query = sqlite
+      ? `UPDATE jellyfin_ratings SET pmdb_id = ? WHERE user_uuid = ? AND profile = ? AND meta_id IN (${marks})${kind}`
+      : `UPDATE jellyfin_ratings SET pmdb_id = $1 WHERE user_uuid = $2 AND profile = $3 AND meta_id IN (${marks})${kind}`;
+    const result: any = await this.runQuery(query, [pmdbId, userUUID, profile, ...metaIds, ...(metaType ? [metaType] : [])]);
     return Number(result?.changes ?? result?.rowCount ?? 0);
   }
 

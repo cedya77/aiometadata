@@ -531,7 +531,7 @@ async function bringRatingsHome(userUUID: string, profile: string, items: MarkIt
     if ((item.kind !== 'movie' && item.kind !== 'series') || item.later || !item.rating) continue;
     const keys = ratingKeys(item);
     if (!keys.length) continue;
-    const held: any[] = await database.listRatings(userUUID, profile, keys).catch(() => []);
+    const held: any[] = await database.listRatings(userUUID, profile, keys, item.kind === 'movie' ? 'movie' : 'series').catch(() => []);
     if (held.length) continue;
     await database.setRating(userUUID, profile, keys, Math.min(10, Math.max(1, Math.round(item.rating))), item.kind === 'movie' ? 'movie' : 'series');
   }

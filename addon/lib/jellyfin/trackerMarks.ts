@@ -419,7 +419,7 @@ async function writeOne(what: Mark, service: string, entry: MarkItem, side: Mark
       // Linked to the rating the copy brought home, so clearing that one clears this too.
       const keys = entry.kind === 'movie' || entry.kind === 'series' ? ratingKeys(entry) : [];
       const { profileKey } = require('./profiles');
-      if (keys.length && !(await require('../database').setRatingRemoteId(userUUID, profileKey(side.scoped), keys, id))) {
+      if (keys.length && !(await require('../database').setRatingRemoteId(userUUID, profileKey(side.scoped), keys, id, entry.kind === 'movie' ? 'movie' : 'series'))) {
         await pmdb.deleteRating(side.credential, id);
         return 'skipped';
       }
