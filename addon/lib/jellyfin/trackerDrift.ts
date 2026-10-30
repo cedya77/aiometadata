@@ -368,7 +368,26 @@ async function aheadOf(userUUID: string, source: DriftSource, sourceKey: string,
   return out;
 }
 
-export async function pushDrift(userUUID: string, config: any, source: DriftSource, viewings: Viewing[], again: Viewing[] = []): Promise<number> {
+const pushing = new Map<string, Promise<unknown>>();
+
+// A send from the dashboard and the resend after a read can each work out the same viewings, so one account's pushes
+// run in turn and leave out what the one before already queued.
+export function pushDrift(userUUID: string, config: any, source: DriftSource, viewings: Viewing[], again: Viewing[] = []): Promise<number> {
+  const key = `${source.service}|${source.credential}`;
+  const run = (pushing.get(key) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+    const { pendingWatches } = require('../trackerOutbox');
+    const queued = new Set<string>((await pendingWatches(source.service, source.credential).catch(() => [])).filter((p: any) => p.played).map((p: any) => String(p.videoId)));
+    const fresh = (v: Viewing) => !v.ids.some((id) => queued.has(id));
+    return queueDrift(userUUID, config, source, viewings.filter(fresh), again.filter(fresh));
+  });
+  pushing.set(key, run);
+  run.finally(() => {
+    if (pushing.get(key) === run) pushing.delete(key);
+  }).catch(() => undefined);
+  return run;
+}
+
+async function queueDrift(userUUID: string, config: any, source: DriftSource, viewings: Viewing[], again: Viewing[]): Promise<number> {
   const { enqueueTrackerWrites } = require('../trackerOutbox');
   const byProfile = new Map<string, Viewing[]>();
   if (ANIME_LISTS.has(source.service)) viewings = furthestPerEntry(source.service, viewings, (v) => v.profile);
