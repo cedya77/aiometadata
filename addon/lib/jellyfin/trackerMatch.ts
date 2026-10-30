@@ -179,6 +179,8 @@ export function theirEpisode(match: TrackerMatch, season: number, episode: numbe
   const key = refKey(season, episode);
   if (lookup.forward.has(key)) return lookup.forward.get(key) ?? null;
   const link = match.seasons[String(season)];
+  // A match is planned for the regular seasons; specials are not the target's specials.
+  if (!link && season === 0) return null;
   const number = episode + (link?.offset ?? 0);
   return number >= 1 ? { season: link ? link.season : season, episode: number } : null;
 }
