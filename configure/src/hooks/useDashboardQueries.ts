@@ -1902,7 +1902,7 @@ export function useJellyfinPerson(userUUID: string | null, profile: string | nul
 export function useJellyfinPersonTitles(userUUID: string | null, profile: string | null, personId: string | null, kind: JellyfinLibraryKind, role: JellyfinPersonRole, order: 'newest' | 'oldest', offset: number, options: DashboardQueryOptions & { enabledWhen?: boolean } = {}) {
   const params = new URLSearchParams({ item: personId ?? '', kind, role, order, offset: String(offset), limit: String(JELLYFIN_PERSON_PAGE) });
   if (profile !== null) params.set('profile', profile);
-  return useJellyfinQuery<{ offset: number; total: number; rows: JellyfinPersonTitle[] }>(
+  return useJellyfinQuery<{ offset: number; total: number; next?: number; rows: JellyfinPersonTitle[] }>(
     ['dashboard', 'jellyfin', 'person-titles', userUUID, profile, personId, kind, role, order, offset] as const,
     `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/person/titles?${params}`,
     { ...options, enabledWhen: Boolean(userUUID && personId) && options.enabledWhen !== false, poll: false }

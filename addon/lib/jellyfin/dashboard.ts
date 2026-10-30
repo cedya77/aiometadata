@@ -1839,12 +1839,13 @@ export async function dashboardPersonTitles(userUUID: string, profile: string | 
     const roles = role === 'all' ? [] : role === 'Actor' ? ['Actor', 'GuestStar'] : [role];
     const types = kind === 'all' ? 'Movie,Series' : kind === 'movie' ? 'Movie' : 'Series';
     const from = Math.max(0, offset);
-    const { items, total } = await readPersonTitles(userUUID, config, personId, types, roles, from, Math.min(100, Math.max(1, limit)), ascending);
+    const { items, total, next } = await readPersonTitles(userUUID, config, personId, types, roles, from, Math.min(100, Math.max(1, limit)), ascending);
     const image = (id: unknown, tag: unknown): string | null =>
       id && tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(id))}/Images/Primary?tag=${encodeURIComponent(String(tag))}` : null;
     return {
       offset: from,
       total,
+      next,
       rows: items.map((item: any) => ({
         id: String(item.Id),
         type: item.Type === 'Movie' ? 'movie' : 'series',
