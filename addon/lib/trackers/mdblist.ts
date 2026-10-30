@@ -95,14 +95,22 @@ async function redate({ config, ids, mediaType, season, episode, change, within 
   // The viewing being moved is found first, so a destination near it can never stand in for it.
   const old = nearestPlay(plays, change.from, (play: any) => play.watched_at, within);
   const placed = nearestPlay(plays.filter((play: any) => play !== old), change.to, (play: any) => play.watched_at, SAME_PLAY_MS);
+  const { lastTrackerCall, noteTrackerCall } = require('../../utils/trackerCalls');
   if (!old) {
     if (!placed && Date.now() - change.from < 15 * 60 * 1000) {
-      require('../../utils/trackerCalls').noteTrackerCall('https://api.mdblist.com/sync/history', 429, 'play not recorded yet', null, Date.now() + 60_000);
+      noteTrackerCall('https://api.mdblist.com/sync/history', 429, 'play not recorded yet', null, Date.now() + 60_000);
     }
     return;
   }
-  if (!placed && !(await api.addToHistory(ids, apiKey, season, episode, undefined, new Date(change.to).toISOString()))) return;
-  await api.removePlays([old.play_id], apiKey);
+  if (placed) {
+    await api.removePlays([old.play_id], apiKey);
+    return;
+  }
+  if (!(await api.removePlays([old.play_id], apiKey))) return;
+  if (await api.addToHistory(ids, apiKey, season, episode, undefined, new Date(change.to).toISOString())) return;
+  const failed = lastTrackerCall();
+  await api.addToHistory(ids, apiKey, season, episode, undefined, old.watched_at);
+  noteTrackerCall('https://api.mdblist.com/sync/watched', failed && failed.status >= 300 ? failed.status : 0, failed?.body, null, failed?.retryAt);
 }
 
 export const mdblist: Tracker = {

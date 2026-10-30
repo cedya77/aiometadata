@@ -34,6 +34,11 @@ export async function recordingTrackerCalls(work: () => Promise<unknown>): Promi
   }
 }
 
+export function lastTrackerCall(): TrackerCall | undefined {
+  const calls = store.getStore();
+  return calls?.[calls.length - 1];
+}
+
 /** Status 0 is a request that never got an answer. */
 export function noteTrackerCall(url: string, status: number, body?: string, retryAfter?: string | number | null, retryAt?: number): void {
   const calls = store.getStore();
