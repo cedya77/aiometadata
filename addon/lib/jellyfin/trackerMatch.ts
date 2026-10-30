@@ -1,5 +1,6 @@
 import { LRUCache } from 'lru-cache';
 import { parseStremioId } from './idsCodec';
+import { videoIdAliases } from './aliases';
 
 const database: any = require('../database');
 
@@ -192,12 +193,41 @@ export function ourEpisodes(match: TrackerMatch, season: number, episode: number
   return linked && !lookup.forward.has(refKey(linked.season, linked.episode)) ? [linked] : [];
 }
 
+const ANIME_SCHEME = /^(kitsu|mal|anilist|anidb):/;
+
+const spelled = (base: string, season: number, episode: number) => (ANIME_SCHEME.test(base) ? `${base}:${episode}` : `${base}:${season}:${episode}`);
+
+const openedBase = (match: TrackerMatch): string | null => (match.open ? parseStremioId(match.open.id)?.base ?? null : null);
+
+const sameNumbering = (a: string, b: string) => ANIME_SCHEME.test(a) === ANIME_SCHEME.test(b);
+
+// A match numbers episodes as the title it was made on lists them, so another spelling of that title is renumbered into it first.
+async function asOpened(match: TrackerMatch, base: string, season: number, episode: number): Promise<EpisodeRef | null> {
+  const opened = openedBase(match);
+  if (!opened || opened === base) return { season, episode };
+  for (const alias of await videoIdAliases(spelled(base, season, episode)).catch(() => [] as string[])) {
+    const parsed = parseStremioId(alias);
+    if (parsed?.base === opened && parsed.episode !== null && parsed.episode !== undefined) return { season: parsed.season ?? 1, episode: parsed.episode };
+  }
+  return sameNumbering(base, opened) ? { season, episode } : null;
+}
+
+async function ourSpelled(match: TrackerMatch, ours: EpisodeRef): Promise<string[]> {
+  const opened = openedBase(match);
+  const aliases = opened ? await videoIdAliases(spelled(opened, ours.season, ours.episode)).catch(() => [] as string[]) : [];
+  return match.bases.flatMap((base) =>
+    !opened || base === opened || sameNumbering(base, opened) ? [spelled(base, ours.season, ours.episode)] : aliases.filter((alias) => parseStremioId(alias)?.base === base)
+  );
+}
+
 export async function matchedTarget(userUUID: string | undefined, service: string, base: string, season?: number, episode?: number): Promise<{ ids: Record<string, string | number>; season?: number; episode?: number; unsent?: true } | null> {
   const match = await matchFor(userUUID, service, base);
   if (!match) return null;
   if (match.kind === 'movie' || episode === undefined || episode === null) return { ids: { ...match.target.ids } };
-  if (sendsNothing(match, season ?? 1, episode)) return { ids: { ...match.target.ids }, unsent: true };
-  const theirs = theirEpisode(match, season ?? 1, episode);
+  const ours = await asOpened(match, base, season ?? 1, episode);
+  if (!ours) return null;
+  if (sendsNothing(match, ours.season, ours.episode)) return { ids: { ...match.target.ids }, unsent: true };
+  const theirs = theirEpisode(match, ours.season, ours.episode);
   return theirs ? { ids: { ...match.target.ids }, ...theirs } : null;
 }
 
@@ -209,7 +239,9 @@ export async function unsentAmong(userUUID: string | undefined, service: string,
   for (const id of ids) {
     const parsed = parseStremioId(id);
     const match = parsed ? index.byBase.get(parsed.base) : null;
-    if (parsed && match && parsed.episode !== null && parsed.episode !== undefined && sendsNothing(match, parsed.season ?? 1, parsed.episode)) out.add(id);
+    if (!parsed || !match || parsed.episode === null || parsed.episode === undefined) continue;
+    const ours = await asOpened(match, parsed.base, parsed.season ?? 1, parsed.episode);
+    if (ours && sendsNothing(match, ours.season, ours.episode)) out.add(id);
   }
   return out;
 }
@@ -228,7 +260,8 @@ export async function theirSpellings(userUUID: string, service: string, ids: str
       out.set(id, bases);
       continue;
     }
-    const theirs = theirEpisode(match, parsed.season ?? 1, parsed.episode);
+    const ours = await asOpened(match, parsed.base, parsed.season ?? 1, parsed.episode);
+    const theirs = ours ? theirEpisode(match, ours.season, ours.episode) : null;
     if (theirs) out.set(id, bases.map((base) => `${base}:${theirs.season}:${theirs.episode}`));
   }
   return out;
@@ -247,7 +280,7 @@ export async function ourSpellings(userUUID: string, service: string, id: string
       if (match.kind === 'movie') out.push(...match.bases);
       continue;
     }
-    for (const ours of ourEpisodes(match, parsed.season ?? 1, parsed.episode)) out.push(...match.bases.map((base) => `${base}:${ours.season}:${ours.episode}`));
+    for (const ours of ourEpisodes(match, parsed.season ?? 1, parsed.episode)) out.push(...(await ourSpelled(match, ours)));
   }
   return out;
 }
