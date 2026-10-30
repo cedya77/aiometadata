@@ -67,14 +67,14 @@ Every browsable catalog in the configuration becomes a library. Movie and series
 
 ### Collections
 
-The collection builder's entries are served in the order they hold on the home screen, ahead of the plain catalogs:
+Libraries are served in the order of the **Catalogs** list, which holds your collections too: drag a collection anywhere in it, between any two catalogs, and clients show it there. A collection that was never moved sits ahead of every catalog.
 
-- A **classic row** is a catalog placed early: its catalog becomes one of the first libraries, and does not appear a second time further down.
+- A **catalog** can carry **Row options**, from its menu in the list: a row title that only Jellyfin clients see, a hidden title, and numbering for a top-ten style row. Its tags decide which users see it.
 - A **collection** becomes a library of its own, typed as a box set library so clients draw it as one, with the collection's backdrop as its artwork. Each **folder** in it is one box set, carrying the folder's cover, backdrop and logo, drawn in the folder's shape (poster, landscape or square). Opening a box set lists the folder's **sources** walked in order, one after the other, with a source's genre applied where one is set and duplicates dropped, paged the way any library is. A folder whose sources are all outside the user's catalogs is not shown, and a collection with no folder left is not shown either.
 
 ![A collection in the builder, its Users field marked Jellyfin only](images/jellyfin/collection-users.jpg)
 
-Both can be restricted to users through the **Users** field in the editor. An entry with no users is for everyone. A collection or row cannot be created or edited from a client; the server declines the request and points at the configuration.
+A collection can be restricted to users through the **Users** field in the editor. A collection with no users is for everyone. A collection cannot be created or edited from a client; the server declines the request and points at the configuration. Rows in an imported design become row options on their catalogs when the import is applied.
 
 ### Search
 

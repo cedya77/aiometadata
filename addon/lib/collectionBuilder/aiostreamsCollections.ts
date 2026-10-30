@@ -11,7 +11,7 @@ import { subFolders, type CollectionDraft, type FolderDraft } from './types';
 
 export const COLLECTION_TYPE = 'collection';
 export const COLLECTION_META_PREFIX = 'aiom.collection:';
-const COLLECTION_CATALOG_PREFIX = 'aiom.collection.';
+export const COLLECTION_CATALOG_PREFIX = 'aiom.collection.';
 const SHAPES: Record<string, string> = { LANDSCAPE: 'landscape', SQUARE: 'square' };
 
 /** A folder is only reachable through the meta resource. */

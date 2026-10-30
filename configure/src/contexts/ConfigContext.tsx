@@ -6,6 +6,7 @@ import { allCatalogDefinitions, allSearchProviders } from "@/data/catalogs";
 import { LoadingScreen } from "@/components/LoadingScreen"; 
 import { hasAnyWatchTrackingEnabled } from '@/lib/watchTracking';
 import { reconcileTagRegistry } from '@/lib/catalogShare';
+import { keepCollectionsInPlace } from '@shared/homeOrder';
 
 interface AuthState {
   authenticated: boolean;
@@ -296,7 +297,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [addonVersion, setAddonVersion] = useState<string>(' ');
   const [preloadedConfig] = useState(initializeConfigFromSources);
   const [auth, setAuth] = useState<AuthState>({ authenticated: false, userUUID: null, password: null });
-  const [config, setConfig] = useState<AppConfig>(() => {
+  const [config, setStoredConfig] = useState<AppConfig>(() => {
     if (preloadedConfig) {
       let hydratedCatalogs: CatalogConfig[] = [...defaultCatalogs] as CatalogConfig[];
       
@@ -430,6 +431,10 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [maxCatalogs, setMaxCatalogs] = useState<number | null>(null);
   const [collectionImportCatalogCap, setCollectionImportCatalogCap] = useState(400);
   const [maxEpisodeOrders, setMaxEpisodeOrders] = useState(100);
+
+  const setConfig = useCallback<React.Dispatch<React.SetStateAction<AppConfig>>>((action) => {
+    setStoredConfig(prev => keepCollectionsInPlace(prev, typeof action === 'function' ? action(prev) : action));
+  }, []);
 
   const refreshInstanceLimits = useCallback(async (): Promise<InstanceLimits | null> => {
     try {

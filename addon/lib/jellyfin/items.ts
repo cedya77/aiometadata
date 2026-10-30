@@ -14,6 +14,7 @@ import type { CatalogRef } from './views';
 import { viewerAccountOwner, viewerMarksUnaired, viewerProfile, viewerReadsExtensions, viewerWantsPeople } from './viewer';
 import { SERVER_WATCHLIST_PREFIX } from '../serverWatchlist';
 import { isLandscapeCatalogConfig } from '../../utils/catalogPosterShape';
+import { configCatalogFor } from '../collectionBuilder/homeOrder';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -789,19 +790,8 @@ function airScheduleOf(meta: any): any {
   return { AirDays: meta.airDays, ...(typeof meta.airTime === 'string' && meta.airTime ? { AirTime: meta.airTime } : {}) };
 }
 
-function catalogSettingsFor(config: any, catalog: { id: string; type: string }): any {
-  const catalogs: any[] = Array.isArray(config?.catalogs) ? config.catalogs : [];
-  const exact = catalogs.find((c) => c.id === catalog.id && (c.type === catalog.type || c.displayType === catalog.type));
-  if (exact) return exact;
-  const suffix = catalog.id.match(/_(movie|series|anime|all)$/);
-  if (!suffix) return undefined;
-  const stripped = catalog.id.slice(0, -suffix[0].length);
-  return catalogs.find((c) => c.id === stripped && c.type === suffix[1])
-    ?? catalogs.find((c) => c.id === stripped && (c.type === catalog.type || c.displayType === catalog.type));
-}
-
 export function isLandscapeCatalog(config: any, catalog: { id: string; type: string }): boolean {
-  return isLandscapeCatalogConfig(config, catalogSettingsFor(config, catalog));
+  return isLandscapeCatalogConfig(config, configCatalogFor(config, catalog));
 }
 
 export function showLandscape(items: any[]): void {
