@@ -1352,6 +1352,7 @@ class Database {
       await this.deleteTrackerMatches(userUUID).catch(() => undefined);
       await this.deleteLeftOut(userUUID).catch(() => undefined);
       await this.deleteHistoryImport(userUUID).catch(() => undefined);
+      await this.deleteTrackerTrail(userUUID).catch(() => undefined);
 
       const deleteAliasQuery = this.type === 'sqlite'
         ? 'DELETE FROM user_aliases WHERE user_uuid = ?'
@@ -1967,6 +1968,13 @@ class Database {
 
   async deleteHistoryImport(userUUID: string): Promise<void> {
     await this.runQuery(`DELETE FROM history_import_jobs WHERE user_uuid = ${this.type === 'sqlite' ? '?' : '$1'}`, [userUUID]);
+  }
+
+  /** Copy jobs hold the titles they copied and activity the titles sent, so both go with the user. */
+  async deleteTrackerTrail(userUUID: string): Promise<void> {
+    const mark = this.type === 'sqlite' ? '?' : '$1';
+    await this.runQuery(`DELETE FROM tracker_copy_jobs WHERE user_uuid = ${mark}`, [userUUID]);
+    await this.runQuery(`DELETE FROM tracker_activity WHERE user_uuid = ${mark}`, [userUUID]);
   }
 
   async currentPlaystate(userUUID: string, profile: string, videoId: string): Promise<any | null> {
