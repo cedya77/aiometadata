@@ -642,13 +642,96 @@ export async function dashboardOutbox(userUUID: string, action: 'retry' | 'drop'
 
 const drifts = new LRUCache<string, any>({ max: 200, ttl: envInt('JELLYFIN_TRACKER_DRIFT_CACHE_SECONDS', 60, 0) * 1000 || 1 });
 
+const driftEpochs = new Map<string, number>();
+
 function forgetDrift(userUUID: string): void {
+  driftEpochs.set(userUUID, (driftEpochs.get(userUUID) ?? 0) + 1);
   for (const key of [...drifts.keys()]) if (key.startsWith(`${userUUID}|`)) drifts.delete(key);
 }
 
 async function driftOf(userUUID: string, key: string, source: SyncSource): Promise<any> {
   const { driftFor } = require('./trackerDrift');
   return driftFor(userUUID, { service: source.service, credential: source.credential, keys: source.keys, scoped: source.scoped });
+}
+
+async function driftOutcomes(key: string): Promise<Map<string, string | null>> {
+  const { driftWindowDays } = require('./trackerDrift');
+  const outcomes = new Map<string, string | null>();
+  for (const row of (await database.listTrackerActivity([key], Date.now() - driftWindowDays() * DAY_MS, 2000).catch(() => [])) as any[]) {
+    if (!row.video || (row.kind !== 'sent' && row.kind !== 'failed')) continue;
+    let detail: any = {};
+    try {
+      detail = JSON.parse(row.detail ?? '{}');
+    } catch {}
+    const outcome = row.kind === 'failed' && (detail.status === 404 || detail.status === 422) ? String(detail.reason ?? 'not found') : null;
+    for (const video of [String(row.video), ...(Array.isArray(detail.videos) ? detail.videos.map(String) : [])]) {
+      if (!outcomes.has(video)) outcomes.set(video, outcome);
+    }
+  }
+  return outcomes;
+}
+
+async function driftItems(userUUID: string, source: SyncSource, outcomes: Map<string, string | null>, viewings: any[]): Promise<any[]> {
+  const { spellingFor } = require('./trackerDrift');
+  const { parseStremioId } = require('./idsCodec');
+  const { MATCH_SERVICES, matchFor } = require('./trackerMatch');
+  const groups = new Map<string, any[]>();
+  for (const v of viewings) {
+    const id = `${v.profile}|${v.metaId}`;
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id)!.push(v);
+  }
+  const out = await mapWithConcurrency([...groups.entries()], envInt('JELLYFIN_DASHBOARD_DESCRIBE_CONCURRENCY', 8, 1), async ([id, list]) => {
+    list.sort((a: any, b: any) => (a.season ?? 0) - (b.season ?? 0) || (a.episode ?? 0) - (b.episode ?? 0) || a.at - b.at);
+    const spelling = spellingFor(source.service, list[list.length - 1].ids);
+    const named = await withDeadline(describe(userUUID, spelling).catch(() => null));
+    const bases = [...new Set(list.flatMap((v: any) => v.ids.map((video: string) => parseStremioId(video)?.base ?? video)))] as string[];
+    const matchable = MATCH_SERVICES.has(source.service);
+    const matched = matchable ? (await Promise.all(bases.map((base) => matchFor(userUUID, source.service, base)))).find(Boolean) ?? null : null;
+    return {
+      id,
+      kind: list[0].kind,
+      video: spelling,
+      bases,
+      ...(matchable ? {
+        seasons: [...new Set(list.map((v: any) => v.season).filter((season: any) => Number.isFinite(season)))].sort((a: any, b: any) => a - b),
+        unmatched: list.flatMap((v: any) => v.ids).map((video: string) => outcomes.get(video)).find(Boolean) ?? null,
+        matchedTo: matched ? matched.target.title : null,
+      } : {}),
+      title: named && named.title !== spelling ? named.title : null,
+      open: list[0].kind === 'movie'
+        ? { id: list[0].ids.find((id: string) => id.startsWith('tt')) ?? list[0].metaId, type: 'movie' }
+        : { id: named?.seriesId ?? list[0].metaId, type: 'series' },
+      imageUrl: named?.backdropUrl ?? named?.imageUrl ?? named?.posterUrl ?? null,
+      views: list.map((v: any) => ({ at: v.at, season: v.season, episode: v.episode, video: v.ids[0], ...(v.theirs ? { theirs: v.theirs } : {}) })),
+      lastAt: Math.max(...list.map((v: any) => v.at)),
+    };
+  });
+  return out.sort((a, b) => b.lastAt - a.lastAt);
+}
+
+async function importGroups(userUUID: string, source: SyncSource, outcomes: Map<string, string | null>, drift: any): Promise<any[]> {
+  const names: Map<string, string> = require('./historyTransfer').importedOrigins();
+  const groups = [];
+  for (const [origin, name] of names) {
+    const list = drift.imported.filter((v: any) => v.origin === origin);
+    const left = drift.leftOut[origin] ?? 0;
+    if (!list.length && !left) continue;
+    const titles = [...new Set(list.map((v: any) => `${v.profile}|${v.metaId}`))];
+    const newest = [...list].sort((a: any, b: any) => b.at - a.at);
+    const shown = new Set(newest.map((v: any) => `${v.profile}|${v.metaId}`).filter((id: string, i: number, all: string[]) => all.indexOf(id) === i).slice(0, 4));
+    const preview = await driftItems(userUUID, source, outcomes, list.filter((v: any) => shown.has(`${v.profile}|${v.metaId}`)));
+    groups.push({
+      origin,
+      name,
+      plays: list.length,
+      titles: titles.length,
+      undated: list.filter((v: any) => !v.at).length,
+      left,
+      preview: preview.map((item) => ({ id: item.id, title: item.title, imageUrl: item.imageUrl })),
+    });
+  }
+  return groups;
 }
 
 export async function dashboardDrift(userUUID: string, viewer: string | null): Promise<any | null> {
@@ -658,87 +741,61 @@ export async function dashboardDrift(userUUID: string, viewer: string | null): P
   const memoKey = `${userUUID}|${profile ?? '*'}`;
   const held = drifts.get(memoKey);
   if (held) return held;
-  const { driftWindowDays, spellingFor } = require('./trackerDrift');
-  const { parseStremioId } = require('./idsCodec');
-  const { MATCH_SERVICES, matchFor } = require('./trackerMatch');
+  const epoch = driftEpochs.get(userUUID) ?? 0;
+  const { driftWindowDays } = require('./trackerDrift');
   const sources = syncSources(config, userUUID, profile);
   const lanes = await mapWithConcurrency([...sources.entries()], 2, async ([key, source]) => {
     try {
       const drift = await driftOf(userUUID, key, source);
-      const outcomes = new Map<string, string | null>();
-      for (const row of (await database.listTrackerActivity([key], Date.now() - driftWindowDays() * DAY_MS, 2000).catch(() => [])) as any[]) {
-        if (!row.video || (row.kind !== 'sent' && row.kind !== 'failed')) continue;
-        let detail: any = {};
-        try {
-          detail = JSON.parse(row.detail ?? '{}');
-        } catch {}
-        const outcome = row.kind === 'failed' && (detail.status === 404 || detail.status === 422) ? String(detail.reason ?? 'not found') : null;
-        for (const video of [String(row.video), ...(Array.isArray(detail.videos) ? detail.videos.map(String) : [])]) {
-          if (!outcomes.has(video)) outcomes.set(video, outcome);
-        }
-      }
-      const items = async (viewings: any[]) => {
-        const groups = new Map<string, any[]>();
-        for (const v of viewings) {
-          const id = `${v.profile}|${v.metaId}`;
-          if (!groups.has(id)) groups.set(id, []);
-          groups.get(id)!.push(v);
-        }
-        const out = await mapWithConcurrency([...groups.entries()], envInt('JELLYFIN_DASHBOARD_DESCRIBE_CONCURRENCY', 8, 1), async ([id, list]) => {
-          list.sort((a: any, b: any) => (a.season ?? 0) - (b.season ?? 0) || (a.episode ?? 0) - (b.episode ?? 0) || a.at - b.at);
-          const spelling = spellingFor(source.service, list[list.length - 1].ids);
-          const named = await withDeadline(describe(userUUID, spelling).catch(() => null));
-          const bases = [...new Set(list.flatMap((v: any) => v.ids.map((video: string) => parseStremioId(video)?.base ?? video)))] as string[];
-          const matchable = MATCH_SERVICES.has(source.service);
-          const matched = matchable ? (await Promise.all(bases.map((base) => matchFor(userUUID, source.service, base)))).find(Boolean) ?? null : null;
-          return {
-            id,
-            kind: list[0].kind,
-            video: spelling,
-            bases,
-            ...(matchable ? {
-              seasons: [...new Set(list.map((v: any) => v.season).filter((season: any) => Number.isFinite(season)))].sort((a: any, b: any) => a - b),
-              unmatched: list.flatMap((v: any) => v.ids).map((video: string) => outcomes.get(video)).find(Boolean) ?? null,
-              matchedTo: matched ? matched.target.title : null,
-            } : {}),
-            title: named && named.title !== spelling ? named.title : null,
-            open: list[0].kind === 'movie'
-              ? { id: list[0].ids.find((id: string) => id.startsWith('tt')) ?? list[0].metaId, type: 'movie' }
-              : { id: named?.seriesId ?? list[0].metaId, type: 'series' },
-            imageUrl: named?.backdropUrl ?? named?.imageUrl ?? named?.posterUrl ?? null,
-            views: list.map((v: any) => ({ at: v.at, season: v.season, episode: v.episode, video: v.ids[0], ...(v.theirs ? { theirs: v.theirs } : {}) })),
-            lastAt: Math.max(...list.map((v: any) => v.at)),
-          };
-        });
-        return out.sort((a, b) => b.lastAt - a.lastAt);
-      };
+      const outcomes = await driftOutcomes(key);
+      const items = (viewings: any[]) => driftItems(userUUID, source, outcomes, viewings);
       const rewatchNote = drift.rewatched.length && !(await keepsRewatches(source)) ? 'free' : null;
-      return { key, behind: await items(drift.behind), ahead: await items(drift.ahead), rewatched: await items(drift.rewatched), rewatchNote, unread: drift.unread, readAt: drift.readAt, error: null };
+      return { key, behind: await items(drift.behind), imported: await importGroups(userUUID, source, outcomes, drift), ahead: await items(drift.ahead), rewatched: await items(drift.rewatched), rewatchNote, unread: drift.unread, readAt: drift.readAt, error: null };
     } catch (error: any) {
-      return { key, behind: [], ahead: [], rewatched: [], rewatchNote: null, unread: 0, readAt: null, error: String(error?.message || error).slice(0, 200) };
+      return { key, behind: [], imported: [], ahead: [], rewatched: [], rewatchNote: null, unread: 0, readAt: null, error: String(error?.message || error).slice(0, 200) };
     }
   });
   const out = { checkedAt: Date.now(), days: driftWindowDays(), lanes };
-  drifts.set(memoKey, out);
+  if ((driftEpochs.get(userUUID) ?? 0) === epoch) drifts.set(memoKey, out);
   return out;
+}
+
+export async function dashboardDriftImported(userUUID: string, key: string, origin: string, viewer: string | null): Promise<any[] | null> {
+  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const source = config ? syncSources(config, userUUID, historyKeyOf(config, userUUID, viewer)).get(key) : null;
+  if (!source) return null;
+  const drift = await driftOf(userUUID, key, source);
+  return driftItems(userUUID, source, await driftOutcomes(key), drift.imported.filter((v: any) => v.origin === origin));
 }
 
 function keepsRewatches(source: SyncSource): Promise<boolean> {
   return require('./trackerDrift').keepsRewatches(source);
 }
 
-export async function dashboardDriftAction(userUUID: string, key: string, action: 'push' | 'pull', items: string[] | null): Promise<number | null> {
+export async function dashboardDriftAction(userUUID: string, key: string, action: 'push' | 'pull' | 'leave' | 'restore', items: string[] | null, origin: string | null = null): Promise<number | null> {
   const config = await database.getUserConfig(userUUID).catch(() => null);
   const source = config ? syncSources(config, userUUID).get(key) : null;
   if (!source) return null;
+  if (action === 'restore') {
+    const restored = origin ? await database.restoreLeftOut(userUUID, key, origin) : 0;
+    forgetDrift(userUUID);
+    return restored;
+  }
   const { pushDrift, pullDrift } = require('./trackerDrift');
   if (action === 'push') await require('./trackerMirror').syncMirror(source.service, source.credential, source.scoped);
   const drift = await driftOf(userUUID, key, source);
   const wanted = (v: any) => !items || items.includes(`${v.profile}|${v.metaId}`);
+  const brought = origin ? drift.imported.filter((v: any) => v.origin === origin) : items ? drift.imported : [];
+  if (action === 'leave') {
+    const leaving = origin ? brought.filter(wanted) : [];
+    if (leaving.length) await database.leaveOut(userUUID, key, origin, leaving.flatMap((v: any) => v.ids));
+    forgetDrift(userUUID);
+    return leaving.length;
+  }
   const driftSource = { service: source.service, credential: source.credential, keys: source.keys, scoped: source.scoped };
-  const again = action === 'push' && drift.rewatched.length && await keepsRewatches(source) ? drift.rewatched.filter(wanted) : [];
+  const again = action === 'push' && !origin && drift.rewatched.length && await keepsRewatches(source) ? drift.rewatched.filter(wanted) : [];
   const done = action === 'push'
-    ? await pushDrift(userUUID, config, driftSource, drift.behind.filter(wanted), again)
+    ? await pushDrift(userUUID, config, driftSource, [...(origin ? [] : drift.behind), ...brought].filter(wanted), again)
     : await pullDrift(userUUID, driftSource, drift.ahead.filter(wanted));
   forgetDrift(userUUID);
   if (action === 'pull') {
@@ -797,7 +854,7 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
   }
 
   const snapshot = await indexedSnapshot(source.service, source.credential, source.scoped).catch(() => null);
-  const theirShows = match ? [match.target.ids.imdb, match.target.ids.tvdb && `tvdb:${match.target.ids.tvdb}`, match.target.ids.tmdb && `tmdb:${match.target.ids.tmdb}`].filter(Boolean).map(String) : [];
+  const theirShows: string[] = match ? require('./trackerMatch').matchBases(match) : [];
   let holds: any = null;
   if (snapshot?.source) {
     if (parsed.episode === null || parsed.episode === undefined) {
@@ -891,7 +948,7 @@ export async function dashboardMatchSearch(userUUID: string, key: string, query:
   const source = await matchSource(userUUID, key);
   if (!source) return null;
   const { searchTargets } = require('./trackerMatch');
-  return searchTargets(source.service, source.credential, query, kind);
+  return searchTargets(source.service, source.credential, query, kind, source.scoped);
 }
 
 export async function dashboardMatchDetail(userUUID: string, key: string, candidate: any): Promise<any | null> {

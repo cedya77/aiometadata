@@ -20,6 +20,7 @@ export type SourceProgress = { matching: Progress & { label: string } };
 export interface HistorySource {
   id: string;
   about: string;
+  importName?: string;
   sameViewingMs(): number;
   // How close a title's state here must be to count as the same viewing and stay as it is; sameViewingMs when absent.
   sameStateMs?(): number;
@@ -269,6 +270,31 @@ export async function lookupAll<T, V>(scope: string, userUUID: string, items: Ma
   if (!job) job = startLookups(jobKey, signature, items, lookup);
   const values = await Promise.race([job.result, sleep(envInt('JELLYFIN_HISTORY_IMPORT_LOOKUP_WAIT_SECONDS', 8, 1) * 1000).then(() => null)]);
   return values ? { values: values as Map<string, V> } : { done: job.done, total: job.total };
+}
+
+export type RuntimeAsk = { kind: 'movie' | 'episode'; metaId: string; videoId: string };
+
+export function runtimeAskOf(ids: TitleIds | null | undefined, season: number | null = null, episode: number | null = null): RuntimeAsk | null {
+  const imdb = imdbOf(ids?.imdb);
+  const tmdb = positive(ids?.tmdb) && `tmdb:${positive(ids?.tmdb)}`;
+  const tvdb = positive(ids?.tvdb) && `tvdb:${positive(ids?.tvdb)}`;
+  if (season === null || !episode) {
+    const metaId = imdb || tmdb;
+    return metaId ? { kind: 'movie', metaId, videoId: metaId } : null;
+  }
+  const metaId = tmdb || imdb || tvdb;
+  return metaId ? { kind: 'episode', metaId, videoId: `${metaId}:${season}:${episode}` } : null;
+}
+
+const runtimeKey = (ask: RuntimeAsk) => `${ask.kind}\u0000${ask.videoId}`;
+
+export async function runtimesFor(scope: string, userUUID: string, asks: Array<RuntimeAsk | null>): Promise<{ runtimeOf: (ask: RuntimeAsk | null) => number } | Progress> {
+  const { runtimeFromMeta } = require('./playstateSync');
+  const wanted = new Map<string, RuntimeAsk>();
+  for (const ask of asks) if (ask) wanted.set(runtimeKey(ask), ask);
+  const looked = await lookupAll(scope, userUUID, wanted, (ask): Promise<number> => runtimeFromMeta(userUUID, ask));
+  if (!('values' in looked)) return looked;
+  return { runtimeOf: (ask) => (ask ? looked.values.get(runtimeKey(ask)) ?? 0 : 0) };
 }
 
 export function unmatchedList(): { miss: (name: string, reason: string) => void; done: () => Pick<SourceRead, 'unmatched' | 'unmatchedCount'> } {

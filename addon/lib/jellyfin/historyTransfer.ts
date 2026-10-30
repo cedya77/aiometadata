@@ -7,6 +7,7 @@ import { openUpload, positive, type Ambiguous, type HistorySource, type Unmatche
 import { traktHistorySource } from './historySourceTrakt';
 import { letterboxdHistorySource } from './historySourceLetterboxd';
 import { stremioHistorySource } from './historySourceStremio';
+import { listHistorySource } from './historySourceList';
 
 const logger = consola.withTag('Jellyfin');
 const database: any = require('../database');
@@ -271,9 +272,12 @@ const keyOf = (profile: string, id: string) => `${profile}\u0000${id}`;
 
 const nativeSameWatchMs = () => envInt('JELLYFIN_HISTORY_IMPORT_SAME_WATCH_SECONDS', 60, 0) * 1000;
 
-export async function planHistoryImport(userUUID: string, file: HistoryFile, mapping: Record<string, string | null>, sameWatchMs = nativeSameWatchMs(), sameStateMs = sameWatchMs): Promise<Plan> {
+export async function planHistoryImport(userUUID: string, file: HistoryFile, mapping: Record<string, string | null>, sameWatchMs = nativeSameWatchMs(), sameStateMs = sameWatchMs, skip: ReadonlySet<Section> = new Set()): Promise<Plan> {
   const counts = emptyCounts();
   const writes: Write[] = [];
+  const queue = (section: Section, write: Write) => {
+    if (!skip.has(section)) writes.push(write);
+  };
   const target = (profile: string): string | null => (Object.prototype.hasOwnProperty.call(mapping, profile) && typeof mapping[profile] === 'string' ? mapping[profile] : null);
 
   const [playstate, watches, ratings, watchlist, dropped, matches] = await Promise.all([
@@ -314,7 +318,7 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     }
     counts.playstate[held.length ? 'updated' : 'added'] += 1;
     for (const { profile, videoId, state } of due) {
-      writes.push(async () => {
+      queue('playstate', async () => {
         const current = await database.currentPlaystate(userUUID, profile, videoId);
         const next = current ? mergedInto(stateOf(current), state) : state;
         if (current && sameState(next, stateOf(current))) return;
@@ -349,7 +353,7 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
       viewings.set(key, [...(viewings.get(key) ?? []), watchedAt]);
     }
     counts.watches.added += 1;
-    writes.push(async () => {
+    queue('watches', async () => {
       for (const videoId of videoIds) if (await database.hasWatchNear(userUUID, profile, videoId, watchedAt, sameWatchMs)) return;
       for (const videoId of videoIds) await database.insertWatch(userUUID, profile, videoId, watchedAt, origin);
     });
@@ -379,7 +383,7 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
       continue;
     }
     counts.ratings[held.length ? 'updated' : 'added'] += 1;
-    writes.push(async () => {
+    queue('ratings', async () => {
       for (const id of ids) {
         const current = await database.currentMark('jellyfin_ratings', userUUID, row.target, id);
         if (current && ratingKept(current, row)) return;
@@ -399,7 +403,7 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     }
     counts.watchlist[held ? 'updated' : 'added'] += 1;
     const metaId = heldId ?? row.metaId;
-    writes.push(async () => {
+    queue('watchlist', async () => {
       const current = await database.currentMark('jellyfin_watchlist', userUUID, row.target, metaId);
       if (listingKept(current, row)) return;
       await database.setWatchlisted(userUUID, row.target, metaId, row.mediaType, row.listed, row.metaType, row.updatedAt);
@@ -415,7 +419,7 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     }
     for (const id of ids) heldDrops.add(keyOf(row.target, id));
     counts.dropped.added += 1;
-    writes.push(async () => {
+    queue('dropped', async () => {
       for (const id of ids) if (await database.currentMark('jellyfin_dropped', userUUID, row.target, id)) return;
       await database.setDropped(userUUID, row.target, ids, true, row.updatedAt);
     });
@@ -437,7 +441,7 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     heldMatches.add(keyOf(service, `group\u0000${group}`));
     for (const base of bases) heldMatches.add(keyOf(service, base));
     counts.matches.added += 1;
-    writes.push(async () => {
+    queue('matches', async () => {
       if (await database.trackerMatchHeld(userUUID, service, group, bases)) return;
       await database.saveTrackerMatch(userUUID, service, group, bases, data);
     });
@@ -546,13 +550,17 @@ export function historyImportBody(): any {
 
 const nativeHistorySource: HistorySource = {
   id: 'aiometadata',
-  about: 'Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers; what they lack shows up in the Trackers section.',
+  about: 'Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers now; what they lack shows in the Trackers section, to send or leave out.',
   sameViewingMs: nativeSameWatchMs,
   detects: (upload) => upload.json !== undefined,
   read: async (upload) => ({ body: upload.json, unmatched: [], unmatchedCount: 0 }),
 };
 
-const HISTORY_SOURCES: HistorySource[] = [traktHistorySource, letterboxdHistorySource, stremioHistorySource, nativeHistorySource];
+const HISTORY_SOURCES: HistorySource[] = [listHistorySource, traktHistorySource, letterboxdHistorySource, stremioHistorySource, nativeHistorySource];
+
+export function importedOrigins(): Map<string, string> {
+  return new Map(HISTORY_SOURCES.filter((source) => source.importName).map((source) => [source.id, source.importName!]));
+}
 
 type Received = { file: HistoryFile; source: HistorySource; unmatched: Unmatched[]; unmatchedCount: number; ambiguous: Ambiguous[] };
 
@@ -575,6 +583,11 @@ function picksOf(value: unknown): Record<string, number> | null {
 }
 
 const refused = (error: string) => ({ status: 400, body: { error } });
+
+function skippedOf(value: unknown): Set<Section> {
+  const asked = typeof value === 'string' ? value.split(',') : [];
+  return new Set(SECTIONS.filter((section) => asked.includes(section)));
+}
 
 async function readUpload(userUUID: string, config: any, buffer: Buffer, fileName: string | null, picks: Record<string, number>): Promise<Received | { status: number; body: any }> {
   const upload = openUpload(buffer, fileName);
@@ -623,7 +636,8 @@ export async function receiveHistoryImport(userUUID: string, config: any, body: 
     }
   }
 
-  const plan = await planHistoryImport(userUUID, file, mapping, upload.source.sameViewingMs(), upload.source.sameStateMs?.() ?? upload.source.sameViewingMs());
+  const skipped = skippedOf(query?.skip);
+  const plan = await planHistoryImport(userUUID, file, mapping, upload.source.sameViewingMs(), upload.source.sameStateMs?.() ?? upload.source.sameViewingMs(), skipped);
   const summary = {
     source: upload.source.id,
     about: upload.source.about,
@@ -632,6 +646,7 @@ export async function receiveHistoryImport(userUUID: string, config: any, body: 
     mapping,
     counts: plan.counts,
     writes: plan.writes.length,
+    skipped: [...skipped],
     unmatched: upload.unmatched,
     unmatchedCount: upload.unmatchedCount,
     ambiguous: upload.ambiguous,

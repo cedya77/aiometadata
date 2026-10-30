@@ -3,7 +3,7 @@ import { parseStremioId } from './idsCodec';
 
 const database: any = require('../database');
 
-export const MATCH_SERVICES = new Set(['simkl', 'mdblist']);
+export const MATCH_SERVICES = new Set(['simkl', 'mdblist', 'publicmetadb']);
 
 export interface SeasonLink {
   season: number;
@@ -64,6 +64,23 @@ function theirBases(target: MatchTarget): string[] {
   return out;
 }
 
+const spelledToo = new WeakMap<TrackerMatch, string[]>();
+
+export function matchBases(match: TrackerMatch): string[] {
+  return [...new Set([...theirBases(match.target), ...(spelledToo.get(match) ?? [])])];
+}
+
+async function noteSpellings(service: string, match: TrackerMatch): Promise<void> {
+  const ids = match.target?.ids ?? {};
+  if (service !== 'publicmetadb' || !ids.tmdb || ids.imdb) return;
+  const { movieExternalIds, tvExternalIds } = require('../getTmdb');
+  const external = await (match.kind === 'movie' ? movieExternalIds : tvExternalIds)(String(ids.tmdb), {}).catch(() => null);
+  const out: string[] = [];
+  if (/^tt\d+$/.test(String(external?.imdb_id ?? ''))) out.push(String(external.imdb_id));
+  if (!ids.tvdb && Number(external?.tvdb_id) > 0) out.push(`tvdb:${Number(external.tvdb_id)}`);
+  if (out.length) spelledToo.set(match, out);
+}
+
 async function indexFor(userUUID: string, service: string): Promise<Index> {
   const key = `${userUUID}|${service}`;
   const held = indexes.get(key);
@@ -79,7 +96,8 @@ async function indexFor(userUUID: string, service: string): Promise<Index> {
         continue;
       }
       groups.set(String(row.match_group), match);
-      for (const base of theirBases(match.target)) index.byTheirs.set(base, [...(index.byTheirs.get(base) ?? []), match]);
+      await noteSpellings(service, match);
+      for (const base of matchBases(match)) index.byTheirs.set(base, [...(index.byTheirs.get(base) ?? []), match]);
     }
     index.byBase.set(String(row.base), match);
   }
@@ -205,7 +223,7 @@ export async function theirSpellings(userUUID: string, service: string, ids: str
     const parsed = parseStremioId(id);
     const match = parsed ? index.byBase.get(parsed.base) : null;
     if (!parsed || !match) continue;
-    const bases = theirBases(match.target);
+    const bases = matchBases(match);
     if (parsed.episode === null || parsed.episode === undefined) {
       out.set(id, bases);
       continue;
@@ -241,7 +259,7 @@ async function simklToken(credential: string): Promise<string | null> {
   return (await getSimklToken(credential).catch(() => null))?.access_token ?? null;
 }
 
-export async function searchTargets(service: string, credential: string, query: string, kind: 'movie' | 'series'): Promise<MatchCandidate[]> {
+export async function searchTargets(service: string, credential: string, query: string, kind: 'movie' | 'series', config: any = {}): Promise<MatchCandidate[]> {
   if (service === 'simkl') {
     const { fetchSimklSearchItems } = require('../../utils/simklUtils');
     const token = await simklToken(credential);
@@ -274,7 +292,43 @@ export async function searchTargets(service: string, credential: string, query: 
       episodes: null,
     })).filter((item: MatchCandidate) => Object.keys(item.ids).length > 0);
   }
+  if (service === 'publicmetadb') {
+    const { searchMovie, searchTv } = require('../getTmdb');
+    const found = await (kind === 'movie' ? searchMovie : searchTv)({ query, language: 'en-US' }, config).catch(() => null);
+    return (Array.isArray(found?.results) ? found.results : [])
+      .filter((item: any) => Number(item?.id) > 0)
+      .slice(0, 20)
+      .map((item: any) => ({
+        ids: { tmdb: Number(item.id) },
+        title: String(item.title ?? item.name ?? ''),
+        year: Number(String(item.release_date ?? item.first_air_date ?? '').slice(0, 4)) || null,
+        posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w185${item.poster_path}` : null,
+        kind: kind === 'movie' ? 'movie' : 'tv',
+        episodes: null,
+      }));
+  }
   return [];
+}
+
+async function tmdbSeasons(tmdb: number, config: any): Promise<TargetSeason[]> {
+  const { tvInfo, seasonInfo } = require('../getTmdb');
+  const show = await tvInfo({ id: tmdb, language: 'en-US' }, config).catch(() => null);
+  const numbers: number[] = (Array.isArray(show?.seasons) ? show.seasons : [])
+    .map((season: any) => Number(season?.season_number))
+    .filter((number: number) => Number.isInteger(number) && number >= 0)
+    .sort((a: number, b: number) => (a === 0 ? 1 : b === 0 ? -1 : a - b))
+    .slice(0, 40);
+  return Promise.all(numbers.map(async (number) => {
+    const detail = await seasonInfo({ id: tmdb, season_number: number, language: 'en-US' }, config).catch(() => null);
+    return {
+      number,
+      episodes: (Array.isArray(detail?.episodes) ? detail.episodes : []).map((episode: any) => ({
+        number: Number(episode.episode_number),
+        title: episode.name ? String(episode.name) : null,
+        airedAt: Date.parse(episode.air_date ?? '') || null,
+      })),
+    };
+  }));
 }
 
 export async function targetDetail(service: string, credential: string, candidate: MatchCandidate, config: any): Promise<{ ids: Record<string, string | number>; seasons: TargetSeason[]; tvdbSeasons?: TargetSeason[]; tvdbDefault?: boolean }> {
@@ -304,28 +358,11 @@ export async function targetDetail(service: string, credential: string, candidat
   if (service === 'mdblist') {
     const ids = { ...candidate.ids };
     if (candidate.kind === 'movie' || !ids.tmdb) return { ids, seasons: [] };
-    const { tvInfo, seasonInfo } = require('../getTmdb');
     const { mdblistTvdbEpisodes } = require('../../utils/mdbList');
-    const [show, map] = await Promise.all([
-      tvInfo({ id: ids.tmdb, language: 'en-US' }, config).catch(() => null),
+    const [seasons, map] = await Promise.all([
+      tmdbSeasons(Number(ids.tmdb), config),
       credential ? mdblistTvdbEpisodes(Number(ids.tmdb), credential).catch(() => null) : null,
     ]);
-    const numbers: number[] = (Array.isArray(show?.seasons) ? show.seasons : [])
-      .map((season: any) => Number(season?.season_number))
-      .filter((number: number) => Number.isInteger(number) && number >= 0)
-      .sort((a: number, b: number) => (a === 0 ? 1 : b === 0 ? -1 : a - b))
-      .slice(0, 40);
-    const seasons: TargetSeason[] = await Promise.all(numbers.map(async (number) => {
-      const detail = await seasonInfo({ id: ids.tmdb, season_number: number, language: 'en-US' }, config).catch(() => null);
-      return {
-        number,
-        episodes: (Array.isArray(detail?.episodes) ? detail.episodes : []).map((episode: any) => ({
-          number: Number(episode.episode_number),
-          title: episode.name ? String(episode.name) : null,
-          airedAt: Date.parse(episode.air_date ?? '') || null,
-        })),
-      };
-    }));
     if (!map) return { ids, seasons };
     const known = new Map(seasons.flatMap((season) => season.episodes.map((episode) => [`${season.number}:${episode.number}`, episode] as const)));
     const tvdb = new Map<number, TargetSeason>();
@@ -341,6 +378,19 @@ export async function targetDetail(service: string, credential: string, candidat
     for (const season of tvdb.values()) season.episodes.sort((a, b) => a.number - b.number);
     const tvdbSeasons = [...tvdb.values()].sort((a, b) => (a.number === 0 ? 1 : b.number === 0 ? -1 : a.number - b.number));
     return tvdbSeasons.length ? { ids, seasons, tvdbSeasons, tvdbDefault: map.tvdbDefault } : { ids, seasons };
+  }
+  if (service === 'publicmetadb') {
+    const ids = { ...candidate.ids };
+    if (!ids.tmdb) return { ids, seasons: [] };
+    const { movieExternalIds, tvExternalIds } = require('../getTmdb');
+    const movie = candidate.kind === 'movie';
+    const [external, seasons] = await Promise.all([
+      (movie ? movieExternalIds : tvExternalIds)(String(ids.tmdb), config).catch(() => null),
+      movie ? [] : tmdbSeasons(Number(ids.tmdb), config),
+    ]);
+    if (/^tt\d+$/.test(String(external?.imdb_id ?? ''))) ids.imdb = String(external.imdb_id);
+    if (Number(external?.tvdb_id) > 0) ids.tvdb = Number(external.tvdb_id);
+    return { ids, seasons };
   }
   return { ids: { ...candidate.ids }, seasons: [] };
 }

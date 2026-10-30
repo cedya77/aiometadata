@@ -607,6 +607,14 @@ class Database {
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (user_uuid, service, base)
       )`,
+      `CREATE TABLE IF NOT EXISTS tracker_left_out (
+        user_uuid TEXT NOT NULL,
+        source_key TEXT NOT NULL,
+        video_id TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        left_at INTEGER NOT NULL,
+        PRIMARY KEY (user_uuid, source_key, video_id)
+      )`,
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid TEXT UNIQUE NOT NULL,
         trusted_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -912,6 +920,14 @@ class Database {
         data TEXT NOT NULL,
         updated_at BIGINT NOT NULL,
         PRIMARY KEY (user_uuid, service, base)
+      )`,
+      `CREATE TABLE IF NOT EXISTS tracker_left_out (
+        user_uuid VARCHAR(64) NOT NULL,
+        source_key VARCHAR(64) NOT NULL,
+        video_id TEXT NOT NULL,
+        origin VARCHAR(32) NOT NULL,
+        left_at BIGINT NOT NULL,
+        PRIMARY KEY (user_uuid, source_key, video_id)
       )`,
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid VARCHAR(255) UNIQUE NOT NULL,
@@ -1300,6 +1316,7 @@ class Database {
       await require('./jellyfin/context').forgetSeen([userUUID]).catch(() => undefined);
       await this.deleteCalendarFeed(userUUID, null).catch(() => undefined);
       await this.deleteTrackerMatches(userUUID).catch(() => undefined);
+      await this.deleteLeftOut(userUUID).catch(() => undefined);
       await this.deleteHistoryImport(userUUID).catch(() => undefined);
 
       const deleteAliasQuery = this.type === 'sqlite'
@@ -1785,6 +1802,17 @@ class Database {
     const marks = origins.map((_, i) => (sqlite ? '?' : `$${i + 2}`)).join(', ');
     const rows = await this.allQuery(`SELECT profile, video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = ${sqlite ? '?' : '$1'} AND origin IN (${marks})`, [userUUID, ...origins]);
     return (rows || []).map((row: any) => ({ profile: String(row.profile ?? ''), video_id: String(row.video_id), watched_at: Number(row.watched_at), origin: row.origin ?? null }));
+  }
+
+  async listUndatedPlaysByOrigin(userUUID: string, origins: string[]): Promise<Array<{ profile: string; video_id: string; origin: string | null }>> {
+    const sqlite = this.type === 'sqlite';
+    const marks = origins.map((_, i) => (sqlite ? '?' : `$${i + 2}`)).join(', ');
+    const rows = await this.allQuery(
+      `SELECT p.profile, p.video_id, p.origin FROM jellyfin_playstate p WHERE p.user_uuid = ${sqlite ? '?' : '$1'} AND p.played = 1 AND p.origin IN (${marks})
+       AND NOT EXISTS (SELECT 1 FROM jellyfin_watches w WHERE w.user_uuid = p.user_uuid AND w.profile = p.profile AND w.video_id = p.video_id)`,
+      [userUUID, ...origins]
+    );
+    return (rows || []).map((row: any) => ({ profile: String(row.profile ?? ''), video_id: String(row.video_id), origin: row.origin ?? null }));
   }
 
   async listWatchesSince(userUUID: string, since: number): Promise<Array<{ profile: string; video_id: string; watched_at: number; origin: string | null }>> {
@@ -2837,6 +2865,42 @@ class Database {
       ? 'DELETE FROM tracker_matches WHERE user_uuid = ? AND service = ? AND base = ?'
       : 'DELETE FROM tracker_matches WHERE user_uuid = $1 AND service = $2 AND base = $3';
     for (const base of bases) await this.runQuery(byBase, [userUUID, service, base]);
+  }
+
+  async listLeftOut(userUUID: string, sourceKey: string): Promise<Array<{ video_id: string; origin: string }>> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT video_id, origin FROM tracker_left_out WHERE user_uuid = ? AND source_key = ?'
+      : 'SELECT video_id, origin FROM tracker_left_out WHERE user_uuid = $1 AND source_key = $2';
+    return ((await this.allQuery(query, [userUUID, sourceKey])) || []).map((row: any) => ({ video_id: String(row.video_id), origin: String(row.origin) }));
+  }
+
+  async leaveOut(userUUID: string, sourceKey: string, origin: string, videoIds: string[]): Promise<void> {
+    const sqlite = this.type === 'sqlite';
+    const now = Date.now();
+    const ids = [...new Set(videoIds)];
+    for (let i = 0; i < ids.length; i += 200) {
+      const chunk = ids.slice(i, i + 200);
+      const values = chunk.map((_, j) => (sqlite ? '(?, ?, ?, ?, ?)' : `($${j * 5 + 1}, $${j * 5 + 2}, $${j * 5 + 3}, $${j * 5 + 4}, $${j * 5 + 5})`)).join(', ');
+      await this.runQuery(
+        `INSERT INTO tracker_left_out (user_uuid, source_key, video_id, origin, left_at) VALUES ${values} ON CONFLICT (user_uuid, source_key, video_id) DO NOTHING`,
+        chunk.flatMap((id) => [userUUID, sourceKey, id, origin, now])
+      );
+    }
+  }
+
+  async restoreLeftOut(userUUID: string, sourceKey: string, origin: string): Promise<number> {
+    const query = this.type === 'sqlite'
+      ? 'DELETE FROM tracker_left_out WHERE user_uuid = ? AND source_key = ? AND origin = ?'
+      : 'DELETE FROM tracker_left_out WHERE user_uuid = $1 AND source_key = $2 AND origin = $3';
+    const result = await this.runQuery(query, [userUUID, sourceKey, origin]);
+    return Number(this.type === 'sqlite' ? result?.changes : result?.rowCount) || 0;
+  }
+
+  async deleteLeftOut(userUUID: string): Promise<void> {
+    const query = this.type === 'sqlite'
+      ? 'DELETE FROM tracker_left_out WHERE user_uuid = ?'
+      : 'DELETE FROM tracker_left_out WHERE user_uuid = $1';
+    await this.runQuery(query, [userUUID]);
   }
 
   async deleteTrackerMatches(userUUID: string): Promise<void> {

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, Download, Film, Loader2, Tv } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, Download, FileUp, Film, Loader2, Tv } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { DASHBOARD_QUERY_KEYS, useJellyfinHistoryImport, useJellyfinHistoryImportJob, type HistoryImportJob, type HistoryImportPreview, type HistoryImportSection } from "@/hooks/useDashboardQueries";
 import { STREMIO_FILE_NAME } from "@/lib/stremioAccount";
 import StremioImport from "./StremioImport";
+import HistoryImportGuide from "./HistoryImportGuide";
 
 const SECTION_LABELS: Array<[HistoryImportSection, string]> = [
   ["playstate", "Watched and in progress"],
@@ -18,6 +20,25 @@ const SECTION_LABELS: Array<[HistoryImportSection, string]> = [
 ];
 
 const SKIP = "__skip__";
+
+const skipKey = (source: string) => `history-import-skip:${source}`;
+
+function rememberedSkip(source: string): HistoryImportSection[] {
+  try {
+    const held = JSON.parse(localStorage.getItem(skipKey(source)) ?? "[]");
+    return Array.isArray(held) ? SECTION_LABELS.map(([key]) => key).filter((key) => held.includes(key)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberSkip(source: string, skipped: HistoryImportSection[]): void {
+  try {
+    localStorage.setItem(skipKey(source), JSON.stringify(skipped));
+  } catch {
+    return;
+  }
+}
 
 const progressOf = (job: HistoryImportJob) => `${job.done.toLocaleString()} of ${job.total.toLocaleString()}`;
 
@@ -45,7 +66,9 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
   const [started, setStarted] = useState(false);
   const [matching, setMatching] = useState<{ done: number; total: number; label: string } | null>(null);
   const [picks, setPicks] = useState<Record<string, number>>({});
+  const [skipped, setSkipped] = useState<HistoryImportSection[]>([]);
   const [stremioOpen, setStremioOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const watching = useRef<string | null>(null);
 
   const running = job?.status === "running";
@@ -78,6 +101,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
     setLoading(true);
     try {
       const result = await send(userUUID, picked, map, chosen, false, setMatching);
+      if (!map) setSkipped(rememberedSkip(result.source));
       setPreview(result);
       setMapping(result.mapping);
     } catch (error) {
@@ -119,7 +143,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
     if (!file) return;
     setLoading(true);
     try {
-      const result = await send(userUUID, file, mapping, picks, true, setMatching);
+      const result = await send(userUUID, file, mapping, picks, true, setMatching, skipped);
       if (result.job) queryClient.setQueryData([...DASHBOARD_QUERY_KEYS.jellyfin, "import", userUUID], result.job);
       setStarted(true);
     } catch (error) {
@@ -139,7 +163,14 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
     }
   };
 
-  const total = preview ? SECTION_LABELS.reduce((sum, [key]) => sum + preview.counts[key].added + preview.counts[key].updated, 0) : 0;
+  const toggle = (section: HistoryImportSection) => {
+    if (!preview) return;
+    const next = skipped.includes(section) ? skipped.filter((key) => key !== section) : [...skipped, section];
+    setSkipped(next);
+    rememberSkip(preview.source, next);
+  };
+
+  const total = preview ? SECTION_LABELS.filter(([key]) => !skipped.includes(key)).reduce((sum, [key]) => sum + preview.counts[key].added + preview.counts[key].updated, 0) : 0;
   const picker = <input ref={input} type="file" accept="application/json,application/zip,text/csv,.json,.zip,.csv" className="hidden" onChange={(event) => pick(event.target.files?.[0])} />;
 
   const trigger = notice ? (
@@ -164,20 +195,26 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
       </div>
     ) : null
   ) : (
-    <>
-      <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" onClick={() => input.current?.click()} disabled={running} title="Import a watch history export">
-        {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Import
-      </Button>
-      <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" onClick={() => setStremioOpen(true)} disabled={running} title="Import watch history from a Stremio account">
-        <Tv className="h-3.5 w-3.5" /> Stremio
-      </Button>
-    </>
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" disabled={running} title="Import watch history">
+          {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Import
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56" onCloseAutoFocus={(event) => event.preventDefault()}>
+        <DropdownMenuItem onSelect={() => input.current?.click()}><FileUp className="size-4" /> From an export file</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => setStremioOpen(true)}><Tv className="size-4" /> From a Stremio account</DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => setGuideOpen(true)}><BookOpen className="size-4" /> Format for other apps</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   return (
     <>
       {picker}
       {trigger}
+      <HistoryImportGuide open={guideOpen} onOpenChange={setGuideOpen} />
       <StremioImport open={stremioOpen} onOpenChange={setStremioOpen} onLibrary={(library) => { setStremioOpen(false); pick(library); }} />
       <Dialog open={Boolean(file)} onOpenChange={(open) => { if (!open) close(); }}>
         <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
@@ -231,14 +268,30 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.06] tabular-nums">
-                    {SECTION_LABELS.map(([key, label]) => (
-                      <tr key={key}>
-                        <td className="px-3 py-2">{label}</td>
-                        <td className="px-3 py-2 text-right">{preview.counts[key].added.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right">{preview.counts[key].updated.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right text-muted-foreground">{preview.counts[key].unchanged.toLocaleString()}</td>
-                      </tr>
-                    ))}
+                    {SECTION_LABELS.map(([key, label]) => {
+                      const counts = preview.counts[key];
+                      const empty = counts.added + counts.updated + counts.unchanged === 0;
+                      const off = skipped.includes(key);
+                      return (
+                        <tr key={key} className={`transition-opacity ${off || empty ? "opacity-45" : ""}`}>
+                          <td className="px-3 py-2">
+                            <label className={`flex items-center gap-2.5 ${empty || started ? "" : "cursor-pointer"}`}>
+                              <input
+                                type="checkbox"
+                                checked={!off && !empty}
+                                disabled={empty || started}
+                                onChange={() => toggle(key)}
+                                className="size-4 shrink-0 cursor-pointer rounded accent-blue-500 disabled:cursor-default"
+                              />
+                              <span className={off ? "line-through decoration-white/30" : ""}>{label}</span>
+                            </label>
+                          </td>
+                          <td className="px-3 py-2 text-right">{counts.added.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right">{counts.updated.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right text-muted-foreground">{counts.unchanged.toLocaleString()}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -246,7 +299,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
               {Boolean(preview.ambiguous?.length) && (
                 <div className="space-y-3 rounded-xl bg-white/[0.03] p-3 ring-1 ring-inset ring-white/10">
                   <p className="text-xs text-muted-foreground">
-                    {preview.ambiguous!.length === 1 ? "This film shares its name and year with another film." : `${preview.ambiguous!.length} films share their name and year with another film.`} Pick the one you watched, or it is left out.
+                    {preview.ambiguous!.length === 1 ? "This title shares its name and year with another title." : `${preview.ambiguous!.length} titles share their name and year with another title.`} Pick the one you watched, or it is left out.
                   </p>
                   {preview.ambiguous!.map((item) => (
                     <div key={item.key} className="space-y-1.5">

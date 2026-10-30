@@ -14,17 +14,19 @@ import {
   type SectionRule,
 } from './historySources';
 import { filmWatched, imdbOfItem, isAnimeId, isStremioLibrary, lastSessionFinished, readStremioLibrary, reallyPlayed, resumeOf, type StremioItem } from './stremioLibrary';
-import { anchorWatched, decodeWatched, parseWatched, sortedVideoIds, type VideoRef, type WatchedField } from './stremioWatched';
+import { anchorWatched, decodeWatched, parseWatched, sortedVideoIds, unanchored, type VideoRef, type WatchedField } from './stremioWatched';
 
 const idMapper: any = require('../id-mapper');
 
 const USABLE_VIDEO = /^(tt\d+|(tmdb|tvdb|kitsu|mal|anilist|anidb):\d+)(:\d+)*$/;
 const ONLY_ANCHOR = 'Only the last watched episode could be placed';
+const UNPLACED = 'Watched marks saved without a position were left out';
 // readHistoryFile keeps no more plays than this.
 const MAX_PLAYS = 10000;
 
 type Lists = { own: string[] | null; cinemeta: string[] | null };
-type Title = { id: string; fields: WatchedField[] };
+type Marks = { field: WatchedField; current: string | null };
+type Title = { id: string; marks: Marks[] };
 type Row = Found & { at: number | null; asOf?: number | null; progress?: { positionMs: number; runtimeMs: number } };
 
 const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
@@ -41,11 +43,24 @@ const videoRefs = (videos: unknown): VideoRef[] =>
 
 const imdbOfAnchor = (anchor: string): string | null => /^tt\d+/.exec(anchor)?.[0] ?? null;
 
-const marksDigest = (fields: WatchedField[]): string =>
+const marksDigest = (marks: Marks[]): string =>
   createHash('sha1')
-    .update(fields.map((field) => `${field.anchor}\u0000${field.anchorLength}\u0000${field.bits.toString('base64')}`).sort().join('\n'))
+    .update(marks.map(({ field, current }) => `${field.anchor}\u0000${field.anchorLength}\u0000${field.bits.toString('base64')}\u0000${current ?? ''}`).sort().join('\n'))
     .digest('hex')
     .slice(0, 16);
+
+const beforeCurrent = (order: string[], current: string | null): string | null => {
+  const at = current ? order.indexOf(current) : -1;
+  return at > 0 ? order[at - 1] : null;
+};
+
+const fitsCurrent = (episodes: string[], order: string[], current: string | null): boolean =>
+  !current || !order.includes(current) || episodes.includes(current) || episodes.includes(beforeCurrent(order, current) ?? '');
+
+const placedFitting = (marks: Marks, ids: string[]): boolean => {
+  const placed = decodeWatched(marks.field, ids);
+  return Boolean(placed && fitsCurrent(placed, ids, marks.current));
+};
 
 // This server's list first, as most Stremio users watch through AIOMetadata; Cinemeta when it cannot place a show's marks.
 async function episodeLists(userUUID: string, title: Title): Promise<Lists> {
@@ -56,9 +71,9 @@ async function episodeLists(userUUID: string, title: Title): Promise<Lists> {
   } catch {
     own = null;
   }
-  const unplaced = title.fields.find((field) => imdbOfAnchor(field.anchor) && !(own && decodeWatched(field, own)));
+  const unplaced = title.marks.find((marks) => imdbOfAnchor(marks.field.anchor) && !(own && placedFitting(marks, own)));
   if (!unplaced) return { own, cinemeta: null };
-  const videos = await idMapper.getCinemetaVideosForImdbSeries(imdbOfAnchor(unplaced.anchor)).catch(() => null);
+  const videos = await idMapper.getCinemetaVideosForImdbSeries(imdbOfAnchor(unplaced.field.anchor)).catch(() => null);
   return { own, cinemeta: Array.isArray(videos) ? sortedVideoIds(videoRefs(videos)) : null };
 }
 
@@ -67,13 +82,19 @@ function watchedEpisodes(item: StremioItem, lists: Lists | undefined, miss: (nam
   let episodes: string[] = [];
   let order: string[] | null = null;
   if (field) {
-    for (const ids of [lists?.own, lists?.cinemeta]) {
+    const decoded = [lists?.own, lists?.cinemeta].flatMap((ids) => {
       const placed = ids ? decodeWatched(field, ids) : null;
-      if (placed) {
-        episodes = placed;
-        order = ids!;
-        break;
-      }
+      return placed ? [{ placed, ids: ids! }] : [];
+    });
+    const chosen = decoded.find(({ placed, ids }) => fitsCurrent(placed, ids, item.state.videoId)) ?? decoded[0];
+    if (chosen) {
+      episodes = chosen.placed;
+      order = chosen.ids;
+    }
+    if (order && unanchored(field)) {
+      const kept = episodes.filter((id) => id === item.state.videoId || id === beforeCurrent(order!, item.state.videoId));
+      if (kept.length < episodes.length) miss(item.name, UNPLACED);
+      episodes = kept;
     }
     if (!order && anchorWatched(field)) {
       episodes = [field.anchor];
@@ -99,8 +120,9 @@ function watchedEpisodes(item: StremioItem, lists: Lists | undefined, miss: (nam
 
 export const stremioHistorySource: HistorySource = {
   id: 'stremio',
+  importName: 'Stremio import',
 
-  about: 'Watched films and episodes, where you stopped, and the Stremio library as the watchlist come over from each Stremio profile. Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers.',
+  about: 'Watched films and episodes, where you stopped, and the Stremio library as the watchlist come over from each Stremio profile. Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers now; what they lack shows in the Trackers section, to send or leave out.',
 
   sameViewingMs: () => envInt('JELLYFIN_HISTORY_IMPORT_STREMIO_SAME_WATCH_MINUTES', 180, 0) * 60 * 1000,
 
@@ -117,13 +139,13 @@ export const stremioHistorySource: HistorySource = {
       for (const item of items) {
         const field = item.type === 'series' ? parseWatched(item.state.watched) : null;
         if (!field) continue;
-        const title = titles.get(item.id) ?? { id: item.id, fields: [] };
-        title.fields.push(field);
+        const title = titles.get(item.id) ?? { id: item.id, marks: [] };
+        title.marks.push({ field, current: item.state.videoId });
         titles.set(item.id, title);
       }
     }
     // A title's marks decide whether Cinemeta is asked, so lookups held for a later request are keyed by them too.
-    const keys = new Map([...titles.values()].map((title) => [title.id, `${title.id}\u0000${marksDigest(title.fields)}`]));
+    const keys = new Map([...titles.values()].map((title) => [title.id, `${title.id}\u0000${marksDigest(title.marks)}`]));
     const lookups = new Map([...titles.values()].map((title) => [keys.get(title.id)!, title]));
     const looked = lookups.size ? await lookupAll('stremio', userUUID, lookups, (title) => episodeLists(userUUID, title)) : { values: new Map<string, Lists>() };
     if (!('values' in looked)) return { matching: { ...looked, label: 'Checking episode lists' } };

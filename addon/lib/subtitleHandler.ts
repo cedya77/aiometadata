@@ -556,7 +556,7 @@ async function creditWatch(parsedId: ParsedMediaId, config: any): Promise<void> 
 async function creditHistory(parsedId: ParsedMediaId, config: any, only: TrackedService, at?: number): Promise<void> {
   const mediaType = parsedId.type === 'movie' ? 'movie' : 'series';
   if (only === 'publicmetadb') {
-    await publicMetaDbHistory(parsedId, config, mediaType, 'watched', at ? new Date(at).toISOString() : undefined);
+    await publicMetaDbHistory(parsedId, config, mediaType, 'watched', at ? new Date(at).toISOString() : undefined, true);
   } else {
     await eachHistoryService(parsedId, config, mediaType, 'addToHistory', 'Crediting a watch', only, at);
   }
@@ -724,14 +724,17 @@ async function publicMetaDbHistory(
   config: any,
   mediaType: 'movie' | 'series',
   action: 'watched' | 'unwatch',
-  watchedAt?: string
+  watchedAt?: string,
+  strict = false
 ): Promise<void> {
   if (!shouldTrackServiceMediaType(config, 'publicmetadb', mediaType)) return;
+  let found = true;
   try {
-    await checkinPublicMetaDB(parsedId, config, { action, ...(watchedAt ? { watchedAt } : {}) });
+    found = await checkinPublicMetaDB(parsedId, config, { action, ...(watchedAt ? { watchedAt } : {}) });
   } catch (error: any) {
     logger.error(`[PublicMetaDB] ${action} failed: ${error.message}`);
   }
+  if (strict && !found) throw noIdsFor('publicmetadb', parsedId);
 }
 
 async function historyTarget(parsedId: ParsedMediaId, config: any, service: TrackedService): Promise<{ ids: Record<string, any>; season?: number; episode?: number; episodeIds?: Record<string, number>; fallback?: { ids: Record<string, any>; season: number; episode: number } | null } | null> {
@@ -870,16 +873,18 @@ async function markEpisodes(
   if (method === 'removeFromHistory' && scope && config.apiKeys?.publicmetadb) {
     const apiKey = config.apiKeys.publicmetadb;
     const { removeWatched, tmdbIdFrom } = require('../utils/publicmetadbUtils');
+    const { matchedTarget } = require('./jellyfin/trackerMatch');
     const shows = new Set<number>();
     if (scope === 'series') {
       for (const id of new Map(parsed.map((p) => [`${p.provider}:${p.id}`, p])).values()) {
-        const tmdbId = await tmdbIdFrom({ [id.provider]: id.id }, 'series').catch(() => null);
+        const matched = await matchedTarget(config?.userUUID, 'publicmetadb', baseOf(id)).catch(() => null);
+        const tmdbId = Number(matched?.ids?.tmdb) || await tmdbIdFrom({ [id.provider]: id.id }, 'series').catch(() => null);
         if (tmdbId) shows.add(tmdbId);
       }
     }
     const episodes = new Map<string, { tmdbId: number; season: number; episode: number }>();
     await mapWithConcurrency(parsed, 4, async (id: ParsedMediaId) => {
-      const resolution = await resolveSeriesIds(id, config).catch(() => null);
+      const resolution = await seriesTarget(id, config, 'publicmetadb').catch(() => null);
       const tmdbId = resolution ? await tmdbIdFrom(resolution.ids, 'series').catch(() => null) : null;
       if (!resolution || !tmdbId || shows.has(tmdbId)) return;
       episodes.set(`${tmdbId}:${resolution.season}:${resolution.episode}`, { tmdbId, season: resolution.season, episode: resolution.episode });
@@ -905,9 +910,10 @@ async function markEpisodes(
     return;
   }
 
-  await mapWithConcurrency(parsed, 4, (id: ParsedMediaId) =>
-    checkinPublicMetaDB(id, config, { action: method === 'addToHistory' ? 'watched' : 'unwatch' }).catch(() => undefined)
+  const found: boolean[] = await mapWithConcurrency(parsed, 4, (id: ParsedMediaId) =>
+    checkinPublicMetaDB(id, config, { action: method === 'addToHistory' ? 'watched' : 'unwatch' }).catch(() => true)
   );
+  if (only && !found.some(Boolean)) throw noIdsFor('publicmetadb', parsed[0]);
 }
 
 async function unwatch(parsedId: ParsedMediaId, config: any, only?: TrackedService): Promise<void> {
@@ -915,7 +921,7 @@ async function unwatch(parsedId: ParsedMediaId, config: any, only?: TrackedServi
   await eachHistoryService(parsedId, config, mediaType, 'removeFromHistory', 'Unwatch', only);
   if (!only || only === 'simkl') await eachHistoryService(parsedId, config, mediaType, 'clearPlayback', 'Clear resume point', 'simkl');
   if (!only || only === 'mdblist') await clearMdblistResumePoint(parsedId, config, mediaType);
-  if (!only || only === 'publicmetadb') await publicMetaDbHistory(parsedId, config, mediaType, 'unwatch');
+  if (!only || only === 'publicmetadb') await publicMetaDbHistory(parsedId, config, mediaType, 'unwatch', undefined, only === 'publicmetadb');
 }
 
 /** The resume point on every tracker, and nothing else: the watch stays. */
@@ -932,14 +938,14 @@ async function clearPublicMetaDbResumePoint(parsedId: ParsedMediaId, config: any
   try {
     const { clearResume, tmdbIdFrom } = require('../utils/publicmetadbUtils');
     if (parsedId.type === 'movie') {
-      const ids = normalizeIdsForMovie(parsedId);
+      const ids = await movieTarget(parsedId, config, 'publicmetadb');
       const tmdbId = ids ? await tmdbIdFrom(ids, 'movie') : null;
       if (!tmdbId) return;
       await clearResume(apiKey, tmdbId, 'movie');
       logger.info('[PublicMetaDB] Cleared the resume point', { tmdb: tmdbId });
       return;
     }
-    const resolution = await resolveSeriesIds(parsedId, config);
+    const resolution = await seriesTarget(parsedId, config, 'publicmetadb');
     const tmdbId = resolution ? await tmdbIdFrom(resolution.ids, 'series') : null;
     if (!tmdbId || !resolution) return;
     await clearResume(apiKey, tmdbId, 'tv', resolution.season, resolution.episode);
@@ -1052,43 +1058,51 @@ async function checkinPublicMetaDB(
   parsedId: ParsedMediaId,
   config: any,
   options: { action?: 'watched' | 'stop' | 'unwatch'; played?: boolean; positionMs?: number; runtimeMs?: number; watchedAt?: string | null } = {}
-): Promise<void> {
+): Promise<boolean> {
   try {
     const { checkinMovie, checkinEpisode } = require('../utils/publicmetadbUtils');
     const apiKey = config.apiKeys?.publicmetadb;
 
     if (!apiKey) {
       logger.debug('[PublicMetaDB Watch Tracking] Skipping - missing API key');
-      return;
+      return true;
     }
 
     if (parsedId.type === 'movie') {
-      const ids = normalizeIdsForMovie(parsedId);
-      if (!ids) {
-        logger.debug(`[PublicMetaDB Watch Tracking] No valid identifiers for movie provider ${parsedId.provider}`);
-        return;
+      const ids = await movieTarget(parsedId, config, 'publicmetadb');
+      if (!ids?.tmdb) {
+        logger.debug(`[PublicMetaDB Watch Tracking] No TMDB id for movie ${parsedId.provider}:${parsedId.id}`);
+        return false;
       }
       logger.debug(`[PublicMetaDB Watch Tracking] Tracking movie (${buildIdSummary(ids)})`);
       await checkinMovie(ids, apiKey, options);
-      return;
+      return true;
     }
 
     if (parsedId.type === 'series') {
-      const resolution = await resolveSeriesIds(parsedId, config);
+      const resolution = await seriesTarget(parsedId, config, 'publicmetadb');
       if (!resolution) {
+        if (await matchLeavesUnsent(parsedId, config, 'publicmetadb')) return true;
         logger.debug(`[PublicMetaDB Watch Tracking] Unable to resolve identifiers for series provider ${parsedId.provider}`);
-        return;
+        return false;
       }
-      logger.debug(`[PublicMetaDB Watch Tracking] Tracking episode (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`);
-      await checkinEpisode(resolution.ids, resolution.season, resolution.episode, apiKey, options);
-      return;
+      const ids = await withTmdbId(resolution.ids, 'series');
+      if (!ids.tmdb) {
+        logger.debug(`[PublicMetaDB Watch Tracking] No TMDB id for series (${buildIdSummary(resolution.ids)})`);
+        return false;
+      }
+      logger.debug(`[PublicMetaDB Watch Tracking] Tracking episode (${buildIdSummary(ids)}) S${resolution.season}E${resolution.episode}`);
+      await checkinEpisode(ids, resolution.season, resolution.episode, apiKey, options);
+      return true;
     }
 
     logger.debug(`[PublicMetaDB Watch Tracking] Unsupported content type: ${parsedId.type}`);
+    return true;
   } catch (error: any) {
     logger.error(`[PublicMetaDB Watch Tracking] Unexpected tracking error: ${error.message}`, {
       stack: error.stack
     });
+    return true;
   }
 }
 

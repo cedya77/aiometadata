@@ -1,29 +1,10 @@
-import { createHash } from 'crypto';
-import redis from '../redisClient';
 import { envInt } from '../../utils/envNumber';
-import { movieExternalIds } from '../getTmdb';
-import { comparable, matchTitle, titleChoices } from '../../utils/titleMatch';
-import { filmSpellings, historyFromSections, imdbOf, lookupAll, parseCsv, positive, unmatchedList, type Ambiguous, type Choice, type HistorySource, type Upload } from './historySources';
+import { comparable } from '../../utils/titleMatch';
+import { filmSpellings, historyFromSections, lookupAll, parseCsv, positive, unmatchedList, type HistorySource, type Upload } from './historySources';
+import { settleTitles, titleIdsFor, titleKey, type NamedTitle } from './historyTitles';
 
 const FILES = ['watched.csv', 'diary.csv', 'ratings.csv', 'watchlist.csv'];
 const URI = 'Letterboxd URI';
-
-type FilmIds = { tmdb: number; imdb: string | null };
-
-type FilmMatch = FilmIds | { options: Choice[] };
-
-const TMDB_POSTER = 'https://image.tmdb.org/t/p/w154';
-
-const choiceOf = (hit: any): Choice => ({
-  tmdb: hit.id,
-  title: String(hit.title ?? hit.name ?? '').slice(0, 200),
-  originalTitle: hit.original_title && hit.original_title !== hit.title ? String(hit.original_title).slice(0, 200) : null,
-  year: positive(String(hit.release_date ?? '').slice(0, 4)),
-  poster: typeof hit.poster_path === 'string' ? `${TMDB_POSTER}${hit.poster_path}` : null,
-  overview: String(hit.overview ?? '').slice(0, 300),
-});
-
-const imdbFor = async (tmdb: number, config: any) => imdbOf((await movieExternalIds(String(tmdb), config).catch(() => null))?.imdb_id);
 
 const headerOf = (text: string) => text.slice(0, 1000).replace(/^\ufeff/, '').split(/\r?\n/)[0] ?? '';
 
@@ -37,40 +18,13 @@ function filesOf(upload: Upload): Map<string, string> {
   return new Map([[guessed, text]]);
 }
 
-const filmKey = (name: string, year: string) => `${comparable(name)}\u0000${positive(year) ?? ''}`;
+const filmKey = (name: string, year: string) => titleKey(name, year, 'movie');
 
 const dayAt = (value: string | undefined): number | null => {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const at = Date.parse(`${value}T12:00:00Z`);
   return Number.isFinite(at) ? at : null;
 };
-
-const choiceKey = (key: string) => createHash('sha1').update(key).digest('hex').slice(0, 16);
-
-async function filmIdsFor(name: string, year: number | null, config: any): Promise<FilmMatch | null> {
-  const key = `letterboxd:tmdb:v2:${createHash('sha1').update(filmKey(name, String(year ?? ''))).digest('hex')}`;
-  const held = await redis.get(key).catch(() => null);
-  if (typeof held === 'string') {
-    try {
-      return held === '' ? null : JSON.parse(held);
-    } catch {
-      return null;
-    }
-  }
-  const pick = { title: name, year: year ?? undefined, kind: 'movie' as const, strict: true };
-  const matched = await matchTitle(pick, config);
-  const tmdb = positive(matched?.hit?.id);
-  let value: FilmMatch | null = tmdb ? { tmdb, imdb: imdbOf(matched?.imdbId) ?? (await imdbFor(tmdb, config)) } : null;
-  if (!value) {
-    const options = (await titleChoices(pick, config)).filter((hit) => positive(hit?.id)).map(choiceOf);
-    if (options.length > 1) value = { options };
-  }
-  const seconds = value ? envInt('LETTERBOXD_FILM_IDS_TTL_DAYS', 30, 1) * 86400 : envInt('LETTERBOXD_FILM_MISS_TTL_HOURS', 24, 1) * 3600;
-  redis.set(key, value ? JSON.stringify(value) : '', 'EX', seconds).catch(() => undefined);
-  return value;
-}
-
-type Film = { name: string; year: number | null };
 
 const stars = (row: Record<string, string>): number | null => {
   const value = Number(row.Rating);
@@ -79,8 +33,9 @@ const stars = (row: Record<string, string>): number | null => {
 
 export const letterboxdHistorySource: HistorySource = {
   id: 'letterboxd',
+  importName: 'Letterboxd import',
 
-  about: 'The diary, watched films, ratings and watchlist come over from Letterboxd, each film matched by its name and year on LumiereDB, then TMDB. Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers.',
+  about: 'The diary, watched films, ratings and watchlist come over from Letterboxd, each film matched by its name and year on LumiereDB, then TMDB. Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers now; what they lack shows in the Trackers section, to send or leave out.',
 
   sameViewingMs: () => envInt('JELLYFIN_HISTORY_IMPORT_LETTERBOXD_SAME_WATCH_HOURS', 36, 0) * 60 * 60 * 1000,
 
@@ -98,29 +53,14 @@ export const letterboxdHistorySource: HistorySource = {
     const listed = csv('watchlist.csv');
     const username = csv('profile.csv')[0]?.Username || null;
 
-    const films = new Map<string, Film>();
+    const films = new Map<string, NamedTitle>();
     for (const row of [...watched, ...diary, ...rated, ...listed]) {
-      if (comparable(row.Name ?? '')) films.set(filmKey(row.Name, row.Year ?? ''), { name: row.Name.slice(0, 300), year: positive(row.Year) });
+      if (comparable(row.Name ?? '')) films.set(filmKey(row.Name, row.Year ?? ''), { name: row.Name.slice(0, 300), year: positive(row.Year), kind: 'movie' });
     }
 
-    const looked = await lookupAll('letterboxd', userUUID, films, (film) => filmIdsFor(film.name, film.year, config));
+    const looked = await lookupAll('letterboxd', userUUID, films, (film) => titleIdsFor(film, config));
     if (!('values' in looked)) return { matching: { ...looked, label: 'Matching films' } };
-    const matched = { ids: looked.values };
-    const ids = new Map<string, FilmIds | null>();
-    const ambiguous: Ambiguous[] = [];
-    for (const [key, found] of matched.ids) {
-      const options = found && 'options' in found ? found.options : null;
-      if (!options) {
-        ids.set(key, found as FilmIds | null);
-        continue;
-      }
-      const film = films.get(key)!;
-      const picked = options.find((option) => option.tmdb === picks[choiceKey(key)])?.tmdb ?? null;
-      ambiguous.push({ key: choiceKey(key), name: `${film.name}${film.year ? ` (${film.year})` : ''}`, options, picked });
-      ids.set(key, picked ? { tmdb: picked, imdb: await imdbFor(picked, config) } : null);
-    }
-    const unpicked = new Set([...matched.ids].filter(([key, found]) => found && 'options' in found && !ids.get(key)).map(([key]) => key));
-    ambiguous.sort((a, b) => a.name.localeCompare(b.name));
+    const { ids, ambiguous, unpicked } = await settleTitles(looked.values, films, picks, config);
 
     const { miss, done } = unmatchedList();
     const missed = new Set<string>();

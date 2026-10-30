@@ -29,10 +29,13 @@ export interface Viewing {
   season: number | null;
   episode: number | null;
   theirs?: number;
+  origin?: string;
 }
 
 export interface Drift {
   behind: Viewing[];
+  imported: Viewing[];
+  leftOut: Record<string, number>;
   ahead: Viewing[];
   rewatched: Viewing[];
   unread: number;
@@ -86,6 +89,31 @@ async function ownViewings(userUUID: string, profiles: Set<string>): Promise<Vie
   return out;
 }
 
+async function importedViewings(userUUID: string, profiles: Set<string>, origins: string[]): Promise<Viewing[]> {
+  if (!origins.length) return [];
+  const moments = new Map<string, any[]>();
+  const add = (key: string, row: any) => {
+    if (!moments.has(key)) moments.set(key, []);
+    moments.get(key)!.push(row);
+  };
+  for (const row of await database.listWatchesByOrigin(userUUID, origins)) {
+    if (profiles.has(row.profile)) add(`${row.profile}|${row.watched_at}|${row.origin}`, { video_id: row.video_id, last_played_at: row.watched_at, origin: 'server', profile: row.profile, from: row.origin });
+  }
+  for (const row of await database.listUndatedPlaysByOrigin(userUUID, origins)) {
+    if (profiles.has(row.profile)) add(`${row.profile}|0|${row.origin}`, { video_id: row.video_id, last_played_at: 0, origin: null, profile: row.profile, from: row.origin });
+  }
+  const dated: Viewing[] = [];
+  const undated: Viewing[] = [];
+  for (const moment of moments.values()) {
+    for (const group of await groupBySpelling(moment)) {
+      const viewing = viewingOf(group[0].profile, group[0].last_played_at, group.map((row: any) => String(row.video_id)));
+      if (viewing) (viewing.at ? dated : undated).push({ ...viewing, origin: group[0].from });
+    }
+  }
+  const seen = new Set(dated.flatMap((v) => v.ids.map((id) => `${v.profile}|${id}`)));
+  return [...dated, ...undated.filter((v) => !v.ids.some((id) => seen.has(`${v.profile}|${id}`)))];
+}
+
 export function asListed(service: string, viewing: Viewing): Viewing {
   if (!ANIME_LISTS.has(service) || viewing.kind !== 'movie') return viewing;
   const imdb = viewing.ids.find((id) => id.startsWith('tt'));
@@ -108,7 +136,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   const since = Date.now() - driftWindowDays() * DAY_MS;
   const state = await database.getTrackerSync(sourceKey).catch(() => null);
   const readAt = Number(state?.synced_at) || null;
-  const empty: Drift = { behind: [], ahead: [], rewatched: [], unread: 0, since, readAt };
+  const empty: Drift = { behind: [], imported: [], leftOut: {}, ahead: [], rewatched: [], unread: 0, since, readAt };
   if (!readAt || !(Number(state?.version) > 0)) return empty;
 
   const snapshot = await indexedSnapshot(source.service, source.credential, source.scoped);
@@ -148,16 +176,32 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
     return parsed?.episode != null && (sent.get(parsed.base) ?? 0) >= parsed.episode && sent.get(parsed.base) !== Infinity;
   };
   const { theirSpellings, unsentAmong } = require('./trackerMatch');
-  const unsent: Set<string> = await unsentAmong(userUUID, source.service, [...new Set(mine.flatMap((v) => v.ids))]).catch(() => new Set<string>());
-  const judged = mine.filter((v) => v.at <= settled && !v.ids.some(wasSent) && !v.ids.some((id) => unsent.has(id)));
-  const ours = [...new Set(judged.flatMap((v) => v.ids))];
-  const matched: Map<string, string[]> = await theirSpellings(userUUID, source.service, ours).catch(() => new Map());
-  const held = await watchedAmong(snapshot, [...ours, ...[...matched.values()].flat()]);
-  let behind = judged.filter((v) => !v.ids.some((id) => held.has(id) || waiting.has(id) || (matched.get(id) ?? []).some((theirs) => held.has(theirs))));
-  const spelled = new Map<string, string[]>();
-  for (const id of new Set(behind.flatMap((v) => v.ids))) spelled.set(id, await videoIdAliases(id).catch(() => [] as string[]));
-  const heldElsewhere = await watchedAmong(snapshot, [...new Set([...spelled.values()].flat())]);
-  behind = behind.filter((v) => !v.ids.some((id) => (spelled.get(id) ?? []).some((alias) => heldElsewhere.has(alias) || waiting.has(alias))));
+  const missingFrom = async (viewings: Viewing[]) => {
+    const unsent: Set<string> = await unsentAmong(userUUID, source.service, [...new Set(viewings.flatMap((v) => v.ids))]).catch(() => new Set<string>());
+    const judged = viewings.filter((v) => v.at <= settled && !v.ids.some(wasSent) && !v.ids.some((id) => unsent.has(id)));
+    const ours = [...new Set(judged.flatMap((v) => v.ids))];
+    const matched: Map<string, string[]> = await theirSpellings(userUUID, source.service, ours).catch(() => new Map());
+    const held = await watchedAmong(snapshot, [...ours, ...[...matched.values()].flat()]);
+    const missing = judged.filter((v) => !v.ids.some((id) => held.has(id) || waiting.has(id) || (matched.get(id) ?? []).some((theirs) => held.has(theirs))));
+    const spelled = new Map<string, string[]>();
+    for (const id of new Set(missing.flatMap((v) => v.ids))) spelled.set(id, await videoIdAliases(id).catch(() => [] as string[]));
+    const heldElsewhere = await watchedAmong(snapshot, [...new Set([...spelled.values()].flat())]);
+    return { judged, matched, held, spelled, heldElsewhere, missing: missing.filter((v) => !v.ids.some((id) => (spelled.get(id) ?? []).some((alias) => heldElsewhere.has(alias) || waiting.has(alias)))) };
+  };
+  const stillPlayed = async (viewings: Viewing[]) => {
+    if (ANIME_LISTS.has(source.service)) {
+      const counts = await seriesCountsAmong(snapshot, [...new Set(viewings.flatMap((v) => v.ids.map((id) => parseStremioId(id)?.base ?? id)))]);
+      viewings = viewings.filter((v) => !v.ids.some((id) => {
+        const count = counts.get(parseStremioId(id)?.base ?? id);
+        return v.at ? (count?.at ?? 0) > v.at : (count?.watched ?? 0) >= (v.episode ?? 1);
+      }));
+    }
+    const states = await statesFor(userUUID, viewings);
+    return viewings.filter((v) => v.ids.some((id) => Number(states.get(`${v.profile}|${id}`)?.played) === 1));
+  };
+  const own = await missingFrom(mine);
+  const { judged, matched, held, spelled, heldElsewhere } = own;
+  let behind = own.missing;
   let rewatched: Viewing[] = [];
   if (REWATCHABLE.has(source.service)) {
     const gap = envInt('JELLYFIN_TRACKER_REWATCH_GAP_HOURS', 48, 48) * 60 * 60 * 1000;
@@ -189,15 +233,24 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
     const again = await statesFor(userUUID, rewatched);
     rewatched = rewatched.filter((v) => v.ids.some((id) => Number(again.get(`${v.profile}|${id}`)?.played) === 1));
   }
-  if (ANIME_LISTS.has(source.service)) {
-    const counts = await seriesCountsAmong(snapshot, [...new Set(behind.flatMap((v) => v.ids.map((id) => parseStremioId(id)?.base ?? id)))]);
-    behind = behind.filter((v) => !v.ids.some((id) => (counts.get(parseStremioId(id)?.base ?? id)?.at ?? 0) > v.at));
-  }
-  const states = await statesFor(userUUID, behind);
-  behind = behind.filter((v) => v.ids.some((id) => Number(states.get(`${v.profile}|${id}`)?.played) === 1));
+  behind = await stillPlayed(behind);
+
+  const origins = [...require('./historyTransfer').importedOrigins().keys()] as string[];
+  const left = new Set<string>(((await database.listLeftOut(userUUID, sourceKey).catch(() => [])) as any[]).map((row) => row.video_id));
+  const leftOut: Record<string, number> = {};
+  const brought = (await importedViewings(userUUID, source.keys, origins)).map((v) => asListed(source.service, v)).filter((v) => {
+    if (!belongsOn(source.service, v, source.scoped)) return false;
+    if (!v.ids.some((id) => left.has(id))) return true;
+    leftOut[v.origin!] = (leftOut[v.origin!] ?? 0) + 1;
+    return false;
+  });
+  const ownMissing = new Set(behind.flatMap((v) => v.ids.map((id) => `${v.profile}|${id}`)));
+  const imported = brought.length
+    ? (await stillPlayed((await missingFrom(brought)).missing)).filter((v) => !v.ids.some((id) => ownMissing.has(`${v.profile}|${id}`)))
+    : [];
 
   const ahead = ANIME_LISTS.has(source.service) ? [] : await aheadOf(userUUID, source, sourceKey, since, unmarking);
-  return { behind, ahead, rewatched, unread: mine.filter((v) => v.at > settled).length, since, readAt };
+  return { behind, imported, leftOut, ahead, rewatched, unread: mine.filter((v) => v.at > settled).length, since, readAt };
 }
 
 async function statesFor(userUUID: string, viewings: Viewing[]): Promise<Map<string, any>> {
@@ -393,7 +446,7 @@ export async function recoverFailed(sourceKey: string, service: Capable): Promis
     const wanted = reaches(rows.flatMap(videosOf));
     const rewatches = drift.rewatched.filter(wanted);
     const again = rewatches.length && await keepsRewatches(source) ? rewatches : [];
-    queued += await pushDrift(userUUID, config, source, drift.behind.filter(wanted), again);
+    queued += await pushDrift(userUUID, config, source, [...drift.behind, ...drift.imported].filter(wanted), again);
     // A rewatch the tracker will not keep is left for a later read rather than marked recovered.
     const unsent = again.length ? [] : rewatches;
     for (const row of rows) {

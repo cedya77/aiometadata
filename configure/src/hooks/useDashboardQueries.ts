@@ -2135,9 +2135,30 @@ export function useJellyfinTrackerMatches(userUUID: string, key: string | null, 
   );
 }
 
+export interface JellyfinDriftImport {
+  origin: string;
+  name: string;
+  plays: number;
+  titles: number;
+  undated: number;
+  left: number;
+  preview: Array<{ id: string; title: string | null; imageUrl: string | null }>;
+}
+
+export function useJellyfinDriftImported(userUUID: string, key: string, origin: string, profile: string | null, open: boolean, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams({ key, origin });
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<{ items: JellyfinDriftItem[] }>(
+    ['dashboard', 'jellyfin', 'sync', 'drift-imported', userUUID, key, origin, profile],
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/drift/imported?${params}`,
+    { ...options, enabledWhen: open, poll: false }
+  );
+}
+
 export interface JellyfinDriftLane {
   key: string;
   behind: JellyfinDriftItem[];
+  imported?: JellyfinDriftImport[];
   ahead: JellyfinDriftItem[];
   rewatched?: JellyfinDriftItem[];
   rewatchNote?: 'free' | null;
@@ -2238,7 +2259,7 @@ function syncActions(getHeaders: () => Record<string, string>) {
   return {
     run: (userUUID: string, key: string, full = false) => post<{ ms: number; changed: boolean }>(userUUID, 'run', { key, full }),
     outbox: (userUUID: string, action: 'retry' | 'drop', ids: number[]) => post<{ count: number }>(userUUID, 'outbox', { action, ids }),
-    drift: (userUUID: string, key: string, action: 'push' | 'pull', items: string[] | null) => post<{ count: number }>(userUUID, 'drift', { key, action, items }),
+    drift: (userUUID: string, key: string, action: 'push' | 'pull' | 'leave' | 'restore', items: string[] | null, origin: string | null = null) => post<{ count: number }>(userUUID, 'drift', { key, action, items, ...(origin ? { origin } : {}) }),
     sameViewing: (userUUID: string, body: { profile: string; video: string; at: number; theirs: number }) => post<{ done: boolean }>(userUUID, 'same-viewing', body),
     copyPreview: (userUUID: string, body: { profile: string | null; from: string; to: string; since: number; what: JellyfinCopyWhat; retry: boolean }) => post<JellyfinCopyPreview>(userUUID, 'copy/preview', body),
     copyDescribe: (userUUID: string, videos: string[]) => post<Record<string, JellyfinCopyNamed>>(userUUID, 'copy/describe', { videos }),
@@ -2346,6 +2367,7 @@ export interface HistoryImportPreview {
   mapping: Record<string, string | null>;
   counts: Record<HistoryImportSection, { added: number; updated: number; unchanged: number }>;
   writes: number;
+  skipped?: HistoryImportSection[];
   unmatched: Array<{ name: string; reason: string }>;
   unmatchedCount: number;
   ambiguous?: Array<{
@@ -2376,9 +2398,11 @@ export function useJellyfinHistoryImport() {
     picks: Record<string, number>,
     apply: boolean,
     onMatching?: (progress: { done: number; total: number; label: string }) => void,
+    skip: HistoryImportSection[] = [],
   ): Promise<HistoryImportPreview & { job?: HistoryImportJob }> => {
     const params = new URLSearchParams();
     if (mapping) params.set('map', JSON.stringify(mapping));
+    if (skip.length) params.set('skip', skip.join(','));
     if (Object.keys(picks).length) params.set('picks', JSON.stringify(picks));
     if (apply) params.set('apply', '1');
     params.set('name', file.name);

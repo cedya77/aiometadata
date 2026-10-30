@@ -4,6 +4,8 @@ import {
   historyFromSections,
   lookupAll,
   positive,
+  runtimeAskOf,
+  runtimesFor,
   seasonNumber,
   showSpellings,
   tmdbEpisodeSpellings,
@@ -15,13 +17,14 @@ import {
   type Upload,
 } from './historySources';
 
-type Section = 'history' | 'ratings' | 'watchlist' | 'hidden';
+type Section = 'history' | 'ratings' | 'watchlist' | 'hidden' | 'playback';
 
 const SECTION_FILES: Array<[RegExp, Section]> = [
   [/^watched-history(-\d+)?\.json$/, 'history'],
   [/^ratings-[a-z]+\.json$/, 'ratings'],
   [/^lists-watchlist\.json$/, 'watchlist'],
   [/^hidden-progress-watched\.json$/, 'hidden'],
+  [/^watched-playback\.json$/, 'playback'],
 ];
 
 const sectionOfFile = (name: string): Section | null => SECTION_FILES.find(([pattern]) => pattern.test(name))?.[1] ?? null;
@@ -34,6 +37,7 @@ function sectionOfRows(rows: unknown): Section | null {
   if (typeof first.rated_at === 'string' && 'rating' in first) return 'ratings';
   if (typeof first.listed_at === 'string' && 'rank' in first) return 'watchlist';
   if (typeof first.hidden_at === 'string') return 'hidden';
+  if (typeof first.paused_at === 'string' && 'progress' in first) return 'playback';
   return null;
 }
 
@@ -63,12 +67,18 @@ async function tvdbNumbering(showTvdb: number, config: any): Promise<Map<number,
 
 const episodeLabel = (row: any) => labelOf(row?.show, ` S${row?.episode?.season ?? '?'}E${row?.episode?.number ?? '?'}`);
 
+const pausedPercent = (row: any): number | null => {
+  const progress = Number(row?.progress);
+  return Number.isFinite(progress) && progress > 0 && progress < 100 ? progress : null;
+};
+
 const ofType = (...types: string[]) => (row: any) => types.includes(row?.type);
 
 export const traktHistorySource: HistorySource = {
   id: 'trakt',
+  importName: 'Trakt import',
 
-  about: 'Plays, ratings, the watchlist and shows hidden from progress come over from Trakt. Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers.',
+  about: 'Plays, paused positions, ratings, the watchlist and shows hidden from progress come over from Trakt. Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers now; what they lack shows in the Trackers section, to send or leave out.',
 
   sameViewingMs: () => envInt('JELLYFIN_HISTORY_IMPORT_TRAKT_SAME_WATCH_MINUTES', 180, 0) * 60 * 1000,
 
@@ -77,7 +87,7 @@ export const traktHistorySource: HistorySource = {
   },
 
   async read(upload: Upload, { userUUID, config }) {
-    const sections: Record<Section, any[]> = { history: [], ratings: [], watchlist: [], hidden: [] };
+    const sections: Record<Section, any[]> = { history: [], ratings: [], watchlist: [], hidden: [], playback: [] };
     let username: string | null = null;
     const single = sectionOfRows(upload.json);
     if (single && upload.files.size === 1) sections[single].push(...(upload.json as any[]));
@@ -106,6 +116,11 @@ export const traktHistorySource: HistorySource = {
     const looked = await lookupAll('trakt', userUUID, shows, (showTvdb) => tvdbNumbering(showTvdb, config));
     if (!('values' in looked)) return { matching: { ...looked, label: 'Checking episode numbers' } };
     const onTvdb = (row: any): EpisodeAt | null => looked.values.get(String(positive(row.show?.ids?.tvdb)))?.get(Number(row.episode?.ids?.tvdb)) ?? null;
+
+    const paused = sections.playback.filter((row) => ofType('movie', 'episode')(row) && pausedPercent(row) !== null);
+    const askOf = (row: any) => (row.type === 'movie' ? runtimeAskOf(row.movie?.ids) : runtimeAskOf(row.show?.ids, seasonNumber(row.episode?.season), positive(row.episode?.number)));
+    const runtimes = await runtimesFor('trakt:runtime', userUUID, paused.map(askOf));
+    if (!('runtimeOf' in runtimes)) return { matching: { ...runtimes, label: 'Reading runtimes' } };
 
     const { miss, done } = unmatchedList();
     const episodes = new Map<string, Promise<string[]>>();
@@ -139,6 +154,19 @@ export const traktHistorySource: HistorySource = {
       { into: 'ratings', rows: sections.ratings, at: (row) => at(row.rated_at), rating: (row) => positive(row.rating) },
       { into: 'watchlist', rows: sections.watchlist, keep: ofType('movie', 'show'), at: (row) => at(row.listed_at) },
       { into: 'dropped', rows: sections.hidden, keep: ofType('show'), at: (row) => at(row.hidden_at) },
+      {
+        into: 'progress',
+        rows: paused,
+        at: (row) => at(row.paused_at),
+        progress: (row) => {
+          const runtimeMs = runtimes.runtimeOf(askOf(row));
+          if (!runtimeMs) {
+            miss(row.type === 'movie' ? labelOf(row.movie) : episodeLabel(row), 'No runtime to place the paused position');
+            return null;
+          }
+          return { positionMs: Math.round((runtimeMs * pausedPercent(row)!) / 100), runtimeMs };
+        },
+      },
     ]);
     return { body, ...done() };
   },

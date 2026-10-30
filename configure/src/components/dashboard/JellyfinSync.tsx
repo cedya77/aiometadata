@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowDownToLine, ArrowLeftRight, CheckCircle2, ChevronRight, Film, History, LayoutList, Link2, Loader2, Merge, MoreHorizontal, Network, Pencil, RefreshCw, RotateCcw, Send, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, CheckCircle2, ChevronRight, EyeOff, Film, History, LayoutList, Link2, Loader2, Merge, MoreHorizontal, Network, Pencil, RefreshCw, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useJellyfinSync, useJellyfinSyncActions, useJellyfinSyncDrift, useJellyfinTrackerMatches, type DashboardTab, type JellyfinDriftItem, type JellyfinDriftLane, type JellyfinSyncFeedItem, type JellyfinSyncLane, type JellyfinSyncRow, type JellyfinSyncWrite, type JellyfinTrackerMatch } from "@/hooks/useDashboardQueries";
+import { useJellyfinDriftImported, useJellyfinSync, useJellyfinSyncActions, useJellyfinSyncDrift, useJellyfinTrackerMatches, type DashboardTab, type JellyfinDriftImport, type JellyfinDriftItem, type JellyfinDriftLane, type JellyfinSyncFeedItem, type JellyfinSyncLane, type JellyfinSyncRow, type JellyfinSyncWrite, type JellyfinTrackerMatch } from "@/hooks/useDashboardQueries";
 import { Eyebrow, Logo, Still, Toggle } from "./TrackerParts";
 import { ANIME_ONLY, COPY_FROM, MATCHABLE, nameOf } from "./trackerNames";
 import JellyfinCopy from "./JellyfinCopy";
@@ -37,7 +37,8 @@ function countdown(ms: number): string {
 
 const limited = (text: string | null) => Boolean(text && /\b429\b|quota|limit|allowance/i.test(text));
 const watchesIn = (items: JellyfinDriftItem[] = []) => items.reduce((sum, item) => sum + new Set(item.views.map((v) => `${v.season}:${v.episode}`)).size, 0);
-const watches = (n: number) => `${n} ${n === 1 ? "watch" : "watches"}`;
+const watches = (n: number) => `${n.toLocaleString()} ${n === 1 ? "watch" : "watches"}`;
+const importedIn = (groups: JellyfinDriftImport[] = []) => groups.reduce((sum, group) => sum + group.plays, 0);
 
 type Tone = "ok" | "waiting" | "paused" | "failing" | "drift" | "ahead" | "idle";
 type LaneState = { tone: Tone; short: string; line: string };
@@ -55,6 +56,8 @@ function laneState(lane: JellyfinSyncLane, now: number, drift?: JellyfinDriftLan
   if (drift?.error) return { tone: "failing", short: "Can't compare", line: `Couldn't compare ${nameOf(lane.service)} with your history` };
   const missing = watchesIn(drift?.behind);
   if (missing) return { tone: "drift", short: `${missing} missing`, line: `Missing ${watches(missing)} from your history` };
+  const brought = importedIn(drift?.imported);
+  if (brought) return { tone: "drift", short: `${brought.toLocaleString()} imported`, line: `Missing ${watches(brought)} you imported` };
   const extra = watchesIn(drift?.ahead);
   if (extra) return { tone: "ahead", short: `${extra} only there`, line: `Has ${watches(extra)} your history doesn't` };
   const again = drift?.rewatchNote ? 0 : watchesIn(drift?.rewatched);
@@ -185,8 +188,10 @@ function spanOf(item: JellyfinDriftItem): string {
 }
 
 function datesOf(item: JellyfinDriftItem): string {
-  const first = shortDay(Math.min(...item.views.map((v) => v.at)));
-  const last = shortDay(item.lastAt);
+  const dated = item.views.map((v) => v.at).filter((at) => at > 0);
+  if (!dated.length) return "with no date";
+  const first = shortDay(Math.min(...dated));
+  const last = shortDay(Math.max(...dated));
   return first === last ? first : `${first} to ${last}`;
 }
 
@@ -201,7 +206,7 @@ function theirsOf(item: JellyfinDriftItem): string | null {
 }
 
 function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, service, onMatch, onSame, phaseOf, info, note }: {
-  title: string;
+  title?: string;
   items: JellyfinDriftItem[];
   all: string;
   one: string;
@@ -223,14 +228,14 @@ function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, se
     : row;
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
+      {title && <div className="flex items-center justify-between gap-3">
         <Eyebrow>{title} <span className="tabular-nums opacity-70">({watchesIn(items)})</span></Eyebrow>
         {items.length > 1 && !note && (
           <button type="button" onClick={() => onGo(null)} disabled={busy !== null} className="flex items-center gap-1.5 text-xs font-semibold text-blue-300 transition-colors hover:text-blue-200 disabled:opacity-50">
             {busy === `${prefix}*` && <Loader2 className="size-3 animate-spin" />} {all}
           </button>
         )}
-      </div>
+      </div>}
       {note && <p className="text-xs leading-relaxed text-muted-foreground">{note}</p>}
       <div className="space-y-1">
         {items.map((item) => {
@@ -275,6 +280,86 @@ function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, se
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function ImportedGroup({ group, service, userUUID, profile, laneKey, activeTab, busy, phaseOf, onAct, onMatch }: {
+  group: JellyfinDriftImport;
+  service: string;
+  userUUID: string;
+  profile: string | null;
+  laneKey: string;
+  activeTab: DashboardTab;
+  busy: string | null;
+  phaseOf: (item: JellyfinDriftItem) => RowPhase | undefined;
+  onAct: (group: JellyfinDriftImport, action: "push" | "leave", items: JellyfinDriftItem[] | null) => Promise<void>;
+  onMatch?: (item: JellyfinDriftItem) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const { data, isLoading, refetch } = useJellyfinDriftImported(userUUID, laneKey, group.origin, profile, open, { activeTab });
+  useEffect(() => {
+    if (open) void refetch();
+  }, [group.plays]);
+  const name = nameOf(service);
+  const items = data?.items ?? [];
+  return (
+    <div className="space-y-2">
+      <Eyebrow>From your {group.name} <span className="tabular-nums opacity-70">({group.plays.toLocaleString()})</span></Eyebrow>
+      <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white/[0.03] p-3 ring-1 ring-inset ring-white/[0.06]">
+        <span className="flex shrink-0 -space-x-6">
+          {(group.preview.length ? group.preview : [{ id: "none", title: null, imageUrl: null }]).slice(0, 3).map((item, i) => (
+            <span key={item.id} className="overflow-hidden rounded-lg ring-2 ring-background" style={{ zIndex: 3 - i }}><Still src={item.imageUrl} className="w-16 rounded-lg sm:w-20" /></span>
+          ))}
+        </span>
+        <span className="min-w-0 flex-1 basis-48">
+          <span className="block text-sm font-semibold">{watches(group.plays)} across {group.titles.toLocaleString()} {group.titles === 1 ? "title" : "titles"}</span>
+          <span className="block text-xs leading-relaxed text-muted-foreground">
+            {name} doesn't have {group.plays === 1 ? "it" : "them"}, and nothing goes out until you choose.
+            {group.undated > 0 && !ANIME_ONLY.has(service) && ` ${group.undated === group.plays ? (group.plays === 1 ? "It has" : "They have") : `${group.undated.toLocaleString()} have`} no date, so ${name} dates ${group.undated === 1 ? "it" : "them"} the day ${group.undated === 1 ? "it arrives" : "they arrive"}.`}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <button type="button" onClick={() => void onAct(group, "leave", null)} disabled={busy !== null} className="flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground disabled:opacity-50">
+            {busy === `import:${group.origin}:leave` ? <Loader2 className="size-3.5 animate-spin" /> : <EyeOff className="size-3.5" />} Leave out
+          </button>
+          <button type="button" onClick={() => void onAct(group, "push", null)} disabled={busy !== null} className="flex h-8 items-center gap-1.5 rounded-full bg-blue-500/90 px-3.5 text-xs font-semibold text-white transition-colors hover:bg-blue-500 disabled:opacity-50">
+            {busy === `import:${group.origin}:push` ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />} Send all
+          </button>
+        </span>
+      </div>
+      <button type="button" onClick={() => setOpen((held) => !held)} aria-expanded={open} className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
+        <ChevronRight className={cx("size-3.5 transition-transform duration-200", open && "rotate-90")} />
+        {open ? "Hide the titles" : `See the ${group.titles === 1 ? "title" : `${group.titles.toLocaleString()} titles`}`}
+      </button>
+      {open && (
+        <div className="animate-fade-in">
+          {isLoading && !data ? (
+            <div className="space-y-1">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 rounded-xl" />)}</div>
+          ) : items.length ? (
+            <DriftList items={items} all="Send all" one="Send" icon={<Send className="size-3.5" />} busy={busy} prefix={`import:${group.origin}:`} where="watched" onGo={(ids) => void onAct(group, "push", ids ? items.filter((item) => ids.includes(item.id)) : null)} service={service} onMatch={onMatch} phaseOf={phaseOf} info={{ userUUID, laneKey, side: "behind", activeTab }} />
+          ) : (
+            <p className="text-xs text-muted-foreground">Nothing left to send.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LeftOut({ groups, service, busy, onRestore }: { groups: JellyfinDriftImport[]; service: string; busy: string | null; onRestore: (group: JellyfinDriftImport) => void }) {
+  const left = groups.filter((group) => group.left > 0);
+  if (!left.length) return null;
+  return (
+    <div className="space-y-1">
+      {left.map((group) => (
+        <p key={group.origin} className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+          <EyeOff className="size-3.5 shrink-0" /> {watches(group.left)} from your {group.name} left out of {nameOf(service)}.
+          <button type="button" onClick={() => onRestore(group)} disabled={busy !== null} className="font-semibold text-blue-300 transition-colors hover:text-blue-200 disabled:opacity-50">
+            {busy === `import:${group.origin}:restore` ? "Showing…" : "Show again"}
+          </button>
+        </p>
+      ))}
     </div>
   );
 }
@@ -364,7 +449,7 @@ function MatchRow({ match, service, onEdit, onRemove }: { match: JellyfinTracker
   );
 }
 
-function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, events, now, reading, busy, phases, onRun, onOutbox, onDrift, onSame, onChanged }: {
+function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, events, now, reading, busy, phases, onRun, onOutbox, onDrift, onImport, onSame, onChanged }: {
   userUUID: string;
   profile: string | null;
   activeTab: DashboardTab;
@@ -380,6 +465,7 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
   onRun: (full: boolean) => void;
   onOutbox: (action: "retry" | "drop", ids: number[]) => Promise<void>;
   onDrift: (action: "push" | "pull", items: string[] | null) => void;
+  onImport: (group: JellyfinDriftImport, action: "push" | "leave" | "restore", items: JellyfinDriftItem[] | null) => Promise<void>;
   onSame: (item: JellyfinDriftItem) => void;
   onChanged: () => void;
 }) {
@@ -411,7 +497,8 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
   const ids = queue.map((w) => w.id);
   const reason = lane.readError ?? (state.tone !== "paused" ? lane.lastError : null);
   const bursts = useMemo(() => burstsOf(events).slice(0, 6), [events]);
-  const settled = drift && !drift.error && !drift.behind.length && !drift.ahead.length && !drift.rewatched?.length;
+  const imports = drift?.imported ?? [];
+  const settled = drift && !drift.error && !drift.behind.length && !drift.ahead.length && !drift.rewatched?.length && !importedIn(imports);
   return (
     <div className="flex min-w-0 animate-fade-in flex-col gap-6 rounded-2xl border border-white/[0.07] bg-black/20 p-5 backdrop-blur-sm sm:p-6">
       <div className="flex flex-wrap items-center gap-4">
@@ -455,9 +542,11 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
         <>
           {drift.behind.length > 0 && <DriftList title={`Missing on ${name}`} items={drift.behind} all="Send all" one="Send" icon={<Send className="size-3.5" />} busy={busy} prefix="push:" where="watched here" onGo={(items) => onDrift("push", items)} service={lane.service} onMatch={matchable ? matchItem : undefined} phaseOf={phaseOf} info={{ userUUID, laneKey: lane.key, side: "behind", activeTab }} />}
           {(drift.rewatched?.length ?? 0) > 0 && <DriftList title={`Rewatched here, not on ${name}`} items={drift.rewatched ?? []} all="Send all" one="Send" icon={<Send className="size-3.5" />} busy={busy} prefix="push:" where="rewatched here" onGo={(items) => onDrift("push", items)} service={lane.service} onMatch={matchable ? matchItem : undefined} onSame={onSame} phaseOf={phaseOf} info={{ userUUID, laneKey: lane.key, side: "again", activeTab }} note={drift.rewatchNote === "free" ? `${name} keeps only the first watch of an episode or film on free accounts, so these can't be sent there. PRO and VIP accounts log them as rewatches.` : undefined} />}
+          {imports.filter((group) => group.plays > 0).map((group) => <ImportedGroup key={group.origin} group={group} service={lane.service} userUUID={userUUID} profile={profile} laneKey={lane.key} activeTab={activeTab} busy={busy} phaseOf={phaseOf} onAct={onImport} onMatch={matchable ? matchItem : undefined} />)}
           {drift.ahead.length > 0 && <DriftList title={`Only on ${name}`} items={drift.ahead} all="Bring all in" one="Bring in" icon={<ArrowDownToLine className="size-3.5" />} busy={busy} prefix="pull:" where="watched" onGo={(items) => onDrift("pull", items)} service={lane.service} phaseOf={phaseOf} info={{ userUUID, laneKey: lane.key, side: "ahead", activeTab }} />}
         </>
       )}
+      {drift && !drift.error && <LeftOut groups={imports} service={lane.service} busy={busy} onRestore={(group) => void onImport(group, "restore", null)} />}
 
       {queue.length > 0 && (
         <div className="space-y-1">
@@ -501,7 +590,7 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
       )}
 
       <p className="text-[11px] text-muted-foreground/80">
-        Every watch made here is checked{ANIME_ONLY.has(lane.service) ? "" : `, and ${name}'s own from the last ${days} days`}{drift?.unread ? `; ${watches(drift.unread)} newer than the last read wait for the next one` : ""}. Reading never changes {name}; sending dates each watch when it happened.
+        Every watch made here or imported is checked{ANIME_ONLY.has(lane.service) ? "" : `, and ${name}'s own from the last ${days} days`}{drift?.unread ? `; ${watches(drift.unread)} newer than the last read wait for the next one` : ""}. Reading never changes {name}; sending dates each watch when it happened, where that is known.
       </p>
     </div>
   );
@@ -693,6 +782,12 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
     return () => window.clearInterval(timer);
   }, [folded, waiting, refetch]);
 
+  const wasWaiting = useRef(waiting);
+  useEffect(() => {
+    if (wasWaiting.current && !waiting && !folded) void refetchDrift();
+    wasWaiting.current = waiting;
+  }, [waiting, folded, refetchDrift]);
+
   const lanes = useMemo(() => data?.lanes ?? [], [data]);
   const [joined, setJoined] = useState<Set<string>>(() => new Set());
   const [phases, setPhases] = useState<Map<string, RowPhase>>(() => new Map());
@@ -806,6 +901,26 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
     }
   };
 
+  const settleImport = async (lane: JellyfinSyncLane, group: JellyfinDriftImport, action: "push" | "leave" | "restore", items: JellyfinDriftItem[] | null) => {
+    const name = nameOf(lane.service);
+    const rows = (items ?? []).map((item) => `${lane.key}|${item.id}`);
+    const plays = items ? items.reduce((sum, item) => sum + item.views.length, 0) : group.plays;
+    setBusy(items?.length === 1 ? `import:${group.origin}:${items[0].id}` : `import:${group.origin}:${action}`);
+    if (action === "push") markRows(rows, "push");
+    try {
+      const { count } = await actions.drift(userUUID, lane.key, action, items ? items.map((item) => item.id) : null, group.origin);
+      if (action === "push") toast[count ? "success" : "info"](count ? `Sending ${watches(count)} from your ${group.name} to ${name}` : `${name} already has ${plays === 1 ? "it" : "them"}`);
+      else if (action === "leave") toast.success(`Left ${watches(count)} from your ${group.name} out of ${name}`, { action: { label: "Undo", onClick: () => void settleImport(lane, group, "restore", null) }, duration: 8000 });
+      else toast.success(`Your ${group.name} shows on ${name} again`);
+    } catch (error) {
+      markRows(rows, null);
+      toast.error(error instanceof Error ? error.message : `Could not settle the import with ${name}`);
+    } finally {
+      setBusy(null);
+      refresh();
+    }
+  };
+
   const sameViewing = async (lane: JellyfinSyncLane, item: JellyfinDriftItem) => {
     const name = nameOf(lane.service);
     const views = item.views.filter((v): v is typeof v & { video: string; theirs: number } => Boolean(v.video && v.theirs));
@@ -856,7 +971,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
   }
 
   // Rewatches count here as on each lane, unless the account would not keep them.
-  const apart = [...drifts.values()].reduce((sum, d) => sum + watchesIn(d.behind) + watchesIn(d.ahead) + (d.rewatchNote ? 0 : watchesIn(d.rewatched)), 0);
+  const apart = [...drifts.values()].reduce((sum, d) => sum + watchesIn(d.behind) + importedIn(d.imported) + watchesIn(d.ahead) + (d.rewatchNote ? 0 : watchesIn(d.rewatched)), 0);
   const uncompared = lanes.filter((lane) => drifts.get(lane.key)?.error);
   const unreadable = lanes.filter((lane) => lane.readError);
   const pending = lanes.reduce((sum, lane) => sum + lane.pending, 0);
@@ -889,6 +1004,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
       onRun={(full) => void runLane(lane, full)}
       onOutbox={outbox}
       onDrift={(action, items) => void settle(lane, action, items)}
+      onImport={(group, action, items) => settleImport(lane, group, action, items)}
       phases={phases}
       onSame={(item) => void sameViewing(lane, item)}
       onChanged={refresh}

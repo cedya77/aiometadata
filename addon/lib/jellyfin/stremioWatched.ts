@@ -44,6 +44,10 @@ export function anchorWatched(field: WatchedField): boolean {
   return bitAt(field.bits, field.anchorLength - 1);
 }
 
+export function unanchored(field: WatchedField): boolean {
+  return field.anchorLength === 1 && !bitAt(field.bits, 0);
+}
+
 export function decodeWatched(field: WatchedField, ids: string[]): string[] | null {
   const at = ids.indexOf(field.anchor);
   if (at < 0) return null;

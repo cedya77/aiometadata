@@ -8681,13 +8681,14 @@ addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift", requireDashboardAdmin,
 addon.post("/api/dashboard/jellyfin/:userUUID/sync/drift", requireDashboardAdmin, async (req, res) => {
   try {
     const key = typeof req.body?.key === 'string' ? req.body.key : '';
-    const action = req.body?.action === 'push' || req.body?.action === 'pull' ? req.body.action : null;
+    const action = ['push', 'pull', 'leave', 'restore'].includes(req.body?.action) ? req.body.action : null;
     const items = Array.isArray(req.body?.items) ? req.body.items.filter((item) => typeof item === 'string').slice(0, 500) : null;
-    if (!key || !action) {
-      res.status(400).json({ error: 'Name the tracker account and push or pull' });
+    const origin = typeof req.body?.origin === 'string' && req.body.origin.length <= 32 ? req.body.origin : null;
+    if (!key || !action || ((action === 'leave' || action === 'restore') && !origin)) {
+      res.status(400).json({ error: 'Name the tracker account, the action and, to leave out or show again, the import' });
       return;
     }
-    const count = await require('./lib/jellyfin/dashboard').dashboardDriftAction(String(req.params.userUUID), key, action, items);
+    const count = await require('./lib/jellyfin/dashboard').dashboardDriftAction(String(req.params.userUUID), key, action, items, origin);
     if (count === null) {
       res.status(404).json({ error: 'No such tracker account on this configuration' });
       return;
@@ -8696,6 +8697,23 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/drift", requireDashboardAdmin
   } catch (error: any) {
     consola.error('[Dashboard API] Error:', error);
     res.status(502).json({ error: `The tracker could not be read first: ${String(error?.trackerSaid ?? error?.message ?? 'no answer').slice(0, 200)}` });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift/imported", requireDashboardAdmin, async (req, res) => {
+  try {
+    const key = typeof req.query.key === 'string' ? req.query.key : '';
+    const origin = typeof req.query.origin === 'string' ? req.query.origin.slice(0, 32) : '';
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const items = key && origin ? await require('./lib/jellyfin/dashboard').dashboardDriftImported(String(req.params.userUUID), key, origin, profile) : null;
+    if (!items) {
+      res.status(404).json({ error: 'No such tracker account on this configuration' });
+      return;
+    }
+    res.json({ items });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to list the imported watches' });
   }
 });
 
