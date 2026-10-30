@@ -2681,11 +2681,20 @@ class Database {
     await this.runQuery(query, [seriesId, season, episode, kind, Math.round(startMs), points, Date.now()]);
   }
 
-  async listFingerprints(seriesId: string, season: number, kind: string): Promise<any[]> {
+  async listFingerprints(seriesId: string, season: number, kind: string, episode: number, limit: number): Promise<any[]> {
     const query = this.type === 'sqlite'
-      ? 'SELECT episode, start_ms, points FROM jellyfin_fingerprints WHERE series_id = ? AND season = ? AND kind = ?'
-      : 'SELECT episode, start_ms, points FROM jellyfin_fingerprints WHERE series_id = $1 AND season = $2 AND kind = $3';
-    return this.allQuery(query, [seriesId, season, kind]);
+      ? 'SELECT episode, start_ms, points FROM jellyfin_fingerprints WHERE series_id = ? AND season = ? AND kind = ? AND episode <> ? ORDER BY ABS(episode - ?), episode LIMIT ?'
+      : 'SELECT episode, start_ms, points FROM jellyfin_fingerprints WHERE series_id = $1 AND season = $2 AND kind = $3 AND episode <> $4 ORDER BY ABS(episode - $5), episode LIMIT $6';
+    return this.allQuery(query, [seriesId, season, kind, episode, episode, limit]);
+  }
+
+  async fingerprintHeld(seriesId: string, season: number, episode: number, kind: string): Promise<{ held: boolean; count: number }> {
+    const sqlite = this.type === 'sqlite';
+    const row: any = await this.getQuery(
+      `SELECT COUNT(*) AS count, SUM(CASE WHEN episode = ${sqlite ? '?' : '$4'} THEN 1 ELSE 0 END) AS held FROM jellyfin_fingerprints WHERE series_id = ${sqlite ? '?' : '$1'} AND season = ${sqlite ? '?' : '$2'} AND kind = ${sqlite ? '?' : '$3'}`,
+      sqlite ? [episode, seriesId, season, kind] : [seriesId, season, kind, episode]
+    );
+    return { held: Number(row?.held) > 0, count: Number(row?.count) || 0 };
   }
 
   async pruneFingerprints(before: number): Promise<void> {

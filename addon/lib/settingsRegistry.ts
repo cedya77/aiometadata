@@ -1910,6 +1910,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_FINGERPRINT_SEASON_MAX',
+    envVar: 'JELLYFIN_FINGERPRINT_SEASON_MAX',
+    label: 'Jellyfin Audio Fingerprints per Season',
+    description: 'The fingerprints are shared by every user, so a season stops taking fingerprints for new episodes once it holds this many. Episodes already held can still be updated.',
+    category: 'Features',
+    type: 'number',
+    default: 3000,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_DASHBOARD_LIVE_SECONDS',
     envVar: 'JELLYFIN_DASHBOARD_LIVE_SECONDS',
     label: 'Jellyfin Dashboard Live Window (seconds)',
