@@ -785,7 +785,8 @@ export async function dashboardDriftAction(userUUID: string, key: string, action
   if (action === 'push') await require('./trackerMirror').syncMirror(source.service, source.credential, source.scoped);
   const drift = await driftOf(userUUID, key, source);
   const wanted = (v: any) => !items || items.includes(`${v.profile}|${v.metaId}`);
-  const brought = origin ? drift.imported.filter((v: any) => v.origin === origin) : items ? drift.imported : [];
+  // Imported plays go out only from their own group, where the user chose to send them.
+  const brought = origin ? drift.imported.filter((v: any) => v.origin === origin) : [];
   if (action === 'leave') {
     const leaving = origin ? brought.filter(wanted) : [];
     if (leaving.length) await database.leaveOut(userUUID, key, origin, leaving.flatMap((v: any) => v.ids.map((videoId: string) => ({ profile: v.profile, videoId }))));
