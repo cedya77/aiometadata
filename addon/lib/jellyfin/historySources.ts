@@ -398,11 +398,14 @@ function historyBody(
   }
   const playstate: any[] = [];
   const watches: any[] = [];
-  for (const [title, { spellings, dated, undated, marked, played, asOf, resume }] of titles) {
+  for (const [title, { spellings, dated, undated, marked, played, asOf, resume: paused }] of titles) {
     const viewings: number[] = [];
     for (const at of dated.sort((a, b) => a - b)) if (!viewings.length || at - viewings[viewings.length - 1] > sameViewingMs) viewings.push(at);
     const count = viewings.length + undated;
     const last = viewings.length ? viewings[viewings.length - 1] : null;
+    // A position paused before the title was last finished is one the viewer has gone past.
+    const finished = Math.max(last ?? 0, marked ?? 0);
+    const resume = paused && paused.at && finished > paused.at ? null : paused;
     const lastPlayed = Math.max(last ?? marked ?? 0, resume?.at ?? 0) || null;
     for (const at of viewings) for (const videoId of spellings) watches.push({ profile, videoId, title, watchedAt: isoAt(at), origin });
     for (const videoId of spellings) {
