@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useJellyfinPlays, type JellyfinTitleRef, type DashboardTab, type JellyfinPlayKind, type JellyfinPlayRow, type JellyfinProfileSummary } from "@/hooks/useDashboardQueries";
 
 export function when(value: number | null | undefined): string {
@@ -96,21 +97,47 @@ export function activityOf(profiles: JellyfinProfileSummary[]): Activity {
   const counts = Object.values(days);
   return { days, total: counts.reduce((a, n) => a + n, 0), active: counts.filter((n) => n > 0).length, streak, best };
 }
+/**
+ * A list paged by hand keeps only its newest page's query active, so an edit made elsewhere refreshes that page alone.
+ * When a page already shown comes back changed, every loaded page is read again and the list is built from them.
+ */
+export async function reloadPages<R>(queryClient: QueryClient, base: readonly unknown[], offsets: number[]): Promise<R[][] | null> {
+  await queryClient.refetchQueries({ queryKey: base, type: "inactive" });
+  const pages: R[][] = [];
+  for (const at of offsets) {
+    const page = queryClient.getQueryData<{ rows?: R[] }>([...base, at]);
+    if (!page?.rows) return null;
+    pages.push(page.rows);
+  }
+  return pages;
+}
+
 export function usePagedPlays(userUUID: string, profile: string | null, kind: JellyfinPlayKind, base: JellyfinPlayRow[], total: number, activeTab: DashboardTab) {
   const [offset, setOffset] = useState(0);
   const [pages, setPages] = useState<Array<{ offset: number; rows: JellyfinPlayRow[] }>>([]);
   const [done, setDone] = useState(false);
   const { data, isFetching, isError, refetch } = useJellyfinPlays(userUUID, profile, kind, offset, { activeTab });
+  const queryClient = useQueryClient();
+  const loaded = useRef<number[]>([]);
   useEffect(() => {
     setOffset(0);
     setPages([]);
     setDone(false);
+    loaded.current = [];
   }, [profile]);
   useEffect(() => {
     if (!data || data.offset !== offset || offset === 0 || data.profile !== profile) return;
-    setPages((held) => (held.some((p) => p.offset === data.offset) ? held : [...held, { offset: data.offset, rows: data.rows }]));
     if (data.done) setDone(true);
-  }, [data, offset, profile]);
+    if (!loaded.current.includes(data.offset)) {
+      loaded.current = [...loaded.current, data.offset];
+      setPages((held) => [...held, { offset: data.offset, rows: data.rows }]);
+      return;
+    }
+    const offsets = [...loaded.current];
+    void reloadPages<JellyfinPlayRow>(queryClient, ["dashboard", "jellyfin", "plays", userUUID, profile, kind], offsets).then((reread) => {
+      if (reread) setPages(offsets.map((at, i) => ({ offset: at, rows: reread[i] })));
+    });
+  }, [data, offset, profile, userUUID, kind, queryClient]);
   const rows = useMemo(() => {
     const seen = new Set<string>();
     const out: JellyfinPlayRow[] = [];

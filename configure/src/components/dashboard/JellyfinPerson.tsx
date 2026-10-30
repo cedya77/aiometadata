@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "reac
 import { createPortal } from "react-dom";
 import { ArrowDownWideNarrow, ArrowLeft, ArrowUpNarrowWide, Check, ChevronLeft, ChevronRight, ImageOff, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useQueryClient } from "@tanstack/react-query";
 import { nameDashboardPage } from "@/lib/dashboardRoute";
 import {
   useJellyfinPerson,
@@ -14,6 +15,7 @@ import {
   type JellyfinTitlePerson,
   type JellyfinTitleRef,
 } from "@/hooks/useDashboardQueries";
+import { reloadPages } from "./jellyfinUtils";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 const SECTION_TITLE = "text-xl font-bold sm:text-3xl";
@@ -179,9 +181,21 @@ function Timeline({ userUUID, profile, personId, kind, role, order, jump, active
   const loading = page.isLoading || (page.isFetching && page.data?.offset !== offset);
   const more = total !== null && rows.length < total && (page.data?.rows.length ?? 0) > 0;
 
+  const queryClient = useQueryClient();
+  const loaded = useRef<number[]>([]);
   useEffect(() => {
     const data = page.data;
     if (!data || data.offset !== offset) return;
+    if (offset !== 0 && loaded.current.includes(offset)) {
+      const offsets = [...loaded.current];
+      void reloadPages<JellyfinPersonTitle>(queryClient, ["dashboard", "jellyfin", "person-titles", userUUID, profile, personId, kind, role, order], offsets).then((pages) => {
+        if (!pages) return;
+        const seen = new Set<string>();
+        setRows(pages.flat().filter((row) => !seen.has(row.id) && Boolean(seen.add(row.id))));
+      });
+      return;
+    }
+    if (!loaded.current.includes(offset)) loaded.current = [...loaded.current, offset];
     setRows((held) => {
       const kept = held.slice(0, offset);
       const seen = new Set(kept.map((row) => row.id));

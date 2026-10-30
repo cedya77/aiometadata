@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { ArrowRight, Bookmark, Film, LayoutGrid, Layers, Loader2, Star, ThumbsDown, Tv, Undo2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { sizedArt } from "./art";
-import { useOpenTitle } from "./jellyfinUtils";
+import { reloadPages, useOpenTitle } from "./jellyfinUtils";
 import { Ambient } from "./JellyfinShared";
 import { JELLYFIN_LIBRARY_PAGE, useJellyfinLibrary, useJellyfinUndrop, type DashboardTab, type JellyfinLibraryKind, type JellyfinLibraryRow, type JellyfinLibraryTab } from "@/hooks/useDashboardQueries";
 
@@ -317,14 +317,24 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
   const wallSentinel = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
 
+  const loaded = useRef<number[]>([]);
   useEffect(() => {
     setOffset(0);
     setRows([]);
     setIndex(0);
+    loaded.current = [];
   }, [tab, kind]);
   useEffect(() => {
     if (!current || !data) return;
-    setRows((held) => (data.offset === 0 ? data.rows : held.length > data.offset ? held : [...held, ...data.rows]));
+    if (data.offset === 0 || !loaded.current.includes(data.offset)) {
+      loaded.current = data.offset === 0 ? [0] : [...loaded.current, data.offset];
+      setRows((held) => (data.offset === 0 ? data.rows : [...held.slice(0, data.offset), ...data.rows]));
+      return;
+    }
+    const offsets = [...loaded.current];
+    void reloadPages<JellyfinLibraryRow>(queryClient, ["dashboard", "jellyfin", "library", userUUID, profile, tab, kind], offsets).then((pages) => {
+      if (pages) setRows(pages.flat());
+    });
   }, [current, data]);
 
   const total = current ? data!.total : rows.length;
