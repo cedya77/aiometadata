@@ -56,6 +56,7 @@ interface Index {
 }
 
 const indexes = new LRUCache<string, Index>({ max: 500, ttl: 10 * 60 * 1000 });
+const epochs = new Map<string, number>();
 
 function theirBases(target: MatchTarget): string[] {
   const out: string[] = [];
@@ -86,6 +87,7 @@ async function indexFor(userUUID: string, service: string): Promise<Index> {
   const key = `${userUUID}|${service}`;
   const held = indexes.get(key);
   if (held) return held;
+  const epoch = epochs.get(key) ?? 0;
   const index: Index = { byBase: new Map(), byTheirs: new Map() };
   const groups = new Map<string, TrackerMatch>();
   for (const row of await database.listTrackerMatches(userUUID, service).catch(() => [])) {
@@ -102,8 +104,16 @@ async function indexFor(userUUID: string, service: string): Promise<Index> {
     }
     index.byBase.set(String(row.base), match);
   }
-  indexes.set(key, index);
+  // A build that read the rows before a change is not kept.
+  if ((epochs.get(key) ?? 0) === epoch) indexes.set(key, index);
   return index;
+}
+
+/** Matches written outside saveMatch and removeMatch are read again. */
+export function forgetMatches(userUUID: string, service: string): void {
+  const key = `${userUUID}|${service}`;
+  epochs.set(key, (epochs.get(key) ?? 0) + 1);
+  indexes.delete(key);
 }
 
 export async function listMatches(userUUID: string, service: string): Promise<TrackerMatch[]> {
@@ -122,13 +132,13 @@ export async function saveMatch(userUUID: string, service: string, match: Omit<T
   const replaced = new Set<string>(((await database.listTrackerMatches(userUUID, service)) as any[]).filter((row) => bases.includes(String(row.base))).map((row) => String(row.match_group)));
   for (const group of replaced) await database.deleteTrackerMatch(userUUID, service, group);
   await database.saveTrackerMatch(userUUID, service, saved.group, bases, JSON.stringify(saved));
-  indexes.delete(`${userUUID}|${service}`);
+  forgetMatches(userUUID, service);
   return saved;
 }
 
 export async function removeMatch(userUUID: string, service: string, group: string): Promise<void> {
   await database.deleteTrackerMatch(userUUID, service, group);
-  indexes.delete(`${userUUID}|${service}`);
+  forgetMatches(userUUID, service);
 }
 
 interface EpisodeLookup {

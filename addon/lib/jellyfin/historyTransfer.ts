@@ -447,6 +447,7 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     queue('matches', async () => {
       if (await database.trackerMatchHeld(userUUID, service, group, bases)) return;
       await database.saveTrackerMatch(userUUID, service, group, bases, data);
+      require('./trackerMatch').forgetMatches(userUUID, service);
     });
   }
 
