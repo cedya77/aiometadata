@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type Query } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Bookmark, BookmarkCheck, CalendarPlus, Cast, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Clock, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, PencilLine, Play, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,6 +22,10 @@ const SECTION_TITLE = "text-xl font-bold sm:text-3xl";
 const sizedStill = (src: string | null, width: number) => (src ? `${src}&maxWidth=${width}&quality=85` : null);
 
 const longDate = (at: number) => new Date(at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+
+// After an edit every dashboard view reads again, but the title page that made it, which has just read itself.
+const changedBy = (q: Query, since: number) =>
+  q.queryKey[0] === "dashboard" && q.queryKey[1] === "jellyfin" && !(q.queryKey[2] === "title" && q.state.dataUpdatedAt >= since);
 
 function seasonLabel(season: number | null): string {
   if (season === null) return "Episodes";
@@ -479,13 +483,14 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, initial
   const isSeries = title?.type === "series";
 
   const run = async (action: JellyfinTitleAction, ids: string[], label: string, optimistic?: boolean, value: number | null = null, shownIds: string[] = ids) => {
+    const since = Date.now();
     setBusy(ids.length === 1 ? ids[0] + action : action);
     if (optimistic !== undefined) setPending((held) => ({ ...held, ...Object.fromEntries(shownIds.map((id) => [id, optimistic])) }));
     try {
       await act(userUUID, profile, action, ids, value);
       await refetch();
       setPending({});
-      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "dashboard" && q.queryKey[1] === "jellyfin" && q.queryKey[2] !== "title" });
+      void queryClient.invalidateQueries({ predicate: (q) => changedBy(q, since) });
       toast.success(label);
     } catch (error) {
       setPending({});
@@ -518,12 +523,13 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, initial
     });
   };
   const redate = async (itemId: string, from: number | null, to: number): Promise<boolean> => {
+    const since = Date.now();
     try {
       const before = document.querySelector(`[data-play="${CSS.escape(`${itemId}|${from ?? "undated"}`)}"]`)?.getBoundingClientRect() ?? null;
       await moveDate(userUUID, profile, itemId, from, to);
       await refetch();
       setGlide({ key: `${itemId}|${to}`, from: before });
-      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "dashboard" && q.queryKey[1] === "jellyfin" && q.queryKey[2] !== "title" });
+      void queryClient.invalidateQueries({ predicate: (q) => changedBy(q, since) });
       toast.success(`Watched ${longDate(to)}`);
       return true;
     } catch (error) {

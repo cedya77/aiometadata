@@ -134,7 +134,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
       else await titleAction(userUUID, row.profileKey || null, action, [row.itemId]);
       if (action !== "drop") setRemoved((prev) => new Set(prev).add(`${row.profileKey}|${row.videoId}`));
       toast.success(action === "played" ? `Marked ${row.title} watched` : action === "unplayed" ? `Marked ${row.title} unwatched` : action === "clear" ? `Cleared the resume position of ${row.title}` : `Dropped ${row.title}`);
-      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "dashboard" && q.queryKey[1] === "jellyfin" && q.queryKey[2] !== "title" });
+      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "dashboard" && q.queryKey[1] === "jellyfin" });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save the change");
     }
