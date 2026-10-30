@@ -260,7 +260,7 @@ export const listHistorySource: HistorySource = {
     };
 
     const of = (...wanted: Kind[]) => usable.filter(({ kind }) => wanted.includes(kind)).map(({ row }) => row);
-    const body = await historyFromSections('list', profileNameOf(upload.fileName), listHistorySource.sameViewingMs(), find, [
+    const body = await historyFromSections('list', profileNameOf(upload.fileName), 0, find, [
       { into: 'viewings', rows: of('movie', 'episode'), keep: present('watched_at'), at: (row) => atOf(row, 'watched_at') },
       { into: 'ratings', rows: of('movie', 'show', 'season', 'episode'), at: (row) => atOf(row, 'rated_at'), rating: ratingValue },
       { into: 'watchlist', rows: of('movie', 'show'), keep: present('watchlisted_at'), at: (row) => atOf(row, 'watchlisted_at') },

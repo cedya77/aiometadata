@@ -81,7 +81,7 @@ export const letterboxdHistorySource: HistorySource = {
     };
 
     const film = async (row: Record<string, string>) => ({ spellings: await spellingsOf(row), kind: 'movie' as const });
-    const body = await historyFromSections('letterboxd', username ? `Letterboxd: ${username}` : 'Letterboxd', letterboxdHistorySource.sameViewingMs(), film, [
+    const body = await historyFromSections('letterboxd', username ? `Letterboxd: ${username}` : 'Letterboxd', 0, film, [
       { into: 'viewings', rows: diary, at: (row) => dayAt(row['Watched Date']) ?? dayAt(row.Date) },
       { into: 'marked', rows: watched, at: (row) => dayAt(row.Date) },
       { into: 'ratings', rows: rated, at: (row) => dayAt(row.Date), rating: stars },

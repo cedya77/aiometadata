@@ -1975,14 +1975,14 @@ class Database {
     return row ?? null;
   }
 
-  async hasWatchNear(userUUID: string, profile: string, videoId: string, at: number, withinMs: number): Promise<boolean> {
+  async hasWatchNear(userUUID: string, profile: string, videoId: string, at: number, withinMs: number, except: number[] = []): Promise<boolean> {
     const sqlite = this.type === 'sqlite';
     const rows = await this.allPrimaryQuery(
-      `SELECT 1 AS held FROM jellyfin_watches WHERE user_uuid = ${sqlite ? '?' : '$1'} AND profile = ${sqlite ? '?' : '$2'} AND video_id = ${sqlite ? '?' : '$3'}
-       AND watched_at >= ${sqlite ? '?' : '$4'} AND watched_at <= ${sqlite ? '?' : '$5'} LIMIT 1`,
+      `SELECT watched_at FROM jellyfin_watches WHERE user_uuid = ${sqlite ? '?' : '$1'} AND profile = ${sqlite ? '?' : '$2'} AND video_id = ${sqlite ? '?' : '$3'}
+       AND watched_at >= ${sqlite ? '?' : '$4'} AND watched_at <= ${sqlite ? '?' : '$5'}`,
       [userUUID, profile, videoId, Math.round(at - withinMs), Math.round(at + withinMs)]
     );
-    return rows.length > 0;
+    return rows.some((row: any) => !except.includes(Number(row.watched_at)));
   }
 
   async currentMark(table: 'jellyfin_ratings' | 'jellyfin_watchlist' | 'jellyfin_dropped', userUUID: string, profile: string, metaId: string): Promise<any | null> {

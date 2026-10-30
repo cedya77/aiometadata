@@ -345,6 +345,9 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     if (!moment.videoIds.includes(row.videoId)) moment.videoIds.push(row.videoId);
     moments.set(key, moment);
   }
+  // A file's viewings are matched against the history held before it, not against one another: the source already
+  // decided which of its rows are separate viewings.
+  const added = new Map<string, number[]>();
   for (const { profile, watchedAt, origin, videoIds } of moments.values()) {
     const near = videoIds.some((videoId) => (viewings.get(keyOf(profile, videoId)) ?? []).some((at) => Math.abs(at - watchedAt) <= sameWatchMs));
     if (near) {
@@ -353,11 +356,11 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     }
     for (const videoId of videoIds) {
       const key = keyOf(profile, videoId);
-      viewings.set(key, [...(viewings.get(key) ?? []), watchedAt]);
+      added.set(key, [...(added.get(key) ?? []), watchedAt]);
     }
     counts.watches.added += 1;
     queue('watches', async () => {
-      for (const videoId of videoIds) if (await database.hasWatchNear(userUUID, profile, videoId, watchedAt, sameWatchMs)) return;
+      for (const videoId of videoIds) if (await database.hasWatchNear(userUUID, profile, videoId, watchedAt, sameWatchMs, added.get(keyOf(profile, videoId)))) return;
       for (const videoId of videoIds) await database.insertWatch(userUUID, profile, videoId, watchedAt, origin);
     });
   }
