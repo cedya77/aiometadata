@@ -132,7 +132,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
     if ([...removed].some((key) => !listed.has(key))) setRemoved((held) => new Set([...held].filter((key) => listed.has(key))));
   }, [pagedProgress.rows, removed]);
   const titleAction = useJellyfinTitleAction();
-  const [remote, setRemote] = useState<{ target: RemoteTarget; at: { x: number; y: number } } | null>(null);
+  const [remote, setRemote] = useState<{ target: RemoteTarget; at: { x: number; y: number }; profile: string | null; profileName: string } | null>(null);
   const closeRemote = useCallback(() => setRemote(null), []);
   const progressAction = useCallback(async (row: JellyfinPlayRow, action: ProgressAction) => {
     try {
@@ -145,8 +145,11 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
       toast.error(error instanceof Error ? error.message : "Could not save the change");
     }
   }, [clearResume, titleAction, userUUID, queryClient]);
+  // In the All view a row is another profile's, whose devices are the ones to play it on.
   const playOn = useCallback((row: JellyfinPlayRow, at: { x: number; y: number }) => setRemote({
     at,
+    profile: row.profileKey || null,
+    profileName: row.profile,
     target: {
       itemId: row.itemId,
       itemType: row.seriesId ? "Episode" : "Movie",
@@ -211,7 +214,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   return (
     <OpenTitleContext.Provider value={openTitle}>
     <div className="border-t border-white/[0.06]">
-      {remote && <RemoteSheet userUUID={userUUID} profile={profile} profileName={profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
+      {remote && <RemoteSheet userUUID={userUUID} profile={remote.profile} profileName={remote.profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
       {route.stack.length > 0 && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} trackers={trackers} stack={route.stack} activeTab={activeTab} onOpen={openStack} />}
       <Hero data={data} profile={profile} onProfile={setProfile} activity={activity} controls={controls} switching={switching} />
       <JellyfinImport userUUID={userUUID} notice />
