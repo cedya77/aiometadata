@@ -316,7 +316,8 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-const longDate = (value: string) => new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+// A birth or death date is a bare day, sent as midnight UTC, so it is read in UTC or it falls a day early west of it.
+const longDate = (value: string) => new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
 
 export default function JellyfinPersonView({ userUUID, profile, profileName, person: cast, activeTab, shown, onBack, onCloseAll, onOpenTitle }: {
   userUUID: string;
