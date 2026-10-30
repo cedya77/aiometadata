@@ -133,6 +133,11 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   const titleAction = useJellyfinTitleAction();
   const [remote, setRemote] = useState<{ target: RemoteTarget; at: { x: number; y: number }; profile: string | null; profileName: string } | null>(null);
   const closeRemote = useCallback(() => setRemote(null), []);
+  // A profile deleted since it was picked, here or remembered from before, goes back to everyone.
+  useEffect(() => {
+    if (profile === null || !data?.viewers || data.userUUID !== userUUID || data.profile !== profile) return;
+    if (!data.viewers.some((p) => p.key === profile)) setProfile(null);
+  }, [data, profile, userUUID]);
   const progressAction = useCallback(async (row: JellyfinPlayRow, action: ProgressAction) => {
     try {
       if (action === "clear") await clearResume(userUUID, row.profileKey, row.videoId);
