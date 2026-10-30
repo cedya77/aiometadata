@@ -10,7 +10,6 @@ const database: any = require('../database');
 const idMappings: any = require('../id-mappings');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const ANIME_SCHEMES = new Set<string>(['kitsu', 'mal', 'anilist', 'anidb']);
 const OWN_ORIGINS = new Set(['server', 'play']);
 const WATCH_OPS = new Set(['scrobble', 'credit', 'catchUp', 'catchUps', 'anime', 'episodes']);
 const batched = (service: string) => Boolean(trackerOf(service)?.writeWatches);
@@ -127,11 +126,10 @@ function titlesOf(id: string): string[] {
   }
 }
 
-// An import writes every spelling of a title at one moment, but a date-only list puts every title of that day there
-// too, so the moment joins spellings only when no two of them can name different titles.
+// An import writes every spelling of a title at one moment, but so does a list for every title of that day, and two
+// titles each known by one id look the same as one known by two; spellings join only by alias or the mapping tables.
 async function groupImported<T extends { video_id: any; last_played_at: number }>(rows: T[]): Promise<T[][]> {
   const groups = await groupBySpelling(rows.map((row) => ({ ...row, origin: null })));
-  const dated = rows.some((row) => row.last_played_at > 0);
   // What each id names, by itself and by its aliases, each at its own coordinate.
   const named = new Map<string, Array<{ coordinate: string; title: string }>>();
   for (const id of new Set(rows.map((row) => String(row.video_id)))) {
@@ -153,21 +151,7 @@ async function groupImported<T extends { video_id: any; last_played_at: number }
   });
   const joined = new Map<number, T[]>();
   groups.forEach((group, i) => joined.set(find(i), [...(joined.get(find(i)) ?? []), ...group]));
-  const byCoordinate = new Map<string, T[][]>();
-  for (const group of joined.values()) {
-    const coordinate = coordinateOf(String(group[0].video_id));
-    byCoordinate.set(coordinate, [...(byCoordinate.get(coordinate) ?? []), group]);
-  }
-  const out: T[][] = [];
-  for (const list of byCoordinate.values()) {
-    const schemes = list.map((group) => new Set(group.flatMap((row) => (named.get(String(row.video_id)) ?? []).map(({ title }) => parseStremioId(title)?.idType ?? title))));
-    const apart = schemes.every((set, i) => schemes.every((other, j) => j <= i || [...set].every((scheme) => !other.has(scheme))));
-    // An anime spelling comes with its aliases, so the moment is only needed to join a regular title's IMDb and TMDB ids.
-    const regular = schemes.every((set) => [...set].every((scheme) => !ANIME_SCHEMES.has(scheme)));
-    if (dated && list.length > 1 && apart && regular) out.push(list.flat());
-    else out.push(...list);
-  }
-  return out;
+  return [...joined.values()];
 }
 
 async function importedViewings(userUUID: string, profiles: Set<string>, origins: string[]): Promise<Viewing[]> {
