@@ -772,12 +772,12 @@ function keepsRewatches(source: SyncSource): Promise<boolean> {
   return require('./trackerDrift').keepsRewatches(source);
 }
 
-export async function dashboardDriftAction(userUUID: string, key: string, action: 'push' | 'pull' | 'leave' | 'restore', items: string[] | null, origin: string | null = null): Promise<number | null> {
+export async function dashboardDriftAction(userUUID: string, key: string, action: 'push' | 'pull' | 'leave' | 'restore', items: string[] | null, origin: string | null = null, viewer: string | null = null): Promise<number | null> {
   const config = await database.getUserConfig(userUUID).catch(() => null);
-  const source = config ? syncSources(config, userUUID).get(key) : null;
+  const source = config ? syncSources(config, userUUID, historyKeyOf(config, userUUID, viewer)).get(key) : null;
   if (!source) return null;
   if (action === 'restore') {
-    const restored = origin ? await database.restoreLeftOut(userUUID, key, origin) : 0;
+    const restored = origin ? await database.restoreLeftOut(userUUID, key, origin, [...source.keys]) : 0;
     forgetDrift(userUUID);
     return restored;
   }
@@ -788,7 +788,7 @@ export async function dashboardDriftAction(userUUID: string, key: string, action
   const brought = origin ? drift.imported.filter((v: any) => v.origin === origin) : items ? drift.imported : [];
   if (action === 'leave') {
     const leaving = origin ? brought.filter(wanted) : [];
-    if (leaving.length) await database.leaveOut(userUUID, key, origin, leaving.flatMap((v: any) => v.ids));
+    if (leaving.length) await database.leaveOut(userUUID, key, origin, leaving.flatMap((v: any) => v.ids.map((videoId: string) => ({ profile: v.profile, videoId }))));
     forgetDrift(userUUID);
     return leaving.length;
   }

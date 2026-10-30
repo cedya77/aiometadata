@@ -5,6 +5,7 @@ import { scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
 
 const database: any = require('../database');
+const idMappings: any = require('../id-mappings');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ANIME_LISTS = new Set<string>(['anilist', 'mal']);
@@ -89,6 +90,64 @@ async function ownViewings(userUUID: string, profiles: Set<string>): Promise<Vie
   return out;
 }
 
+const coordinateOf = (id: string): string => {
+  const parsed = parseStremioId(id);
+  return parsed && parsed.episode !== null && parsed.episode !== undefined ? `${parsed.season ?? ''}:${parsed.episode}` : 'title';
+};
+
+// The title an id names, by its own base and the ids the mapping tables give it: a film's IMDb and TMDB ids share no alias.
+function titlesOf(id: string): string[] {
+  const parsed = parseStremioId(id);
+  if (!parsed) return [id];
+  const type = parsed.episode === null || parsed.episode === undefined ? 'movie' : 'series';
+  const number = parsed.base.split(':')[1];
+  try {
+    const found = parsed.idType === 'imdb' ? idMappings.getByImdbId(parsed.base, type)
+      : parsed.idType === 'tmdb' ? idMappings.getByTmdbId(number, type)
+      : parsed.idType === 'tvdb' ? idMappings.getByTvdbId(number, type)
+      : null;
+    return [...new Set([parsed.base, found?.imdbId, found?.tmdbId && `tmdb:${found.tmdbId}`, found?.tvdbId && `tvdb:${found.tvdbId}`].filter(Boolean) as string[])];
+  } catch {
+    return [parsed.base];
+  }
+}
+
+// An import writes every spelling of a title at one moment, but a date-only list puts every title of that day there
+// too, so the moment joins spellings only when no two of them can name different titles.
+async function groupImported<T extends { video_id: any; last_played_at: number }>(rows: T[]): Promise<T[][]> {
+  const groups = await groupBySpelling(rows.map((row) => ({ ...row, origin: null })));
+  const dated = rows.some((row) => row.last_played_at > 0);
+  const parent = groups.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const claimed = new Map<string, number>();
+  groups.forEach((group, i) => {
+    for (const row of group) {
+      const id = String(row.video_id);
+      for (const title of titlesOf(id)) {
+        const key = `${coordinateOf(id)}|${title}`;
+        const first = claimed.get(key);
+        if (first === undefined) claimed.set(key, i);
+        else parent[find(i)] = find(first);
+      }
+    }
+  });
+  const joined = new Map<number, T[]>();
+  groups.forEach((group, i) => joined.set(find(i), [...(joined.get(find(i)) ?? []), ...group]));
+  const byCoordinate = new Map<string, T[][]>();
+  for (const group of joined.values()) {
+    const coordinate = coordinateOf(String(group[0].video_id));
+    byCoordinate.set(coordinate, [...(byCoordinate.get(coordinate) ?? []), group]);
+  }
+  const out: T[][] = [];
+  for (const list of byCoordinate.values()) {
+    const schemes = list.map((group) => new Set(group.flatMap((row) => titlesOf(String(row.video_id)).map((id) => parseStremioId(id)?.idType ?? id))));
+    const apart = schemes.every((set, i) => schemes.every((other, j) => j <= i || [...set].every((scheme) => !other.has(scheme))));
+    if (dated && list.length > 1 && apart) out.push(list.flat());
+    else out.push(...list);
+  }
+  return out;
+}
+
 async function importedViewings(userUUID: string, profiles: Set<string>, origins: string[]): Promise<Viewing[]> {
   if (!origins.length) return [];
   const moments = new Map<string, any[]>();
@@ -97,21 +156,23 @@ async function importedViewings(userUUID: string, profiles: Set<string>, origins
     moments.get(key)!.push(row);
   };
   for (const row of await database.listWatchesByOrigin(userUUID, origins)) {
-    if (profiles.has(row.profile)) add(`${row.profile}|${row.watched_at}|${row.origin}`, { video_id: row.video_id, last_played_at: row.watched_at, origin: 'server', profile: row.profile, from: row.origin });
+    if (profiles.has(row.profile)) add(`w|${row.profile}|${row.watched_at}|${row.origin}`, { video_id: row.video_id, last_played_at: row.watched_at, profile: row.profile, from: row.origin });
   }
   for (const row of await database.listUndatedPlaysByOrigin(userUUID, origins)) {
-    if (profiles.has(row.profile)) add(`${row.profile}|0|${row.origin}`, { video_id: row.video_id, last_played_at: 0, origin: null, profile: row.profile, from: row.origin });
+    // A mark keeps the date its source knew it was finished on; a position under way dates the resume instead.
+    const at = row.position_ms > 0 ? 0 : row.last_played_at ?? 0;
+    if (profiles.has(row.profile)) add(`m|${row.profile}|${at}|${row.origin}`, { video_id: row.video_id, last_played_at: at, profile: row.profile, from: row.origin, mark: true });
   }
-  const dated: Viewing[] = [];
-  const undated: Viewing[] = [];
+  const watched: Viewing[] = [];
+  const marked: Viewing[] = [];
   for (const moment of moments.values()) {
-    for (const group of await groupBySpelling(moment)) {
+    for (const group of await groupImported(moment)) {
       const viewing = viewingOf(group[0].profile, group[0].last_played_at, group.map((row: any) => String(row.video_id)));
-      if (viewing) (viewing.at ? dated : undated).push({ ...viewing, origin: group[0].from });
+      if (viewing) (group[0].mark ? marked : watched).push({ ...viewing, origin: group[0].from });
     }
   }
-  const seen = new Set(dated.flatMap((v) => v.ids.map((id) => `${v.profile}|${id}`)));
-  return [...dated, ...undated.filter((v) => !v.ids.some((id) => seen.has(`${v.profile}|${id}`)))];
+  const seen = new Set(watched.flatMap((v) => v.ids.map((id) => `${v.profile}|${id}`)));
+  return [...watched, ...marked.filter((v) => !v.ids.some((id) => seen.has(`${v.profile}|${id}`)))];
 }
 
 export function asListed(service: string, viewing: Viewing): Viewing {
@@ -236,11 +297,11 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   behind = await stillPlayed(behind);
 
   const origins = [...require('./historyTransfer').importedOrigins().keys()] as string[];
-  const left = new Set<string>(((await database.listLeftOut(userUUID, sourceKey).catch(() => [])) as any[]).map((row) => row.video_id));
+  const left = new Set<string>(((await database.listLeftOut(userUUID, sourceKey).catch(() => [])) as any[]).map((row) => `${row.profile}|${row.origin}|${row.video_id}`));
   const leftOut: Record<string, number> = {};
   const brought = (await importedViewings(userUUID, source.keys, origins)).map((v) => asListed(source.service, v)).filter((v) => {
     if (!belongsOn(source.service, v, source.scoped)) return false;
-    if (!v.ids.some((id) => left.has(id))) return true;
+    if (!v.ids.some((id) => left.has(`${v.profile}|${v.origin}|${id}`))) return true;
     leftOut[v.origin!] = (leftOut[v.origin!] ?? 0) + 1;
     return false;
   });

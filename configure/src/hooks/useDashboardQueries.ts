@@ -2259,7 +2259,7 @@ function syncActions(getHeaders: () => Record<string, string>) {
   return {
     run: (userUUID: string, key: string, full = false) => post<{ ms: number; changed: boolean }>(userUUID, 'run', { key, full }),
     outbox: (userUUID: string, action: 'retry' | 'drop', ids: number[]) => post<{ count: number }>(userUUID, 'outbox', { action, ids }),
-    drift: (userUUID: string, key: string, action: 'push' | 'pull' | 'leave' | 'restore', items: string[] | null, origin: string | null = null) => post<{ count: number }>(userUUID, 'drift', { key, action, items, ...(origin ? { origin } : {}) }),
+    drift: (userUUID: string, key: string, action: 'push' | 'pull' | 'leave' | 'restore', items: string[] | null, origin: string | null = null, profile: string | null = null) => post<{ count: number }>(userUUID, 'drift', { key, action, items, ...(origin ? { origin } : {}), ...(profile !== null ? { profile } : {}) }),
     sameViewing: (userUUID: string, body: { profile: string; video: string; at: number; theirs: number }) => post<{ done: boolean }>(userUUID, 'same-viewing', body),
     copyPreview: (userUUID: string, body: { profile: string | null; from: string; to: string; since: number; what: JellyfinCopyWhat; retry: boolean }) => post<JellyfinCopyPreview>(userUUID, 'copy/preview', body),
     copyDescribe: (userUUID: string, videos: string[]) => post<Record<string, JellyfinCopyNamed>>(userUUID, 'copy/describe', { videos }),

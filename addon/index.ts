@@ -8684,11 +8684,12 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/drift", requireDashboardAdmin
     const action = ['push', 'pull', 'leave', 'restore'].includes(req.body?.action) ? req.body.action : null;
     const items = Array.isArray(req.body?.items) ? req.body.items.filter((item) => typeof item === 'string').slice(0, 500) : null;
     const origin = typeof req.body?.origin === 'string' && req.body.origin.length <= 32 ? req.body.origin : null;
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
     if (!key || !action || ((action === 'leave' || action === 'restore') && !origin)) {
       res.status(400).json({ error: 'Name the tracker account, the action and, to leave out or show again, the import' });
       return;
     }
-    const count = await require('./lib/jellyfin/dashboard').dashboardDriftAction(String(req.params.userUUID), key, action, items, origin);
+    const count = await require('./lib/jellyfin/dashboard').dashboardDriftAction(String(req.params.userUUID), key, action, items, origin, profile);
     if (count === null) {
       res.status(404).json({ error: 'No such tracker account on this configuration' });
       return;

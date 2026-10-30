@@ -109,7 +109,7 @@ export const traktHistorySource: HistorySource = {
     }
 
     const shows = new Map<string, number>();
-    for (const row of [...sections.history, ...sections.ratings]) {
+    for (const row of [...sections.history, ...sections.ratings, ...sections.playback]) {
       const showTvdb = row?.type === 'episode' ? positive(row.show?.ids?.tvdb) : null;
       if (showTvdb && positive(row.episode?.ids?.tvdb)) shows.set(String(showTvdb), showTvdb);
     }

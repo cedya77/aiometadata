@@ -181,6 +181,35 @@ class Database {
     await this.ensureTrackerOutboxProfile();
     await this.ensureCopyJobColumns();
     await this.ensureRatingsMetaType();
+    await this.ensureLeftOutKey();
+  }
+
+  /** A title left out is left out for one profile's import, which the first table did not key by. */
+  async ensureLeftOutKey(): Promise<void> {
+    try {
+      const columns = this.type === 'sqlite'
+        ? (await this.allQuery(`PRAGMA table_info(tracker_left_out)`)).map((c: any) => c.name)
+        : (await this.allQuery(`SELECT column_name FROM information_schema.columns WHERE table_name = 'tracker_left_out'`)).map((c: any) => c.column_name);
+      if (!columns.length || columns.includes('profile')) return;
+      const sqlite = this.type === 'sqlite';
+      await this.runQuery(`ALTER TABLE tracker_left_out RENAME TO tracker_left_out_v1`);
+      if (!sqlite) await this.runQuery(`ALTER TABLE tracker_left_out_v1 RENAME CONSTRAINT tracker_left_out_pkey TO tracker_left_out_v1_pkey`);
+      await this.runQuery(`CREATE TABLE tracker_left_out (
+        user_uuid ${sqlite ? 'TEXT' : 'VARCHAR(64)'} NOT NULL,
+        source_key ${sqlite ? 'TEXT' : 'VARCHAR(64)'} NOT NULL,
+        profile TEXT NOT NULL DEFAULT '',
+        origin ${sqlite ? 'TEXT' : 'VARCHAR(32)'} NOT NULL,
+        video_id TEXT NOT NULL,
+        left_at ${sqlite ? 'INTEGER' : 'BIGINT'} NOT NULL,
+        PRIMARY KEY (user_uuid, source_key, profile, origin, video_id)
+      )`);
+      await this.runQuery(`INSERT INTO tracker_left_out (user_uuid, source_key, profile, origin, video_id, left_at)
+        SELECT user_uuid, source_key, '', origin, video_id, left_at FROM tracker_left_out_v1`);
+      await this.runQuery(`DROP TABLE tracker_left_out_v1`);
+      logger.info('Migrated tracker_left_out: rows keyed by profile and import');
+    } catch (error: any) {
+      logger.warn(`Could not key tracker_left_out by profile: ${error.message}`);
+    }
   }
 
   /** The profile is part of the key, which neither dialect can add in place. */
@@ -610,10 +639,11 @@ class Database {
       `CREATE TABLE IF NOT EXISTS tracker_left_out (
         user_uuid TEXT NOT NULL,
         source_key TEXT NOT NULL,
-        video_id TEXT NOT NULL,
+        profile TEXT NOT NULL DEFAULT '',
         origin TEXT NOT NULL,
+        video_id TEXT NOT NULL,
         left_at INTEGER NOT NULL,
-        PRIMARY KEY (user_uuid, source_key, video_id)
+        PRIMARY KEY (user_uuid, source_key, profile, origin, video_id)
       )`,
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid TEXT UNIQUE NOT NULL,
@@ -924,10 +954,11 @@ class Database {
       `CREATE TABLE IF NOT EXISTS tracker_left_out (
         user_uuid VARCHAR(64) NOT NULL,
         source_key VARCHAR(64) NOT NULL,
-        video_id TEXT NOT NULL,
+        profile TEXT NOT NULL DEFAULT '',
         origin VARCHAR(32) NOT NULL,
+        video_id TEXT NOT NULL,
         left_at BIGINT NOT NULL,
-        PRIMARY KEY (user_uuid, source_key, video_id)
+        PRIMARY KEY (user_uuid, source_key, profile, origin, video_id)
       )`,
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid VARCHAR(255) UNIQUE NOT NULL,
@@ -1804,15 +1835,21 @@ class Database {
     return (rows || []).map((row: any) => ({ profile: String(row.profile ?? ''), video_id: String(row.video_id), watched_at: Number(row.watched_at), origin: row.origin ?? null }));
   }
 
-  async listUndatedPlaysByOrigin(userUUID: string, origins: string[]): Promise<Array<{ profile: string; video_id: string; origin: string | null }>> {
+  async listUndatedPlaysByOrigin(userUUID: string, origins: string[]): Promise<Array<{ profile: string; video_id: string; origin: string | null; last_played_at: number | null; position_ms: number }>> {
     const sqlite = this.type === 'sqlite';
     const marks = origins.map((_, i) => (sqlite ? '?' : `$${i + 2}`)).join(', ');
     const rows = await this.allQuery(
-      `SELECT p.profile, p.video_id, p.origin FROM jellyfin_playstate p WHERE p.user_uuid = ${sqlite ? '?' : '$1'} AND p.played = 1 AND p.origin IN (${marks})
+      `SELECT p.profile, p.video_id, p.origin, p.last_played_at, p.position_ms FROM jellyfin_playstate p WHERE p.user_uuid = ${sqlite ? '?' : '$1'} AND p.played = 1 AND p.origin IN (${marks})
        AND NOT EXISTS (SELECT 1 FROM jellyfin_watches w WHERE w.user_uuid = p.user_uuid AND w.profile = p.profile AND w.video_id = p.video_id)`,
       [userUUID, ...origins]
     );
-    return (rows || []).map((row: any) => ({ profile: String(row.profile ?? ''), video_id: String(row.video_id), origin: row.origin ?? null }));
+    return (rows || []).map((row: any) => ({
+      profile: String(row.profile ?? ''),
+      video_id: String(row.video_id),
+      origin: row.origin ?? null,
+      last_played_at: Number(row.last_played_at) || null,
+      position_ms: Number(row.position_ms) || 0,
+    }));
   }
 
   async listWatchesSince(userUUID: string, since: number): Promise<Array<{ profile: string; video_id: string; watched_at: number; origin: string | null }>> {
@@ -2867,33 +2904,36 @@ class Database {
     for (const base of bases) await this.runQuery(byBase, [userUUID, service, base]);
   }
 
-  async listLeftOut(userUUID: string, sourceKey: string): Promise<Array<{ video_id: string; origin: string }>> {
+  async listLeftOut(userUUID: string, sourceKey: string): Promise<Array<{ profile: string; video_id: string; origin: string }>> {
     const query = this.type === 'sqlite'
-      ? 'SELECT video_id, origin FROM tracker_left_out WHERE user_uuid = ? AND source_key = ?'
-      : 'SELECT video_id, origin FROM tracker_left_out WHERE user_uuid = $1 AND source_key = $2';
-    return ((await this.allQuery(query, [userUUID, sourceKey])) || []).map((row: any) => ({ video_id: String(row.video_id), origin: String(row.origin) }));
+      ? 'SELECT profile, video_id, origin FROM tracker_left_out WHERE user_uuid = ? AND source_key = ?'
+      : 'SELECT profile, video_id, origin FROM tracker_left_out WHERE user_uuid = $1 AND source_key = $2';
+    return ((await this.allQuery(query, [userUUID, sourceKey])) || []).map((row: any) => ({ profile: String(row.profile ?? ''), video_id: String(row.video_id), origin: String(row.origin) }));
   }
 
-  async leaveOut(userUUID: string, sourceKey: string, origin: string, videoIds: string[]): Promise<void> {
+  async leaveOut(userUUID: string, sourceKey: string, origin: string, entries: Array<{ profile: string; videoId: string }>): Promise<void> {
     const sqlite = this.type === 'sqlite';
     const now = Date.now();
-    const ids = [...new Set(videoIds)];
-    for (let i = 0; i < ids.length; i += 200) {
-      const chunk = ids.slice(i, i + 200);
-      const values = chunk.map((_, j) => (sqlite ? '(?, ?, ?, ?, ?)' : `($${j * 5 + 1}, $${j * 5 + 2}, $${j * 5 + 3}, $${j * 5 + 4}, $${j * 5 + 5})`)).join(', ');
+    const rows = [...new Map(entries.map((entry) => [`${entry.profile}|${entry.videoId}`, entry])).values()];
+    for (let i = 0; i < rows.length; i += 200) {
+      const chunk = rows.slice(i, i + 200);
+      const values = chunk.map((_, j) => (sqlite ? '(?, ?, ?, ?, ?, ?)' : `(${[1, 2, 3, 4, 5, 6].map((k) => `$${j * 6 + k}`).join(', ')})`)).join(', ');
       await this.runQuery(
-        `INSERT INTO tracker_left_out (user_uuid, source_key, video_id, origin, left_at) VALUES ${values} ON CONFLICT (user_uuid, source_key, video_id) DO NOTHING`,
-        chunk.flatMap((id) => [userUUID, sourceKey, id, origin, now])
+        `INSERT INTO tracker_left_out (user_uuid, source_key, profile, origin, video_id, left_at) VALUES ${values} ON CONFLICT (user_uuid, source_key, profile, origin, video_id) DO NOTHING`,
+        chunk.flatMap((entry) => [userUUID, sourceKey, entry.profile, origin, entry.videoId, now])
       );
     }
   }
 
-  async restoreLeftOut(userUUID: string, sourceKey: string, origin: string): Promise<number> {
-    const query = this.type === 'sqlite'
-      ? 'DELETE FROM tracker_left_out WHERE user_uuid = ? AND source_key = ? AND origin = ?'
-      : 'DELETE FROM tracker_left_out WHERE user_uuid = $1 AND source_key = $2 AND origin = $3';
-    const result = await this.runQuery(query, [userUUID, sourceKey, origin]);
-    return Number(this.type === 'sqlite' ? result?.changes : result?.rowCount) || 0;
+  async restoreLeftOut(userUUID: string, sourceKey: string, origin: string, profiles: string[]): Promise<number> {
+    if (!profiles.length) return 0;
+    const sqlite = this.type === 'sqlite';
+    const marks = profiles.map((_, i) => (sqlite ? '?' : `$${i + 4}`)).join(', ');
+    const result = await this.runQuery(
+      `DELETE FROM tracker_left_out WHERE user_uuid = ${sqlite ? '?' : '$1'} AND source_key = ${sqlite ? '?' : '$2'} AND origin = ${sqlite ? '?' : '$3'} AND profile IN (${marks})`,
+      [userUUID, sourceKey, origin, ...profiles]
+    );
+    return Number(sqlite ? result?.changes : result?.rowCount) || 0;
   }
 
   async deleteLeftOut(userUUID: string): Promise<void> {

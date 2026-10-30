@@ -889,7 +889,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
     setBusy(`${action}:${items ? items[0] : "*"}`);
     markRows(rows, action);
     try {
-      const { count } = await actions.drift(userUUID, lane.key, action, items);
+      const { count } = await actions.drift(userUUID, lane.key, action, items, null, profile);
       if (action === "push") toast[count ? "success" : "info"](count ? `Sending ${watches(watchesIn(picked))} to ${name}` : `${name} already has ${picked.length === 1 ? "it" : "them"}`);
       else toast.success(`Brought ${watches(watchesIn(picked))} in from ${name}`);
     } catch (error) {
@@ -908,7 +908,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
     setBusy(items?.length === 1 ? `import:${group.origin}:${items[0].id}` : `import:${group.origin}:${action}`);
     if (action === "push") markRows(rows, "push");
     try {
-      const { count } = await actions.drift(userUUID, lane.key, action, items ? items.map((item) => item.id) : null, group.origin);
+      const { count } = await actions.drift(userUUID, lane.key, action, items ? items.map((item) => item.id) : null, group.origin, profile);
       if (action === "push") toast[count ? "success" : "info"](count ? `Sending ${watches(count)} from your ${group.name} to ${name}` : `${name} already has ${plays === 1 ? "it" : "them"}`);
       else if (action === "leave") toast.success(`Left ${watches(count)} from your ${group.name} out of ${name}`, { action: { label: "Undo", onClick: () => void settleImport(lane, group, "restore", null) }, duration: 8000 });
       else toast.success(`Your ${group.name} shows on ${name} again`);

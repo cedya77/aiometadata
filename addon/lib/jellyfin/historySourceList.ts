@@ -21,6 +21,9 @@ import {
 } from './historySources';
 import { settleTitles, titleIdsFor, titleKey, type NamedTitle } from './historyTitles';
 
+const idMapper: any = require('../id-mapper');
+const idMappings: any = require('../id-mappings');
+
 type Kind = 'movie' | 'show' | 'season' | 'episode';
 type Row = Record<string, unknown>;
 
@@ -108,6 +111,21 @@ const pauseIn = (row: Row): Pause | null => {
 
 const idsOf = (row: Row): TitleIds => ({ imdb: imdbOf(text(row.imdb_id)), tmdb: positive(text(row.tmdb_id)), tvdb: positive(text(row.tvdb_id)) });
 
+// Seasons and episodes are numbered as on TMDB, so a show named only by IMDb or TVDB is found there first.
+function withShowTmdb(ids: TitleIds): TitleIds {
+  if (ids.tmdb) return ids;
+  const imdb = ids.imdb as string | null;
+  const tvdb = ids.tvdb as number | null;
+  const anime = (imdb && idMapper.getMappingByImdbId(imdb)) || (tvdb && idMapper.getMappingByTvdbId(tvdb)) || null;
+  let tmdb = anime?.themoviedb_type === 'tv' ? positive(anime.themoviedb_id) : null;
+  if (!tmdb) {
+    try {
+      tmdb = positive((imdb ? idMappings.getByImdbId(imdb, 'series') : tvdb ? idMappings.getByTvdbId(String(tvdb), 'series') : null)?.tmdbId);
+    } catch {}
+  }
+  return tmdb ? { ...ids, tmdb } : ids;
+}
+
 const hasIds = (row: Row, kind: Kind) => {
   const ids = idsOf(row);
   return Boolean(ids.imdb || ids.tmdb || (kind !== 'movie' && ids.tvdb));
@@ -186,7 +204,7 @@ export const listHistorySource: HistorySource = {
       return titleKey(title.name, title.year, title.kind);
     };
     const titleIdsOf = (row: Row, kind: Kind): TitleIds | null => {
-      if (hasIds(row, kind)) return idsOf(row);
+      if (hasIds(row, kind)) return kind === 'season' || kind === 'episode' ? withShowTmdb(idsOf(row)) : idsOf(row);
       const match = matched.get(keyOf(row, kind));
       return match ? { imdb: match.imdb, tmdb: match.tmdb } : null;
     };
@@ -202,7 +220,9 @@ export const listHistorySource: HistorySource = {
       const kind = kinds.get(row)!;
       const runtimeMs = pause.runtimeMs ?? runtimes.runtimeOf(askOf(row, kind));
       if (!runtimeMs) {
+        // A title that did not match is reported once, by find.
         if (titleIdsOf(row, kind)) miss(labelOf(row, kind), 'No runtime to place the paused position; add runtime_seconds');
+        else void find(row);
         return null;
       }
       const positionMs = pause.positionMs ?? Math.round((runtimeMs * pause.percent!) / 100);
