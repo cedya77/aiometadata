@@ -1728,7 +1728,7 @@ class Database {
     const sqlite = this.type === 'sqlite';
     const ids = [...new Set(videoIds)];
     const latestOf = (rows: Array<{ watched_at: number }>) => (rows.length ? Math.max(...rows.map((row) => row.watched_at)) : null);
-    const before = await this.listWatchesFor(userUUID, profile, ids);
+    const before = await this.listWatchesFor(userUUID, profile, ids, true);
     let moved = 0;
     for (const id of ids) {
       const own = before.filter((row) => row.video_id === id);
@@ -1797,7 +1797,8 @@ class Database {
     return { moved, latestBefore: latestOf(before), latestAfter: latestOf(after) };
   }
 
-  async listWatchesFor(userUUID: string, profile: string, videoIds: string[]): Promise<Array<{ video_id: string; watched_at: number; origin: string | null }>> {
+  /** primary for a read whose rows a write is about to change. */
+  async listWatchesFor(userUUID: string, profile: string, videoIds: string[], primary = false): Promise<Array<{ video_id: string; watched_at: number; origin: string | null }>> {
     const out: any[] = [];
     const ids = [...new Set(videoIds)];
     for (let at = 0; at < ids.length; at += 500) {
@@ -1806,7 +1807,7 @@ class Database {
       const query = this.type === 'sqlite'
         ? `SELECT video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = ? AND profile = ? AND video_id IN (${marks})`
         : `SELECT video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = $1 AND profile = $2 AND video_id IN (${marks})`;
-      out.push(...((await this.allQuery(query, [userUUID, profile, ...chunk])) || []));
+      out.push(...((await (primary ? this.allPrimaryQuery(query, [userUUID, profile, ...chunk]) : this.allQuery(query, [userUUID, profile, ...chunk]))) || []));
     }
     return out.map((row) => ({ video_id: String(row.video_id), watched_at: Number(row.watched_at), origin: row.origin ?? null }));
   }
@@ -2324,7 +2325,8 @@ class Database {
     const marks = ids.map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
     const where = `user_uuid = ${sqlite ? '?' : '$1'} AND claimed_until <= ${sqlite ? '?' : '$2'} AND id IN (${marks})`;
     const params = [userUUID, Date.now(), ...ids];
-    const rows = (await this.allQuery(`SELECT id, profile, service, op, item_key, payload FROM tracker_outbox WHERE ${where}`, params)) || [];
+    // Read on the primary, which the delete runs on, so a write a replica still shows unclaimed is not reported dropped.
+    const rows = (await this.allPrimaryQuery(`SELECT id, profile, service, op, item_key, payload FROM tracker_outbox WHERE ${where}`, params)) || [];
     if (rows.length) await this.runQuery(`DELETE FROM tracker_outbox WHERE ${where}`, params);
     return rows;
   }
