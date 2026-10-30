@@ -1259,7 +1259,7 @@ async function droppedShows(userUUID: string, profile: string, ids: string[], co
   return shows;
 }
 
-function asProfile<T>(userUUID: string, profile: string | null, work: (config: any) => Promise<T>): Promise<T | null> {
+export function asProfile<T>(userUUID: string, profile: string | null, work: (config: any) => Promise<T>): Promise<T | null> {
   const { runInViewerScope } = require('./viewer');
   const { loadConfig } = require('./context');
   return runInViewerScope(false, async () => {

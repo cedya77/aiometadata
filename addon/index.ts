@@ -8282,6 +8282,26 @@ addon.get("/api/dashboard/jellyfin/:userUUID/plays", requireDashboardAdmin, asyn
   }
 });
 
+addon.get("/api/dashboard/jellyfin/:userUUID/year", requireDashboardAdmin, async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const year = parseInt(String(req.query.year ?? ''), 10);
+    if (!Number.isInteger(year) || year < 1970 || year > 9999) {
+      res.status(400).json({ error: 'Pick a year' });
+      return;
+    }
+    const payload = await require('./lib/jellyfin/yearReview').dashboardYear(String(req.params.userUUID), profile, year);
+    if (!payload) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the year in review' });
+  }
+});
+
 addon.get("/api/dashboard/jellyfin/:userUUID/shows", requireDashboardAdmin, async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
