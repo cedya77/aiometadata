@@ -765,7 +765,7 @@ export async function recordWatchDate(req: any, itemId: string, from: number | n
   const runtimeMs = session.runtimeMs ?? 0;
   const sameViewing = runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
   const database: any = require('../database');
-  const { moved, latestBefore, latestAfter } = await database.redateWatch(userUUID, profile, spellings, from, to, Math.max(sameViewing, 60_000), merge);
+  const { moved, latestBefore, latestAfter, apart } = await database.redateWatch(userUUID, profile, spellings, from, to, Math.max(sameViewing, 60_000), merge);
   if (!moved) return false;
 
   const { invalidateResume } = require('./resume');
@@ -779,7 +779,7 @@ export async function recordWatchDate(req: any, itemId: string, from: number | n
   const services = ['mdblist', 'publicmetadb', ...(latest ? ['simkl'] : [])].filter((service) => hasCredential(config, service));
   await enqueueTrackerWrites(userUUID, config, services.map((service) => ({
     service, op: 'redate', item: session.descriptor.i,
-    payload: { type: session.stremioType, id: session.videoId, from, to, latest, ...(merge ? { merge: true } : {}) },
+    payload: { type: session.stremioType, id: session.videoId, from, to, latest, ...(apart ? { apart: true } : {}) },
   }))).catch((error: any) => logger.debug(`Moving the watch date on trackers failed for ${session.videoId}: ${error?.message || error}`));
   return true;
 }
