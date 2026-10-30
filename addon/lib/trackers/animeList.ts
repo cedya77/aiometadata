@@ -31,8 +31,9 @@ function withAnimeIds(entry: MarkItem): MarkItem {
 
 const held = (what: Mark, data: any) => what === 'watchlist' || (what === 'ratings' && data?.score > 0) || (what === 'dropped' && data?.status === 'dropped');
 
-export function animeList(id: 'anilist' | 'mal', name: string, load: () => any): Pick<Tracker, 'heldMarks' | 'markContext' | 'prepareMark' | 'refuseMark' | 'checkSignIn'> {
+export function animeList(id: 'anilist' | 'mal', name: string, load: () => any, resolve: (media: any) => Promise<{ id: number; episode: any } | null>): Pick<Tracker, 'heldMarks' | 'markContext' | 'prepareMark' | 'refuseMark' | 'checkSignIn' | 'animeEntry'> {
   return {
+    animeEntry: resolve,
     async heldMarks(what, side) {
       const keys = new Set<string>();
       for (const [key, data] of await listOn(side)) if (held(what, data)) keys.add(key);

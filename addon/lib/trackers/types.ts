@@ -31,6 +31,7 @@ export interface Tracker {
   writeMarks?(what: Mark, items: MarkItem[], side: MarkSide, userUUID: string): Promise<MarkOutcome>;
   writeMark?(what: Mark, entry: MarkItem, side: MarkSide, userUUID: string): Promise<MarkWrite>;
   checkSignIn?(credential: string): Promise<void>;
+  animeEntry?(media: any): Promise<{ id: number; episode: any } | null>;
   rewatch?: { separate: boolean; kept?(credential: string): Promise<boolean> };
   tmdbWatches?(rows: MirrorRow[]): TmdbWatch[];
   watchesHeld?: { read(credential: string): Promise<Set<string>>; keys(target: CopyTarget, kind: 'movie' | 'episode'): string[] };

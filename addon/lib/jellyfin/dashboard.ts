@@ -11,7 +11,7 @@ import { groupBySpelling } from './aliases';
 import { itemIdForVideo } from './history';
 import { defaultUserName, listProfiles, profileKey, scopeConfigToProfile } from './profiles';
 import { CAPABLE, credentialFor } from './trackerSource';
-import { isMatchable, trackerOf, type Mark } from '../trackers';
+import { isMatchable, trackerName, trackerOf, type Mark } from '../trackers';
 import { sourceKeyFor } from './trackerMirror';
 import { mapWithConcurrency } from '../../utils/concurrency';
 import redis from '../redisClient';
@@ -827,17 +827,16 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
 
   let sendsAs: any = null;
   let sendError: string | null = null;
-  if (side === 'behind' && (source.service === 'anilist' || source.service === 'mal')) {
+  const animeEntry = trackerOf(source.service)?.animeEntry;
+  if (side === 'behind' && animeEntry) {
     const { parseMediaId } = require('../subtitleHandler');
     const media = parseMediaId(video);
     try {
-      const target: any = media
-        ? await withDeadline(source.service === 'anilist' ? require('../anilistTracker').resolveAniListId(media) : require('../malTracker').resolveMalId(media), 'slow')
-        : null;
-      const entry = target && target !== 'slow' ? Number(source.service === 'anilist' ? target.anilistId : target.malId) : null;
+      const target: any = media ? await withDeadline(animeEntry(media), 'slow') : null;
+      const entry = target && target !== 'slow' ? target.id : null;
       if (target === 'slow') sendError = 'Working out the ids took too long; open this again';
       else if (entry) sendsAs = { ids: { [source.service]: entry }, season: null, episode: Number(target.episode) || null };
-      else sendError = media ? `No ${source.service === 'anilist' ? 'AniList' : 'MAL'} entry is mapped to ${video}` : `${video} is not an id trackers take`;
+      else sendError = media ? `No ${trackerName(source.service)} entry is mapped to ${video}` : `${video} is not an id trackers take`;
     } catch (error: any) {
       sendError = String(error?.message || error).slice(0, 200);
     }

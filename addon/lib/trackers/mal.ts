@@ -12,7 +12,10 @@ export const mal: Tracker = {
   marks: { from: [], to: MARK_KINDS },
   batch: 10,
   pace: () => ({ perSecond: 1 }),
-  ...animeList('mal', 'MyAnimeList', load),
+  ...animeList('mal', 'MyAnimeList', load, async (media) => {
+    const found = await load().resolveMalId(media);
+    return found ? { id: Number(found.malId), episode: found.episode } : null;
+  }),
   async writeMark(what, entry, side, userUUID) {
     const token = await animeToken('mal', 'MyAnimeList', load, side, userUUID);
     const done = what === 'ratings' ? await load().setScore(Number(entry.ids.mal), Math.round(entry.rating ?? 0), token)
