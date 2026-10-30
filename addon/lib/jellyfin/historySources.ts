@@ -272,7 +272,8 @@ export async function lookupAll<T, V>(scope: string, userUUID: string, items: Ma
   }
   if (!job) job = startLookups(jobKey, signature, items, lookup);
   const values = await Promise.race([job.result, sleep(envInt('JELLYFIN_HISTORY_IMPORT_LOOKUP_WAIT_SECONDS', 8, 1) * 1000).then(() => null)]);
-  return values ? { values: values as Map<string, V> } : { done: job.done, total: job.total };
+  // A job a newer upload stopped holds only part of the titles, which are not to be read as all of them.
+  return values && !job.stopped ? { values: values as Map<string, V> } : { done: job.done, total: job.total };
 }
 
 export type RuntimeAsk = { kind: 'movie' | 'episode'; metaId: string; videoId: string };

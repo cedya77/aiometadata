@@ -2399,6 +2399,7 @@ export function useJellyfinHistoryImport() {
     apply: boolean,
     onMatching?: (progress: { done: number; total: number; label: string }) => void,
     skip: HistoryImportSection[] = [],
+    signal?: AbortSignal,
   ): Promise<HistoryImportPreview & { job?: HistoryImportJob }> => {
     const params = new URLSearchParams();
     if (mapping) params.set('map', JSON.stringify(mapping));
@@ -2411,12 +2412,14 @@ export function useJellyfinHistoryImport() {
         method: 'POST',
         headers: { ...getHeaders(), 'Content-Type': 'application/octet-stream' },
         body: file,
+        signal,
       });
       const result = await response.json().catch(() => null);
       if (!response.ok) throw new Error(result?.error || (response.status === 413 ? 'This file is larger than the import limit' : `Import failed (${response.status})`));
       if (!result?.matching) return result;
       onMatching?.(result.matching);
       await new Promise((resolve) => setTimeout(resolve, 1000));
+      signal?.throwIfAborted();
     }
   }, [getHeaders]);
   const status = useCallback(async (userUUID: string): Promise<HistoryImportJob | null> => {

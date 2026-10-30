@@ -70,6 +70,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
   const [stremioOpen, setStremioOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const watching = useRef<string | null>(null);
+  const reading = useRef<AbortController | null>(null);
 
   const running = job?.status === "running";
   const shown = started ? job ?? null : null;
@@ -92,24 +93,34 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
 
   const close = () => {
     if (shown?.status === "running") return;
+    reading.current?.abort();
     setFile(null);
     setPreview(null);
     setStarted(false);
   };
 
   const load = async (picked: File, map: Record<string, string | null> | null, chosen: Record<string, number>) => {
+    // Only the latest read may set the preview: an earlier file still matching would otherwise replace it.
+    reading.current?.abort();
+    const controller = new AbortController();
+    reading.current = controller;
     setLoading(true);
     try {
-      const result = await send(userUUID, picked, map, chosen, false, setMatching);
+      const result = await send(userUUID, picked, map, chosen, false, setMatching, [], controller.signal);
+      if (controller.signal.aborted) return;
       if (!map) setSkipped(rememberedSkip(result.source));
       setPreview(result);
       setMapping(result.mapping);
     } catch (error) {
+      if (controller.signal.aborted) return;
       toast.error(error instanceof Error ? error.message : "Could not read the file");
       if (!map) setFile(null);
     } finally {
-      setLoading(false);
-      setMatching(null);
+      if (reading.current === controller) {
+        reading.current = null;
+        setLoading(false);
+        setMatching(null);
+      }
     }
   };
 
