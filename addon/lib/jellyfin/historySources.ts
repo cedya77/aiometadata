@@ -35,6 +35,9 @@ function isZip(buffer: Buffer): boolean {
   return buffer.length >= 4 && buffer.readUInt32LE(0) === 0x04034b50;
 }
 
+// Editors on Windows often start a UTF-8 file with a byte order mark, which JSON.parse refuses.
+const withoutBom = (text: string) => text.replace(/^\ufeff/, '');
+
 function unzipTextFiles(buffer: Buffer): SourceFiles | string {
   const budget = envInt('JELLYFIN_HISTORY_IMPORT_MAX_UNZIPPED_MB', 256, 1) * 1048576;
   const unreadable = 'This zip file could not be read';
@@ -79,7 +82,7 @@ function unzipTextFiles(buffer: Buffer): SourceFiles | string {
     }
     used += text.length;
     if (used > budget) return tooLarge;
-    found.push([name, text.toString('utf8')]);
+    found.push([name, withoutBom(text.toString('utf8'))]);
   }
   const tops = new Set(found.map(([name]) => (name.includes('/') ? name.split('/')[0] : '')));
   const shared = tops.size === 1 && !tops.has('') ? `${[...tops][0]}/` : '';
@@ -101,7 +104,7 @@ export function openUpload(buffer: Buffer, fileName: string | null): Upload | st
     }
     return { fileName, files, json: parsed };
   }
-  const text = buffer.toString('utf8');
+  const text = withoutBom(buffer.toString('utf8'));
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
