@@ -1,19 +1,20 @@
 import { useState } from "react";
 import { Film } from "lucide-react";
 import { CARD_SERVICES } from "@/lib/cardAccounts";
-import { TRACKER_TILES, nameOf } from "./trackerNames";
+import { useTrackers } from "./trackers";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
 export function Logo({ service, size = 36, className }: { service: string; size?: number; className?: string }) {
   const icon = (CARD_SERVICES as Record<string, { icon?: string }>)[service]?.icon;
   const [failed, setFailed] = useState(false);
-  const style = { width: size, height: size, borderRadius: Math.round(size * 0.28) };
+  const tracker = useTrackers().of(service);
+  const style = { width: size, height: size, borderRadius: Math.round(size * 0.28), ...(tracker ? { backgroundColor: tracker.color } : {}) };
   return (
-    <span aria-hidden style={style} className={cx("inline-flex shrink-0 items-center justify-center overflow-hidden ring-1 ring-inset ring-white/10", TRACKER_TILES[service] ?? "bg-zinc-700", className)}>
+    <span aria-hidden style={style} className={cx("inline-flex shrink-0 items-center justify-center overflow-hidden ring-1 ring-inset ring-white/10", !tracker && "bg-zinc-700", className)}>
       {icon && !failed
         ? <img src={icon} alt="" onError={() => setFailed(true)} className="size-full object-cover" />
-        : <span className="text-xs font-black text-white">{nameOf(service).slice(0, 1)}</span>}
+        : <span className="text-xs font-black text-white">{(tracker?.name ?? service).slice(0, 1)}</span>}
     </span>
   );
 }

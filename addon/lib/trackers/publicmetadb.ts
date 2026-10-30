@@ -105,6 +105,7 @@ export const publicmetadb: Tracker = {
   color: '#ebebeb',
   animeOnly: false,
   datedHistory: true,
+  wholeRatings: false,
   marks: { from: ['watchlist', 'dropped'], to: MARK_KINDS },
   batch: 10,
   markBatch: { ratings: 1 },

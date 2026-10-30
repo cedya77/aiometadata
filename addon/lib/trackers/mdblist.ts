@@ -112,6 +112,7 @@ export const mdblist: Tracker = {
   animeOnly: false,
   rewatch: { separate: false },
   datedHistory: true,
+  wholeRatings: false,
   marks: { from: MARK_KINDS, to: MARK_KINDS },
   batchGapMs: 1000,
   async readMarks(what, side) {

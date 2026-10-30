@@ -11,6 +11,7 @@ import JellyfinPersonView, { CastRow } from "./JellyfinPerson";
 import RemoteSheet, { type RemoteTarget } from "./JellyfinRemote";
 import WatchDateSheet, { type WatchDateAnchor, type WatchDateTarget } from "./JellyfinWatchDate";
 import { anchorOf, duration, ordinal, rewatchLabel, timesWatched, useRemembered, watchedWhen, when } from "./jellyfinUtils";
+import { useTrackers } from "./trackers";
 import { nameDashboardPage, type DashboardPage } from "@/lib/dashboardRoute";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
@@ -426,11 +427,11 @@ function Details({ title }: { title: JellyfinTitle }) {
   );
 }
 
-function TitleView({ userUUID, profile, profileName, trackers, titleRef, initialSeason, activeTab, shown, onBack, onCloseAll, onPerson }: {
+function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSeason, activeTab, shown, onBack, onCloseAll, onPerson }: {
   userUUID: string;
   profile: string | null;
   profileName: string;
-  trackers: string[];
+  sentTo: string[];
   titleRef: JellyfinTitleRef;
   initialSeason?: number | null;
   activeTab: DashboardTab;
@@ -439,6 +440,7 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, initial
   onCloseAll: () => void;
   onPerson: (person: JellyfinTitlePerson) => void;
 }) {
+  const trackers = useTrackers();
   const queryClient = useQueryClient();
   const act = useJellyfinTitleAction();
   const moveDate = useJellyfinWatchDate();
@@ -726,7 +728,7 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, initial
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground max-sm:text-center">
-                      {trackers.length ? `Changes are saved here and sent to ${trackers.join(", ")}.` : "Changes are saved on this server."}
+                      {sentTo.length ? `Changes are saved here and sent to ${sentTo.map(trackers.name).join(", ")}.` : "Changes are saved on this server."}
                     </p>
 
                     {title.overview && <Overview text={title.overview} />}
@@ -780,7 +782,7 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, initial
             )}
 
             {title && title.people.length > 0 && <CastRow people={title.people} onPerson={onPerson} />}
-            {dateSheet && <WatchDateSheet target={dateSheet.target} anchor={dateSheet.anchor} trackers={trackers} onClose={closeDateSheet} onSave={async (to) => { const saved = await redate(dateSheet.target.itemId, dateSheet.target.from, to); if (saved) setDateSheet(null); return saved; }} />}
+            {dateSheet && <WatchDateSheet target={dateSheet.target} anchor={dateSheet.anchor} sentTo={sentTo} onClose={closeDateSheet} onSave={async (to) => { const saved = await redate(dateSheet.target.itemId, dateSheet.target.from, to); if (saved) setDateSheet(null); return saved; }} />}
             {remote && <RemoteSheet userUUID={userUUID} profile={profile} profileName={profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
 
             {title && (
@@ -808,11 +810,11 @@ function TitleView({ userUUID, profile, profileName, trackers, titleRef, initial
   );
 }
 
-export default function JellyfinTitlePage({ userUUID, profile, profileName, trackers, stack, activeTab, onOpen }: {
+export default function JellyfinTitlePage({ userUUID, profile, profileName, sentTo, stack, activeTab, onOpen }: {
   userUUID: string;
   profile: string | null;
   profileName: string;
-  trackers: string[];
+  sentTo: string[];
   stack: DashboardPage[];
   activeTab: DashboardTab;
   onOpen: (stack: DashboardPage[]) => void;
@@ -839,7 +841,7 @@ export default function JellyfinTitlePage({ userUUID, profile, profileName, trac
   return (
     <>
       {stack.map((entry, index) => entry.kind === "title" ? (
-        <TitleView key={index} userUUID={userUUID} profile={profile} profileName={profileName} trackers={trackers} titleRef={entry.ref} initialSeason={entry.season} activeTab={activeTab} shown={index === stack.length - 1} onBack={back} onCloseAll={closeAll} onPerson={openPerson} />
+        <TitleView key={index} userUUID={userUUID} profile={profile} profileName={profileName} sentTo={sentTo} titleRef={entry.ref} initialSeason={entry.season} activeTab={activeTab} shown={index === stack.length - 1} onBack={back} onCloseAll={closeAll} onPerson={openPerson} />
       ) : (
         <JellyfinPersonView key={index} userUUID={userUUID} profile={profile} profileName={profileName} person={entry.person} activeTab={activeTab} shown={index === stack.length - 1} onBack={back} onCloseAll={closeAll} onOpenTitle={openTitle} />
       ))}

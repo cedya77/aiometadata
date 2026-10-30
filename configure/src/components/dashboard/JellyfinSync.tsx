@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinDriftImported, useJellyfinSync, useJellyfinSyncActions, useJellyfinSyncDrift, useJellyfinTrackerMatches, type DashboardTab, type JellyfinDriftImport, type JellyfinDriftItem, type JellyfinDriftLane, type JellyfinSyncFeedItem, type JellyfinSyncLane, type JellyfinSyncRow, type JellyfinSyncWrite, type JellyfinTrackerMatch } from "@/hooks/useDashboardQueries";
 import { Eyebrow, Logo, Still, Toggle } from "./TrackerParts";
-import { ANIME_ONLY, COPY_FROM, MATCHABLE, nameOf } from "./trackerNames";
+import { useTrackers, type Trackers } from "./trackers";
 import JellyfinCopy from "./JellyfinCopy";
 import TrackerMatchDialog, { Poster, type MatchSubject } from "./JellyfinTrackerMatch";
 import DriftInfo from "./JellyfinDriftInfo";
@@ -43,17 +43,17 @@ const importedIn = (groups: JellyfinDriftImport[] = []) => groups.reduce((sum, g
 type Tone = "ok" | "waiting" | "paused" | "failing" | "drift" | "ahead" | "idle";
 type LaneState = { tone: Tone; short: string; line: string };
 
-function laneState(lane: JellyfinSyncLane, now: number, drift?: JellyfinDriftLane): LaneState {
+function laneState(lane: JellyfinSyncLane, now: number, trackers: Trackers, drift?: JellyfinDriftLane): LaneState {
   const next = lane.nextTryAt ? lane.nextTryAt - now : 0;
   const soon = next > 0 ? `in ${countdown(next)}` : "now";
-  if (lane.readError) return { tone: "failing", short: "Can't read", line: `Can't read ${nameOf(lane.service)}` };
+  if (lane.readError) return { tone: "failing", short: "Can't read", line: `Can't read ${trackers.name(lane.service)}` };
   if (lane.pending > 0) {
     if (limited(lane.lastError)) return { tone: "paused", short: "Paused", line: `Paused by its limit, next try ${soon}` };
     if (lane.lastError) return { tone: "failing", short: `${lane.pending} retrying`, line: `${lane.pending} waiting, retrying ${soon}` };
     return { tone: "waiting", short: `${lane.pending} waiting`, line: `${lane.pending} waiting, sending ${soon}` };
   }
   if (!lane.imported) return { tone: "idle", short: "Not read yet", line: "Not read yet" };
-  if (drift?.error) return { tone: "failing", short: "Can't compare", line: `Couldn't compare ${nameOf(lane.service)} with your history` };
+  if (drift?.error) return { tone: "failing", short: "Can't compare", line: `Couldn't compare ${trackers.name(lane.service)} with your history` };
   const missing = watchesIn(drift?.behind);
   if (missing) return { tone: "drift", short: `${missing} missing`, line: `Missing ${watches(missing)} from your history` };
   const brought = importedIn(drift?.imported);
@@ -141,6 +141,7 @@ function summaryOf(burst: Burst): { what: string; detail: string | null; tone: s
 }
 
 function BurstRow({ burst, showServices }: { burst: Burst; showServices: boolean }) {
+  const trackers = useTrackers();
   const { what, detail, tone } = summaryOf(burst);
   const stills = [...new Set(burst.events.map((e) => e.imageUrl).filter(Boolean))].slice(0, 3) as string[];
   const marks = new Map<string, string>();
@@ -155,7 +156,7 @@ function BurstRow({ burst, showServices }: { burst: Burst; showServices: boolean
         {(detail || (showServices && marks.size > 0)) && (
           <span className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             {showServices && [...marks].map(([service, kind]) => (
-              <span key={service} title={`${nameOf(service)}: ${kind}`} className="relative shrink-0">
+              <span key={service} title={`${trackers.name(service)}: ${kind}`} className="relative shrink-0">
                 <Logo service={service} size={16} />
                 {kind !== "sent" && <X className="absolute -bottom-1 -right-1 size-2.5 rounded-full bg-red-500 text-white" strokeWidth={4} />}
               </span>
@@ -222,6 +223,7 @@ function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, se
   info?: { userUUID: string; laneKey: string; side: "behind" | "ahead" | "again"; activeTab: DashboardTab };
   note?: string;
 }) {
+  const trackers = useTrackers();
   const openTitle = useOpenTitle();
   const withInfo = (item: JellyfinDriftItem, row: React.ReactElement) => info && service
     ? <DriftInfo userUUID={info.userUUID} laneKey={info.laneKey} service={service} side={info.side} item={item} activeTab={info.activeTab}>{row}</DriftInfo>
@@ -241,7 +243,7 @@ function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, se
         {items.map((item) => {
           const phase = phaseOf?.(item);
           const working = phase !== undefined && phase !== "leaving";
-          const svc = nameOf(service ?? "");
+          const svc = trackers.name(service ?? "");
           return (
           <div key={item.id} className={cx("grid transition-[grid-template-rows,opacity] duration-[450ms] ease-out", phase === "leaving" ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100")}>
           <div className="min-h-0 overflow-hidden">
@@ -251,9 +253,9 @@ function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, se
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold underline-offset-4 group-hover:underline">{item.title ?? "Unknown title"}</span>
                 <span className="block text-xs text-muted-foreground">{spanOf(item)}<span className="max-sm:block"><span className="max-sm:hidden"> · </span>{where} {datesOf(item)}</span></span>
-                {onMatch && item.unmatched && !item.matchedTo && <span className="mt-0.5 block text-xs text-amber-200/90">{nameOf(service ?? "")} can't find this title</span>}
+                {onMatch && item.unmatched && !item.matchedTo && <span className="mt-0.5 block text-xs text-amber-200/90">{trackers.name(service ?? "")} can't find this title</span>}
                 {onMatch && item.matchedTo && <span className="mt-0.5 block truncate text-xs text-muted-foreground">Matched to {item.matchedTo}</span>}
-                {onSame && theirsOf(item) && <span className="mt-0.5 block truncate text-xs text-muted-foreground">{nameOf(service ?? "")} has it from {theirsOf(item)}</span>}
+                {onSame && theirsOf(item) && <span className="mt-0.5 block truncate text-xs text-muted-foreground">{trackers.name(service ?? "")} has it from {theirsOf(item)}</span>}
                 {working && (
                   <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-blue-200/90">
                     <Loader2 className="size-3 shrink-0 animate-spin" /> {phase === "same" ? `Counting it as the viewing ${svc} has` : phase === "push" ? `Sending to ${svc}` : `Bringing it in from ${svc}`}
@@ -262,12 +264,12 @@ function DriftList({ title, items, all, one, icon, busy, prefix, where, onGo, se
               </span>
             </button>)}
             {onMatch && (
-              <button type="button" onClick={() => onMatch(item)} aria-label={`Match ${item.title ?? "this title"} on ${nameOf(service ?? "")}`} className={cx("flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors", item.unmatched && !item.matchedTo ? "bg-amber-400/15 text-amber-100 ring-1 ring-inset ring-amber-300/30 hover:bg-amber-400/25" : "border border-white/[0.12] text-foreground/90 hover:bg-white/10")}>
+              <button type="button" onClick={() => onMatch(item)} aria-label={`Match ${item.title ?? "this title"} on ${trackers.name(service ?? "")}`} className={cx("flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors", item.unmatched && !item.matchedTo ? "bg-amber-400/15 text-amber-100 ring-1 ring-inset ring-amber-300/30 hover:bg-amber-400/25" : "border border-white/[0.12] text-foreground/90 hover:bg-white/10")}>
                 <Link2 className="size-3.5" /> <span className="hidden sm:inline">{item.matchedTo ? "Edit match" : "Match"}</span>
               </button>
             )}
             {onSame && theirsOf(item) && (
-              <button type="button" onClick={() => onSame(item)} disabled={busy !== null || phase !== undefined} title={`Not a rewatch: count it as the viewing ${nameOf(service ?? "")} has from ${theirsOf(item)}`} aria-label={`Same viewing as on ${nameOf(service ?? "")}: ${item.title ?? "this title"}`} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.12] px-3 text-xs font-medium text-foreground/90 transition-colors hover:bg-white/10 disabled:opacity-50">
+              <button type="button" onClick={() => onSame(item)} disabled={busy !== null || phase !== undefined} title={`Not a rewatch: count it as the viewing ${trackers.name(service ?? "")} has from ${theirsOf(item)}`} aria-label={`Same viewing as on ${trackers.name(service ?? "")}: ${item.title ?? "this title"}`} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.12] px-3 text-xs font-medium text-foreground/90 transition-colors hover:bg-white/10 disabled:opacity-50">
                 {busy === `same:${item.id}` ? <Loader2 className="size-3.5 animate-spin" /> : <Merge className="size-3.5" />} <span className="hidden sm:inline">Same viewing</span>
               </button>
             )}
@@ -296,12 +298,13 @@ function ImportedGroup({ group, service, userUUID, profile, laneKey, activeTab, 
   onAct: (group: JellyfinDriftImport, action: "push" | "leave", items: JellyfinDriftItem[] | null) => Promise<void>;
   onMatch?: (item: JellyfinDriftItem) => void;
 }) {
+  const trackers = useTrackers();
   const [open, setOpen] = useState(false);
   const { data, isLoading, refetch } = useJellyfinDriftImported(userUUID, laneKey, group.origin, profile, open, { activeTab });
   useEffect(() => {
     if (open) void refetch();
   }, [group.plays]);
-  const name = nameOf(service);
+  const name = trackers.name(service);
   const items = data?.items ?? [];
   return (
     <div className="space-y-2">
@@ -316,7 +319,7 @@ function ImportedGroup({ group, service, userUUID, profile, laneKey, activeTab, 
           <span className="block text-sm font-semibold">{watches(group.plays)} across {group.titles.toLocaleString()} {group.titles === 1 ? "title" : "titles"}</span>
           <span className="block text-xs leading-relaxed text-muted-foreground">
             {name} doesn't have {group.plays === 1 ? "it" : "them"}, and nothing goes out until you choose.
-            {group.undated > 0 && !ANIME_ONLY.has(service) && ` ${group.undated === group.plays ? (group.plays === 1 ? "It has" : "They have") : `${group.undated.toLocaleString()} have`} no date, so ${name} dates ${group.undated === 1 ? "it" : "them"} the day ${group.undated === 1 ? "it arrives" : "they arrive"}.`}
+            {group.undated > 0 && !trackers.animeOnly(service) && ` ${group.undated === group.plays ? (group.plays === 1 ? "It has" : "They have") : `${group.undated.toLocaleString()} have`} no date, so ${name} dates ${group.undated === 1 ? "it" : "them"} the day ${group.undated === 1 ? "it arrives" : "they arrive"}.`}
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
@@ -348,13 +351,14 @@ function ImportedGroup({ group, service, userUUID, profile, laneKey, activeTab, 
 }
 
 function LeftOut({ groups, service, busy, onRestore }: { groups: JellyfinDriftImport[]; service: string; busy: string | null; onRestore: (group: JellyfinDriftImport) => void }) {
+  const trackers = useTrackers();
   const left = groups.filter((group) => group.left > 0);
   if (!left.length) return null;
   return (
     <div className="space-y-1">
       {left.map((group) => (
         <p key={group.origin} className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-          <EyeOff className="size-3.5 shrink-0" /> {watches(group.left)} from your {group.name} left out of {nameOf(service)}.
+          <EyeOff className="size-3.5 shrink-0" /> {watches(group.left)} from your {group.name} left out of {trackers.name(service)}.
           <button type="button" onClick={() => onRestore(group)} disabled={busy !== null} className="font-semibold text-blue-300 transition-colors hover:text-blue-200 disabled:opacity-50">
             {busy === `import:${group.origin}:restore` ? "Showing…" : "Show again"}
           </button>
@@ -428,12 +432,13 @@ function matchSummary(match: JellyfinTrackerMatch): string {
 }
 
 function MatchRow({ match, service, onEdit, onRemove }: { match: JellyfinTrackerMatch; service: string; onEdit: () => void; onRemove: () => void }) {
+  const trackers = useTrackers();
   return (
     <div className="flex items-center gap-3 rounded-xl p-1.5">
       <Poster src={match.target.posterUrl} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground/90">{match.title ?? "A title"}</p>
-        <p className="text-xs text-muted-foreground">Sent to {nameOf(service)} as {match.target.title}{match.target.year ? ` (${match.target.year})` : ""}, {matchSummary(match)}</p>
+        <p className="text-xs text-muted-foreground">Sent to {trackers.name(service)} as {match.target.title}{match.target.year ? ` (${match.target.year})` : ""}, {matchSummary(match)}</p>
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -469,8 +474,9 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
   onSame: (item: JellyfinDriftItem) => void;
   onChanged: () => void;
 }) {
-  const name = nameOf(lane.service);
-  const matchable = MATCHABLE.has(lane.service);
+  const trackers = useTrackers();
+  const name = trackers.name(lane.service);
+  const matchable = trackers.of(lane.service)?.matchable === true;
   const phaseOf = (item: JellyfinDriftItem) => phases.get(`${lane.key}|${item.id}`);
   const actions = useJellyfinSyncActions();
   const { data: matchData, refetch: refetchMatches } = useJellyfinTrackerMatches(userUUID, lane.key, matchable, { activeTab });
@@ -493,7 +499,7 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
       onChanged();
     }
   };
-  const state = laneState(lane, now, drift);
+  const state = laneState(lane, now, trackers, drift);
   const ids = queue.map((w) => w.id);
   const reason = lane.readError ?? (state.tone !== "paused" ? lane.lastError : null);
   const bursts = useMemo(() => burstsOf(events).slice(0, 6), [events]);
@@ -508,7 +514,7 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
             <h3 className="text-2xl font-bold tracking-tight">{name}</h3>
             <p className={cx("text-sm", TEXT[state.tone])}>
               {state.line}
-              <span className="text-muted-foreground"> · read {lane.syncedAt ? when(lane.syncedAt) : "never"}{ANIME_ONLY.has(lane.service) ? " · anime only" : ""}</span>
+              <span className="text-muted-foreground"> · read {lane.syncedAt ? when(lane.syncedAt) : "never"}{trackers.animeOnly(lane.service) ? " · anime only" : ""}</span>
             </p>
           </div>
         </div>
@@ -537,7 +543,7 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
       ) : drift.error ? (
         <p className="text-xs text-red-300">Could not compare with {name}: {drift.error}</p>
       ) : settled ? (
-        <p className="flex items-center gap-2 text-sm text-emerald-200/90"><CheckCircle2 className="size-4 shrink-0" /> {name} has every watch made here{ANIME_ONLY.has(lane.service) ? "" : `, and nothing it got in the last ${days} days is missing here`}.</p>
+        <p className="flex items-center gap-2 text-sm text-emerald-200/90"><CheckCircle2 className="size-4 shrink-0" /> {name} has every watch made here{trackers.animeOnly(lane.service) ? "" : `, and nothing it got in the last ${days} days is missing here`}.</p>
       ) : (
         <>
           {drift.behind.length > 0 && <DriftList title={`Missing on ${name}`} items={drift.behind} all="Send all" one="Send" icon={<Send className="size-3.5" />} busy={busy} prefix="push:" where="watched here" onGo={(items) => onDrift("push", items)} service={lane.service} onMatch={matchable ? matchItem : undefined} phaseOf={phaseOf} info={{ userUUID, laneKey: lane.key, side: "behind", activeTab }} />}
@@ -590,7 +596,7 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
       )}
 
       <p className="text-[11px] text-muted-foreground/80">
-        Every watch made here or imported is checked{ANIME_ONLY.has(lane.service) ? "" : `, and ${name}'s own from the last ${days} days`}{drift?.unread ? `; ${watches(drift.unread)} newer than the last read wait for the next one` : ""}. Reading never changes {name}; sending dates each watch when it happened, where that is known.
+        Every watch made here or imported is checked{trackers.animeOnly(lane.service) ? "" : `, and ${name}'s own from the last ${days} days`}{drift?.unread ? `; ${watches(drift.unread)} newer than the last read wait for the next one` : ""}. Reading never changes {name}; sending dates each watch when it happened, where that is known.
       </p>
     </div>
   );
@@ -598,6 +604,7 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
 
 
 function LedgerRow({ lane, number, state, active, onPick }: { lane: JellyfinSyncLane; number: number; state: LaneState; active: boolean; onPick: () => void }) {
+  const trackers = useTrackers();
   const others = lane.profiles.length > 1 || lane.profiles[0] !== "Main";
   return (
     <button
@@ -609,7 +616,7 @@ function LedgerRow({ lane, number, state, active, onPick }: { lane: JellyfinSync
       <span className={cx("w-7 shrink-0 text-right font-mono text-sm tabular-nums transition-colors", active ? "text-blue-300" : "text-muted-foreground/50")}>{String(number).padStart(2, "0")}</span>
       <Logo service={lane.service} size={36} className={cx("transition-transform duration-300", active && "scale-110 shadow-lg")} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold leading-tight">{nameOf(lane.service)}{others && <span className="font-normal text-muted-foreground"> · {lane.profiles.join(", ")}</span>}</span>
+        <span className="block truncate text-sm font-semibold leading-tight">{trackers.name(lane.service)}{others && <span className="font-normal text-muted-foreground"> · {lane.profiles.join(", ")}</span>}</span>
         <span className="mt-0.5 flex items-center gap-1.5 text-[11px]">
           <span className={cx("size-1.5 shrink-0 rounded-full", DOT[state.tone])} />
           <span className={cx("truncate", TEXT[state.tone])}>{state.short}</span>
@@ -655,6 +662,7 @@ const CHIP: Record<Tone, string> = {
 };
 
 function Hub({ lanes, states, selected, watched, onPick, onCopy }: { lanes: JellyfinSyncLane[]; states: Map<string, LaneState>; selected: string | undefined; watched: number; onPick: (key: string) => void; onCopy: (from: string, to: string) => void }) {
+  const trackers = useTrackers();
   const box = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
@@ -720,17 +728,17 @@ function Hub({ lanes, states, selected, watched, onPick, onCopy }: { lanes: Jell
             type="button"
             onClick={() => onPick(lane.key)}
             aria-pressed={on}
-            draggable={COPY_FROM.has(lane.service)}
+            draggable={trackers.copiesFrom(lane.service, "watches")}
             onDragStart={(event) => { event.dataTransfer.setData("text/plain", lane.key); event.dataTransfer.effectAllowed = "copy"; setDragging(lane.key); }}
             onDragEnd={() => { setDragging(null); setOver(null); }}
             onDragOver={(event) => { if (target) { event.preventDefault(); setOver(lane.key); } }}
             onDragLeave={() => setOver((held) => (held === lane.key ? null : held))}
             onDrop={(event) => { event.preventDefault(); if (dragging && target) onCopy(dragging, lane.key); setDragging(null); setOver(null); }}
             style={{ left: x, top: y }}
-            className={cx("group absolute flex w-40 -translate-x-1/2 -translate-y-[44px] flex-col items-center gap-1.5 rounded-2xl p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60", COPY_FROM.has(lane.service) && "cursor-grab active:cursor-grabbing")}
+            className={cx("group absolute flex w-40 -translate-x-1/2 -translate-y-[44px] flex-col items-center gap-1.5 rounded-2xl p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60", trackers.copiesFrom(lane.service, "watches") && "cursor-grab active:cursor-grabbing")}
           >
             <Logo service={lane.service} size={60} className={cx("transition-all duration-300 group-hover:scale-105", over === lane.key ? "scale-125 ring-2 ring-emerald-300 shadow-[0_0_32px_rgba(110,231,183,0.55)]" : target ? "outline outline-2 outline-offset-4 outline-dashed outline-white/40" : on ? "scale-110 ring-2 ring-blue-400/80 shadow-[0_0_28px_rgba(59,130,246,0.45)]" : "shadow-lg shadow-black/40", dragging === lane.key && "opacity-60")} />
-            <span className="text-sm font-semibold">{nameOf(lane.service)}</span>
+            <span className="text-sm font-semibold">{trackers.name(lane.service)}</span>
             {target
               ? <span className="text-[11px] text-emerald-200">{over === lane.key ? "Drop to copy here" : "Copy here"}</span>
               : state && <span className={cx("text-[11px]", TEXT[state.tone])}>{state.tone === "ok" ? `read ${lane.syncedAt ? when(lane.syncedAt) : "never"}` : state.short}</span>}
@@ -753,6 +761,7 @@ const dayOf = (at: number): string => {
 };
 
 export default function JellyfinSync({ userUUID, profile, profileName, watched, rows, activeTab, compact = false, onOpen }: { userUUID: string; profile: string | null; profileName: string; watched: number; rows: JellyfinSyncRow[]; activeTab: DashboardTab; compact?: boolean; onOpen?: () => void }) {
+  const trackers = useTrackers();
   const folded = compact;
   const [tab, setTab] = useRemembered<Tab>("jellyfin.sync.tab", "trackers");
   const [view, setView] = useRemembered<View>("jellyfin.sync.view", "ledger");
@@ -806,7 +815,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
     return next;
   });
   const drifts = useMemo(() => new Map((driftData?.lanes ?? []).map((lane) => [lane.key, joined.size && lane.rewatched ? { ...lane, rewatched: lane.rewatched.filter((item) => !joined.has(`${lane.key}|${item.id}`)) } : lane])), [driftData, joined]);
-  const states = useMemo(() => new Map(lanes.map((lane) => [lane.key, laneState(lane, now, drifts.get(lane.key))])), [lanes, now, drifts]);
+  const states = useMemo(() => new Map(lanes.map((lane) => [lane.key, laneState(lane, now, trackers, drifts.get(lane.key))])), [lanes, now, trackers, drifts]);
   const rank: Tone[] = ["failing", "paused", "waiting", "drift", "ahead"];
   const selected = lanes.find((lane) => lane.key === chosen)
     ?? rank.map((tone) => lanes.find((lane) => states.get(lane.key)?.tone === tone)).find(Boolean)
@@ -857,7 +866,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
   };
 
   const runLane = async (lane: JellyfinSyncLane, full: boolean) => {
-    const name = nameOf(lane.service);
+    const name = trackers.name(lane.service);
     setRunning((held) => new Set(held).add(lane.key));
     try {
       const done = await actions.run(userUUID, lane.key, full);
@@ -882,7 +891,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
   };
 
   const settle = async (lane: JellyfinSyncLane, action: "push" | "pull", items: string[] | null) => {
-    const name = nameOf(lane.service);
+    const name = trackers.name(lane.service);
     const drift = drifts.get(lane.key);
     const picked = (action === "push" ? [...(drift?.behind ?? []), ...(drift?.rewatchNote ? [] : drift?.rewatched ?? [])] : drift?.ahead)?.filter((item) => !items || items.includes(item.id)) ?? [];
     const rows = picked.map((item) => `${lane.key}|${item.id}`);
@@ -902,7 +911,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
   };
 
   const settleImport = async (lane: JellyfinSyncLane, group: JellyfinDriftImport, action: "push" | "leave" | "restore", items: JellyfinDriftItem[] | null) => {
-    const name = nameOf(lane.service);
+    const name = trackers.name(lane.service);
     const rows = (items ?? []).map((item) => `${lane.key}|${item.id}`);
     const plays = items ? items.reduce((sum, item) => sum + item.views.length, 0) : group.plays;
     setBusy(items?.length === 1 ? `import:${group.origin}:${items[0].id}` : `import:${group.origin}:${action}`);
@@ -922,7 +931,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
   };
 
   const sameViewing = async (lane: JellyfinSyncLane, item: JellyfinDriftItem) => {
-    const name = nameOf(lane.service);
+    const name = trackers.name(lane.service);
     const views = item.views.filter((v): v is typeof v & { video: string; theirs: number } => Boolean(v.video && v.theirs));
     const row = `${lane.key}|${item.id}`;
     setBusy(`same:${item.id}`);
@@ -959,7 +968,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
           {rows.map((row, i) => {
             const tone: Tone = row.readError ? "failing" : row.lastError ? (limited(row.lastError) ? "paused" : "failing") : row.pending > 0 ? "waiting" : row.imported ? "ok" : "idle";
             return (
-              <button key={`${row.service}-${i}`} type="button" onClick={onOpen} aria-label={`Open trackers: ${nameOf(row.service)}`} title={`${nameOf(row.service)}: ${row.readError ? "can't read" : row.pending ? `${row.pending} waiting` : `read ${when(row.syncedAt)}`}`} className="relative transition-transform hover:scale-110">
+              <button key={`${row.service}-${i}`} type="button" onClick={onOpen} aria-label={`Open trackers: ${trackers.name(row.service)}`} title={`${trackers.name(row.service)}: ${row.readError ? "can't read" : row.pending ? `${row.pending} waiting` : `read ${when(row.syncedAt)}`}`} className="relative transition-transform hover:scale-110">
                 <Logo service={row.service} size={20} />
                 <span className={cx("absolute -bottom-0.5 -right-0.5 size-2 rounded-full ring-2 ring-background", DOT[tone])} />
               </button>
@@ -977,10 +986,10 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
   const pending = lanes.reduce((sum, lane) => sum + lane.pending, 0);
   const headline = !data ? "Trackers"
     : !lanes.length ? "No trackers"
-    : unreadable.length ? (unreadable.length === 1 ? `Can't read ${nameOf(unreadable[0].service)}` : `Can't read ${unreadable.length} trackers`)
+    : unreadable.length ? (unreadable.length === 1 ? `Can't read ${trackers.name(unreadable[0].service)}` : `Can't read ${unreadable.length} trackers`)
     : pending ? `${pending} waiting to send`
     : !driftData ? "Comparing…"
-    : uncompared.length ? (uncompared.length === 1 ? `Can't compare ${nameOf(uncompared[0].service)}` : `Can't compare ${uncompared.length} trackers`)
+    : uncompared.length ? (uncompared.length === 1 ? `Can't compare ${trackers.name(uncompared[0].service)}` : `Can't compare ${uncompared.length} trackers`)
     : apart ? `${apart === 1 ? "One watch" : `${apart.toLocaleString()} watches`} apart`
     : "In step";
   const selectedDrift = selected ? drifts.get(selected.key) : undefined;

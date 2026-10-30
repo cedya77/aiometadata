@@ -5,12 +5,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinCopyJobs, useJellyfinSyncActions, type DashboardTab, type JellyfinCopyJob, type JellyfinCopyNamed, type JellyfinCopyPreview, type JellyfinCopyTitle, type JellyfinCopyWhat, type JellyfinSyncLane } from "@/hooks/useDashboardQueries";
 import { Eyebrow, Logo, Still, Toggle } from "./TrackerParts";
-import { ANIME_ONLY, COPY_FROM, COPY_ROUTES, nameOf } from "./trackerNames";
+import { useTrackers } from "./trackers";
 import { when } from "./jellyfinUtils";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 const shortDay = (at: number) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+const orList = (names: string[]) => (names.length > 1 ? `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}` : names.join(""));
 
 type Range = "all" | "since" | "pick";
 
@@ -37,6 +38,7 @@ function markLine(t: JellyfinCopyTitle, what: JellyfinCopyWhat): string {
 }
 
 function Side({ label, lane, lanes, onPick, accent }: { label: string; lane: JellyfinSyncLane | undefined; lanes: JellyfinSyncLane[]; onPick: (key: string) => void; accent?: boolean }) {
+  const trackers = useTrackers();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -44,7 +46,7 @@ function Side({ label, lane, lanes, onPick, accent }: { label: string; lane: Jel
           {lane ? <Logo service={lane.service} size={48} /> : <span className="size-12 rounded-xl bg-white/5" />}
           <span className="min-w-0 flex-1">
             <span className={cx("block text-[11px] font-medium uppercase tracking-[0.14em]", accent ? "text-blue-300" : "text-muted-foreground")}>{label}</span>
-            <span className="block truncate text-lg font-bold">{lane ? nameOf(lane.service) : "Pick a tracker"}</span>
+            <span className="block truncate text-lg font-bold">{lane ? trackers.name(lane.service) : "Pick a tracker"}</span>
             {lane && lane.profiles.length > 0 && <span className="block truncate text-xs text-muted-foreground">{lane.profiles.join(", ")} · read {lane.syncedAt ? when(lane.syncedAt) : "never"}</span>}
           </span>
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
@@ -53,7 +55,7 @@ function Side({ label, lane, lanes, onPick, accent }: { label: string; lane: Jel
       <DropdownMenuContent align="start" className="w-64">
         {lanes.map((option) => (
           <DropdownMenuItem key={option.key} onSelect={() => onPick(option.key)} className="gap-3">
-            <Logo service={option.service} size={22} /> {nameOf(option.service)}
+            <Logo service={option.service} size={22} /> {trackers.name(option.service)}
             {option.profiles.length > 1 && <span className="text-xs text-muted-foreground">{option.profiles.join(", ")}</span>}
           </DropdownMenuItem>
         ))}
@@ -63,6 +65,7 @@ function Side({ label, lane, lanes, onPick, accent }: { label: string; lane: Jel
 }
 
 function JobCard({ job, onControl }: { job: JellyfinCopyJob; onControl: (id: number, action: "pause" | "resume" | "stop") => void }) {
+  const trackers = useTrackers();
   const share = job.total ? Math.min(100, (job.done / job.total) * 100) : 100;
   const live = job.status === "running" || job.status === "paused";
   const waiting = job.status === "running" && job.nextAt && job.nextAt - Date.now() > 60_000;
@@ -75,7 +78,7 @@ function JobCard({ job, onControl }: { job: JellyfinCopyJob; onControl: (id: num
           <Logo service={job.toService} size={28} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold">{nameOf(job.fromService)} to {nameOf(job.toService)}</span>
+          <span className="block text-sm font-semibold">{trackers.name(job.fromService)} to {trackers.name(job.toService)}</span>
           <span className="block text-xs text-muted-foreground">
             {job.status === "done" ? `Finished ${when(job.finishedAt ?? job.createdAt)}` : job.status === "stopped" ? `Stopped ${when(job.finishedAt ?? job.createdAt)}` : job.status === "failed" ? "Gave up" : job.status === "paused" ? "Paused" : waiting ? `Waiting, resumes ${new Date(job.nextAt!).toLocaleString(undefined, { hour: "numeric", minute: "2-digit", month: "short", day: "numeric" })}` : "Copying"}
             {" · started "}{when(job.createdAt)}
@@ -111,11 +114,12 @@ export default function JellyfinCopy({ userUUID, profile, lanes, activeTab, init
 }) {
   const [what, setWhat] = useState<JellyfinCopyWhat>("watches");
   const [retry, setRetry] = useState(false);
-  const route = COPY_ROUTES[what];
-  const sources = useMemo(() => lanes.filter((lane) => route.from.has(lane.service)), [lanes, route]);
-  const targets = useMemo(() => lanes.filter((lane) => !route.to || route.to.has(lane.service)), [lanes, route]);
-  const [from, setFrom] = useState<string>(initial?.from ?? lanes.find((lane) => COPY_FROM.has(lane.service))?.key ?? "");
-  const [to, setTo] = useState<string>(initial?.to ?? lanes.find((lane) => lane.key !== (initial?.from ?? lanes.find((l) => COPY_FROM.has(l.service))?.key))?.key ?? "");
+  const trackers = useTrackers();
+  const sources = useMemo(() => lanes.filter((lane) => trackers.copiesFrom(lane.service, what)), [lanes, trackers, what]);
+  const targets = useMemo(() => lanes.filter((lane) => trackers.copiesTo(lane.service, what)), [lanes, trackers, what]);
+  const firstSource = lanes.find((lane) => trackers.copiesFrom(lane.service, "watches"))?.key;
+  const [from, setFrom] = useState<string>(initial?.from ?? firstSource ?? "");
+  const [to, setTo] = useState<string>(initial?.to ?? lanes.find((lane) => lane.key !== (initial?.from ?? firstSource))?.key ?? "");
   const [range, setRange] = useState<Range>("all");
   const [sinceDay, setSinceDay] = useState(() => new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10));
   const [preview, setPreview] = useState<JellyfinCopyPreview | null>(null);
@@ -196,10 +200,13 @@ export default function JellyfinCopy({ userUUID, profile, lanes, activeTab, init
     ? <p>Watches sent before that didn't land are included this time. <button type="button" onClick={() => setRetry(false)} className="font-semibold text-blue-300 hover:text-blue-200">Leave them out</button></p>
     : refused > 0 ? <p><button type="button" onClick={() => setRetry(true)} className="font-semibold text-blue-300 hover:text-blue-200">Try the {refused.toLocaleString()} sent before again</button></p> : null;
   const posters = (preview?.titles ?? []).slice(0, 8).map((t) => names[t.video]?.posterUrl ?? names[t.video]?.imageUrl).filter(Boolean) as string[];
-  const toName = toLane ? nameOf(toLane.service) : "";
-  const fromName = fromLane ? nameOf(fromLane.service) : "";
+  const toName = toLane ? trackers.name(toLane.service) : "";
+  const toTracker = toLane ? trackers.of(toLane.service) : undefined;
+  const toAnime = toTracker?.animeOnly === true;
+  const pace = toTracker?.pace ?? null;
+  const fromName = fromLane ? trackers.name(fromLane.service) : "";
 
-  const swappable = Boolean(toLane && fromLane && route.from.has(toLane.service) && (!route.to || route.to.has(fromLane.service)));
+  const swappable = Boolean(toLane && fromLane && trackers.copiesFrom(toLane.service, what) && trackers.copiesTo(fromLane.service, what));
   const swap = () => {
     if (!swappable) return;
     setFrom(to);
@@ -231,7 +238,7 @@ export default function JellyfinCopy({ userUUID, profile, lanes, activeTab, init
     }
   };
 
-  if (!lanes.some((lane) => COPY_FROM.has(lane.service))) return <p className="text-sm text-muted-foreground">Copying starts from MDBList, Simkl or PublicMetaDB; connect one to copy its history to another tracker.</p>;
+  if (!lanes.some((lane) => trackers.copiesFrom(lane.service, "watches"))) return <p className="text-sm text-muted-foreground">Copying starts from {orList(trackers.list.filter((tracker) => tracker.datedHistory).map((tracker) => tracker.name))}; connect one to copy its history to another tracker.</p>;
 
   const running = jobs.filter((job) => job.status === "running" || job.status === "paused");
   const recent = jobs.filter((job) => !running.includes(job)).slice(0, 3);
@@ -287,7 +294,7 @@ export default function JellyfinCopy({ userUUID, profile, lanes, activeTab, init
             <div className="flex flex-wrap gap-x-9 gap-y-3">
               {(marks
                 ? ([[preview.totals.films, "film", "films"], [preview.totals.shows ?? 0, "show", "shows"], [preview.totals.seasons ?? 0, "season", "seasons"], [preview.totals.episodes, "episode", "episodes"]] as const).filter(([n], i) => n > 0 || i < 2)
-                : ([[preview.totals.films, "film", "films"], [preview.totals.episodes, ANIME_ONLY.has(toLane?.service ?? "") ? "show's progress" : "episode", ANIME_ONLY.has(toLane?.service ?? "") ? "shows' progress" : "episodes"], [preview.totals.titles, "title", "titles"]] as const)
+                : ([[preview.totals.films, "film", "films"], [preview.totals.episodes, toAnime ? "show's progress" : "episode", toAnime ? "shows' progress" : "episodes"], [preview.totals.titles, "title", "titles"]] as const)
               ).map(([n, one, many]) => (
                 <div key={many}>
                   <p className="text-3xl font-extrabold tabular-nums tracking-tight">{n.toLocaleString()}</p>
@@ -331,16 +338,16 @@ export default function JellyfinCopy({ userUUID, profile, lanes, activeTab, init
             )}
             <div className="space-y-1 text-xs leading-relaxed text-muted-foreground">
               {what === "watches" && <p>Each watch keeps the date {fromName} has, and anything not yet in your history comes in too. Nothing is removed from {toName}, and what it already has is skipped, so copying again is safe.</p>}
-              {what === "ratings" && <p>Each rating keeps the date {fromName} has. Titles {toName} has already rated keep their own rating, so copying again is safe, and films and shows not rated here yet are rated here too.{toLane?.service === "simkl" || toLane?.service === "mal" ? ` ${toName} rates in whole numbers, so half points are rounded.` : ""}</p>}
-              {what === "watchlist" && <p>Titles already on {toName}{toLane?.service === "simkl" ? " or anywhere in your Simkl library" : ""} are skipped, and nothing is removed from it, so copying again is safe.</p>}
+              {what === "ratings" && <p>Each rating keeps the date {fromName} has. Titles {toName} has already rated keep their own rating, so copying again is safe, and films and shows not rated here yet are rated here too.{toTracker?.wholeRatings ? ` ${toName} rates in whole numbers, so half points are rounded.` : ""}</p>}
+              {what === "watchlist" && <p>Titles already on {toName} are skipped, and nothing is removed from it, so copying again is safe.{toTracker?.notes?.watchlist ? ` ${toTracker.notes.watchlist}` : ""}</p>}
               {what === "dropped" && <p>Shows {toName} already has as dropped are skipped. Your watch history on {toName} stays as it is.</p>}
               {marks && preview.totals.excluded > 0 && Object.entries(preview.totals.reasons ?? {}).map(([reason, n]) => <p key={reason}>{plural(n, "title")} {REASONS[reason] ?? reason}, so {n === 1 ? "it stays" : "they stay"} out.</p>)}
-              {what === "ratings" && toLane?.service === "publicmetadb" && chosenWatches > 20 && <p>{toName} takes 200 new ratings an hour, so this runs for about {Math.max(1, Math.round(chosenWatches / 200))} {Math.round(chosenWatches / 200) <= 1 ? "hour" : "hours"}.</p>}
+              {what === "ratings" && pace?.ratingsPerHour && chosenWatches > 20 && <p>{toName} takes {pace.ratingsPerHour} new ratings an hour, so this runs for about {Math.max(1, Math.round(chosenWatches / pace.ratingsPerHour))} {Math.round(chosenWatches / pace.ratingsPerHour) <= 1 ? "hour" : "hours"}.</p>}
               {!marks && (preview.totals.blocked?.noId ?? 0) > 0 && <p>{plural(preview.totals.blocked!.noId, "watch", "watches")} can't be copied: {toName} has no id for {preview.totals.blocked!.noId === 1 ? "it" : "them"}.</p>}
               {!marks && (preview.totals.blocked?.refused ?? 0) > 0 && <p>{plural(preview.totals.blocked!.refused, "watch", "watches")} {preview.totals.blocked!.refused === 1 ? "was" : "were"} sent before and {toName} didn't take {preview.totals.blocked!.refused === 1 ? "it" : "them"}, so {preview.totals.blocked!.refused === 1 ? "it stays" : "they stay"} out.</p>}
               {retryControl}
-              {!marks && preview.totals.excluded > 0 && <p>{plural(preview.totals.excluded, "watch", "watches")} {ANIME_ONLY.has(toLane?.service ?? "") ? "aren't anime" : `are turned off for ${toName} in your tracking settings`}, so {preview.totals.excluded === 1 ? "it stays" : "they stay"} out.</p>}
-              {!marks && toLane?.service === "publicmetadb" && chosenWatches > 200 && <p>{toName} takes one watch at a time, so this runs for about {Math.max(1, Math.round(chosenWatches / 4 / 60))} {Math.round(chosenWatches / 4 / 60) <= 1 ? "minute" : "minutes"}.</p>}
+              {!marks && preview.totals.excluded > 0 && <p>{plural(preview.totals.excluded, "watch", "watches")} {toAnime ? "aren't anime" : `are turned off for ${toName} in your tracking settings`}, so {preview.totals.excluded === 1 ? "it stays" : "they stay"} out.</p>}
+              {!marks && pace && chosenWatches > 200 && <p>{toName} takes one watch at a time, so this runs for about {Math.max(1, Math.round(chosenWatches / pace.perSecond / 60))} {Math.round(chosenWatches / pace.perSecond / 60) <= 1 ? "minute" : "minutes"}.</p>}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
               <span className="text-xs text-muted-foreground">Runs in the background; you can leave this page.</span>

@@ -23,7 +23,6 @@ import {
   type JellyfinTitleRef,
 } from "@/hooks/useDashboardQueries";
 import { ActivityMap, Hero } from "./JellyfinHero";
-import { TRACKER_NAMES } from "./trackerNames";
 import JellyfinSync from "./JellyfinSync";
 import { MoreFooter, PlayTable, PlayedByDay, ProgressCard, Row, type ProgressAction } from "./JellyfinPlays";
 import RemoteSheet, { type RemoteTarget } from "./JellyfinRemote";
@@ -210,12 +209,12 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   );
 
   const watched = shown.reduce((sum, p) => sum + p.movies + p.episodes, 0);
-  const trackers = data.sync.filter((row) => row.profiles.includes(historyName)).map((row) => TRACKER_NAMES[row.service] ?? row.service);
+  const sentTo = data.sync.filter((row) => row.profiles.includes(historyName)).map((row) => row.service);
   return (
     <OpenTitleContext.Provider value={openTitle}>
     <div className="border-t border-white/[0.06]">
       {remote && <RemoteSheet userUUID={userUUID} profile={remote.profile} profileName={remote.profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
-      {route.stack.length > 0 && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} trackers={trackers} stack={route.stack} activeTab={activeTab} onOpen={openStack} />}
+      {route.stack.length > 0 && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} sentTo={sentTo} stack={route.stack} activeTab={activeTab} onOpen={openStack} />}
       <Hero data={data} profile={profile} onProfile={setProfile} activity={activity} controls={controls} switching={switching} />
       <JellyfinImport userUUID={userUUID} notice />
       <div ref={sectionsTop} />

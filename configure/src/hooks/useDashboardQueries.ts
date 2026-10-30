@@ -2048,6 +2048,40 @@ export interface JellyfinSync {
   feed: JellyfinSyncFeedItem[];
 }
 
+export type TrackerMark = 'ratings' | 'watchlist' | 'dropped';
+
+export interface TrackerInfo {
+  id: string;
+  name: string;
+  color: string;
+  animeOnly: boolean;
+  datedHistory: boolean;
+  matchable: boolean;
+  wholeRatings: boolean;
+  redates: 'all' | 'episodes' | null;
+  marks: { from: TrackerMark[]; to: TrackerMark[] };
+  pace: { perSecond: number; ratingsPerHour?: number } | null;
+  notes?: { watchlist?: string; redate?: string };
+}
+
+export function useTrackerInfo() {
+  const { isAdmin, logout } = useAdmin();
+  const getHeaders = useApiHeaders();
+  return useQuery({
+    queryKey: ['dashboard', 'trackers'] as const,
+    queryFn: async () => {
+      try {
+        return (await fetchDashboardData<{ trackers: TrackerInfo[] }>('/api/dashboard/trackers', getHeaders())).trackers;
+      } catch (error) {
+        if (error instanceof Error && error.message === 'UNAUTHORIZED') logout();
+        throw error;
+      }
+    },
+    enabled: isAdmin,
+    staleTime: Infinity,
+  });
+}
+
 export function useJellyfinSync(userUUID: string, profile: string | null, open: boolean, options: DashboardQueryOptions = {}) {
   const params = new URLSearchParams();
   if (profile !== null) params.set('profile', profile);

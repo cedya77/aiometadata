@@ -11,6 +11,7 @@ export type { Mark, Tracker } from './types';
 export { MARK_KINDS } from './types';
 
 export const TRACKERS: Record<AccountService, Tracker> = { simkl, mdblist, publicmetadb, anilist, mal };
+const LIST: Tracker[] = Object.values(TRACKERS);
 
 export const trackerOf = (id: string): Tracker | undefined => (TRACKERS as Record<string, Tracker>)[id];
 export const trackerName = (id: string): string => trackerOf(id)?.name ?? id;
@@ -26,4 +27,20 @@ export function gapMs(id: string, what: Mark | 'watches' = 'watches'): number {
   const pace = trackerOf(id)?.pace?.();
   if (!pace) return 1000;
   return what === 'ratings' && pace.ratingsPerHour ? Math.ceil(3_600_000 / pace.ratingsPerHour) : Math.ceil(1000 / pace.perSecond);
+}
+
+export function trackerFacts() {
+  return LIST.map((tracker) => ({
+    id: tracker.id,
+    name: tracker.name,
+    color: tracker.color,
+    animeOnly: tracker.animeOnly,
+    datedHistory: tracker.datedHistory,
+    matchable: Boolean(tracker.match),
+    wholeRatings: tracker.wholeRatings,
+    redates: tracker.redate?.scope ?? null,
+    marks: tracker.marks,
+    pace: tracker.pace?.() ?? null,
+    notes: tracker.notes,
+  }));
 }

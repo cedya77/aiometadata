@@ -8613,6 +8613,10 @@ addon.post("/api/dashboard/jellyfin/:userUUID/title/watch-date", requireDashboar
   }
 });
 
+addon.get("/api/dashboard/trackers", requireDashboardAdmin, (req, res) => {
+  res.json({ trackers: require('./lib/trackers').trackerFacts() });
+});
+
 addon.get("/api/dashboard/jellyfin/:userUUID/sync", requireDashboardAdmin, async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;

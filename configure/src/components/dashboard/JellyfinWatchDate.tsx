@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronLeft, ChevronRight, Clock, ImageOff, Loader2 } from "lucide-react";
+import type { TrackerInfo } from "@/hooks/useDashboardQueries";
+import { useTrackers } from "./trackers";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
@@ -51,10 +53,10 @@ function weekStart(): number {
 
 const uses12Hours = new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 === true;
 
-function dateNote(target: WatchDateTarget, trackers: string[]): string {
+function dateNote(target: WatchDateTarget, sentTo: TrackerInfo[]): string {
   if (target.from === null) return "Saved here. The trackers keep the date they have.";
-  const moved = trackers.filter((name) => name === "MDBList" || name === "PublicMetaDB" || (name === "Simkl" && target.episode));
-  const held = !target.episode && trackers.includes("Simkl") ? " Simkl keeps its own date for movies, since changing it there clears your rating." : "";
+  const moved = sentTo.filter((tracker) => tracker.redates === "all" || (tracker.redates === "episodes" && target.episode)).map((tracker) => tracker.name);
+  const held = target.episode ? "" : sentTo.filter((tracker) => tracker.redates === "episodes" && tracker.notes?.redate).map((tracker) => ` ${tracker.notes!.redate}`).join("");
   return `Saved here${moved.length ? ` and changed on ${moved.join(", ")}` : ""}.${held}`;
 }
 
@@ -87,13 +89,14 @@ function TimeField({ value, min, max, label, onChange }: { value: number; min: n
   );
 }
 
-export default function WatchDateSheet({ target, anchor, trackers, onSave, onClose }: {
+export default function WatchDateSheet({ target, anchor, sentTo, onSave, onClose }: {
   target: WatchDateTarget;
   anchor: WatchDateAnchor;
-  trackers: string[];
+  sentTo: string[];
   onSave: (to: number) => Promise<boolean>;
   onClose: () => void;
 }) {
+  const trackers = useTrackers();
   const ref = useRef<HTMLFormElement>(null);
   const grid = useRef<HTMLDivElement>(null);
   const [now] = useState(() => Date.now());
@@ -335,7 +338,7 @@ export default function WatchDateSheet({ target, anchor, trackers, onSave, onClo
       </div>
 
       <p className={cx("px-3 pt-3 text-xs leading-relaxed", future ? "text-amber-300" : "text-muted-foreground")}>
-        {future ? "That's later than now. Pick a time that has passed." : dateNote(target, trackers)}
+        {future ? "That's later than now. Pick a time that has passed." : dateNote(target, sentTo.map(trackers.of).filter((tracker): tracker is TrackerInfo => Boolean(tracker)))}
       </p>
       <div className="flex items-center justify-end gap-2 p-3">
         <button type="button" onClick={onClose} disabled={saving} className="inline-flex h-10 items-center rounded-full px-4 text-sm font-medium text-foreground/70 transition hover:bg-white/10 hover:text-foreground">Cancel</button>

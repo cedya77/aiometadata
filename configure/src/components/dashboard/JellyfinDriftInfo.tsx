@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Info, Link2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinDriftDetail, type DashboardTab, type JellyfinDriftItem } from "@/hooks/useDashboardQueries";
-import { nameOf } from "./trackerNames";
+import { useTrackers } from "./trackers";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 const day = (at: number) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: new Date(at).getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
@@ -71,7 +71,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Detail({ userUUID, laneKey, service, side: shown, item, activeTab, open }: { userUUID: string; laneKey: string; service: string; side: "behind" | "ahead" | "again"; item: JellyfinDriftItem; activeTab: DashboardTab; open: boolean }) {
-  const name = nameOf(service);
+  const name = useTrackers().name(service);
   const side = shown === "ahead" ? "ahead" : "behind";
   const { data, isLoading, isError } = useJellyfinDriftDetail(userUUID, laneKey, side, item, open, { activeTab });
   const seasons = seasonsOf(item);

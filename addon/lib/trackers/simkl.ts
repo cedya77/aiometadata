@@ -174,7 +174,12 @@ export const simkl: Tracker = {
     },
   },
   datedHistory: true,
+  wholeRatings: true,
   marks: { from: MARK_KINDS, to: MARK_KINDS },
+  notes: {
+    watchlist: 'Titles anywhere in your Simkl library are skipped too.',
+    redate: 'Simkl keeps its own date for movies, since changing it there clears your rating.',
+  },
   async readMarks(what, side) {
     const out: Array<MarkItem | null> = [];
     for (const { type, data } of await simklEntries(side.credential)) {

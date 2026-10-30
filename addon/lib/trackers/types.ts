@@ -18,11 +18,13 @@ export interface Tracker {
   color: string;
   animeOnly: boolean;
   datedHistory: boolean;
+  wholeRatings: boolean;
   marks: { from: Mark[]; to: Mark[] };
   batch?: number;
   markBatch?: Partial<Record<Mark, number>>;
   batchGapMs?: number;
   pace?: () => TrackerPace;
+  notes?: { watchlist?: string; redate?: string };
   readMarks?(what: Mark, side: MarkSide): Promise<MarkItem[]>;
   heldMarks?(what: Mark, side: MarkSide): Promise<Set<string>>;
   markContext?(what: Mark, side: MarkSide): Promise<unknown>;

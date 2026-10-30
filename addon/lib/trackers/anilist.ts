@@ -9,6 +9,7 @@ export const anilist: Tracker = {
   color: '#152232',
   animeOnly: true,
   datedHistory: false,
+  wholeRatings: false,
   marks: { from: [], to: MARK_KINDS },
   batch: 10,
   pace: () => ({ perSecond: 1 }),

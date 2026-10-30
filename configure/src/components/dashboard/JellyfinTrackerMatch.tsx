@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinSyncActions, useJellyfinTitle, type DashboardTab, type JellyfinMatchCandidate, type JellyfinMatchDetail, type JellyfinMatchSeason, type JellyfinTrackerMatch } from "@/hooks/useDashboardQueries";
 import { Eyebrow } from "./TrackerParts";
-import { nameOf } from "./trackerNames";
+import { useTrackers } from "./trackers";
 import { GUESSED, LOOK, heldIn, keyOf, norm, planSeason, seasonLink, seasonName, sentKey, strayEpisodes, wordsOf, type OurEpisode, type Ref, type Row, type SeasonPlan, type Status, type TheirEpisode } from "./trackerMatchPlan";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
@@ -68,7 +68,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const name = nameOf(service);
+  const name = useTrackers().name(service);
   const actions = useJellyfinSyncActions();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState(subject.title ?? "");
