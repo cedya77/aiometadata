@@ -1,6 +1,7 @@
 import { envInt } from '../../utils/envNumber';
 import { MARK_KINDS, type Mark, type Tracker } from './types';
 import { TITLE_KEYS, cleanIds, dateOf, iso, markItem, mirrored, notFoundCount, scoreOf, titleIds, type MarkItem, type MarkOutcome } from './marks';
+import { sharesId, targetsFor, type CopyItem, type TmdbWatch, type WatchOutcome } from './watches';
 
 async function mdblistPages(apiKey: string, path: string, label: string, arrays: string[]): Promise<Record<string, any[]>> {
   const { makeRateLimitedMDBListRequest } = require('../../utils/mdbList');
@@ -55,12 +56,41 @@ async function writeMarks(what: Mark, items: MarkItem[], apiKey: string): Promis
   }
 }
 
+function missed(write: any, missing: any): boolean {
+  const list = (key: string): any[] => (Array.isArray(missing?.[key]) ? missing[key] : []);
+  if (write.episodeIds) return list('episodes').some((entry) => sharesId(entry?.ids, write.episodeIds));
+  if (write.season == null || write.episode == null) return list('movies').some((entry) => sharesId(entry?.ids, write.ids));
+  if (list('shows').some((entry) => sharesId(entry?.ids, write.ids))) return true;
+  return list('episodes').some((entry) => Number(entry?.season) === Number(write.season) && Number(entry?.number) === Number(write.episode) && sharesId(entry?.show?.ids, write.ids));
+}
+
+async function writeWatches(items: CopyItem[], apiKey: string, config: any): Promise<WatchOutcome> {
+  const { mdblistCallsLeft, addHistoryBatch } = require('../../utils/mdbList');
+  const { remaining, limit, resetAt } = mdblistCallsLeft(apiKey);
+  if (remaining !== null && remaining <= Math.max(50, (limit ?? 0) / 5)) return { done: 0, sent: 0, failed: 0, wait: resetAt - Date.now(), error: 'Waiting for the MDBList quota to reset' };
+  const { writes, from, lost } = await targetsFor(mdblist, items, config);
+  if (!writes.length) return { done: items.length, sent: 0, failed: lost.length, lost };
+  const unresolved = lost.length;
+  try {
+    const { missed: missing } = await addHistoryBatch(writes, apiKey);
+    for (const [w, write] of writes.entries()) if (missed(write, missing)) lost.push(from[w]);
+    // A show MDBList did not find is one entry for every episode written under it.
+    return { done: items.length, sent: writes.length - (lost.length - unresolved), failed: lost.length, lost };
+  } catch (error: any) {
+    if (error?.code === 'MDBLIST_QUOTA_EXHAUSTED' || error?.response?.status === 429) return { done: 0, sent: 0, failed: 0, wait: mdblistCallsLeft(apiKey).resetAt - Date.now(), error: 'MDBList quota spent' };
+    throw error;
+  }
+}
+
 export const mdblist: Tracker = {
   id: 'mdblist',
   name: 'MDBList',
   color: '#4a86d0',
   animeOnly: false,
+  rewatch: { separate: false },
+  datedHistory: true,
   marks: { from: MARK_KINDS, to: MARK_KINDS },
+  batchGapMs: 1000,
   async readMarks(what, side) {
     const out: Array<MarkItem | null> = [];
     if (what === 'ratings') {
@@ -93,4 +123,19 @@ export const mdblist: Tracker = {
     return TITLE_KEYS.some((key) => entry.ids[key]) ? null : 'no id';
   },
   writeMarks: (what, items, side) => writeMarks(what, items, side.credential),
+  tmdbWatches(rows) {
+    const out: TmdbWatch[] = [];
+    for (const { key, data } of rows) {
+      if (key.startsWith('movie:')) {
+        const ids = data?.movie?.ids ?? {};
+        out.push({ kind: 'movie', tmdb: Number(ids.tmdb), imdb: ids.imdb ?? null, showTvdb: null, season: null, episode: null, tvdb: null, at: dateOf(data?.last_watched_at) });
+      } else if (key.startsWith('ep:')) {
+        const show = data?.episode?.show?.ids ?? {};
+        out.push({ kind: 'episode', tmdb: Number(show.tmdb), imdb: show.imdb ?? null, showTvdb: show.tvdb ?? null, season: Number(data?.episode?.season), episode: Number(data?.episode?.number), tvdb: data?.episode?.tvdb_ids ?? null, at: dateOf(data?.last_watched_at) });
+      }
+    }
+    return out;
+  },
+  takesEpisodeIds: true,
+  writeWatches: { url: 'https://api.mdblist.com/sync/watched', write: (items, credential, config) => writeWatches(items, credential, config) },
 };

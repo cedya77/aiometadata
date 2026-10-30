@@ -422,13 +422,15 @@ export async function deliverCatchUp(service: WatchTrackingService, p: { type: s
 
 export async function deliverCatchUps(service: WatchTrackingService, p: { items?: any[]; rewatch?: boolean }, config: any, userUUID: string): Promise<void> {
   const items = Array.isArray(p.items) ? p.items : [];
-  const credential = service === 'mdblist' ? config.apiKeys?.mdblist : service === 'simkl' ? config.apiKeys?.simklTokenId : null;
+  const { ACCOUNT_SERVICES } = require('./accounts');
+  const { trackerName, trackerOf } = require('./trackers');
+  const batch = trackerOf(service)?.writeWatches;
+  const credential = batch ? config.apiKeys?.[ACCOUNT_SERVICES[service].key] : null;
   if (!items.length || !credential) return;
-  const { writeMdblist, writeSimkl } = require('./jellyfin/trackerCopy');
   const { noteTrackerCall } = require('../utils/trackerCalls');
-  const outcome = service === 'mdblist' ? await writeMdblist(items, credential, config) : await writeSimkl(items, credential, config, p.rewatch === true);
-  const name = service === 'mdblist' ? 'MDBList' : 'Simkl';
-  const url = service === 'mdblist' ? 'https://api.mdblist.com/sync/watched' : 'https://api.simkl.com/sync/history';
+  const outcome = await batch.write(items, credential, config, p.rewatch === true);
+  const name = trackerName(service);
+  const url = batch.url;
   if (outcome.wait) {
     noteTrackerCall(url, 429, outcome.error ?? 'waiting for the allowance', null, Date.now() + outcome.wait);
     return;

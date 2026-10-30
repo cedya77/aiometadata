@@ -1,5 +1,6 @@
 import type { AccountService } from '../accounts';
 import type { MarkItem, MarkOutcome, MarkSide, MarkWrite } from './marks';
+import type { CopyItem, CopyTarget, MirrorRow, TmdbWatch, WatchOutcome } from './watches';
 
 export type Mark = 'ratings' | 'watchlist' | 'dropped';
 export const MARK_KINDS: Mark[] = ['ratings', 'watchlist', 'dropped'];
@@ -14,9 +15,11 @@ export interface Tracker {
   name: string;
   color: string;
   animeOnly: boolean;
+  datedHistory: boolean;
   marks: { from: Mark[]; to: Mark[] };
   batch?: number;
   markBatch?: Partial<Record<Mark, number>>;
+  batchGapMs?: number;
   pace?: () => TrackerPace;
   readMarks?(what: Mark, side: MarkSide): Promise<MarkItem[]>;
   heldMarks?(what: Mark, side: MarkSide): Promise<Set<string>>;
@@ -26,4 +29,10 @@ export interface Tracker {
   writeMarks?(what: Mark, items: MarkItem[], side: MarkSide, userUUID: string): Promise<MarkOutcome>;
   writeMark?(what: Mark, entry: MarkItem, side: MarkSide, userUUID: string): Promise<MarkWrite>;
   checkSignIn?(credential: string): Promise<void>;
+  rewatch?: { separate: boolean; kept?(credential: string): Promise<boolean> };
+  tmdbWatches?(rows: MirrorRow[]): TmdbWatch[];
+  watchesHeld?: { read(credential: string): Promise<Set<string>>; keys(target: CopyTarget, kind: 'movie' | 'episode'): string[] };
+  takesEpisodeIds?: boolean;
+  writeWatches?: { url: string; write(items: CopyItem[], credential: string, config: any, rewatch?: boolean): Promise<WatchOutcome> };
+  writeWatch?(item: CopyItem, credential: string, config: any): Promise<boolean>;
 }

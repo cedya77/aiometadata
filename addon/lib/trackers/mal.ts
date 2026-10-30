@@ -8,6 +8,7 @@ export const mal: Tracker = {
   name: 'MyAnimeList',
   color: '#2e51a2',
   animeOnly: true,
+  datedHistory: false,
   marks: { from: [], to: MARK_KINDS },
   batch: 10,
   pace: () => ({ perSecond: 1 }),

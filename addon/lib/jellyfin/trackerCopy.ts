@@ -7,13 +7,12 @@ import { scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
 import { asListed, belongsOn, furthestPerEntry, pullDrift, spellingFor, spellingsFor, viewingOf, type Viewing } from './trackerDrift';
 import { MARKS, markVideo, planMarks, ratingKeys, writeMarks, type Mark, type MarkItem } from './trackerMarks';
-import type { SimklMissed } from '../../utils/simklUtils';
-import { copyBatch, gapMs, isAnimeList, trackerName } from '../trackers';
+import { copyBatch, gapMs, isAnimeList, trackerName, trackerOf } from '../trackers';
+import { aliasesOf, copyTarget as targetOn, heldKeysOf, nativeKey, spellingsOf, type CopyItem, type CopyTarget, type MirrorRow, type WatchOutcome } from '../trackers/watches';
 
 const logger = consola.withTag('Trackers');
 const database: any = require('../database');
 
-export const COPY_SOURCES = new Set<string>(['simkl', 'mdblist', 'publicmetadb']);
 const NOUNS: Record<string, [string, string]> = { watches: ['watch', 'watches'], ratings: ['rating', 'ratings'], watchlist: ['watchlist title', 'watchlist titles'], dropped: ['dropped show', 'dropped shows'] };
 export type CopyWhat = 'watches' | Mark;
 
@@ -25,85 +24,44 @@ export interface CopySide {
   scoped: any;
 }
 
-export interface CopyItem {
-  ids: string[];
-  kind: 'movie' | 'episode';
-  metaId: string;
-  season: number | null;
-  episode: number | null;
-  at: number | null;
-  native?: { tmdb: number; imdb: string | null; season: number | null; episode: number | null };
+export type { CopyItem } from '../trackers/watches';
+
+const tmdbNumbered = (service: string) => Boolean(trackerOf(service)?.tmdbWatches);
+
+async function tmdbWatchesOf(service: string, credential: string) {
+  const { mirrorRows } = require('./trackerMirror');
+  const rows: MirrorRow[] = await mirrorRows(service, credential);
+  return trackerOf(service)?.tmdbWatches?.(rows) ?? [];
 }
 
-const TMDB_NUMBERED = new Set<string>(['mdblist', 'publicmetadb']);
-
-const nativeKey = (kind: string, tmdb: number, season: number | null, episode: number | null) => (kind === 'movie' ? `movie:${tmdb}` : `tv:${tmdb}:${season}:${episode}`);
-const dateOf = (value: unknown): number | null => {
-  const at = Date.parse(String(value ?? '').replace(' ', 'T'));
-  return Number.isFinite(at) ? at : null;
-};
-
 async function nativeEntries(service: string, credential: string, config: any): Promise<CopyItem[]> {
-  const { mirrorRows } = require('./trackerMirror');
   const { movieSpellings } = require('./watched');
-  const rows: Array<{ key: string; data: any }> = await mirrorRows(service, credential);
   const byKey = new Map<string, CopyItem>();
-  const add = async (kind: 'movie' | 'episode', tmdb: number, imdb: string | null, season: number | null, episode: number | null, at: number | null, spellings: string[]) => {
-    if (!Number.isFinite(tmdb) || tmdb <= 0) return;
+  for (const watch of await tmdbWatchesOf(service, credential)) {
+    const { kind, tmdb, imdb, season, episode, at } = watch;
+    if (!Number.isFinite(tmdb) || tmdb <= 0) continue;
     const key = nativeKey(kind, tmdb, season, episode);
     const held = byKey.get(key);
     if (held) {
       if ((at ?? 0) > (held.at ?? 0)) held.at = at;
-      return;
+      continue;
     }
+    const spellings = spellingsOf(watch);
     const ids = new Set(spellings);
     for (const spelling of spellings) for (const alias of await videoIdAliases(spelling).catch(() => [] as string[])) ids.add(alias);
     if (kind === 'movie') for (const spelling of spellings) for (const more of await movieSpellings(spelling, config)) ids.add(more);
     const list = [...ids];
     byKey.set(key, { ids: list, kind, metaId: kind === 'movie' ? list[0] : imdb ?? `tmdb:${tmdb}`, season, episode, at, native: { tmdb, imdb, season, episode } });
-  };
-  for (const row of rows) {
-    const data = row.data;
-    if (service === 'mdblist' && row.key.startsWith('movie:')) {
-      const ids = data?.movie?.ids ?? {};
-      await add('movie', Number(ids.tmdb), ids.imdb ?? null, null, null, dateOf(data?.last_watched_at), [ids.imdb, `tmdb:${ids.tmdb}`].filter((id) => id && !String(id).endsWith(':undefined')));
-    } else if (service === 'mdblist' && row.key.startsWith('ep:')) {
-      const show = data?.episode?.show?.ids ?? {};
-      const season = Number(data?.episode?.season);
-      const episode = Number(data?.episode?.number);
-      const named = data?.episode?.tvdb_ids;
-      const spellings: string[] = [];
-      if (named?.series && Number.isFinite(Number(named.season)) && Number.isFinite(Number(named.episode))) {
-        spellings.push(`tvdb:${named.series}:${named.season}:${named.episode}`);
-        if (show.imdb && String(show.tvdb ?? '') === String(named.series)) spellings.push(`${show.imdb}:${named.season}:${named.episode}`);
-      } else if (show.imdb) {
-        spellings.push(`${show.imdb}:${season}:${episode}`);
-      }
-      spellings.push(`tmdb:${show.tmdb}:${season}:${episode}`);
-      await add('episode', Number(show.tmdb), show.imdb ?? null, season, episode, dateOf(data?.last_watched_at), spellings);
-    } else if (service === 'publicmetadb' && row.key.startsWith('play:')) {
-      const kind = data?.media_type === 'movie' ? 'movie' : 'episode';
-      const tmdb = Number(data?.tmdb_id);
-      await add(kind, tmdb, null, kind === 'movie' ? null : Number(data?.season), kind === 'movie' ? null : Number(data?.episode), dateOf(data?.watched_at), [kind === 'movie' ? `tmdb:${tmdb}` : `tmdb:${tmdb}:${data?.season}:${data?.episode}`]);
-    }
   }
   return [...byKey.values()];
 }
 
 async function nativeHeld(service: string, credential: string): Promise<Set<string>> {
-  const { mirrorRows } = require('./trackerMirror');
-  const rows: Array<{ key: string; data: any }> = await mirrorRows(service, credential);
-  const out = new Set<string>();
-  for (const { key, data } of rows) {
-    if (service === 'mdblist' && key.startsWith('movie:')) out.add(nativeKey('movie', Number(data?.movie?.ids?.tmdb), null, null));
-    if (service === 'mdblist' && key.startsWith('ep:')) out.add(nativeKey('episode', Number(data?.episode?.show?.ids?.tmdb), Number(data?.episode?.season), Number(data?.episode?.number)));
-    if (service === 'mdblist' && key.startsWith('ep:') && data?.episode?.show?.ids?.imdb) out.add(`imdb:${data.episode.show.ids.imdb}:${data.episode.season}:${data.episode.number}`);
-    const tvdbNumbers = service === 'mdblist' && key.startsWith('ep:') ? data?.episode?.tvdb_ids : null;
-    if (tvdbNumbers?.series) out.add(`tvdb:${tvdbNumbers.series}:${tvdbNumbers.season}:${tvdbNumbers.episode}`);
-    if (service === 'mdblist' && key.startsWith('movie:') && data?.movie?.ids?.imdb) out.add(`imdb:${data.movie.ids.imdb}`);
-    if (service === 'publicmetadb' && key.startsWith('play:')) out.add(data?.media_type === 'movie' ? nativeKey('movie', Number(data?.tmdb_id), null, null) : nativeKey('episode', Number(data?.tmdb_id), Number(data?.season), Number(data?.episode)));
-  }
-  return out;
+  return new Set((await tmdbWatchesOf(service, credential)).flatMap(heldKeysOf));
+}
+
+async function tmdbAliases(service: string, credential: string): Promise<Map<string, string>> {
+  return new Map((await tmdbWatchesOf(service, credential)).flatMap(aliasesOf));
 }
 
 export interface CopyPlan {
@@ -121,68 +79,7 @@ async function triedBefore(userUUID: string, from: CopySide, to: CopySide, what:
   return new Set(items.map(copyKey));
 }
 
-const SIMKL_KEYS = ['simkl', 'imdb', 'tmdb', 'tvdb', 'mal', 'anidb', 'kitsu', 'anilist'];
-
-async function simklHeld(credential: string): Promise<Set<string>> {
-  const { mirrorRows } = require('./trackerMirror');
-  const rows: Array<{ key: string; data: any }> = await mirrorRows('simkl', credential);
-  const out = new Set<string>();
-  for (const { key, data } of rows) {
-    const media = data?.movie ?? data?.show;
-    const ids = Object.entries(media?.ids ?? {}).filter(([name, value]) => SIMKL_KEYS.includes(name) && value);
-    if (key.startsWith('movies:') || data?.anime_type === 'movie') {
-      for (const [name, value] of ids) out.add(`movie:${name}:${value}`);
-      continue;
-    }
-    const mapped = Array.isArray(data?.mapped_tvdb_seasons) ? data.mapped_tvdb_seasons.map(Number) : [];
-    const ownNumbers = key.startsWith('anime:') && mapped.length && !mapped.includes(1)
-      ? ids.filter(([name]) => !['imdb', 'tmdb', 'tvdb'].includes(name))
-      : ids;
-    for (const season of Array.isArray(data?.seasons) ? data.seasons : []) {
-      for (const episode of Array.isArray(season?.episodes) ? season.episodes : []) {
-        for (const [name, value] of ownNumbers) out.add(`${name}:${value}:${season.number}:${episode.number}`);
-        if (episode?.tvdb?.season != null && media?.ids?.tvdb) out.add(`tvdb:${media.ids.tvdb}:${episode.tvdb.season}:${episode.tvdb.episode}`);
-        if (episode?.tvdb?.season != null && media?.ids?.imdb) out.add(`imdb:${media.ids.imdb}:${episode.tvdb.season}:${episode.tvdb.episode}`);
-      }
-    }
-  }
-  return out;
-}
-
-async function mdblistTmdbSpellings(credential: string): Promise<Map<string, string>> {
-  const { mirrorRows } = require('./trackerMirror');
-  const rows: Array<{ key: string; data: any }> = await mirrorRows('mdblist', credential);
-  const out = new Map<string, string>();
-  for (const { key, data } of rows) {
-    if (!key.startsWith('ep:')) continue;
-    const show = data?.episode?.show?.ids ?? {};
-    const season = Number(data?.episode?.season);
-    const number = Number(data?.episode?.number);
-    if (!show.tmdb || !Number.isFinite(season) || !Number.isFinite(number)) continue;
-    const tmdb = `tmdb:${show.tmdb}:${season}:${number}`;
-    const named = data?.episode?.tvdb_ids;
-    if (named?.series) {
-      out.set(`tvdb:${named.series}:${named.season}:${named.episode}`, tmdb);
-      if (show.imdb) out.set(`${show.imdb}:${named.season}:${named.episode}`, tmdb);
-    } else if (show.imdb) {
-      out.set(`${show.imdb}:${season}:${number}`, tmdb);
-    }
-  }
-  return out;
-}
-
-function simklTargetKeys(target: Target, kind: 'movie' | 'episode'): string[] {
-  const keys: string[] = [];
-  for (const one of [target, target.fallback].filter(Boolean) as Array<{ ids: Record<string, any>; season?: number; episode?: number }>) {
-    for (const [name, value] of Object.entries(one.ids)) {
-      if (!SIMKL_KEYS.includes(name) || !value) continue;
-      keys.push(kind === 'movie' ? `movie:${name}:${value}` : `${name}:${value}:${one.season ?? 1}:${one.episode}`);
-    }
-  }
-  return keys;
-}
-
-function targetKeys(target: Target, kind: 'movie' | 'episode'): string[] {
+function targetKeys(target: CopyTarget, kind: 'movie' | 'episode'): string[] {
   if (target.episodeIds) return [`tvdb:${target.ids.tvdb}:${target.season}:${target.episode}`];
   const keys: string[] = [];
   if (target.ids.tmdb) keys.push(nativeKey(kind, Number(target.ids.tmdb), target.season ?? 1, target.episode ?? null));
@@ -234,7 +131,7 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
   await readFresh(from);
   await readFresh(to);
   const { indexedSnapshot, watchedAmong, movieSpellings } = require('./watched');
-  if (TMDB_NUMBERED.has(from.service) && TMDB_NUMBERED.has(to.service)) {
+  if (tmdbNumbered(from.service) && tmdbNumbered(to.service)) {
     const target = await indexedSnapshot(to.service, to.credential, to.scoped);
     const { shouldTrackServiceMediaType } = require('../watchTracking');
     const recent = (await nativeEntries(from.service, from.credential, from.scoped)).filter((item) => !since || (item.at ?? 0) >= since);
@@ -287,15 +184,16 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
   const blocked = { noId: 0, refused: 0 };
   if (!isAnimeList(to.service)) {
     const { mapWithConcurrency } = require('../../utils/concurrency');
-    const held = TMDB_NUMBERED.has(to.service) ? await nativeHeld(to.service, to.credential) : to.service === 'simkl' ? await simklHeld(to.credential) : null;
-    const keysOf = to.service === 'simkl' ? simklTargetKeys : targetKeys;
-    const ownTmdb = to.service === 'simkl' && from.service === 'mdblist' ? await mdblistTmdbSpellings(from.credential) : null;
-    const heldAsSpelled = (v: Viewing) => to.service === 'simkl' && held !== null && v.ids.some((id) => held.has(id) || held.has(ownTmdb?.get(id) ?? ''));
+    const spelled = trackerOf(to.service)?.watchesHeld;
+    const held = tmdbNumbered(to.service) ? await nativeHeld(to.service, to.credential) : spelled ? await spelled.read(to.credential) : null;
+    const keysOf = spelled ? spelled.keys : targetKeys;
+    const ownTmdb = spelled && tmdbNumbered(from.service) ? await tmdbAliases(from.service, from.credential) : null;
+    const heldAsSpelled = (v: Viewing) => Boolean(spelled) && held !== null && v.ids.some((id) => held.has(id) || held.has(ownTmdb?.get(id) ?? ''));
     const tried = await triedBefore(userUUID, from, to, 'watches', retry);
     const asItem = (v: Viewing): CopyItem => ({ ids: v.ids, kind: v.kind, metaId: v.metaId, season: v.season, episode: v.episode, at: v.at > 0 ? v.at : null });
     const unsent: Set<string> = await require('./trackerMatch').unsentAmong(userUUID, to.service, [...new Set(missing.flatMap((v) => v.ids))]).catch(() => new Set<string>());
     if (unsent.size) missing = missing.filter((v) => !v.ids.some((id) => unsent.has(id)));
-    const targets: Array<Target | null> = await mapWithConcurrency(missing, envInt('JELLYFIN_COPY_PLAN_CONCURRENCY', 8, 1), (v: Viewing) => copyTarget(to.service, asItem(v), to.scoped).catch(() => null));
+    const targets: Array<CopyTarget | null> = await mapWithConcurrency(missing, envInt('JELLYFIN_COPY_PLAN_CONCURRENCY', 8, 1), (v: Viewing) => copyTarget(to.service, asItem(v), to.scoped).catch(() => null));
     missing = missing.filter((v, index) => {
       const target = targets[index];
       if (heldAsSpelled(v)) return false;
@@ -345,130 +243,22 @@ export async function controlCopy(userUUID: string, id: number, action: 'pause' 
   return true;
 }
 
-type Outcome = { done: number; sent: number; failed: number; skipped?: number; wait?: number; error?: string; lost?: number[]; stalled?: boolean };
+type Outcome = WatchOutcome;
 
-const sharesId = (a: Record<string, any> = {}, b: Record<string, any> = {}): boolean =>
-  Object.entries(a).some(([key, value]) => value != null && b[key] != null && String(b[key]) === String(value));
-
-function mdblistMissed(write: any, missed: any): boolean {
-  const list = (key: string): any[] => (Array.isArray(missed?.[key]) ? missed[key] : []);
-  if (write.episodeIds) return list('episodes').some((entry) => sharesId(entry?.ids, write.episodeIds));
-  if (write.season == null || write.episode == null) return list('movies').some((entry) => sharesId(entry?.ids, write.ids));
-  if (list('shows').some((entry) => sharesId(entry?.ids, write.ids))) return true;
-  return list('episodes').some((entry) => Number(entry?.season) === Number(write.season) && Number(entry?.number) === Number(write.episode) && sharesId(entry?.show?.ids, write.ids));
-}
-
-type Target = { ids: Record<string, any>; season?: number; episode?: number; episodeIds?: Record<string, number>; fallback?: { ids: Record<string, any>; season: number; episode: number } | null };
-
-export async function copyTarget(service: string, item: CopyItem, config: any): Promise<Target | null> {
-  if (item.native && TMDB_NUMBERED.has(service)) {
-    const ids: Record<string, any> = { tmdb: item.native.tmdb, ...(item.native.imdb ? { imdb: item.native.imdb } : {}) };
-    return item.kind === 'movie' ? { ids } : { ids, season: item.native.season ?? undefined, episode: item.native.episode ?? undefined };
-  }
-  const { parseMediaId, historyTarget } = require('../subtitleHandler');
-  let target: Target | null = null;
-  for (const spelling of spellingsFor(service, item.ids)) {
-    const parsed = parseMediaId(spelling);
-    target = parsed ? await historyTarget(parsed, config, service).catch(() => null) : null;
-    if (target) break;
-  }
-  if (!target) return null;
-  if (service === 'mdblist' && target.episodeIds) return target;
-  if (TMDB_NUMBERED.has(service)) {
-    const { tmdbIdFrom } = require('../../utils/publicmetadbUtils');
-    const tmdb = target.ids.tmdb ?? await tmdbIdFrom(target.ids, item.kind === 'movie' ? 'movie' : 'series').catch(() => null);
-    if (!tmdb) return null;
-    target.ids = { ...target.ids, tmdb };
-  }
-  return target;
+export async function copyTarget(service: string, item: CopyItem, config: any): Promise<CopyTarget | null> {
+  const tracker = trackerOf(service);
+  return tracker ? targetOn(tracker, item, config) : null;
 }
 
 const strikes = new Map<number, number>();
 const busy = new Set<number>();
 let timer: NodeJS.Timeout | null = null;
 
-const iso = (at: number | null) => (at ? new Date(at).toISOString() : null);
 
 function statusOf(calls: Array<{ status: number }>, error: any): number {
   const last = calls[calls.length - 1];
   if (last) return last.status;
   return error ? -1 : 0;
-}
-
-export async function writeMdblist(items: CopyItem[], apiKey: string, config: any): Promise<Outcome> {
-  const { mdblistCallsLeft, addHistoryBatch } = require('../../utils/mdbList');
-  const { remaining, limit, resetAt } = mdblistCallsLeft(apiKey);
-  if (remaining !== null && remaining <= Math.max(50, (limit ?? 0) / 5)) return { done: 0, sent: 0, failed: 0, wait: resetAt - Date.now(), error: 'Waiting for the MDBList quota to reset' };
-  const writes: any[] = [];
-  const from: number[] = [];
-  const lost: number[] = [];
-  for (const [i, item] of items.entries()) {
-    const target = await copyTarget('mdblist', item, config);
-    if (!target) lost.push(i);
-    else {
-      writes.push({ ...target, watchedAt: iso(item.at) });
-      from.push(i);
-    }
-  }
-  if (!writes.length) return { done: items.length, sent: 0, failed: lost.length, lost };
-  const unresolved = lost.length;
-  try {
-    const { missed } = await addHistoryBatch(writes, apiKey);
-    for (const [w, write] of writes.entries()) if (mdblistMissed(write, missed)) lost.push(from[w]);
-    // A show MDBList did not find is one entry for every episode written under it.
-    return { done: items.length, sent: writes.length - (lost.length - unresolved), failed: lost.length, lost };
-  } catch (error: any) {
-    if (error?.code === 'MDBLIST_QUOTA_EXHAUSTED' || error?.response?.status === 429) return { done: 0, sent: 0, failed: 0, wait: mdblistCallsLeft(apiKey).resetAt - Date.now(), error: 'MDBList quota spent' };
-    throw error;
-  }
-}
-
-export async function writeSimkl(items: CopyItem[], tokenId: string, config: any, rewatch = false): Promise<Outcome> {
-  const { getSimklToken, getSimklQuota, addHistoryBatch } = require('../../utils/simklUtils');
-  const accessToken = (await getSimklToken(tokenId))?.access_token;
-  if (!accessToken) throw new Error('No Simkl token');
-  const quota = await getSimklQuota(accessToken).catch(() => null);
-  if (quota && quota.remaining <= Math.max(25, quota.limit / 5)) return { done: 0, sent: 0, failed: 0, wait: quota.resetsAt - Date.now(), error: 'Waiting for the Simkl allowance to reset' };
-  const writes: any[] = [];
-  const from: number[] = [];
-  const lost: number[] = [];
-  for (const [i, item] of items.entries()) {
-    const target = await copyTarget('simkl', item, config);
-    if (!target) lost.push(i);
-    else {
-      writes.push({ ...target, watchedAt: iso(item.at) });
-      from.push(i);
-    }
-  }
-  const failed = lost.length;
-  if (writes.length) {
-    try {
-      const first = await addHistoryBatch(writes.map(({ fallback, ...write }) => write), accessToken, rewatch);
-      const missed = new Set(first.missed.map((entry: SimklMissed) => JSON.stringify(entry.ids)));
-      const kindOf = (write: any) => write.season == null && write.episode == null;
-      const firstMissed = (write: any) => missed.has(JSON.stringify(write.ids)) || first.missed.some((entry: SimklMissed) => (entry.movie === null || entry.movie === kindOf(write)) && sharesId(entry.ids, write.ids));
-      const retry = writes.filter((write) => write.fallback && missed.has(JSON.stringify(write.ids)));
-      if (!retry.length) {
-        for (const [w, write] of writes.entries()) if (firstMissed(write)) lost.push(from[w]);
-        return { done: items.length, sent: writes.length - first.notFound, failed: failed + first.notFound, lost };
-      }
-      const second = await addHistoryBatch(retry.map((write) => ({ ...write.fallback, watchedAt: write.watchedAt })), accessToken, rewatch);
-      const recovered = retry.length - second.notFound;
-      for (const [w, write] of writes.entries()) {
-        if (firstMissed(write) && (!write.fallback || second.missed.some((entry: SimklMissed) => (entry.movie === null || entry.movie === kindOf(write.fallback)) && sharesId(entry.ids, write.fallback.ids)))) lost.push(from[w]);
-      }
-      return { done: items.length, sent: writes.length - first.notFound + recovered, failed: failed + first.notFound - recovered, lost };
-    } catch (error: any) {
-      const code = error?.response?.data?.error;
-      if (error?.code === 'SIMKL_QUOTA_EXHAUSTED' || code === 'user_limit_exceeded' || code === 'app_limit_exceeded') {
-        const later = await getSimklQuota(accessToken).catch(() => null);
-        return { done: 0, sent: 0, failed: 0, wait: (later?.resetsAt ?? Date.now() + 6 * 60 * 60 * 1000) - Date.now(), error: 'Simkl allowance spent' };
-      }
-      if (code === 'rate_limit') return { done: 0, sent: 0, failed: 0, wait: 10_000, error: 'Simkl is finishing another write' };
-      throw error;
-    }
-  }
-  return { done: items.length, sent: 0, failed, lost };
 }
 
 async function writeOneByOne(service: string, items: CopyItem[], credential: string, config: any, userUUID: string): Promise<Outcome> {
@@ -482,14 +272,10 @@ async function writeOneByOne(service: string, items: CopyItem[], credential: str
   let skipped = 0;
   for (const item of items) {
     let existing = false;
+    const writeWatch = trackerOf(service)?.writeWatch;
     const { calls, error } = await recordingTrackerCalls(async () => {
-      if (service === 'publicmetadb') {
-        const { markWatched } = require('../../utils/publicmetadbUtils');
-        const target = await copyTarget(service, item, config);
-        if (!target) return;
-        const answer = await markWatched(credential, target.ids.tmdb, item.kind === 'movie' ? 'movie' : 'tv', target.season, target.episode, iso(item.at));
-        const created = Date.parse(String(answer?.item?.created ?? '').replace(' ', 'T'));
-        existing = Number.isFinite(created) && Date.now() - created > 60_000;
+      if (writeWatch) {
+        existing = await writeWatch(item, credential, config);
       } else {
         await require('../playbackHandler').deliverCatchUp(service, { type: item.kind === 'movie' ? 'movie' : 'series', id: spellingFor(service, item.ids), at: item.at ?? Date.now() }, trackerConfig(config, service as AccountService), userUUID);
       }
@@ -558,9 +344,8 @@ async function step(id: number): Promise<void> {
     if (what !== 'watches') outcome = await writeMarks(what, items, { service: job.to_service, credential, scoped: config }, job.user_uuid);
     else {
       await bringHome(job.user_uuid, job, items, config);
-      outcome = job.to_service === 'mdblist' ? await writeMdblist(items, credential, config)
-        : job.to_service === 'simkl' ? await writeSimkl(items, credential, config)
-        : await writeOneByOne(job.to_service, items, credential, config, job.user_uuid);
+      const batch = trackerOf(job.to_service)?.writeWatches;
+      outcome = batch ? await batch.write(items, credential, config) : await writeOneByOne(job.to_service, items, credential, config, job.user_uuid);
     }
     strikes.delete(id);
   } catch (error: any) {
@@ -590,7 +375,7 @@ async function step(id: number): Promise<void> {
     sent: job.sent + outcome.sent,
     failed: job.failed + outcome.failed,
     skipped: job.skipped + (outcome.skipped ?? 0),
-    nextAt: Date.now() + Math.max(outcome.wait ?? 0, job.to_service === 'mdblist' ? 1000 : 0),
+    nextAt: Date.now() + Math.max(outcome.wait ?? 0, trackerOf(job.to_service)?.batchGapMs ?? 0),
     lastError: outcome.error ?? null,
   });
   if (outcome.sent) {

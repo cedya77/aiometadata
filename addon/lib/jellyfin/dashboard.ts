@@ -1031,9 +1031,8 @@ async function copyPair(userUUID: string, viewer: string | null, fromKey: string
   const from = sources.get(fromKey);
   const to = sources.get(toKey);
   if (!from || !to) return null;
-  const { COPY_SOURCES } = require('./trackerCopy');
   const source = trackerOf(from.service);
-  if (what === 'watches') return COPY_SOURCES.has(from.service) ? { from, to } : null;
+  if (what === 'watches') return source?.datedHistory ? { from, to } : null;
   return source?.marks.from.includes(what as Mark) && trackerOf(to.service)?.marks.to.includes(what as Mark) ? { from, to } : null;
 }
 

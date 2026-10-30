@@ -1,6 +1,7 @@
 import { envInt } from '../../utils/envNumber';
 import { MARK_KINDS, type Tracker } from './types';
 import { dateOf, markItem, mirrored, ratingKeys, type MarkItem, type MarkSide } from './marks';
+import { copyTarget, isoAt, type TmdbWatch } from './watches';
 
 const pmdbItem = (row: any, extra: Partial<MarkItem> = {}) => {
   const tmdb = Number(row?.tmdb_id);
@@ -54,6 +55,7 @@ export const publicmetadb: Tracker = {
   name: 'PublicMetaDB',
   color: '#ebebeb',
   animeOnly: false,
+  datedHistory: true,
   marks: { from: ['watchlist', 'dropped'], to: MARK_KINDS },
   batch: 10,
   markBatch: { ratings: 1 },
@@ -106,5 +108,22 @@ export const publicmetadb: Tracker = {
     if (!listId) return 'failed';
     await pmdb.setListItem(side.credential, listId, tmdb, type, true);
     return 'sent';
+  },
+  tmdbWatches(rows) {
+    const out: TmdbWatch[] = [];
+    for (const { key, data } of rows) {
+      if (!key.startsWith('play:')) continue;
+      const kind = data?.media_type === 'movie' ? 'movie' : 'episode';
+      out.push({ kind, tmdb: Number(data?.tmdb_id), imdb: null, showTvdb: null, season: kind === 'movie' ? null : Number(data?.season), episode: kind === 'movie' ? null : Number(data?.episode), tvdb: null, at: dateOf(data?.watched_at) });
+    }
+    return out;
+  },
+  async writeWatch(item, credential, config) {
+    const { markWatched } = require('../../utils/publicmetadbUtils');
+    const target = await copyTarget(publicmetadb, item, config);
+    if (!target) return false;
+    const answer = await markWatched(credential, target.ids.tmdb, item.kind === 'movie' ? 'movie' : 'tv', target.season, target.episode, isoAt(item.at));
+    const created = Date.parse(String(answer?.item?.created ?? '').replace(' ', 'T'));
+    return Number.isFinite(created) && Date.now() - created > 60_000;
   },
 };

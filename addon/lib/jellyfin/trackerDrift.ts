@@ -3,7 +3,7 @@ import { parseStremioId } from './idsCodec';
 import { groupBySpelling, getPlaystatesAcross, upsertPlaystateEverywhere, videoIdAliases } from './aliases';
 import { scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
-import { isAnimeList } from '../trackers';
+import { isAnimeList, trackerOf } from '../trackers';
 
 const database: any = require('../database');
 const idMappings: any = require('../id-mappings');
@@ -12,8 +12,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const ANIME_SCHEMES = new Set<string>(['kitsu', 'mal', 'anilist', 'anidb']);
 const OWN_ORIGINS = new Set(['server', 'play']);
 const WATCH_OPS = new Set(['scrobble', 'credit', 'catchUp', 'catchUps', 'anime', 'episodes']);
-const BATCHED = new Set<string>(['simkl', 'mdblist']);
-const REWATCHABLE = new Set<string>(['simkl', 'mdblist']);
+const batched = (service: string) => Boolean(trackerOf(service)?.writeWatches);
+const rewatchOf = (service: string) => trackerOf(service)?.rewatch;
 
 export interface DriftSource {
   service: Capable;
@@ -285,7 +285,8 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   const { judged, matched, held, spelled, heldElsewhere } = own;
   let behind = own.missing;
   let rewatched: Viewing[] = [];
-  if (REWATCHABLE.has(source.service)) {
+  const rewatch = rewatchOf(source.service);
+  if (rewatch) {
     const gap = envInt('JELLYFIN_TRACKER_REWATCH_GAP_HOURS', 48, 48) * 60 * 60 * 1000;
     // When each title was last sent, so a send stands only for the viewings made before it.
     const sentAt = new Map<string, number>();
@@ -296,7 +297,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
       try {
         detail = JSON.parse(row.detail ?? '{}') ?? {};
       } catch {}
-      if (source.service === 'simkl' && detail.rewatch !== true) continue;
+      if (rewatch.separate && detail.rewatch !== true) continue;
       if (row.op === 'scrobble' && detail.verb !== 'Watched') continue;
       noteSent(String(row.video), Number(row.at) || 0);
       if (row.op === 'catchUps' || row.op === 'episodes') for (const video of detail.videos ?? []) noteSent(String(video), Number(row.at) || 0);
@@ -401,7 +402,7 @@ async function queueDrift(userUUID: string, config: any, source: DriftSource, vi
   if (isAnimeList(source.service)) viewings = furthestPerEntry(source.service, viewings, (v) => v.profile);
   for (const v of viewings) byProfile.set(v.profile, [...(byProfile.get(v.profile) ?? []), v]);
   const rewatches = new Map<string, Viewing[]>();
-  if (BATCHED.has(source.service)) {
+  if (batched(source.service)) {
     for (const v of again) {
       byProfile.set(v.profile, byProfile.get(v.profile) ?? []);
       rewatches.set(v.profile, [...(rewatches.get(v.profile) ?? []), v]);
@@ -411,11 +412,11 @@ async function queueDrift(userUUID: string, config: any, source: DriftSource, vi
   for (const [profile, list] of byProfile) {
     const scoped = scopeConfigToProfile(config, userUUID, profile || null);
     if (!credentialFor(scoped, source.service)) continue;
-    if (BATCHED.has(source.service)) {
+    if (batched(source.service)) {
       const size = envInt('JELLYFIN_COPY_BATCH_SIZE', 100, 1);
       const sets: Array<{ list: Viewing[]; rewatch: boolean }> = [];
       const repeat = rewatches.get(profile) ?? [];
-      if (source.service === 'simkl') {
+      if (rewatchOf(source.service)?.separate) {
         sets.push({ list, rewatch: false });
         const byShow = new Map<string, Viewing[]>();
         for (const v of repeat) byShow.set(v.metaId, [...(byShow.get(v.metaId) ?? []), v]);
@@ -483,10 +484,8 @@ function passing(detail: any): boolean {
 
 /** Whether the account keeps a second viewing of a title it already holds. */
 export async function keepsRewatches(source: { service: string; credential: string }): Promise<boolean> {
-  if (source.service !== 'simkl') return true;
-  const { getSimklToken, simklKeepsRewatches } = require('../../utils/simklUtils');
-  const token = (await getSimklToken(source.credential).catch(() => null))?.access_token;
-  return token ? simklKeepsRewatches(token) : false;
+  const kept = rewatchOf(source.service)?.kept;
+  return kept ? kept(source.credential) : true;
 }
 
 const recovering = new Map<string, number>();
