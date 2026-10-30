@@ -113,7 +113,8 @@ export default function JellyfinSearch({ userUUID, profile, profileName, local, 
       key: `p:${t.id}`, ref: { id: t.id, type: t.type }, title: t.title, sub: t.type === "movie" ? "Movie" : "Show", posterUrl: t.posterUrl, state: t.state, group: "profile",
     }));
     const seen = new Set(mine.map((r) => ("id" in r.ref ? r.ref.id : "")));
-    const everywhere = (query === typed.trim() ? data?.results ?? [] : []).filter((r) => !seen.has(r.id)).map<Result>((r) => ({
+    // The query keeps the last answer while the next loads, which is shown only for the words it answered.
+    const everywhere = (query === typed.trim() && data?.query === query ? data.results : []).filter((r) => !seen.has(r.id)).map<Result>((r) => ({
       key: `e:${r.id}`, ref: { id: r.id, type: r.type }, title: r.title, sub: [r.type === "movie" ? "Movie" : "Show", r.year].filter(Boolean).join(" · "), posterUrl: r.posterUrl, state: null, group: "everywhere",
     }));
     return [...mine, ...everywhere];
