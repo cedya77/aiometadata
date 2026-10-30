@@ -1,47 +1,125 @@
 import consola from 'consola';
+import { createHash } from 'crypto';
+import { LRUCache } from 'lru-cache';
+import { envInt } from '../../../utils/envNumber';
 import { asProfile } from '../dashboard';
 import { profileKey } from '../profiles';
 import { viewingTimeZone } from '../viewingHours';
-import { safeTimeZone, yearPlays } from './plays';
-import { timeYear } from './timed';
+import { metaContextDigest } from './facts';
+import { safeTimeZone, yearBounds, yearPlays } from './plays';
+import { enqueue, ticketFor } from './queue';
+import { timeYear, type TimedYear } from './timed';
 
 const logger = consola.withTag('YearReview');
+const database: any = require('../../database');
+
+const REVIEW_VERSION = 1;
+
+type Stored = { fingerprint: string; builtAt: number; data: any };
+
+const memory = new LRUCache<string, Stored>({ max: envInt('JELLYFIN_YEAR_REVIEW_MEMORY', 20, 1) });
+
+const reviewKey = (userUUID: string, historyKey: string, year: number) => `${userUUID}|${historyKey}|${year}`;
+
+function localYear(at: number, timeZone: string): number {
+  return Number(new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric' }).format(new Date(at)));
+}
+
+async function yearsOf(userUUID: string, historyKey: string, timeZone: string): Promise<number[]> {
+  const stats = await database.watchStatsBetween(userUUID, historyKey, 0, Number.MAX_SAFE_INTEGER);
+  if (stats.first === null || stats.last === null) return [];
+  const years: number[] = [];
+  for (let year = localYear(stats.last, timeZone); year >= localYear(stats.first, timeZone); year -= 1) years.push(year);
+  return years;
+}
+
+async function fingerprintOf(userUUID: string, historyKey: string, year: number, timeZone: string): Promise<string> {
+  const { from, to } = yearBounds(year, timeZone);
+  const [stats, meta] = await Promise.all([database.watchStatsBetween(userUUID, historyKey, from, to), metaContextDigest(userUUID)]);
+  const parts = [
+    REVIEW_VERSION,
+    timeZone,
+    stats.count,
+    stats.last,
+    stats.sum,
+    meta,
+    envInt('JELLYFIN_YEAR_REVIEW_BATCH_PLAYS', 6, 2),
+    envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0),
+  ];
+  return createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 24);
+}
+
+function summarise(year: number, timeZone: string, timed: TimedYear): any {
+  const films = timed.titles.filter((title) => title.kind === 'movie');
+  const shows = timed.titles.filter((title) => title.kind === 'series');
+  const anime = timed.titles.filter((title) => title.anime);
+  const sum = (list: typeof timed.titles, pick: (title: (typeof timed.titles)[number]) => number) => list.reduce((total, title) => total + pick(title), 0);
+  return {
+    version: REVIEW_VERSION,
+    year,
+    timeZone,
+    counts: timed.counts,
+    totals: {
+      plays: timed.plays.length,
+      watchMs: timed.plays.reduce((total, play) => total + play.runtimeMs, 0),
+      films: { titles: films.length, plays: sum(films, (title) => title.plays.length), watchMs: sum(films, (title) => title.watchMs) },
+      shows: { titles: shows.length, plays: sum(shows, (title) => title.plays.length), watchMs: sum(shows, (title) => title.watchMs) },
+      anime: { titles: anime.length, plays: sum(anime, (title) => title.plays.length) },
+      rhythmPlays: timed.plays.filter((play) => !play.batch && !play.overfull).length,
+    },
+    titles: timed.titles.map((title) => ({
+      key: title.key,
+      kind: title.kind,
+      name: title.facts?.name ?? null,
+      anime: title.anime,
+      watchMs: title.watchMs,
+      facts: title.facts ? { source: title.facts.source, year: title.facts.year, genres: title.facts.genres, countries: title.facts.countries, networks: title.facts.networks, studios: title.facts.studios, language: title.facts.language, poster: title.facts.poster } : null,
+      plays: title.plays.map((play) => [play.videoId, play.at, play.runtimeMs, play.runtimeSource, play.batch ? 1 : 0, play.overfull ? 1 : 0, play.spellings]),
+    })),
+  };
+}
+
+async function buildYear(userUUID: string, profile: string | null, year: number, waitedMs: number): Promise<void> {
+  await asProfile(userUUID, profile, async (config) => {
+    const timeZone = safeTimeZone(viewingTimeZone(config));
+    const historyKey = profileKey(config);
+    const started = Date.now();
+    const fingerprint = await fingerprintOf(userUUID, historyKey, year, timeZone);
+    const timed = await timeYear(userUUID, historyKey, await yearPlays(userUUID, historyKey, year, timeZone), timeZone);
+    const builtAt = Date.now();
+    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed) };
+    memory.set(reviewKey(userUUID, historyKey, year), stored);
+    await database.putYearReview(userUUID, historyKey, year, fingerprint, builtAt, stored.data);
+    const maxAgeMs = envInt('JELLYFIN_YEAR_REVIEW_FACTS_HOURS', 7 * 24, 1) * 60 * 60 * 1000;
+    const pruned = await database.pruneTitleFacts(Date.now() - maxAgeMs).catch(() => 0);
+    const { counts } = timed;
+    logger.info(`${userUUID.slice(0, 8)} ${year}: ${timed.plays.length} plays, ${timed.titles.length} titles, facts ${counts.stored} stored, ${counts.held} cached, ${counts.built} built, ${counts.missing} missing, waited ${waitedMs}ms, built in ${builtAt - started}ms${pruned ? `, ${pruned} old facts pruned` : ''}`);
+  });
+}
 
 export async function dashboardYear(userUUID: string, profile: string | null, year: number): Promise<any | null> {
   return asProfile(userUUID, profile, async (config) => {
     const timeZone = safeTimeZone(viewingTimeZone(config));
     const historyKey = profileKey(config);
-    const started = Date.now();
-    const plays = await yearPlays(userUUID, historyKey, year, timeZone);
-    const folded = Date.now();
-    const timed = await timeYear(userUUID, historyKey, plays, timeZone);
-    const ms = { fold: folded - started, time: Date.now() - folded };
-    const films = timed.titles.filter((title) => title.kind === 'movie');
-    const shows = timed.titles.filter((title) => title.kind === 'series');
-    const sum = (list: typeof timed.titles, pick: (title: (typeof timed.titles)[number]) => number) => list.reduce((total, title) => total + pick(title), 0);
-    logger.info(`${userUUID.slice(0, 8)} ${year}: ${timed.plays.length} plays, ${timed.titles.length} titles, ${timed.counts.held} cached, ${timed.counts.built} built, ${timed.counts.missing} missing, ${ms.fold + ms.time}ms`);
+    const key = reviewKey(userUUID, historyKey, year);
+    const [fingerprint, years] = await Promise.all([fingerprintOf(userUUID, historyKey, year, timeZone), yearsOf(userUUID, historyKey, timeZone)]);
+    let stored = memory.get(key) ?? null;
+    if (!stored) {
+      stored = await database.getYearReview(userUUID, historyKey, year).catch(() => null);
+      if (stored) memory.set(key, stored);
+    }
+    const fresh = stored?.fingerprint === fingerprint;
+    const recent = !!stored && Date.now() - stored.builtAt < envInt('JELLYFIN_YEAR_REVIEW_MIN_REBUILD_MINUTES', 30, 0) * 60 * 1000;
+    const ticket = fresh || recent ? ticketFor(key) : enqueue(key, (waitedMs) => buildYear(userUUID, profile, year, waitedMs));
     return {
       year,
-      timeZone,
-      ms,
-      counts: timed.counts,
-      totals: {
-        plays: timed.plays.length,
-        watchMs: timed.plays.reduce((total, play) => total + play.runtimeMs, 0),
-        films: { titles: films.length, plays: sum(films, (title) => title.plays.length), watchMs: sum(films, (title) => title.watchMs) },
-        shows: { titles: shows.length, plays: sum(shows, (title) => title.plays.length), watchMs: sum(shows, (title) => title.watchMs) },
-        anime: { titles: timed.titles.filter((title) => title.anime).length, plays: sum(timed.titles.filter((title) => title.anime), (title) => title.plays.length) },
-        rhythmPlays: timed.plays.filter((play) => !play.batch && !play.overfull).length,
-      },
-      titles: timed.titles.map((title) => ({
-        key: title.key,
-        kind: title.kind,
-        name: title.facts?.name ?? null,
-        anime: title.anime,
-        watchMs: title.watchMs,
-        facts: title.facts ? { source: title.facts.source, year: title.facts.year, genres: title.facts.genres, countries: title.facts.countries, networks: title.facts.networks, studios: title.facts.studios, language: title.facts.language, poster: title.facts.poster } : null,
-        plays: title.plays.map((play) => [play.videoId, play.at, play.runtimeMs, play.runtimeSource, play.batch ? 1 : 0, play.overfull ? 1 : 0, play.spellings]),
-      })),
+      years,
+      status: stored ? 'ready' : ticket?.state ?? 'queued',
+      ...(ticket?.state === 'queued' ? { ahead: ticket.ahead } : {}),
+      stale: !!stored && !fresh,
+      rebuilding: stored && ticket ? ticket.state : null,
+      builtAt: stored?.builtAt ?? null,
+      data: stored?.data ?? null,
     };
   });
 }

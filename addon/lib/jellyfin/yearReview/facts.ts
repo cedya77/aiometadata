@@ -123,6 +123,15 @@ export interface FactsRequest {
   weight: number;
 }
 
+export async function metaContextDigest(userUUID: string): Promise<string> {
+  const config = await routeConfig(userUUID);
+  if (!config) return '';
+  const { getMetaSmartLockContextHash } = require('../../getCache');
+  return [['tt0', 'movie'], ['tt0', 'series'], ['mal:0', 'movie'], ['mal:0', 'series']]
+    .map(([id, kind]) => getMetaSmartLockContextHash(config, id, kind, true, false))
+    .join('.');
+}
+
 function factsKey(config: any, request: FactsRequest): string {
   const { getMetaSmartLockContextHash } = require('../../getCache');
   return `${request.kind}:${getMetaSmartLockContextHash(config, request.titleKey, request.kind, true, false)}:${request.titleKey}`;

@@ -578,6 +578,15 @@ class Database {
         data TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       )`,
+      `CREATE TABLE IF NOT EXISTS jellyfin_year_review (
+        user_uuid TEXT NOT NULL,
+        profile TEXT NOT NULL DEFAULT '',
+        year INTEGER NOT NULL,
+        fingerprint TEXT NOT NULL,
+        built_at INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY (user_uuid, profile, year)
+      )`,
       `CREATE TABLE IF NOT EXISTS title_facts (
         facts_key TEXT PRIMARY KEY,
         data TEXT NOT NULL,
@@ -898,6 +907,15 @@ class Database {
         version INTEGER NOT NULL,
         data TEXT NOT NULL,
         updated_at BIGINT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS jellyfin_year_review (
+        user_uuid VARCHAR(64) NOT NULL,
+        profile TEXT NOT NULL DEFAULT '',
+        year INTEGER NOT NULL,
+        fingerprint TEXT NOT NULL,
+        built_at BIGINT NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY (user_uuid, profile, year)
       )`,
       `CREATE TABLE IF NOT EXISTS title_facts (
         facts_key TEXT PRIMARY KEY,
@@ -1365,6 +1383,7 @@ class Database {
       await this.deleteLeftOut(userUUID).catch(() => undefined);
       await this.deleteHistoryImport(userUUID).catch(() => undefined);
       await this.deleteTrackerTrail(userUUID).catch(() => undefined);
+      await this.deleteYearReviews(userUUID).catch(() => undefined);
 
       const deleteAliasQuery = this.type === 'sqlite'
         ? 'DELETE FROM user_aliases WHERE user_uuid = ?'
@@ -1867,6 +1886,40 @@ class Database {
       last_played_at: Number(row.last_played_at) || null,
       position_ms: Number(row.position_ms) || 0,
     }));
+  }
+
+  async watchStatsBetween(userUUID: string, profile: string, from: number, to: number): Promise<{ count: number; first: number | null; last: number | null; sum: string }> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT COUNT(*) AS count, MIN(watched_at) AS first, MAX(watched_at) AS last, SUM(watched_at) AS total FROM jellyfin_watches WHERE user_uuid = ? AND profile = ? AND watched_at >= ? AND watched_at < ?'
+      : 'SELECT COUNT(*) AS count, MIN(watched_at) AS first, MAX(watched_at) AS last, SUM(watched_at) AS total FROM jellyfin_watches WHERE user_uuid = $1 AND profile = $2 AND watched_at >= $3 AND watched_at < $4';
+    const row = (await this.getQuery(query, [userUUID, profile, from, to])) || {};
+    return { count: Number(row.count) || 0, first: row.first === null || row.first === undefined ? null : Number(row.first), last: row.last === null || row.last === undefined ? null : Number(row.last), sum: String(row.total ?? 0) };
+  }
+
+  async getYearReview(userUUID: string, profile: string, year: number): Promise<{ fingerprint: string; builtAt: number; data: any } | null> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT fingerprint, built_at, data FROM jellyfin_year_review WHERE user_uuid = ? AND profile = ? AND year = ?'
+      : 'SELECT fingerprint, built_at, data FROM jellyfin_year_review WHERE user_uuid = $1 AND profile = $2 AND year = $3';
+    const row = await this.getQuery(query, [userUUID, profile, year]);
+    if (!row) return null;
+    try {
+      return { fingerprint: String(row.fingerprint), builtAt: Number(row.built_at), data: JSON.parse(row.data) };
+    } catch {
+      return null;
+    }
+  }
+
+  async putYearReview(userUUID: string, profile: string, year: number, fingerprint: string, builtAt: number, data: any): Promise<void> {
+    const query = this.type === 'sqlite'
+      ? `INSERT INTO jellyfin_year_review (user_uuid, profile, year, fingerprint, built_at, data) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (user_uuid, profile, year) DO UPDATE SET fingerprint = excluded.fingerprint, built_at = excluded.built_at, data = excluded.data`
+      : `INSERT INTO jellyfin_year_review (user_uuid, profile, year, fingerprint, built_at, data) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (user_uuid, profile, year) DO UPDATE SET fingerprint = EXCLUDED.fingerprint, built_at = EXCLUDED.built_at, data = EXCLUDED.data`;
+    await this.runQuery(query, [userUUID, profile, year, fingerprint, builtAt, JSON.stringify(data)]);
+  }
+
+  async deleteYearReviews(userUUID: string): Promise<void> {
+    await this.runQuery(`DELETE FROM jellyfin_year_review WHERE user_uuid = ${this.type === 'sqlite' ? '?' : '$1'}`, [userUUID]);
   }
 
   async getTitleFacts(keys: string[], since: number): Promise<Map<string, any>> {
