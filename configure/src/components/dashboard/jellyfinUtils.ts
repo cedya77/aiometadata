@@ -119,7 +119,10 @@ export function usePagedPlays(userUUID: string, profile: string | null, kind: Je
   const { data, isFetching, isError, refetch } = useJellyfinPlays(userUUID, profile, kind, offset, { activeTab });
   const queryClient = useQueryClient();
   const loaded = useRef<number[]>([]);
+  // A re-read still out when the profile changes is of the list that was there before.
+  const generation = useRef(0);
   useEffect(() => {
+    generation.current += 1;
     setOffset(0);
     setPages([]);
     setDone(false);
@@ -134,8 +137,9 @@ export function usePagedPlays(userUUID: string, profile: string | null, kind: Je
       return;
     }
     const offsets = [...loaded.current];
+    const started = generation.current;
     void reloadPages<JellyfinPlayRow>(queryClient, ["dashboard", "jellyfin", "plays", userUUID, profile, kind], offsets).then((reread) => {
-      if (reread) setPages(offsets.map((at, i) => ({ offset: at, rows: reread[i] })));
+      if (reread && started === generation.current) setPages(offsets.map((at, i) => ({ offset: at, rows: reread[i] })));
     });
   }, [data, offset, profile, userUUID, kind, queryClient]);
   const rows = useMemo(() => {
