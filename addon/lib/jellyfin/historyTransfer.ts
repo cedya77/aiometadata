@@ -307,8 +307,9 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     if (!titles.has(title)) titles.set(title, []);
     titles.get(title)!.push({ key, ...entry });
   }
+  // A finish near a held pause is that viewing ending, so it keeps its own, newer times.
   const sameViewing = (held: State, state: State): State =>
-    held.lastPlayedAt && state.lastPlayedAt && Math.abs(held.lastPlayedAt - state.lastPlayedAt) <= sameStateMs
+    (held.played || !state.played) && held.lastPlayedAt && state.lastPlayedAt && Math.abs(held.lastPlayedAt - state.lastPlayedAt) <= sameStateMs
       ? { ...state, lastPlayedAt: held.lastPlayedAt, updatedAt: Math.min(state.updatedAt, held.updatedAt) }
       : state;
   const mergedInto = (held: State, state: State) => mergeState(held, sameViewing(held, state));
