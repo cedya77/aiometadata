@@ -125,6 +125,12 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   const queryClient = useQueryClient();
   const [removed, setRemoved] = useState<ReadonlySet<string>>(() => new Set());
   const progress = useMemo(() => (removed.size ? { ...pagedProgress, rows: pagedProgress.rows.filter((row) => !removed.has(`${row.profileKey}|${row.videoId}`)) } : pagedProgress), [pagedProgress, removed]);
+  // A removed row stays hidden only until the server stops listing it, so playing it again brings it back.
+  useEffect(() => {
+    if (!removed.size) return;
+    const listed = new Set(pagedProgress.rows.map((row) => `${row.profileKey}|${row.videoId}`));
+    if ([...removed].some((key) => !listed.has(key))) setRemoved((held) => new Set([...held].filter((key) => listed.has(key))));
+  }, [pagedProgress.rows, removed]);
   const titleAction = useJellyfinTitleAction();
   const [remote, setRemote] = useState<{ target: RemoteTarget; at: { x: number; y: number } } | null>(null);
   const closeRemote = useCallback(() => setRemote(null), []);
