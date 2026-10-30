@@ -5,7 +5,7 @@ import { trackerConfig, type AccountService } from '../accounts';
 import { videoIdAliases } from './aliases';
 import { scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
-import { asListed, belongsOn, pullDrift, spellingFor, spellingsFor, viewingOf, type Viewing } from './trackerDrift';
+import { asListed, belongsOn, furthestPerEntry, pullDrift, spellingFor, spellingsFor, viewingOf, type Viewing } from './trackerDrift';
 import { MARKS, markBatchSize, markVideo, planMarks, ratingKeys, writeMarks, type Mark, type MarkItem } from './trackerMarks';
 
 const logger = consola.withTag('Trackers');
@@ -308,14 +308,7 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
       return true;
     });
   }
-  if (ANIME_LISTS.has(to.service)) {
-    const furthest = new Map<string, Viewing>();
-    for (const v of missing) {
-      const was = furthest.get(v.metaId);
-      if (!was || (v.episode ?? 0) > (was.episode ?? 0)) furthest.set(v.metaId, v);
-    }
-    missing = [...furthest.values()];
-  }
+  if (ANIME_LISTS.has(to.service)) missing = furthestPerEntry(to.service, missing);
   const plan: CopyPlan = {
     items: missing.map((v) => ({ ids: v.ids, kind: v.kind, metaId: v.metaId, season: v.season, episode: v.episode, at: v.at > 0 ? v.at : null })),
     excluded,

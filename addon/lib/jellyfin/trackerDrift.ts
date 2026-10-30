@@ -72,6 +72,19 @@ export function spellingFor(service: string, ids: string[]): string {
   return spellingsFor(service, ids)[0];
 }
 
+// An anime list keeps one entry per anime id, so the furthest viewing is kept per entry, in the numbering it is sent in.
+export function furthestPerEntry(service: string, viewings: Viewing[], scope: (v: Viewing) => string = () => ''): Viewing[] {
+  const furthest = new Map<string, { viewing: Viewing; reach: number }>();
+  for (const viewing of viewings) {
+    const sent = parseStremioId(spellingFor(service, viewing.ids));
+    const key = `${scope(viewing)}|${sent?.base ?? viewing.metaId}`;
+    const reach = sent?.episode ?? viewing.episode ?? 0;
+    const held = furthest.get(key);
+    if (!held || reach > held.reach) furthest.set(key, { viewing, reach });
+  }
+  return [...furthest.values()].map(({ viewing }) => viewing);
+}
+
 async function ownViewings(userUUID: string, profiles: Set<string>): Promise<Viewing[]> {
   const rows = (await database.listWatchesByOrigin(userUUID, [...OWN_ORIGINS])).filter((row: any) => profiles.has(row.profile));
   const byMoment = new Map<string, any[]>();
@@ -358,15 +371,7 @@ async function aheadOf(userUUID: string, source: DriftSource, sourceKey: string,
 export async function pushDrift(userUUID: string, config: any, source: DriftSource, viewings: Viewing[], again: Viewing[] = []): Promise<number> {
   const { enqueueTrackerWrites } = require('../trackerOutbox');
   const byProfile = new Map<string, Viewing[]>();
-  if (ANIME_LISTS.has(source.service)) {
-    const furthest = new Map<string, Viewing>();
-    for (const v of viewings) {
-      const key = `${v.profile}|${v.metaId}`;
-      const held = furthest.get(key);
-      if (!held || (v.episode ?? 0) > (held.episode ?? 0)) furthest.set(key, v);
-    }
-    viewings = [...furthest.values()];
-  }
+  if (ANIME_LISTS.has(source.service)) viewings = furthestPerEntry(source.service, viewings, (v) => v.profile);
   for (const v of viewings) byProfile.set(v.profile, [...(byProfile.get(v.profile) ?? []), v]);
   const rewatches = new Map<string, Viewing[]>();
   if (BATCHED.has(source.service)) {
