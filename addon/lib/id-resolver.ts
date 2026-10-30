@@ -250,22 +250,26 @@ async function _fetchFromTvmaze(tvmazeId: string, config: any): Promise<Record<s
   }
 }
 
+const CINEMETA_HOSTS = ['cinemeta-live.strem.io', 'v3-cinemeta.strem.io'];
+
 async function getExternalIdsFromImdb(imdbId: string, type: string): Promise<{ tmdbId: string | null; tvdbId: string | null } | undefined> {
   if (!imdbId || imdbId.toString().trim() === '') return undefined;
-  const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
-
-  try {
-    const { data } = await httpGet(url);
-    const tvdbId = data?.meta?.tvdb_id;
-    const tmdbId = data?.meta?.moviedb_id || data?.meta?.themoviedb_id || data?.meta?.tmdb_id;
-    return {
-      tmdbId: (tmdbId && tmdbId.toString().trim() !== '') ? tmdbId : null,
-      tvdbId: (tvdbId && tvdbId.toString().trim() !== '') ? tvdbId : null,
-    };
-  } catch (error: any) {
-    logger.warn(`[Cinemeta] Could not fetch external ids for ${imdbId}: ${error.message}`);
-    return undefined;
+  let found: { tmdbId: string | null; tvdbId: string | null } | undefined;
+  for (const host of CINEMETA_HOSTS) {
+    try {
+      const { data } = await httpGet(`https://${host}/meta/${type}/${imdbId}.json`);
+      const tvdbId = data?.meta?.tvdb_id;
+      const tmdbId = data?.meta?.moviedb_id || data?.meta?.themoviedb_id || data?.meta?.tmdb_id;
+      found = {
+        tmdbId: (tmdbId && tmdbId.toString().trim() !== '') ? tmdbId : null,
+        tvdbId: (tvdbId && tvdbId.toString().trim() !== '') ? tvdbId : null,
+      };
+      if (found.tmdbId || found.tvdbId) return found;
+    } catch (error: any) {
+      logger.warn(`[Cinemeta] Could not fetch external ids for ${imdbId} from ${host}: ${error.message}`);
+    }
   }
+  return found;
 }
 
 
