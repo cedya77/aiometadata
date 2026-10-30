@@ -203,8 +203,11 @@ class Database {
         left_at ${sqlite ? 'INTEGER' : 'BIGINT'} NOT NULL,
         PRIMARY KEY (user_uuid, source_key, profile, origin, video_id)
       )`);
+      // A row goes to each profile that holds that title from that import, and to the main profile when none does.
       await this.runQuery(`INSERT INTO tracker_left_out (user_uuid, source_key, profile, origin, video_id, left_at)
-        SELECT user_uuid, source_key, '', origin, video_id, left_at FROM tracker_left_out_v1`);
+        SELECT DISTINCT v.user_uuid, v.source_key, COALESCE(h.profile, ''), v.origin, v.video_id, v.left_at FROM tracker_left_out_v1 v
+        LEFT JOIN (SELECT user_uuid, profile, video_id, origin FROM jellyfin_watches UNION SELECT user_uuid, profile, video_id, origin FROM jellyfin_playstate) h
+          ON h.user_uuid = v.user_uuid AND h.video_id = v.video_id AND h.origin = v.origin`);
       await this.runQuery(`DROP TABLE tracker_left_out_v1`);
       logger.info('Migrated tracker_left_out: rows keyed by profile and import');
     } catch (error: any) {
