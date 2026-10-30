@@ -1497,10 +1497,11 @@ class Database {
   }
 
   // The authority for what a client sees; trackers are told afterwards.
-  async getPlaystate(userUUID: string, videoId: string, profile = ''): Promise<any | null> {
+  async getPlaystate(userUUID: string, videoId: string, profile = '', primary = false): Promise<any | null> {
     const query = this.type === 'sqlite'
       ? 'SELECT * FROM jellyfin_playstate WHERE user_uuid = ? AND profile = ? AND video_id = ?'
       : 'SELECT * FROM jellyfin_playstate WHERE user_uuid = $1 AND profile = $2 AND video_id = $3';
+    if (primary) return (await this.allPrimaryQuery(query, [userUUID, profile, videoId]))[0] ?? null;
     return (await this.getQuery(query, [userUUID, profile, videoId])) || null;
   }
 
@@ -1735,7 +1736,7 @@ class Database {
       const own = before.filter((row) => row.video_id === id);
       let origin: string | null;
       if (from === null) {
-        const state = own.length ? null : await this.getPlaystate(userUUID, id, profile);
+        const state = own.length ? null : await this.getPlaystate(userUUID, id, profile, true);
         if (!state || !Number(state.played)) continue;
         origin = state.origin ?? null;
       } else {
