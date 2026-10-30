@@ -200,7 +200,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
     </>
   );
 
-  const watched = (profile === null ? data.profiles : data.profiles.filter((p) => p.key === profile)).reduce((sum, p) => sum + p.movies + p.episodes, 0);
+  const watched = shown.reduce((sum, p) => sum + p.movies + p.episodes, 0);
   const trackers = data.sync.filter((row) => row.profiles.includes(historyName)).map((row) => TRACKER_NAMES[row.service] ?? row.service);
   return (
     <OpenTitleContext.Provider value={openTitle}>
