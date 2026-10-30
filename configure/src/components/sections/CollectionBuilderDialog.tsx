@@ -70,6 +70,7 @@ import {
   type ExportNote,
   type SourceDraft,
 } from '@shared/types';
+import { foldRows } from '@shared/homeOrder';
 import { toNuvioCollections } from '@shared/nuvioExport';
 import { toLayoutFile } from '@shared/layoutExport';
 import { proxyCollectionImages } from '@shared/imageProxy';
@@ -159,6 +160,8 @@ const BULK_ADD_THRESHOLD = 100;
 interface CollectionBuilderDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  initialEntryId?: string;
+  startNew?: boolean;
 }
 
 const SEVERITY_RANK: Record<IssueSeverity, number> = { blocking: 0, warning: 1, info: 2 };
@@ -212,10 +215,7 @@ function reissueTakenIds(entries: BuilderEntry[], taken: Set<string>): void {
 
 // ---- Main dialog ----
 
-/** The picker's target when it is adding new rows rather than filling an entry. */
-const NEW_ROWS = '__new-rows__';
-
-export function CollectionBuilderDialog({ isOpen, onClose }: CollectionBuilderDialogProps) {
+export function CollectionBuilderDialog({ isOpen, onClose, initialEntryId, startNew }: CollectionBuilderDialogProps) {
   const { config, setConfig, auth, maxCatalogs, collectionImportCatalogCap, refreshInstanceLimits } = useConfig();
 
   const [entries, setEntries] = useState<BuilderEntry[]>([]);
@@ -319,16 +319,19 @@ export function CollectionBuilderDialog({ isOpen, onClose }: CollectionBuilderDi
     setEntries(saved);
     // Nothing built yet is the one moment the gallery is worth more than the
     // builder, so it opens there. Anyone with collections lands on their own.
-    setView(saved.length === 0 && FEATURED_COLLECTIONS.length > 0 ? 'featured' : 'build');
+    const focus = saved.find(entry => entry.id === initialEntryId)?.id ?? saved[0]?.id;
+    setView(!startNew && !initialEntryId && saved.length === 0 && FEATURED_COLLECTIONS.length > 0 ? 'featured' : 'build');
     setBaseline(JSON.stringify(saved));
-    setSelectedId(saved[0]?.id ?? null);
+    setSelectedId(focus ?? null);
     setStagedBlueprints([]);
     setSessionSourceKeys(new Set());
     setActiveTab('design');
     setRailQuery('');
-    setExpandedIds(new Set(saved[0]?.id ? [saved[0].id] : []));
+    setExpandedIds(new Set(focus ? [focus] : []));
     setTitleFocusId(null);
     setManifestUrl(buildManifestUrl(auth.userUUID));
+    if (initialEntryId && focus === initialEntryId) setMobilePane('editor');
+    if (startNew) addEntry(createCollectionDraft());
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -731,9 +734,6 @@ export function CollectionBuilderDialog({ isOpen, onClose }: CollectionBuilderDi
 
   const pickerExistingKeys = useMemo(() => {
     if (!pickerTarget) return [];
-    if (pickerTarget.entryId === NEW_ROWS) {
-      return committedEntries.flatMap(entry => (entry.kind === 'classicRow' && entry.source ? [catalogKey(entry.source)] : []));
-    }
     // Replacing is a single pick, so nothing needs to be marked as already added.
     if (typeof pickerTarget.replaceIndex === 'number') return [];
     const entry = entries.find(item => item.id === pickerTarget.entryId);
@@ -843,19 +843,6 @@ export function CollectionBuilderDialog({ isOpen, onClose }: CollectionBuilderDi
   const handlePick = (picked: ManifestCatalog[]) => {
     if (!pickerTarget || picked.length === 0) return;
     const sources: SourceDraft[] = picked.map(sourceFromCatalog);
-    if (pickerTarget.entryId === NEW_ROWS) {
-      const placed = new Set(pickerExistingKeys);
-      const rows = sources
-        .filter(source => !placed.has(catalogKey(source)))
-        .map(source => ({ ...createClassicRowDraft(source.name), source }));
-      setPickerTarget(null);
-      if (rows.length === 0) return;
-      setEntries(prev => [...prev, ...rows]);
-      setSelectedId(rows[rows.length - 1].id);
-      setActiveTab('design');
-      toast.success(rows.length === 1 ? `"${rows[0].title}" added as a row` : `${rows.length} rows added`);
-      return;
-    }
     setEntries(prev =>
       prev.map(entry => {
         if (entry.id !== pickerTarget.entryId) return entry;
@@ -895,15 +882,25 @@ export function CollectionBuilderDialog({ isOpen, onClose }: CollectionBuilderDi
 
   const applyToConfig = (options: { withCatalogs?: boolean; thenSave?: boolean } = {}) => {
     const addCatalogs = options.withCatalogs !== false && pendingCount > 0;
-    const applied = clone(committedEntries).map(currentFields);
+    const cleaned = clone(committedEntries).map(currentFields);
+    const rowCount = cleaned.filter(entry => entry.kind === 'classicRow').length;
+    const folded = rowCount > 0
+      ? foldRows({ catalogs: addCatalogs ? applyCatalogAdditions(config.catalogs || [], pendingAdditions) : config.catalogs || [] }, cleaned)
+      : null;
+    const applied: BuilderEntry[] = folded ? folded.collections : cleaned;
 
-    setConfig(prev => ({
-      ...prev,
-      collections: applied,
-      ...(addCatalogs && { catalogs: applyCatalogAdditions(prev.catalogs || [], pendingAdditions) }),
-    }));
-    setEntries(prev => prev.map(currentFields));
+    setConfig(prev => folded
+      ? { ...prev, collections: applied, catalogs: folded.catalogs as CatalogConfig[] }
+      : {
+          ...prev,
+          collections: applied,
+          ...(addCatalogs && { catalogs: applyCatalogAdditions(prev.catalogs || [], pendingAdditions) }),
+        });
+    setEntries(prev => (folded ? [...clone(applied), ...prev.filter(entry => entry.id === draftId)] : prev.map(currentFields)));
     setBaseline(JSON.stringify(applied));
+    if (rowCount > 0) {
+      toast.success(rowCount === 1 ? 'The row became row options on its catalog' : `${rowCount} rows became row options on their catalogs`);
+    }
     if (addCatalogs) setStagedBlueprints([]);
 
     const catalogNote = addCatalogs
@@ -1851,18 +1848,19 @@ export function CollectionBuilderDialog({ isOpen, onClose }: CollectionBuilderDi
                 >
                   <Layers className="mr-1.5 h-4 w-4 text-cyan-400" /> {terms.collection}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1 border-0 bg-purple-500/10 text-purple-200 hover:bg-purple-500/20 active:bg-purple-500/25"
-                  onClick={() => setPickerTarget({ entryId: NEW_ROWS, folderId: null })}
-                >
-                  <Rows3 className="mr-1.5 h-4 w-4 text-purple-400" /> {terms.row}
-                </Button>
               </div>
               <Button size="sm" variant="ghost" className="w-full" onClick={() => setImportOpen(true)}>
                 <Upload className="mr-1.5 h-4 w-4" /> Import JSON
               </Button>
+              <div className="space-y-1.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+                <p>
+                  <span className="font-medium text-foreground">Where it shows.</span> Collections take their place from the catalog list. Drag them there, between any two catalogs.
+                </p>
+                <p className="flex gap-1.5">
+                  <Rows3 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-400" />
+                  <span>A row's title and numbering live on its catalog now: open the catalog's menu and choose Row options. Rows in an import become row options when you apply.</span>
+                </p>
+              </div>
 
               {(committedEntries.length > 6 || railQuery !== '') && (
                 <div className="relative">
@@ -2794,9 +2792,7 @@ export function CollectionBuilderDialog({ isOpen, onClose }: CollectionBuilderDi
       <CatalogPicker
         isOpen={pickerTarget !== null}
         catalogs={sourceList.catalogs}
-        multiple={pickerTarget?.entryId === NEW_ROWS || (pickerTarget?.folderId !== null && typeof pickerTarget?.replaceIndex !== 'number')}
-        title={pickerTarget?.entryId === NEW_ROWS ? 'Add rows' : undefined}
-        description={pickerTarget?.entryId === NEW_ROWS ? 'Each catalog you pick becomes its own row, named after it. Rename them afterwards if you like.' : undefined}
+        multiple={pickerTarget?.folderId !== null && typeof pickerTarget?.replaceIndex !== 'number'}
         existingKeys={pickerExistingKeys}
         tagOptions={tagOptions}
         onConfirm={handlePick}

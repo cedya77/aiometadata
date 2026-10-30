@@ -31,7 +31,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Copy, MoreHorizontal, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Copy, MoreHorizontal, Sparkles, Rows3, Plus } from 'lucide-react';
+import { RowOptionsDialog, rowSummary } from './RowOptionsDialog';
+import { CollectionListCard, collectionListKey } from './CollectionListCard';
+import { fromHomeOrder, homeOrder, withAnchor, type HomeSlot } from '@shared/homeOrder';
+import type { BuilderEntry, CollectionDraft } from '@shared/types';
+import type { ListKind } from '@/components/TagFilterBar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -3226,6 +3231,7 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
   const [newName, setNewName] = useState(catalog.name);
   const [newType, setNewType] = useState(catalog.displayType || catalog.type);
   const [showSettings, setShowSettings] = useState(false);
+  const [showRowOptions, setShowRowOptions] = useState(false);
   const [showDeleteWarning, setShowDeleteWarning] = useState(false);
   const SettingsDialog = resolveSettingsDialog(catalog);
   // Latched during render: once opened the dialog stays mounted for this row.
@@ -3575,6 +3581,10 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
                     <Shuffle className={`h-4 w-4 mr-2 ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-400' : 'text-muted-foreground'}`} />
                     {catalog.randomizePerPage ? 'Original Order' : 'Randomize Order'}
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowRowOptions(true)}>
+                    <Rows3 className={`h-4 w-4 mr-2 ${catalog.row ? 'text-purple-400' : 'text-muted-foreground'}`} />
+                    Row options…
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleMoveToTop}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="h-4 w-4 mr-2 text-muted-foreground" fill="currentColor">
@@ -3664,6 +3674,16 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
               </Badge>
             )}
             <CatalogTagRow catalog={catalog} mode="button" />
+            {rowSummary(catalog.row) && (
+              <button
+                type="button"
+                onClick={() => setShowRowOptions(true)}
+                className="inline-flex h-[22px] min-w-0 max-w-full items-center gap-1.5 rounded-md border border-dashed border-purple-400/30 bg-purple-500/[0.06] px-2 text-xs text-purple-200 transition-colors hover:bg-purple-500/10 active:bg-purple-500/15"
+              >
+                <Rows3 className="h-3 w-3 shrink-0" />
+                <span className="truncate">{rowSummary(catalog.row)}</span>
+              </button>
+            )}
           </div>
           <CatalogTagRow catalog={catalog} mode="chips" className="mt-1.5" />
           {(catalog.source === 'trakt' || catalog.source === 'mdblist') &&
@@ -3782,6 +3802,15 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
             <TooltipContent>Move to bottom of list</TooltipContent>
           </Tooltip>
 
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" onClick={() => setShowRowOptions(true)} aria-label="Row options" className="active:scale-90 transition-transform">
+                <Rows3 className={`h-5 w-5 transition-colors ${catalog.row ? 'text-purple-500 dark:text-purple-400' : 'text-muted-foreground hover:text-foreground'}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Row options</TooltipContent>
+          </Tooltip>
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -4052,6 +4081,19 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
 
       {/* Mounted on first open so a row that is only scrolled past costs nothing,
           and kept mounted afterwards so the dialog still animates closed. */}
+      <RowOptionsDialog
+        catalog={catalog}
+        open={showRowOptions}
+        onOpenChange={setShowRowOptions}
+        onSave={row => setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c => {
+            if (c.id !== catalog.id || c.type !== catalog.type) return c;
+            const { row: _row, ...rest } = c;
+            return row ? { ...rest, row } : rest;
+          }),
+        }))}
+      />
       {settingsMounted && (
         <SettingsDialog
           catalog={catalog}
@@ -4243,6 +4285,12 @@ function CatalogsSettingsContent({
   const [isTmdbListOpen, setIsTmdbListOpen] = useState(false);
   const [isTmdbDiscoverBuilderOpen, setIsTmdbDiscoverBuilderOpen] = useState(false);
   const [isCollectionBuilderOpen, setIsCollectionBuilderOpen] = useState(false);
+  const [builderIntent, setBuilderIntent] = useState<{ entryId?: string; create?: boolean }>({});
+  const [listKind, setListKind] = useState<ListKind>('all');
+  const openCollectionBuilder = (intent: { entryId?: string; create?: boolean } = {}) => {
+    setBuilderIntent(intent);
+    setIsCollectionBuilderOpen(true);
+  };
 
   useEffect(() => {
     if (consumeCollectionBuilderRequest()) setIsCollectionBuilderOpen(true);
@@ -4452,57 +4500,84 @@ function CatalogsSettingsContent({
     });
   }, [visibleCatalogs, collectionFilter, collectedKeys]);
 
+  const listItems = useMemo(() => {
+    const shownCatalogs = new Map(filteredCatalogs.map(catalog => [`${catalog.id}-${catalog.type}`, catalog]));
+    const showCatalogs = listKind !== 'collections';
+    const showCollections = listKind !== 'catalogs' && collectionFilter === 'all';
+    const wantedTags = tagFilters.map(tag => tag.toLowerCase());
+    const items: Array<
+      | { kind: 'catalog'; key: string; catalog: CatalogConfig & { source?: string } }
+      | { kind: 'collection'; key: string; collection: CollectionDraft }
+    > = [];
+    for (const slot of homeOrder(config)) {
+      if (slot.kind === 'catalog') {
+        const key = `${slot.catalog.id}-${slot.catalog.type}`;
+        const catalog = shownCatalogs.get(key);
+        if (showCatalogs && catalog) items.push({ kind: 'catalog', key, catalog });
+        continue;
+      }
+      if (!showCollections) continue;
+      if (wantedTags.length && !(slot.collection.tags ?? []).some(tag => wantedTags.includes(tag.toLowerCase()))) continue;
+      items.push({ kind: 'collection', key: collectionListKey(slot.collection), collection: slot.collection });
+    }
+    return items;
+  }, [config, filteredCatalogs, listKind, collectionFilter, tagFilters]);
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-  
+
     const activeKey = active.id as string;
     const overKey = over.id as string;
-  
-    setConfig(prev => {
-      const currentCatalogs = [...prev.catalogs];
-      const getCatalogKey = (catalog: CatalogConfig) => `${catalog.id}-${catalog.type}`;
-      
-      const movingKeys = selectedIds.has(activeKey)
-        ? currentCatalogs
-            .map(getCatalogKey)
-            .filter(key => selectedIds.has(key))
-        : [activeKey];
 
+    setConfig(prev => {
+      const slotKey = (slot: HomeSlot) =>
+        slot.kind === 'catalog' ? `${slot.catalog.id}-${slot.catalog.type}` : collectionListKey(slot.collection);
+      const slots = homeOrder(prev);
+      const keys = slots.map(slotKey);
+
+      const movingKeys = selectedIds.has(activeKey)
+        ? keys.filter(key => selectedIds.has(key))
+        : [activeKey];
       const movingKeySet = new Set(movingKeys);
-      const movingItems = currentCatalogs.filter(c => movingKeySet.has(getCatalogKey(c)));
-      const remainingItems = currentCatalogs.filter(c => !movingKeySet.has(getCatalogKey(c)));
-  
-      const activeIndexTotal = currentCatalogs.findIndex(c => getCatalogKey(c) === activeKey);
-      const overIndexTotal = currentCatalogs.findIndex(c => getCatalogKey(c) === overKey);
+      const movingSlots = slots.filter((_, index) => movingKeySet.has(keys[index]));
+      const remainingSlots = slots.filter((_, index) => !movingKeySet.has(keys[index]));
+
+      const activeIndexTotal = keys.indexOf(activeKey);
+      const overIndexTotal = keys.indexOf(overKey);
       if (activeIndexTotal === -1 || overIndexTotal === -1) return prev;
 
       const isMovingDown = activeIndexTotal < overIndexTotal;
-      const remainingBeforeOver = currentCatalogs
+      const remainingBeforeOver = keys
         .slice(0, overIndexTotal)
-        .filter(c => !movingKeySet.has(getCatalogKey(c))).length;
-
+        .filter(key => !movingKeySet.has(key)).length;
       const insertIndex = isMovingDown
         ? remainingBeforeOver + (movingKeySet.has(overKey) ? 0 : 1)
         : remainingBeforeOver;
-  
-      const newCatalogs = [...remainingItems];
-      newCatalogs.splice(insertIndex, 0, ...movingItems);
-  
-      return { ...prev, catalogs: newCatalogs };
+
+      const nextSlots = [...remainingSlots];
+      nextSlots.splice(insertIndex, 0, ...movingSlots);
+      const { catalogs, anchors } = fromHomeOrder(nextSlots);
+      const placed = new Set<unknown>(catalogs);
+      const unplaced = prev.catalogs.filter(catalog => !placed.has(catalog));
+
+      return {
+        ...prev,
+        catalogs: [...(catalogs as CatalogConfig[]), ...unplaced],
+        collections: (prev.collections ?? []).map((entry: BuilderEntry) =>
+          entry.kind === 'collection' ? withAnchor(entry, anchors.get(entry.id)) : entry
+        ),
+      };
     });
   };
 
-  const catalogItemIds = useMemo(
-    () => filteredCatalogs.map(c => `${c.id}-${c.type}`),
-    [filteredCatalogs]
-  );
+  const catalogItemIds = useMemo(() => listItems.map(item => item.key), [listItems]);
 
   /**
    * Past this many rows the per-row work the list does on every change costs
    * more than the polish it buys. An import can bring in thousands at once.
    */
-  const isLargeList = filteredCatalogs.length > LARGE_LIST_THRESHOLD;
+  const isLargeList = listItems.length > LARGE_LIST_THRESHOLD;
 
   /**
    * Above the threshold only the rows on screen are mounted. The list scrolls
@@ -4522,18 +4597,22 @@ function CatalogsSettingsContent({
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [isLargeList, filteredCatalogs.length]);
+  }, [isLargeList, listItems.length]);
 
   const rowVirtualizer = useWindowVirtualizer({
-    count: filteredCatalogs.length,
+    count: listItems.length,
     estimateSize: () => ESTIMATED_ROW_HEIGHT,
     overscan: 8,
     scrollMargin: listOffset,
-    getItemKey: (index) => {
-      const catalog = filteredCatalogs[index];
-      return catalog ? `${catalog.id}-${catalog.type}` : index;
-    },
+    getItemKey: (index) => listItems[index]?.key ?? index,
   });
+
+  const renderListItem = (item: (typeof listItems)[number]) =>
+    item.kind === 'collection' ? (
+      <CollectionListCard collection={item.collection} onEdit={collection => openCollectionBuilder({ entryId: collection.id })} />
+    ) : (
+      renderCatalogRow(item.catalog)
+    );
 
   const renderCatalogRow = (catalog: CatalogConfig & { source?: string }) => (
     catalog.source === 'merged' ? (
@@ -5412,7 +5491,7 @@ function CatalogsSettingsContent({
         <div className="space-y-1">
           <h2 className="text-2xl font-semibold">Catalog Management</h2>
           <p className="text-muted-foreground">
-            Drag to reorder. Click icons to toggle visibility.
+            Drag to reorder. Clients show your catalogs and collections in this order.
           </p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 text-sm text-muted-foreground">
             <div className="flex items-center gap-1.5 whitespace-nowrap">
@@ -5420,6 +5499,9 @@ function CatalogsSettingsContent({
             </div>
             <div className="flex items-center gap-1.5 whitespace-nowrap">
               <Home className="h-4 w-4 text-blue-500 dark:text-blue-400" /> Home
+            </div>
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
+              <Layers className="h-4 w-4 text-purple-500 dark:text-purple-400" /> Collection
             </div>
             <button
               onClick={() => setHideDisabledCatalogs(!hideDisabledCatalogs)}
@@ -5450,9 +5532,18 @@ function CatalogsSettingsContent({
               <Wand2 className="h-4 w-4 mr-2" />
               Build Your Catalog
             </Button>
-            <Button onClick={() => setIsCollectionBuilderOpen(true)} size="sm" variant="outline">
+            <Button onClick={() => openCollectionBuilder()} size="sm" variant="outline">
               <Layers className="h-4 w-4 mr-2" />
               Collections
+            </Button>
+            <Button
+              onClick={() => openCollectionBuilder({ create: true })}
+              size="sm"
+              variant="outline"
+              className="border-purple-400/30 bg-purple-500/[0.06] text-purple-100 hover:bg-purple-500/15"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New collection
             </Button>
             {(config.apiKeys?.openrouter || config.apiKeys?.gemini || hasBuiltInGemini) && (
               <Button onClick={() => setIsAICatalogOpen(true)} size="sm" variant="outline">
@@ -5843,6 +5934,8 @@ function CatalogsSettingsContent({
         collectionFilter={collectionFilter}
         onCollectionFilterChange={(config.collections?.length ?? 0) > 0 ? setCollectionFilter : undefined}
         collectionCounts={(config.collections?.length ?? 0) > 0 ? collectionCounts : undefined}
+        listKind={listKind}
+        onListKindChange={(config.collections ?? []).some(entry => entry.kind === 'collection') ? setListKind : undefined}
       />
 
       <div className="relative">
@@ -5866,26 +5959,26 @@ function CatalogsSettingsContent({
                 style={{ height: rowVirtualizer.getTotalSize() }}
               >
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const catalog = filteredCatalogs[virtualRow.index];
-                  if (!catalog) return null;
+                  const item = listItems[virtualRow.index];
+                  if (!item) return null;
                   return (
                     <div
-                      key={`${catalog.id}-${catalog.type}`}
+                      key={item.key}
                       data-index={virtualRow.index}
                       ref={rowVirtualizer.measureElement}
                       className="absolute left-0 top-0 w-full pb-2"
                       style={{ transform: `translateY(${virtualRow.start - rowVirtualizer.options.scrollMargin}px)` }}
                     >
-                      {renderCatalogRow(catalog)}
+                      {renderListItem(item)}
                     </div>
                   );
                 })}
               </div>
             ) : (
               <div className="space-y-2">
-              {filteredCatalogs.map((catalog) => (
+              {listItems.map((item) => (
                 <motion.div
-                  key={`${catalog.id}-${catalog.type}`}
+                  key={item.key}
                   layout
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -5893,7 +5986,7 @@ function CatalogsSettingsContent({
                     duration: 0.2,
                   }}
                 >
-                  {renderCatalogRow(catalog)}
+                  {renderListItem(item)}
                 </motion.div>
               ))}
               </div>
@@ -5959,6 +6052,8 @@ function CatalogsSettingsContent({
       <CollectionBuilderDialog
         isOpen={isCollectionBuilderOpen}
         onClose={() => setIsCollectionBuilderOpen(false)}
+        initialEntryId={builderIntent.entryId}
+        startNew={builderIntent.create}
       />
       <DiscoverBuilderDialog
         isOpen={isTmdbDiscoverBuilderOpen}

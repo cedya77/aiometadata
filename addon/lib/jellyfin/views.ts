@@ -7,6 +7,8 @@ import { collectionFolder } from './dto';
 import { profileTags } from './profiles';
 import { viewerReadsExtensions } from './viewer';
 import { isCollectionCatalogId } from '../collectionBuilder/aiostreamsCollections';
+import { configCatalogFor, placeCollections, rowOptionsOf } from '../collectionBuilder/homeOrder';
+import type { CatalogRowOptions } from '../collectionBuilder/types';
 import { accountOwner, servedAccountsKey } from '../accounts';
 
 const { getManifest } = require('../getManifest');
@@ -113,15 +115,8 @@ export function viewIdFor(catalog: CatalogRef): string {
   return encodeJellyfinId({ k: 'view', t: catalog.type, c: catalog.id });
 }
 
-function placesCatalog(entry: any, catalog: CatalogRef): boolean {
-  return String(entry?.source?.catalogId ?? '') === catalog.id && String(entry?.source?.type ?? '').toLowerCase() === catalog.type.toLowerCase();
-}
-
-/** The builder row a catalog is shown as, if any. */
-export function rowFor(config: any, catalog: CatalogRef): any | null {
-  const { entryVisible } = require('./collections');
-  const entries = Array.isArray(config?.collections) ? config.collections : [];
-  return entries.find((entry: any) => entry?.kind === 'classicRow' && entryVisible(entry, config) && placesCatalog(entry, catalog)) ?? null;
+export function rowFor(config: any, catalog: CatalogRef): CatalogRowOptions | null {
+  return rowOptionsOf(configCatalogFor(config, catalog));
 }
 
 export function catalogView(catalog: CatalogRef, serverId: string, row: any = null): any {
@@ -138,34 +133,21 @@ export function catalogView(catalog: CatalogRef, serverId: string, row: any = nu
   };
 }
 
-// Builder entries first, in their order; then every catalog they never named.
 export async function buildViews(
   userUUID: string,
   serverId: string,
   config: any
 ): Promise<any[]> {
-  const { boxSetsFor, collectionView, entryVisible } = require('./collections');
+  const { boxSetsFor, builderCollections, collectionView } = require('./collections');
   const catalogs = (await getCatalogs(userUUID, config)).filter(isBrowsable);
 
-  const views: any[] = [];
-  const placed = new Set<CatalogRef>();
-  for (const entry of Array.isArray(config?.collections) ? config.collections : []) {
-    if (!entryVisible(entry, config)) continue;
-    if (entry?.kind === 'classicRow') {
-      const catalog = catalogs.find((c) => placesCatalog(entry, c));
-      if (catalog && !placed.has(catalog)) {
-        placed.add(catalog);
-        views.push(catalogView(catalog, serverId, entry));
-      }
-    } else if (entry?.kind === 'collection' && entry.id && typeof entry.title === 'string') {
-      const folders = await boxSetsFor(userUUID, config, serverId, entry);
-      if (folders.length) views.push(collectionView(serverId, entry, folders.length));
-    }
+  const collections: Array<{ id: string; view: any }> = [];
+  for (const collection of builderCollections(config)) {
+    const folders = await boxSetsFor(userUUID, config, serverId, collection);
+    if (folders.length) collections.push({ id: collection.id, view: collectionView(serverId, collection, folders.length) });
   }
-  for (const catalog of catalogs) {
-    if (!placed.has(catalog)) views.push(catalogView(catalog, serverId));
-  }
-  return views;
+  const placed = placeCollections(config, catalogs, (catalog) => configCatalogFor(config, catalog), collections, (collection) => collection.id);
+  return placed.map((slot) => ('view' in slot ? slot.view : catalogView(slot, serverId, rowFor(config, slot))));
 }
 
 export async function findCatalogByViewId(

@@ -48,7 +48,19 @@ export interface CollectionDraft {
   showAllTab?: boolean;
   /** Server users holding one of these see it; none means every user. */
   tags?: string[];
+  after?: CatalogAnchor;
   folders: FolderDraft[];
+}
+
+export interface CatalogAnchor {
+  id: string;
+  type: string;
+}
+
+export interface CatalogRowOptions {
+  title?: string;
+  hideTitle?: boolean;
+  numbered?: boolean;
 }
 
 /** Single-catalog row. Jellyfin only, Nuvio has no equivalent. */

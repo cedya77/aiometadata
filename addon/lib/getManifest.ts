@@ -10,7 +10,8 @@ import catalogsTranslationsJson from "../static/translations.json";
 import catalogTypesJson from "../static/catalog-types.json";
 import { PLAYBACK_MANIFEST_EVENTS, WATCH_STATE_PUSH_EVENTS, WATCH_STATE_VERSION } from "./playbackHandler";
 import { watchStatePullTtl } from "./watchState";
-import { collectionCatalogs, collectionsServed, COLLECTION_META_PREFIX } from "./collectionBuilder/aiostreamsCollections";
+import { collectionCatalogs, collectionsServed, COLLECTION_CATALOG_PREFIX, COLLECTION_META_PREFIX } from "./collectionBuilder/aiostreamsCollections";
+import { configCatalogFor, placeCollections } from "./collectionBuilder/homeOrder";
 import { similarCatalogs } from "./similarCatalog";
 import { holderCards, rowOwner, servesCatalog, withAccountOwner } from "./accounts";
 import { hasNamedViewers } from "./jellyfin/profiles";
@@ -1724,8 +1725,13 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
     });
   }
 
-  // Listed first, as on the Jellyfin server.
-  catalogs.unshift(...collectionCatalogs(config, tags));
+  catalogs = placeCollections(
+    config,
+    catalogs,
+    (catalog: any) => configCatalogFor(config, catalog),
+    collectionCatalogs(config, tags),
+    (catalog: any) => catalog.id.slice(COLLECTION_CATALOG_PREFIX.length)
+  );
   catalogs.push(...similarCatalogs(config));
 
   const nameSuffix = process.env.ADDON_NAME_SUFFIX || "";

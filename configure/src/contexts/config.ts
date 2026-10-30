@@ -1,4 +1,4 @@
-import type { BuilderEntry } from '@shared/types';
+import type { BuilderEntry, CatalogRowOptions } from '@shared/types';
 
 export type TagColorKey =
   | 'blue' | 'green' | 'red' | 'violet' | 'amber' | 'cyan'
@@ -98,6 +98,7 @@ export interface CatalogConfig {
   pageSize?: number;
   /** If set, this catalog is absorbed into a merged catalog and hidden from UI/manifest */
   mergedInto?: string;
+  row?: CatalogRowOptions;
   // List metadata (item count, privacy, author, description, AniList-specific fields, Trakt Up Next settings, Letterboxd-specific fields, TMDB-specific fields)
   metadata?: {
     itemCount?: number;
