@@ -8522,6 +8522,10 @@ addon.post("/api/dashboard/jellyfin/:userUUID/title/action", requireDashboardAdm
       res.status(404).json({ error: 'No such configuration' });
       return;
     }
+    if (done === false) {
+      res.status(422).json({ error: 'The title could not be read, so nothing was changed' });
+      return;
+    }
     res.json({ done });
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);

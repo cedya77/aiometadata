@@ -1871,6 +1871,8 @@ export async function dashboardTitleAction(userUUID: string, profile: string | n
     if (!config) return null;
     const { decodeJellyfinId } = require('./ids');
     const playstate = require('./playstate');
+    // A watchlist or rating change that could not read its title says so; a drop that had nothing to change is no failure.
+    let changed = true;
     for (const itemId of itemIds) {
       if (action === 'played') await playstate.recordPlayed(req, { ItemId: itemId });
       else if (action === 'unplayed') await playstate.recordUnplayed(req, { ItemId: itemId });
@@ -1880,19 +1882,19 @@ export async function dashboardTitleAction(userUUID: string, profile: string | n
         if (!descriptor) continue;
         if (action === 'watchlist' || action === 'unwatchlist') {
           const { setWatchlisted } = require('./watchlist');
-          await setWatchlisted(userUUID, config, descriptor, action === 'watchlist');
+          if (!(await setWatchlisted(userUUID, config, descriptor, action === 'watchlist'))) changed = false;
         } else if (action === 'drop' || action === 'undrop') {
           const { rateSeries, clearLocalDrop } = require('./dropped');
           await rateSeries(userUUID, config, descriptor, action === 'drop' ? false : null);
           if (action === 'undrop') await clearLocalDrop(userUUID, config, descriptor.i).catch(() => false);
         } else if (action === 'rate') {
           const { rateItem, ratingFrom } = require('./ratings');
-          await rateItem(userUUID, config, descriptor, ratingFrom(rating));
+          if (!(await rateItem(userUUID, config, descriptor, ratingFrom(rating)))) changed = false;
         }
       }
     }
     forgetMemos(userUUID);
-    return true;
+    return changed;
   });
 }
 

@@ -1968,7 +1968,7 @@ export function useJellyfinTitleAction() {
       headers: { ...getHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, itemIds, profile: profile ?? undefined, rating }),
     });
-    if (!response.ok) throw new Error(`Could not save the change (${response.status})`);
+    if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || `Could not save the change (${response.status})`);
   };
 }
 
