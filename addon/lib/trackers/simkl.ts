@@ -112,10 +112,12 @@ async function writeWatches(items: CopyItem[], tokenId: string, config: any, rew
   if (writes.length) {
     try {
       const first = await addHistoryBatch(writes.map(({ fallback, ...write }) => write), accessToken, rewatch);
-      const missed = new Set(first.missed.map((entry: SimklMissed) => JSON.stringify(entry.ids)));
       const kindOf = (write: any) => write.season == null && write.episode == null;
-      const firstMissed = (write: any) => missed.has(JSON.stringify(write.ids)) || first.missed.some((entry: SimklMissed) => (entry.movie === null || entry.movie === kindOf(write)) && sharesId(entry.ids, write.ids));
-      const retry = writes.filter((write) => write.fallback && missed.has(JSON.stringify(write.ids)));
+      // A film and a show can carry the same ids, so a miss stands only for writes of its own kind.
+      const ownKind = (entry: SimklMissed, write: any) => entry.movie === null || entry.movie === kindOf(write);
+      const exactly = (write: any) => first.missed.some((entry: SimklMissed) => ownKind(entry, write) && JSON.stringify(entry.ids) === JSON.stringify(write.ids));
+      const firstMissed = (write: any) => exactly(write) || first.missed.some((entry: SimklMissed) => ownKind(entry, write) && sharesId(entry.ids, write.ids));
+      const retry = writes.filter((write) => write.fallback && exactly(write));
       if (!retry.length) {
         for (const [w, write] of writes.entries()) if (firstMissed(write)) lost.push(from[w]);
         return { done: items.length, sent: writes.length - first.notFound, failed: failed + first.notFound, lost };
