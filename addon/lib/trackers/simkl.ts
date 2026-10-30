@@ -3,6 +3,7 @@ import { cleanIds, dateOf, iso, keysOf, markItem, markKeys, notFoundCount, score
 import { sharesId, targetsFor, type CopyItem, type CopyTarget, type WatchOutcome } from './watches';
 import type { SimklMissed } from '../../utils/simklUtils';
 import type { MatchCandidate, TargetSeason } from './match';
+import { SAME_PLAY_MS, playTime, type Redate } from './redate';
 
 async function simklEntries(credential: string): Promise<Array<{ type: string; data: any }>> {
   const { mirrorRows } = require('../jellyfin/trackerMirror');
@@ -145,6 +146,20 @@ async function token(credential: string): Promise<string | null> {
   return (await getSimklToken(credential).catch(() => null))?.access_token ?? null;
 }
 
+async function redate({ config, ids, mediaType, season, episode, change }: Redate): Promise<void> {
+  if (mediaType === 'movie' || season == null || episode == null || change.latest == null) return;
+  const simklUtils = require('../../utils/simklUtils');
+  const tokenId = config.apiKeys?.simklTokenId;
+  const access = tokenId ? (await simklUtils.getSimklToken(tokenId))?.access_token : null;
+  if (!access) return;
+  const held = await simklUtils.episodeWatchedAt(ids, access, season, episode);
+  if (held === undefined) return;
+  const heldAt = playTime(held);
+  if (heldAt !== null && Math.abs(heldAt - change.latest) < SAME_PLAY_MS) return;
+  if (held !== null && !(await simklUtils.removeFromHistory(ids, access, season, episode))) return;
+  await simklUtils.addToHistory(ids, access, season, episode, undefined, new Date(change.latest).toISOString());
+}
+
 export const simkl: Tracker = {
   id: 'simkl',
   name: 'Simkl',
@@ -183,6 +198,7 @@ export const simkl: Tracker = {
   writeMarks: (what, items, side) => writeMarks(what, items, side.credential),
   watchesHeld: { read: watchesHeld, keys: heldKeys },
   writeWatches: { url: 'https://api.simkl.com/sync/history', write: writeWatches },
+  redate: { scope: 'episodes', run: redate },
   match: {
     async search(credential, query, kind) {
       const { fetchSimklSearchItems } = require('../../utils/simklUtils');

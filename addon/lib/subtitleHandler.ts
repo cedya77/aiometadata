@@ -5,6 +5,7 @@ const { resolveTvdbEpisodeFromAnidbEpisode, resolveAnidbEpisodeFromTvdbEpisode }
 const anilistTracker: any = require('./anilistTracker');
 const malTracker: any = require('./malTracker');
 const simklUtils: any = require('../utils/simklUtils');
+import type { WatchDateChange } from './trackers/redate';
 import {
   isWatchTrackingServiceEnabled,
   normalizeWatchTrackingMediaType,
@@ -562,33 +563,7 @@ async function creditHistory(parsedId: ParsedMediaId, config: any, only: Tracked
   }
 }
 
-export interface WatchDateChange {
-  from: number;
-  to: number;
-  latest?: number | null;
-}
-
-const SAME_PLAY_MS = 60_000;
-
-function playTime(value: unknown): number | null {
-  const at = Date.parse(String(value ?? '').replace(' ', 'T'));
-  return Number.isFinite(at) ? at : null;
-}
-
-function nearestPlay<T>(plays: T[], at: number, dateOf: (play: T) => unknown, within: number): T | null {
-  let best: T | null = null;
-  let gap = Infinity;
-  for (const play of plays) {
-    const when = playTime(dateOf(play));
-    if (when === null) continue;
-    const off = Math.abs(when - at);
-    if (off <= within && off < gap) {
-      best = play;
-      gap = off;
-    }
-  }
-  return best;
-}
+export type { WatchDateChange };
 
 async function redateHistory(parsedId: ParsedMediaId, config: any, only: TrackedService, change: WatchDateChange): Promise<void> {
   const mediaType = parsedId.type === 'movie' ? 'movie' : 'series';
@@ -609,113 +584,7 @@ async function redateHistory(parsedId: ParsedMediaId, config: any, only: Tracked
   if (!ids) throw noIdsFor(only, parsedId);
   const { envInt } = require('../utils/envNumber');
   const within = envInt('JELLYFIN_WATCH_DATE_MATCH_HOURS', 12, 0) * 60 * 60 * 1000;
-  if (only === 'publicmetadb') await redatePublicMetaDb(config, ids, mediaType, season, episode, change, within);
-  else if (only === 'mdblist') await redateMdblist(config, ids, mediaType, season, episode, change, within);
-  else if (only === 'simkl') await redateSimkl(config, ids, mediaType, season, episode, change);
-}
-
-async function redatePublicMetaDb(
-  config: any,
-  ids: Record<string, any>,
-  mediaType: 'movie' | 'series',
-  season: number | undefined,
-  episode: number | undefined,
-  change: WatchDateChange,
-  within: number
-): Promise<void> {
-  const apiKey = config.apiKeys?.publicmetadb;
-  if (!apiKey) return;
-  const { tmdbIdFrom, fetchWatched, setWatchedDate, removePlay } = require('../utils/publicmetadbUtils');
-  const tmdbId = await tmdbIdFrom(ids, mediaType);
-  if (!tmdbId) return;
-  const kind = mediaType === 'movie' ? 'movie' : 'tv';
-  const isTitle = (play: any) => Number(play?.tmdb_id) === Number(tmdbId) && play?.media_type === kind
-    && (kind === 'movie' || (Number(play.season) === season && Number(play.episode) === episode));
-  const { sourceKeyFor } = require('./jellyfin/trackerMirror');
-  const database: any = require('./database');
-  const mirrorKey = sourceKeyFor('publicmetadb', apiKey);
-  const group = `${kind}:${tmdbId}`;
-
-  let plays: any[] = ((await database.listTrackerMirrorGroup(mirrorKey, group).catch(() => [])) as any[])
-    .map((row) => { try { return JSON.parse(row.data); } catch { return null; } })
-    .filter(isTitle);
-  if (!nearestPlay(plays, change.from, (play) => play.watched_at, within)) {
-    plays = [];
-    const read = new Set<string>();
-    for (let page = 1; ; page += 1) {
-      const result = await fetchWatched(apiKey, page, 500);
-      const first = String(result.items[0]?.id ?? '');
-      if (first && read.has(first)) break;
-      read.add(first);
-      plays.push(...result.items.filter(isTitle));
-      const oldest = playTime(result.items[result.items.length - 1]?.watched_at);
-      if (page >= result.totalPages || !result.items.length || (oldest !== null && oldest < change.from - within)) break;
-    }
-  }
-  // The viewing being moved is found first, so a destination near it can never stand in for it.
-  const old = nearestPlay(plays, change.from, (play) => play.watched_at, within);
-  if (!old?.id) return;
-  const placed = nearestPlay(plays.filter((play) => play !== old), change.to, (play) => play.watched_at, SAME_PLAY_MS);
-  if (placed) {
-    await removePlay(apiKey, String(old.id));
-    await database.deleteTrackerMirror(mirrorKey, [`play:${old.id}`]).catch(() => undefined);
-    await database.bumpTrackerSyncVersion(mirrorKey).catch(() => undefined);
-    return;
-  }
-  const answer = await setWatchedDate(apiKey, String(old.id), new Date(change.to).toISOString());
-  const moved = answer?.item ?? { ...old, watched_at: new Date(change.to).toISOString() };
-  await database.upsertTrackerMirror(mirrorKey, [{ key: `play:${old.id}`, group, data: moved }]).catch(() => undefined);
-  // An older play can move without changing what a read compares, so the watched state is rebuilt here.
-  await database.bumpTrackerSyncVersion(mirrorKey).catch(() => undefined);
-}
-
-async function redateMdblist(
-  config: any,
-  ids: Record<string, any>,
-  mediaType: 'movie' | 'series',
-  season: number | undefined,
-  episode: number | undefined,
-  change: WatchDateChange,
-  within: number
-): Promise<void> {
-  const apiKey = config.apiKeys?.mdblist;
-  const tmdbId = Number(ids.tmdb);
-  if (!apiKey || !tmdbId) return;
-  const mdblist = require('../utils/mdbList');
-  const all = await mdblist.historyPlays(mediaType === 'movie' ? 'movie' : 'show', tmdbId, apiKey);
-  if (!all) return;
-  const plays = mediaType === 'movie' ? all : all.filter((play: any) => play.season_num === season && play.episode_num === episode);
-  // The viewing being moved is found first, so a destination near it can never stand in for it.
-  const old = nearestPlay(plays, change.from, (play: any) => play.watched_at, within);
-  const placed = nearestPlay(plays.filter((play: any) => play !== old), change.to, (play: any) => play.watched_at, SAME_PLAY_MS);
-  if (!old) {
-    if (!placed && Date.now() - change.from < 15 * 60 * 1000) {
-      require('../utils/trackerCalls').noteTrackerCall('https://api.mdblist.com/sync/history', 429, 'play not recorded yet', null, Date.now() + 60_000);
-    }
-    return;
-  }
-  if (!placed && !(await mdblist.addToHistory(ids, apiKey, season, episode, undefined, new Date(change.to).toISOString()))) return;
-  await mdblist.removePlays([old.play_id], apiKey);
-}
-
-async function redateSimkl(
-  config: any,
-  ids: Record<string, any>,
-  mediaType: 'movie' | 'series',
-  season: number | undefined,
-  episode: number | undefined,
-  change: WatchDateChange
-): Promise<void> {
-  if (mediaType === 'movie' || season == null || episode == null || change.latest == null) return;
-  const tokenId = config.apiKeys?.simklTokenId;
-  const token = tokenId ? (await simklUtils.getSimklToken(tokenId))?.access_token : null;
-  if (!token) return;
-  const held = await simklUtils.episodeWatchedAt(ids, token, season, episode);
-  if (held === undefined) return;
-  const heldAt = playTime(held);
-  if (heldAt !== null && Math.abs(heldAt - change.latest) < SAME_PLAY_MS) return;
-  if (held !== null && !(await simklUtils.removeFromHistory(ids, token, season, episode))) return;
-  await simklUtils.addToHistory(ids, token, season, episode, undefined, new Date(change.latest).toISOString());
+  await require('./trackers').trackerOf(only)?.redate?.run({ config, ids, mediaType, season, episode, change, within });
 }
 
 // PublicMetaDB keeps plays rather than a watched flag and is keyed on TMDB.

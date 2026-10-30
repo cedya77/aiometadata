@@ -3,6 +3,7 @@ import { MARK_KINDS, type Mark, type Tracker } from './types';
 import { TITLE_KEYS, cleanIds, dateOf, iso, markItem, mirrored, notFoundCount, scoreOf, titleIds, type MarkItem, type MarkOutcome } from './marks';
 import { sharesId, targetsFor, type CopyItem, type TmdbWatch, type WatchOutcome } from './watches';
 import { tmdbSeasons, type MatchCandidate, type TargetSeason } from './match';
+import { SAME_PLAY_MS, nearestPlay, type Redate } from './redate';
 
 async function mdblistPages(apiKey: string, path: string, label: string, arrays: string[]): Promise<Record<string, any[]>> {
   const { makeRateLimitedMDBListRequest } = require('../../utils/mdbList');
@@ -83,6 +84,27 @@ async function writeWatches(items: CopyItem[], apiKey: string, config: any): Pro
   }
 }
 
+async function redate({ config, ids, mediaType, season, episode, change, within }: Redate): Promise<void> {
+  const apiKey = config.apiKeys?.mdblist;
+  const tmdbId = Number(ids.tmdb);
+  if (!apiKey || !tmdbId) return;
+  const api = require('../../utils/mdbList');
+  const all = await api.historyPlays(mediaType === 'movie' ? 'movie' : 'show', tmdbId, apiKey);
+  if (!all) return;
+  const plays = mediaType === 'movie' ? all : all.filter((play: any) => play.season_num === season && play.episode_num === episode);
+  // The viewing being moved is found first, so a destination near it can never stand in for it.
+  const old = nearestPlay(plays, change.from, (play: any) => play.watched_at, within);
+  const placed = nearestPlay(plays.filter((play: any) => play !== old), change.to, (play: any) => play.watched_at, SAME_PLAY_MS);
+  if (!old) {
+    if (!placed && Date.now() - change.from < 15 * 60 * 1000) {
+      require('../../utils/trackerCalls').noteTrackerCall('https://api.mdblist.com/sync/history', 429, 'play not recorded yet', null, Date.now() + 60_000);
+    }
+    return;
+  }
+  if (!placed && !(await api.addToHistory(ids, apiKey, season, episode, undefined, new Date(change.to).toISOString()))) return;
+  await api.removePlays([old.play_id], apiKey);
+}
+
 export const mdblist: Tracker = {
   id: 'mdblist',
   name: 'MDBList',
@@ -139,6 +161,7 @@ export const mdblist: Tracker = {
   },
   takesEpisodeIds: true,
   writeWatches: { url: 'https://api.mdblist.com/sync/watched', write: (items, credential, config) => writeWatches(items, credential, config) },
+  redate: { scope: 'all', run: redate },
   match: {
     async search(credential, query, kind) {
       const { fetchMdbListSearchItems } = require('../../utils/mdbList');

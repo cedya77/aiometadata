@@ -2,6 +2,7 @@ import type { AccountService } from '../accounts';
 import type { MarkItem, MarkOutcome, MarkSide, MarkWrite } from './marks';
 import type { CopyItem, CopyTarget, MirrorRow, TmdbWatch, WatchOutcome } from './watches';
 import type { MatchCandidate, MatchDetail } from './match';
+import type { Redate } from './redate';
 
 export type Mark = 'ratings' | 'watchlist' | 'dropped';
 export const MARK_KINDS: Mark[] = ['ratings', 'watchlist', 'dropped'];
@@ -36,6 +37,7 @@ export interface Tracker {
   takesEpisodeIds?: boolean;
   writeWatches?: { url: string; write(items: CopyItem[], credential: string, config: any, rewatch?: boolean): Promise<WatchOutcome> };
   writeWatch?(item: CopyItem, credential: string, config: any): Promise<boolean>;
+  redate?: { scope: 'all' | 'episodes'; run(redate: Redate): Promise<void> };
   match?: {
     search(credential: string, query: string, kind: 'movie' | 'series', config: any): Promise<MatchCandidate[]>;
     detail(credential: string, candidate: MatchCandidate, config: any): Promise<MatchDetail>;

@@ -3,6 +3,7 @@ import { MARK_KINDS, type Tracker } from './types';
 import { dateOf, markItem, mirrored, ratingKeys, type MarkItem, type MarkSide } from './marks';
 import { copyTarget, isoAt, type TmdbWatch } from './watches';
 import { tmdbSeasons, type MatchCandidate } from './match';
+import { SAME_PLAY_MS, nearestPlay, playTime, type Redate } from './redate';
 
 const pmdbItem = (row: any, extra: Partial<MarkItem> = {}) => {
   const tmdb = Number(row?.tmdb_id);
@@ -49,6 +50,53 @@ async function self(side: MarkSide, userUUID: string): Promise<string | null> {
     }
   }
   return null;
+}
+
+async function redate({ config, ids, mediaType, season, episode, change, within }: Redate): Promise<void> {
+  const apiKey = config.apiKeys?.publicmetadb;
+  if (!apiKey) return;
+  const { tmdbIdFrom, fetchWatched, setWatchedDate, removePlay } = require('../../utils/publicmetadbUtils');
+  const tmdbId = await tmdbIdFrom(ids, mediaType);
+  if (!tmdbId) return;
+  const kind = mediaType === 'movie' ? 'movie' : 'tv';
+  const isTitle = (play: any) => Number(play?.tmdb_id) === Number(tmdbId) && play?.media_type === kind
+    && (kind === 'movie' || (Number(play.season) === season && Number(play.episode) === episode));
+  const { sourceKeyFor } = require('../jellyfin/trackerMirror');
+  const database: any = require('../database');
+  const mirrorKey = sourceKeyFor('publicmetadb', apiKey);
+  const group = `${kind}:${tmdbId}`;
+
+  let plays: any[] = ((await database.listTrackerMirrorGroup(mirrorKey, group).catch(() => [])) as any[])
+    .map((row) => { try { return JSON.parse(row.data); } catch { return null; } })
+    .filter(isTitle);
+  if (!nearestPlay(plays, change.from, (play) => play.watched_at, within)) {
+    plays = [];
+    const read = new Set<string>();
+    for (let page = 1; ; page += 1) {
+      const result = await fetchWatched(apiKey, page, 500);
+      const first = String(result.items[0]?.id ?? '');
+      if (first && read.has(first)) break;
+      read.add(first);
+      plays.push(...result.items.filter(isTitle));
+      const oldest = playTime(result.items[result.items.length - 1]?.watched_at);
+      if (page >= result.totalPages || !result.items.length || (oldest !== null && oldest < change.from - within)) break;
+    }
+  }
+  // The viewing being moved is found first, so a destination near it can never stand in for it.
+  const old = nearestPlay(plays, change.from, (play) => play.watched_at, within);
+  if (!old?.id) return;
+  const placed = nearestPlay(plays.filter((play) => play !== old), change.to, (play) => play.watched_at, SAME_PLAY_MS);
+  if (placed) {
+    await removePlay(apiKey, String(old.id));
+    await database.deleteTrackerMirror(mirrorKey, [`play:${old.id}`]).catch(() => undefined);
+    await database.bumpTrackerSyncVersion(mirrorKey).catch(() => undefined);
+    return;
+  }
+  const answer = await setWatchedDate(apiKey, String(old.id), new Date(change.to).toISOString());
+  const moved = answer?.item ?? { ...old, watched_at: new Date(change.to).toISOString() };
+  await database.upsertTrackerMirror(mirrorKey, [{ key: `play:${old.id}`, group, data: moved }]).catch(() => undefined);
+  // An older play can move without changing what a read compares, so the watched state is rebuilt here.
+  await database.bumpTrackerSyncVersion(mirrorKey).catch(() => undefined);
 }
 
 export const publicmetadb: Tracker = {
@@ -127,6 +175,7 @@ export const publicmetadb: Tracker = {
     const created = Date.parse(String(answer?.item?.created ?? '').replace(' ', 'T'));
     return Number.isFinite(created) && Date.now() - created > 60_000;
   },
+  redate: { scope: 'all', run: redate },
   match: {
     async search(_credential, query, kind, config) {
       const { searchMovie, searchTv } = require('../getTmdb');
