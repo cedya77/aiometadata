@@ -1118,8 +1118,11 @@ async function pmdbTvdbOrders(rows: any[], config: any): Promise<Map<number, Map
   const { withEpisodeOrder } = require('../../utils/episodeOrder');
   const idMapper: any = require('../id-mapper');
   const shows = new Set<number>(rows.filter((row: any) => row?.tmdb_id && row.media_type !== 'movie' && Number(row?.season) > 0).map((row: any) => Number(row.tmdb_id)));
+  // A show a title is matched to was sent its plays in TMDB numbering, so they are read back in it.
+  const { listMatches } = require('./trackerMatch');
+  const matched = new Set<number>(config?.userUUID ? ((await listMatches(config.userUUID, 'publicmetadb').catch(() => [])) as any[]).map((match) => Number(match.target?.ids?.tmdb)).filter(Boolean) : []);
   for (const tmdb of shows) {
-    if (idMapper.getMappingByTmdbId(String(tmdb), 'series')) continue;
+    if (matched.has(tmdb) || idMapper.getMappingByTmdbId(String(tmdb), 'series')) continue;
     const ids = await canonicalIds({ tmdb }, 'series', config).catch(() => ({} as Record<string, any>));
     if ((withEpisodeOrder(config, Number(ids.tvdb) || null).tvdbSeasonType || 'default') !== 'default') continue;
     const order = await mdblistTvdbOrder(tmdb, apiKey).catch(() => null);
