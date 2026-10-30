@@ -118,6 +118,9 @@ export async function matchFor(userUUID: string | undefined, service: string, ba
 export async function saveMatch(userUUID: string, service: string, match: Omit<TrackerMatch, 'group' | 'updatedAt'>): Promise<TrackerMatch> {
   const bases = [...new Set(match.bases)];
   const saved: TrackerMatch = { ...match, bases, group: bases[0], updatedAt: Date.now() };
+  // A match made earlier for any of these ids is replaced whole, or its other ids would keep the old target.
+  const replaced = new Set<string>(((await database.listTrackerMatches(userUUID, service)) as any[]).filter((row) => bases.includes(String(row.base))).map((row) => String(row.match_group)));
+  for (const group of replaced) await database.deleteTrackerMatch(userUUID, service, group);
   await database.saveTrackerMatch(userUUID, service, saved.group, bases, JSON.stringify(saved));
   indexes.delete(`${userUUID}|${service}`);
   return saved;
