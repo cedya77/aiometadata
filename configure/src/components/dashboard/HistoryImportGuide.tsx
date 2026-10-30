@@ -167,7 +167,7 @@ const SAMPLE_JSON = `${JSON.stringify(SAMPLE, null, 2)}\n`;
 const SAMPLE_CSV = `${COLUMNS.join(",")}\n${SAMPLE.map((row) => COLUMNS.map((column) => String((row as Record<string, unknown>)[column] ?? "")).join(",")).join("\n")}\n`;
 
 const NOTES: ReactNode[] = [
-  <>Dates are ISO 8601, like <Code>2024-05-01T20:15:00Z</Code>. A day alone, like <Code>2024-05-01</Code>, works too.</>,
+  <>Dates are ISO 8601, like <Code>2024-05-01T20:15:00Z</Code>. A day alone, like <Code>2024-05-01</Code>, works too, and a time with no zone is UTC.</>,
   <>One row can hold several things at once: a viewing, a rating and a watchlist date.</>,
   <>A paused position puts the title in Continue Watching. Without <Code>runtime_seconds</Code>, the length comes from this server's metadata.</>,
   <>A spreadsheet works as well: save it as CSV with these names as the header row, and leave cells empty where a field does not apply.</>,

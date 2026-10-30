@@ -50,8 +50,16 @@ function rowsOf(upload: Upload): Row[] | null {
 
 const seasonOf = (row: Row): number | null => (text(row.season) ? seasonNumber(text(row.season)) : null);
 
+const ISO = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}:?\d{2})?)?$/i;
+
+// ISO 8601 only, as the guide says: anything else, like 01/05/2024, reads differently by locale and server.
+// A time with no zone is UTC, so the server's own zone never moves it.
 const dateAt = (value: string): number | null => {
-  const parsed = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value);
+  const iso = ISO.exec(value);
+  if (!iso) return null;
+  const [, day, time, zone] = iso;
+  const offset = zone && zone.toUpperCase() !== 'Z' ? `${zone.slice(0, 3)}:${zone.slice(-2)}` : 'Z';
+  const parsed = Date.parse(time ? `${day}T${time}${offset}` : `${day}T12:00:00Z`);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
