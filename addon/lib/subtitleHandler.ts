@@ -571,6 +571,7 @@ async function redateHistory(parsedId: ParsedMediaId, config: any, only: Tracked
   let ids: Record<string, any> | null = null;
   let season: number | undefined;
   let episode: number | undefined;
+  let fallback: { ids: Record<string, any>; season: number; episode: number } | null = null;
   if (parsedId.type === 'movie') {
     ids = await movieTarget(parsedId, config, only);
   } else {
@@ -579,12 +580,13 @@ async function redateHistory(parsedId: ParsedMediaId, config: any, only: Tracked
       ids = await withTmdbId(resolution.ids, 'series');
       season = resolution.season;
       episode = resolution.episode;
+      fallback = resolution.fallbackData ?? null;
     }
   }
   if (!ids) throw noIdsFor(only, parsedId);
   const { envInt } = require('../utils/envNumber');
   const within = envInt('JELLYFIN_WATCH_DATE_MATCH_HOURS', 12, 0) * 60 * 60 * 1000;
-  await require('./trackers').trackerOf(only)?.redate?.run({ config, ids, mediaType, season, episode, change, within });
+  await require('./trackers').trackerOf(only)?.redate?.run({ config, ids, mediaType, season, episode, change, within, fallback });
 }
 
 // PublicMetaDB keeps plays rather than a watched flag and is keyed on TMDB.

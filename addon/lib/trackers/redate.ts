@@ -12,6 +12,7 @@ export interface Redate {
   episode: number | undefined;
   change: WatchDateChange;
   within: number;
+  fallback?: { ids: Record<string, any>; season: number; episode: number } | null;
 }
 
 export const SAME_PLAY_MS = 60_000;

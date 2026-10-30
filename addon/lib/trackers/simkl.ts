@@ -146,18 +146,27 @@ async function token(credential: string): Promise<string | null> {
   return (await getSimklToken(credential).catch(() => null))?.access_token ?? null;
 }
 
-async function redate({ config, ids, mediaType, season, episode, change }: Redate): Promise<void> {
+async function redate({ config, ids, mediaType, season, episode, change, fallback }: Redate): Promise<void> {
   if (mediaType === 'movie' || season == null || episode == null || change.latest == null) return;
   const simklUtils = require('../../utils/simklUtils');
   const tokenId = config.apiKeys?.simklTokenId;
   const access = tokenId ? (await simklUtils.getSimklToken(tokenId))?.access_token : null;
   if (!access) return;
-  const held = await simklUtils.episodeWatchedAt(ids, access, season, episode);
+  let target = { ids, season, episode };
+  let held = await simklUtils.episodeWatchedAt(ids, access, season, episode);
+  const status = require('../../utils/trackerCalls').lastTrackerCall()?.status ?? 200;
+  if (!held && fallback && status >= 200 && status < 300) {
+    const again = await simklUtils.episodeWatchedAt(fallback.ids, access, fallback.season, fallback.episode);
+    if (again) {
+      target = fallback;
+      held = again;
+    }
+  }
   if (held === undefined) return;
   const heldAt = playTime(held);
   if (heldAt !== null && Math.abs(heldAt - change.latest) < SAME_PLAY_MS) return;
-  if (held !== null && !(await simklUtils.removeFromHistory(ids, access, season, episode))) return;
-  await simklUtils.addToHistory(ids, access, season, episode, undefined, new Date(change.latest).toISOString());
+  if (held !== null && !(await simklUtils.removeFromHistory(target.ids, access, target.season, target.episode))) return;
+  await simklUtils.addToHistory(target.ids, access, target.season, target.episode, undefined, new Date(change.latest).toISOString());
 }
 
 export const simkl: Tracker = {
