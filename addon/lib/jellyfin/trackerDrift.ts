@@ -4,6 +4,7 @@ import { groupBySpelling, getPlaystatesAcross, upsertPlaystateEverywhere, videoI
 import { scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
 import { isAnimeList, trackerOf } from '../trackers';
+import { trackerConfig } from '../accounts';
 
 const database: any = require('../database');
 const idMappings: any = require('../id-mappings');
@@ -268,7 +269,10 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
     const spelled = new Map<string, string[]>();
     for (const id of new Set(missing.flatMap((v) => v.ids))) spelled.set(id, await videoIdAliases(id).catch(() => [] as string[]));
     const heldElsewhere = await watchedAmong(snapshot, [...new Set([...spelled.values()].flat())]);
-    return { judged, matched, held, spelled, heldElsewhere, missing: missing.filter((v) => !v.ids.some((id) => (spelled.get(id) ?? []).some((alias) => heldElsewhere.has(alias) || waiting.has(alias)))) };
+    const unspelled = missing.filter((v) => !v.ids.some((id) => (spelled.get(id) ?? []).some((alias) => heldElsewhere.has(alias) || waiting.has(alias))));
+    const sentAs = await sendSpellings(userUUID, source, unspelled);
+    const heldAsSent = await watchedAmong(snapshot, [...new Set([...sentAs.values()].flat())]);
+    return { judged, matched, held, spelled, heldElsewhere, sentAs, heldAsSent, missing: unspelled.filter((v) => !(sentAs.get(v) ?? []).some((id) => heldAsSent.has(id))) };
   };
   const stillPlayed = async (viewings: Viewing[]) => {
     if (isAnimeList(source.service)) {
@@ -282,7 +286,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
     return viewings.filter((v) => v.ids.some((id) => Number(states.get(`${v.profile}|${id}`)?.played) === 1));
   };
   const own = await missingFrom(mine);
-  const { judged, matched, held, spelled, heldElsewhere } = own;
+  const { judged, matched, held, spelled, heldElsewhere, sentAs, heldAsSent } = own;
   let behind = own.missing;
   let rewatched: Viewing[] = [];
   const rewatch = rewatchOf(source.service);
@@ -303,7 +307,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
       if (row.op === 'catchUps' || row.op === 'episodes') for (const video of detail.videos ?? []) noteSent(String(video), Number(row.at) || 0);
     }
     const missing = new Set(behind);
-    const heldAt = (v: Viewing) => Math.max(0, ...v.ids.flatMap((id) => [
+    const heldAt = (v: Viewing) => Math.max(0, ...(sentAs.get(v) ?? []).map((id) => heldAsSent.get(id) ?? 0), ...v.ids.flatMap((id) => [
       held.get(id) ?? 0,
       ...(matched.get(id) ?? []).map((theirs) => held.get(theirs) ?? 0),
       ...(spelled.get(id) ?? []).map((alias) => heldElsewhere.get(alias) ?? 0),
@@ -334,6 +338,27 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
 
   const ahead = isAnimeList(source.service) ? [] : await aheadOf(userUUID, source, sourceKey, since, unmarking);
   return { behind, imported, leftOut, ahead, rewatched, unread: mine.filter((v) => v.at > settled).length, since, readAt };
+}
+
+async function sendSpellings(userUUID: string, source: DriftSource, viewings: Viewing[]): Promise<Map<Viewing, string[]>> {
+  const out = new Map<Viewing, string[]>();
+  if (!viewings.length || isAnimeList(source.service)) return out;
+  const { parseMediaId, historyTarget } = require('../subtitleHandler');
+  const { mapWithConcurrency } = require('../../utils/concurrency');
+  const config = { ...trackerConfig(source.scoped, source.service), userUUID };
+  await mapWithConcurrency(viewings, 4, async (v: Viewing) => {
+    const media = parseMediaId(spellingFor(source.service, v.ids));
+    const target = media ? await historyTarget(media, config, source.service).catch(() => null) : null;
+    if (target) out.set(v, targetSpellings(target, v.kind));
+  });
+  return out;
+}
+
+function targetSpellings(target: { ids: Record<string, any>; season?: number; episode?: number }, kind: Viewing['kind']): string[] {
+  const { imdb, tmdb, tvdb } = target.ids;
+  const bases = [/^tt\d+$/.test(String(imdb ?? '')) ? String(imdb) : null, tmdb ? `tmdb:${tmdb}` : null, tvdb ? `tvdb:${tvdb}` : null].filter((base): base is string => Boolean(base));
+  if (kind === 'movie') return bases;
+  return target.season != null && target.episode != null ? bases.map((base) => `${base}:${target.season}:${target.episode}`) : [];
 }
 
 async function statesFor(userUUID: string, viewings: Viewing[]): Promise<Map<string, any>> {
