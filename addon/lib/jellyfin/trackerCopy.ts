@@ -3,7 +3,7 @@ import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { trackerConfig, type AccountService } from '../accounts';
 import { videoIdAliases } from './aliases';
-import { scopeConfigToProfile } from './profiles';
+import { listProfiles, scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
 import { asListed, belongsOn, furthestPerEntry, pullDrift, spellingFor, spellingsFor, viewingOf, type Viewing } from './trackerDrift';
 import { MARKS, markVideo, planMarks, ratingKeys, writeMarks, type Mark, type MarkItem } from './trackerMarks';
@@ -299,8 +299,18 @@ async function writeOneByOne(service: string, items: CopyItem[], credential: str
   return { done, sent, failed, skipped };
 }
 
-async function bringHome(userUUID: string, job: any, items: CopyItem[], config: any): Promise<void> {
-  const fromCredential = credentialFor(config, job.from_service);
+// A copy in the All view can start from another profile's tracker, so the source is found by the key it started with.
+function sourceCredential(stored: any, job: any): string | undefined {
+  const { sourceKeyFor } = require('./trackerMirror');
+  for (const profile of listProfiles(stored, job.user_uuid)) {
+    const credential = credentialFor({ ...scopeConfigToProfile(stored, job.user_uuid, profile.id || null), userUUID: job.user_uuid }, job.from_service);
+    if (credential && sourceKeyFor(job.from_service, credential) === job.from_key) return credential;
+  }
+  return undefined;
+}
+
+async function bringHome(userUUID: string, job: any, items: CopyItem[], config: any, stored: any): Promise<void> {
+  const fromCredential = sourceCredential(stored, job);
   if (!fromCredential) return;
   const dated = items.filter((item) => item.at);
   if (!dated.length) return;
@@ -343,7 +353,7 @@ async function step(id: number): Promise<void> {
     if (what === 'ratings') await bringRatingsHome(job.user_uuid, job.profile, items);
     if (what !== 'watches') outcome = await writeMarks(what, items, { service: job.to_service, credential, scoped: config }, job.user_uuid);
     else {
-      await bringHome(job.user_uuid, job, items, config);
+      await bringHome(job.user_uuid, job, items, config, stored);
       const batch = trackerOf(job.to_service)?.writeWatches;
       outcome = batch ? await batch.write(items, credential, config) : await writeOneByOne(job.to_service, items, credential, config, job.user_uuid);
     }
