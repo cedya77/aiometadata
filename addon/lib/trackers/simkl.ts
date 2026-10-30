@@ -3,7 +3,7 @@ import { cleanIds, dateOf, iso, keysOf, markItem, markKeys, notFoundCount, score
 import { sharesId, targetsFor, type CopyItem, type CopyTarget, type WatchOutcome } from './watches';
 import type { SimklMissed } from '../../utils/simklUtils';
 import type { MatchCandidate, TargetSeason } from './match';
-import { SAME_PLAY_MS, playTime, type Redate } from './redate';
+import { SAME_PLAY_MS, nothingToMove, playTime, type Redate } from './redate';
 
 async function simklEntries(credential: string): Promise<Array<{ type: string; data: any }>> {
   const { mirrorRows } = require('../jellyfin/trackerMirror');
@@ -162,7 +162,7 @@ async function redate({ config, ids, mediaType, season, episode, change, fallbac
       held = again;
     }
   }
-  if (held === undefined) return;
+  if (held === undefined) return nothingToMove('https://api.simkl.com/sync/watched', 'not found on Simkl');
   const heldAt = playTime(held);
   if (heldAt !== null && Math.abs(heldAt - change.latest) < SAME_PLAY_MS) return;
   if (held !== null && !(await simklUtils.removeFromHistory(target.ids, access, target.season, target.episode))) return;

@@ -15,6 +15,13 @@ export interface Redate {
   fallback?: { ids: Record<string, any>; season: number; episode: number } | null;
 }
 
+export function nothingToMove(url: string, reason: string): void {
+  const { lastTrackerCall, noteTrackerCall } = require('../../utils/trackerCalls');
+  const last = lastTrackerCall();
+  if (last && last.status !== 409 && (last.status < 200 || last.status >= 300)) return;
+  noteTrackerCall(url, 404, reason);
+}
+
 export const SAME_PLAY_MS = 60_000;
 
 export function playTime(value: unknown): number | null {

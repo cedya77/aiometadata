@@ -3,7 +3,7 @@ import { MARK_KINDS, type Tracker } from './types';
 import { dateOf, markItem, mirrored, ratingKeys, type MarkItem, type MarkSide } from './marks';
 import { copyTarget, isoAt, type TmdbWatch } from './watches';
 import { tmdbSeasons, type MatchCandidate } from './match';
-import { SAME_PLAY_MS, nearestPlay, playTime, type Redate } from './redate';
+import { SAME_PLAY_MS, nearestPlay, nothingToMove, playTime, type Redate } from './redate';
 
 const pmdbItem = (row: any, extra: Partial<MarkItem> = {}) => {
   const tmdb = Number(row?.tmdb_id);
@@ -57,7 +57,7 @@ async function redate({ config, ids, mediaType, season, episode, change, within 
   if (!apiKey) return;
   const { tmdbIdFrom, fetchWatched, setWatchedDate, removePlay } = require('../../utils/publicmetadbUtils');
   const tmdbId = await tmdbIdFrom(ids, mediaType);
-  if (!tmdbId) return;
+  if (!tmdbId) return nothingToMove('https://publicmetadb.com/api/watched', 'no TMDB id for the title');
   const kind = mediaType === 'movie' ? 'movie' : 'tv';
   const isTitle = (play: any) => Number(play?.tmdb_id) === Number(tmdbId) && play?.media_type === kind
     && (kind === 'movie' || (Number(play.season) === season && Number(play.episode) === episode));
@@ -84,7 +84,7 @@ async function redate({ config, ids, mediaType, season, episode, change, within 
   }
   // The viewing being moved is found first, so a destination near it can never stand in for it.
   const old = nearestPlay(plays, change.from, (play) => play.watched_at, within);
-  if (!old?.id) return;
+  if (!old?.id) return nothingToMove('https://publicmetadb.com/api/watched', 'no play near the old date');
   const placed = nearestPlay(plays.filter((play) => play !== old), change.to, (play) => play.watched_at, SAME_PLAY_MS);
   if (placed) {
     await removePlay(apiKey, String(old.id));

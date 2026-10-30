@@ -3,7 +3,7 @@ import { MARK_KINDS, type Mark, type Tracker } from './types';
 import { TITLE_KEYS, cleanIds, dateOf, iso, markItem, mirrored, notFoundCount, scoreOf, titleIds, type MarkItem, type MarkOutcome } from './marks';
 import { sharesId, targetsFor, type CopyItem, type TmdbWatch, type WatchOutcome } from './watches';
 import { tmdbSeasons, type MatchCandidate, type TargetSeason } from './match';
-import { SAME_PLAY_MS, nearestPlay, type Redate } from './redate';
+import { SAME_PLAY_MS, nearestPlay, nothingToMove, type Redate } from './redate';
 
 async function mdblistPages(apiKey: string, path: string, label: string, arrays: string[]): Promise<Record<string, any[]>> {
   const { makeRateLimitedMDBListRequest } = require('../../utils/mdbList');
@@ -87,7 +87,7 @@ async function writeWatches(items: CopyItem[], apiKey: string, config: any): Pro
 async function redate({ config, ids, mediaType, season, episode, change, within }: Redate): Promise<void> {
   const apiKey = config.apiKeys?.mdblist;
   const tmdbId = Number(ids.tmdb);
-  if (!apiKey || !tmdbId) return;
+  if (!apiKey || !tmdbId) return nothingToMove('https://api.mdblist.com/sync/history', 'no TMDB id for the title');
   const api = require('../../utils/mdbList');
   const all = await api.historyPlays(mediaType === 'movie' ? 'movie' : 'show', tmdbId, apiKey);
   if (!all) return;
@@ -99,6 +99,8 @@ async function redate({ config, ids, mediaType, season, episode, change, within 
   if (!old) {
     if (!placed && Date.now() - change.from < 15 * 60 * 1000) {
       noteTrackerCall('https://api.mdblist.com/sync/history', 429, 'play not recorded yet', null, Date.now() + 60_000);
+    } else if (!placed) {
+      nothingToMove('https://api.mdblist.com/sync/history', 'no play near the old date');
     }
     return;
   }
