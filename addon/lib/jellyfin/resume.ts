@@ -613,10 +613,15 @@ function forgetShelves(userUUID: string): void {
 }
 
 export function invalidateResume(userUUID: string): void {
-  generations.set(userUUID, generationOf(userUUID) + 1);
+  forgetOwnWatches(userUUID);
   for (const key of [...snapshots.keys()]) {
     if (String(key).startsWith(`${userUUID}:`)) snapshots.delete(key);
   }
+}
+
+/** A watch this server recorded: what is built from its table is rebuilt, the tracker reads are kept. */
+export function forgetOwnWatches(userUUID: string): void {
+  generations.set(userUUID, generationOf(userUUID) + 1);
   for (const cache of [nextUpPages, lastNextUp]) {
     for (const key of [...cache.keys()]) {
       if (String(key).startsWith(`${userUUID}:`)) cache.delete(key);

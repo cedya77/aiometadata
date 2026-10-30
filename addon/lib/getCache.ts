@@ -455,6 +455,7 @@ function classifyResult(result: any, error: any = null, cacheKey: string | null 
     cacheKey.includes('anilist_') ||
     cacheKey.includes('kitsu-') ||
     cacheKey.includes('mdblist-') ||
+    cacheKey.includes('publicmetadb-api:') ||
     cacheKey.includes('trakt-') ||
     cacheKey.includes('trakt_') ||
     cacheKey.includes('mdblist_') ||

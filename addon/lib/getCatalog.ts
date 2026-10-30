@@ -8,7 +8,7 @@ import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommend
 import { fetchSimklTrendingItems, fetchSimklRecipeItems, fetchSimklWatchlistItems, sortSimklItemsByRelease, sortSimklItemsByActivity, fetchSimklUpNextItems, parseSimklItems, parseSimklUpNextItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases, fetchSimklListPage } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
-import { fetchResume, parseResumeItems, fetchListItems, parseListItems, fetchPickItems, parsePickItems, publicMetaDBListType, publicMetaDBListId, WATCHLIST_CATALOG_ID } from "../utils/publicmetadbUtils.js";
+import { fetchResume, parseResumeItems, fetchListPage, parseListItems, fetchPickItems, parsePickItems, publicMetaDBListType, publicMetaDBListId, WATCHLIST_CATALOG_ID } from "../utils/publicmetadbUtils.js";
 import { mapWithLimit } from "../utils/concurrency.js";
 import { envInt } from '../utils/envNumber';
 const anilist = require('./anilist');
@@ -3497,6 +3497,11 @@ async function getLumiereCatalog(
   }
 }
 
+function publicMetaDBListTtl(catalogConfig: any): number {
+  const own = catalogConfig?.cacheTTL;
+  return typeof own === 'number' && Number.isFinite(own) && own >= 0 ? own : Number(getSetting('CATALOG_TTL')) || 24 * 60 * 60;
+}
+
 async function getPublicMetaDBCatalog(
   type: string,
   catalogId: string,
@@ -3527,14 +3532,12 @@ async function getPublicMetaDBCatalog(
       const listId = await publicMetaDBListId(config, catalogId);
       if (!listId) return [];
       const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
-      const [data, listType] = await Promise.all([
-        fetchListItems(apiKey, listId, page, pageSize).catch((error: any) => {
-          if (!String(error?.message || '').includes('403')) throw error;
-          logger.warn(`[PublicMetaDB] List ${listId} is not on this account; it is a row left over from an older configuration. Remove it, or reinstall the addon in the client.`);
-          return { items: [] };
-        }),
-        catalogId === WATCHLIST_CATALOG_ID ? 'watchlist' : publicMetaDBListType(config, catalogId),
-      ]);
+      const listType = catalogId === WATCHLIST_CATALOG_ID ? 'watchlist' : await publicMetaDBListType(config, catalogId);
+      const data = await fetchListPage(apiKey, listId, page, pageSize, listType === 'watchlist', publicMetaDBListTtl(catalogConfig)).catch((error: any) => {
+        if (!String(error?.message || '').includes('403')) throw error;
+        logger.warn(`[PublicMetaDB] List ${listId} is not on this account; it is a row left over from an older configuration. Remove it, or reinstall the addon in the client.`);
+        return { items: [] };
+      });
       let metas = await parseListItems(data.items || [], type, language, config);
       metas = stampListedAt(metas, data.items || [], (item: any) => ({ tmdb: item?.tmdb_id }), (item: any) => item?.created);
       logger.success(`[PublicMetaDB] ${listType === 'watchlist' ? 'Watchlist' : 'List'} ${listId}: ${metas.length} items (page ${page})`);
@@ -3544,7 +3547,7 @@ async function getPublicMetaDBCatalog(
     if (catalogId.startsWith('publicmetadb.public.')) {
       const listId = catalogId.slice('publicmetadb.public.'.length);
       const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
-      const data = await fetchListItems(apiKey, listId, page, pageSize);
+      const data = await fetchListPage(apiKey, listId, page, pageSize, false, publicMetaDBListTtl(catalogConfig));
       let metas = await parseListItems(data.items || [], type, language, config);
       metas = stampListedAt(metas, data.items || [], (item: any) => ({ tmdb: item?.tmdb_id }), (item: any) => item?.created);
       logger.success(`[PublicMetaDB] Public list ${listId}: ${metas.length} items (page ${page})`);

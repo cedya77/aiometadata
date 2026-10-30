@@ -5,6 +5,7 @@ import { resolveAllIds } from "../lib/id-resolver.js";
 import { UserConfig } from "../types/index.js";
 import consola from 'consola';
 import { noteTrackerCall } from "./trackerCalls.js";
+import { getSetting } from "../lib/settingsService.js";
 
 const logger = consola.withTag('PublicMetaDB');
 
@@ -334,8 +335,36 @@ async function setListItem(apiKey: string, listId: string, tmdbId: number | stri
   }
 }
 
-async function fetchListItems(apiKey: string, listId: string, page: number = 1, perPage: number = 20): Promise<any> {
-  return makeRequest(`/api/external/lists/${listId}/items?page=${page}&perPage=${perPage}`, apiKey);
+async function fetchListItems(apiKey: string, listId: string, page: number = 1, perPage: number = 20, sort: string = ''): Promise<any> {
+  return makeRequest(`/api/external/lists/${listId}/items?page=${page}&perPage=${perPage}${sort}`, apiKey);
+}
+
+function listBlockSize(pageSize: number): number {
+  const configured = parseInt(getSetting('PUBLICMETADB_LIST_BLOCK_SIZE'), 10);
+  const size = Number.isFinite(configured) && configured > 0 ? configured : 500;
+  return Math.max(pageSize, Math.min(size, 500));
+}
+
+async function fetchListBlock(apiKey: string, listId: string, blockOffset: number, blockSize: number, newestFirst: boolean, ttl: number): Promise<any[]> {
+  const keyHash = createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
+  const sort = newestFirst ? '&sort=created&order=desc' : '';
+  return cacheWrapGlobal(`publicmetadb-api:block:${keyHash}:${listId}:${newestFirst ? 'newest' : 'listed'}:${blockOffset}:${blockSize}:ttl:${ttl}`, async () => {
+    const data = await fetchListItems(apiKey, listId, blockOffset / blockSize + 1, blockSize, sort);
+    return data?.items || [];
+  }, ttl, { upstream: true, sourceList: true });
+}
+
+async function fetchListPage(apiKey: string, listId: string, page: number, pageSize: number, newestFirst: boolean, ttl: number): Promise<{ items: any[] }> {
+  const blockSize = listBlockSize(pageSize);
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  const rows: any[] = [];
+  for (let at = Math.floor(start / blockSize) * blockSize; at < end; at += blockSize) {
+    const items = await fetchListBlock(apiKey, listId, at, blockSize, newestFirst, ttl);
+    rows.push(...items.slice(Math.max(0, start - at), end - at));
+    if (items.length < blockSize) break;
+  }
+  return { items: rows };
 }
 
 async function fetchPublicListByLink(apiKey: string, user: string, slug: string, page: number = 1, perPage: number = 20): Promise<any> {
@@ -747,6 +776,7 @@ export {
   fetchEpisodeRatings,
   fetchLists,
   fetchListItems,
+  fetchListPage,
   fetchPublicListByLink,
   publicMetaDBListType,
   publicMetaDBWatchlistCatalog,

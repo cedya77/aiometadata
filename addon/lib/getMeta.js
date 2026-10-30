@@ -882,6 +882,18 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
   return null;
 }
 
+async function cinemetaForEpisodelessTvdbSeries(seriesData, episodes, allIds, includeVideos, language, config) {
+  if (seriesData.firstAired || !allIds?.imdbId) return null;
+  const tvdbEpisodes = includeVideos
+    ? episodes
+    : await tvdb.getSeriesEpisodes(allIds.tvdbId, language, config.tvdbSeasonType, config);
+  if (tvdbEpisodes?.episodes?.length) return null;
+  const imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
+  if (!imdbData?.videos?.length) return null;
+  logger.info(`[SeriesMeta] TVDB ${allIds.tvdbId} has no episodes; using Cinemeta ${allIds.imdbId} (${imdbData.videos.length} videos).`);
+  return imdbData;
+}
+
 async function getSeriesMeta(preferredProvider, stremioId, language, config, userUUID, allIds, includeVideos) {
   logger.debug(`[SeriesMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
 
@@ -960,6 +972,10 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 
       // Check if we got valid data
       if (seriesData) {
+        const cinemetaData = await cinemetaForEpisodelessTvdbSeries(seriesData, episodes, allIds, includeVideos, language, config);
+        if (cinemetaData) {
+          return _markDegraded(await buildImdbSeriesResponse(stremioId, cinemetaData, { allIds }, config), degraded);
+        }
         return _markDegraded(await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, false, includeVideos), degraded);
       } else {
         logger.debug(`[SeriesMeta] TVDB returned null data for ${allIds.tvdbId} (expected when content doesn't exist on TVDB)`);

@@ -492,6 +492,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'PUBLICMETADB_LIST_BLOCK_SIZE',
+    envVar: 'PUBLICMETADB_LIST_BLOCK_SIZE',
+    label: 'PublicMetaDB List Block Size',
+    description: 'How many list entries one PublicMetaDB request fetches. Catalog pages are cut from the block, so a block of 500 serves 25 pages of 20 for a single request. Capped at 500, the endpoint maximum. Set it to the catalog page size to go back to one request per page.',
+    category: 'Providers',
+    type: 'number',
+    default: 500,
+    min: 1,
+  },
+  {
     key: 'PUBLICMETADB_LISTS_TTL',
     envVar: 'PUBLICMETADB_LISTS_TTL',
     label: 'PublicMetaDB Lists Cache TTL',

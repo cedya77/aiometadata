@@ -419,9 +419,14 @@ async function recordPlaystate(
   positionMs: number,
   played: boolean | null,
   config: any,
-  finished = false
+  finished = false,
+  resetAll = false
 ): Promise<void> {
   await writePlaystate(userUUID, profile, session, event, positionMs, played, finished);
+  // Dropped before a client is told, so the read-back it makes sees the change.
+  const { forgetOwnWatches, invalidateResume } = require('./resume');
+  if (resetAll) invalidateResume(userUUID);
+  else if (played === true || event === 'unplayed') forgetOwnWatches(userUUID);
   announce(userUUID, config, profile, session).catch((error: any) =>
     logger.debug(`User data push failed for ${session.videoId}: ${error?.message || error}`)
   );
@@ -544,17 +549,13 @@ async function settle(
   resumedFrom: number | null = null
 ): Promise<void> {
   // The table is written before any tracker is told, so a read never waits on one.
-  await recordPlaystate(userUUID, profile, session, event, positionMs, played, config, event === 'stop' && played === true);
+  await recordPlaystate(userUUID, profile, session, event, positionMs, played, config, event === 'stop' && played === true, !tellsTrackers(config));
   if (played === true && session.descriptor.k === 'episode') {
     const { undropOnWatch } = require('./dropped');
     undropOnWatch(userUUID, config, [session.descriptor.i]);
   }
 
-  if (!tellsTrackers(config)) {
-    const { invalidateResume } = require('./resume');
-    invalidateResume(userUUID);
-    return;
-  }
+  if (!tellsTrackers(config)) return;
 
   // A pause at zero is what a collapsed position looks like, and a real one says
   // nothing a tracker can use, so it is remembered without writing a resume
@@ -647,24 +648,28 @@ async function markEach(req: any, body: any, event: 'played' | 'unplayed', upTo 
       return null;
     }
     deletePosition(`${userUUID}:${profile}:${id}`);
-    await recordPlaystate(userUUID, profile, session, event, 0, played, config);
+    await writePlaystate(userUUID, profile, session, event, 0, played);
     return session;
   })).filter((s): s is ResolvedSession => s !== null);
+
+  // Every row is written before anything is dropped or a client told, so none reads half a season.
+  const { forgetOwnWatches, invalidateResume } = require('./resume');
+  if (tellsTrackers(config)) forgetOwnWatches(userUUID);
+  else invalidateResume(userUUID);
+  for (const session of sessions) {
+    announce(userUUID, config, profile, session).catch((error: any) =>
+      logger.debug(`User data push failed for ${session.videoId}: ${error?.message || error}`)
+    );
+  }
 
   if (played) {
     const { undropOnWatch } = require('./dropped');
     undropOnWatch(userUUID, config, sessions.filter((session) => session.descriptor.k === 'episode').map((session) => session.descriptor.i));
   }
-  if (!tellsTrackers(config)) {
-    const { invalidateResume } = require('./resume');
-    invalidateResume(userUUID);
-    return;
-  }
+  if (!tellsTrackers(config)) return;
   // A season or series goes to the trackers as one batch, not an event per episode.
   if (marked.scope) {
     const { handlePlaybackReport } = require('../playbackHandler');
-    const { invalidateResume } = require('./resume');
-    invalidateResume(userUUID);
     handlePlaybackReport('series', marked.metaId, {
       scope: marked.scope,
       event,
