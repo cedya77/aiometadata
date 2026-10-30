@@ -1838,6 +1838,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_YEAR_REVIEW_FACTS_HOURS',
+    envVar: 'JELLYFIN_YEAR_REVIEW_FACTS_HOURS',
+    label: 'Year in Review Title Facts Lifetime (hours)',
+    description: 'How long the title details a Year in Review reads from metadata are kept and shared between reviews before they are read again.',
+    category: 'Features',
+    type: 'number',
+    default: 168,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_DASHBOARD_PROGRESS_MAX',
     envVar: 'JELLYFIN_DASHBOARD_PROGRESS_MAX',
     label: 'Jellyfin Dashboard Continue Watching Count Limit',

@@ -578,6 +578,12 @@ class Database {
         data TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       )`,
+      `CREATE TABLE IF NOT EXISTS title_facts (
+        facts_key TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_title_facts_updated ON title_facts(updated_at)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_favourites (
         user_uuid TEXT NOT NULL,
         profile TEXT NOT NULL DEFAULT '',
@@ -893,6 +899,12 @@ class Database {
         data TEXT NOT NULL,
         updated_at BIGINT NOT NULL
       )`,
+      `CREATE TABLE IF NOT EXISTS title_facts (
+        facts_key TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at BIGINT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_title_facts_updated ON title_facts(updated_at)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_favourites (
         user_uuid VARCHAR(64) NOT NULL,
         profile TEXT NOT NULL DEFAULT '',
@@ -1855,6 +1867,37 @@ class Database {
       last_played_at: Number(row.last_played_at) || null,
       position_ms: Number(row.position_ms) || 0,
     }));
+  }
+
+  async getTitleFacts(keys: string[], since: number): Promise<Map<string, any>> {
+    const out = new Map<string, any>();
+    const unique = [...new Set(keys)];
+    for (let i = 0; i < unique.length; i += 500) {
+      const chunk = unique.slice(i, i + 500);
+      const marks = chunk.map((_, n) => (this.type === 'sqlite' ? '?' : `$${n + 2}`)).join(', ');
+      const rows = await this.allQuery(`SELECT facts_key, data FROM title_facts WHERE updated_at >= ${this.type === 'sqlite' ? '?' : '$1'} AND facts_key IN (${marks})`, [since, ...chunk]);
+      for (const row of rows || []) {
+        try {
+          out.set(String(row.facts_key), JSON.parse(row.data));
+        } catch {
+          continue;
+        }
+      }
+    }
+    return out;
+  }
+
+  async putTitleFacts(rows: Array<{ key: string; data: any }>): Promise<void> {
+    const now = Date.now();
+    const query = this.type === 'sqlite'
+      ? 'INSERT INTO title_facts (facts_key, data, updated_at) VALUES (?, ?, ?) ON CONFLICT (facts_key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
+      : 'INSERT INTO title_facts (facts_key, data, updated_at) VALUES ($1, $2, $3) ON CONFLICT (facts_key) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at';
+    for (const row of rows) await this.runQuery(query, [row.key, JSON.stringify(row.data), now]);
+  }
+
+  async pruneTitleFacts(before: number): Promise<number> {
+    const result = await this.runQuery(`DELETE FROM title_facts WHERE updated_at < ${this.type === 'sqlite' ? '?' : '$1'}`, [before]);
+    return Number(this.type === 'sqlite' ? result?.changes : result?.rowCount) || 0;
   }
 
   async listWatchesBetween(userUUID: string, profile: string, from: number, to: number): Promise<Array<{ video_id: string; watched_at: number; origin: string | null }>> {

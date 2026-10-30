@@ -3,6 +3,8 @@ import { mapWithConcurrency } from '../../../utils/concurrency';
 import { fetchMetaBeforeArt, originalLanguage, parseRuntimeTicks } from '../items';
 import type { YearPlay } from './plays';
 
+const database: any = require('../../database');
+
 export interface TitleFacts {
   id: string;
   kind: 'movie' | 'series';
@@ -22,8 +24,10 @@ export interface TitleFacts {
   episodeRuntimes: Record<string, number>;
   episodeCount: number;
   ids: Record<string, string>;
-  source: 'cache' | 'built';
+  source: FactsSource;
 }
+
+export type FactsSource = 'stored' | 'cache' | 'built';
 
 const PER_ENTRY_ANIME = /^(kitsu|mal|anilist|anidb):/i;
 const ANIME_SPELLING = /^(kitsu|mal|anilist|anidb):/i;
@@ -62,7 +66,7 @@ function isAnime(meta: any, genres: string[], language: string | null): boolean 
   return (language === 'ja' || language === 'jpn') && genres.some((genre) => genre.toLowerCase() === 'animation');
 }
 
-export function factsFromMeta(meta: any, kind: 'movie' | 'series', source: 'cache' | 'built', watched: Set<string>): TitleFacts {
+export function factsFromMeta(meta: any, kind: 'movie' | 'series', source: FactsSource): TitleFacts {
   const genres = names(meta.genres);
   const language = originalLanguage(meta);
   const episodeRuntimes: Record<string, number> = {};
@@ -74,7 +78,7 @@ export function factsFromMeta(meta: any, kind: 'movie' | 'series', source: 'cach
     if (season !== 0) episodeCount += 1;
     const key = episodeKey(season, episode);
     const runtime = runtimeMsOf(video?.runtime);
-    if (runtime > 0 && watched.has(key)) episodeRuntimes[key] = runtime;
+    if (runtime > 0) episodeRuntimes[key] = runtime;
   }
   return {
     id: String(meta.id),
@@ -117,40 +121,50 @@ export interface FactsRequest {
   titleKey: string;
   kind: 'movie' | 'series';
   weight: number;
-  watched: Set<string>;
 }
 
-export async function titleFacts(userUUID: string, requests: FactsRequest[]): Promise<{ facts: Map<string, TitleFacts>; built: number; held: number; missing: number }> {
+function factsKey(config: any, request: FactsRequest): string {
+  const { getMetaSmartLockContextHash } = require('../../getCache');
+  return `${request.kind}:${getMetaSmartLockContextHash(config, request.titleKey, request.kind, true, false)}:${request.titleKey}`;
+}
+
+export async function titleFacts(userUUID: string, requests: FactsRequest[]): Promise<{ facts: Map<string, TitleFacts>; stored: number; built: number; held: number; missing: number }> {
   const buildBudget = envInt('JELLYFIN_YEAR_REVIEW_BUILD_TITLES', 400, 0);
   const width = envInt('JELLYFIN_YEAR_REVIEW_META_CONCURRENCY', 4, 1);
-  const ranked = [...requests].sort((a, b) => b.weight - a.weight);
+  const maxAgeMs = envInt('JELLYFIN_YEAR_REVIEW_FACTS_HOURS', 7 * 24, 1) * 60 * 60 * 1000;
   const facts = new Map<string, TitleFacts>();
   const config = await routeConfig(userUUID);
+  if (!config) return { facts, stored: 0, built: 0, held: 0, missing: requests.length };
+  const keys = new Map(requests.map((request) => [request.titleKey, factsKey(config, request)]));
+  const kept: Map<string, any> = await database.getTitleFacts([...keys.values()], Date.now() - maxAgeMs).catch(() => new Map());
+  for (const request of requests) {
+    const found = kept.get(keys.get(request.titleKey)!);
+    if (found) facts.set(request.titleKey, { ...found, source: 'stored' });
+  }
+  const stored = facts.size;
+  const ranked = requests.filter((request) => !facts.has(request.titleKey)).sort((a, b) => b.weight - a.weight);
+  const fresh: Array<{ key: string; data: TitleFacts }> = [];
   let built = 0;
   let held = 0;
   await mapWithConcurrency(ranked, width, async (request, rank) => {
-    const cached = config ? await heldMeta(userUUID, config, request.kind, request.titleKey) : null;
-    if (cached) {
-      held += 1;
-      facts.set(request.titleKey, factsFromMeta(cached, request.kind, 'cache', request.watched));
-      return;
-    }
-    if (rank >= buildBudget) return;
-    const fresh = await fetchMetaBeforeArt(userUUID, request.kind, request.titleKey).catch(() => null);
-    if (!fresh) return;
-    built += 1;
-    facts.set(request.titleKey, factsFromMeta(fresh, request.kind, 'built', request.watched));
+    const cached = await heldMeta(userUUID, config, request.kind, request.titleKey);
+    const meta = cached ?? (rank < buildBudget ? await fetchMetaBeforeArt(userUUID, request.kind, request.titleKey).catch(() => null) : null);
+    if (!meta) return;
+    if (cached) held += 1;
+    else built += 1;
+    const found = factsFromMeta(meta, request.kind, cached ? 'cache' : 'built');
+    facts.set(request.titleKey, found);
+    fresh.push({ key: keys.get(request.titleKey)!, data: found });
   });
-  return { facts, built, held, missing: requests.length - facts.size };
+  if (fresh.length) await database.putTitleFacts(fresh).catch(() => undefined);
+  return { facts, stored, built, held, missing: requests.length - facts.size };
 }
 
 export function factsRequests(plays: YearPlay[]): FactsRequest[] {
   const byTitle = new Map<string, FactsRequest>();
   for (const play of plays) {
-    const request = byTitle.get(play.titleKey) ?? { titleKey: play.titleKey, kind: play.kind === 'movie' ? 'movie' as const : 'series' as const, weight: 0, watched: new Set<string>() };
+    const request = byTitle.get(play.titleKey) ?? { titleKey: play.titleKey, kind: play.kind === 'movie' ? 'movie' as const : 'series' as const, weight: 0 };
     request.weight += 1;
-    if (play.episode !== null) request.watched.add(episodeKey(play.season, play.episode));
-    if (play.episode !== null && play.season === null) request.watched.add(episodeKey(1, play.episode));
     byTitle.set(play.titleKey, request);
   }
   return [...byTitle.values()];

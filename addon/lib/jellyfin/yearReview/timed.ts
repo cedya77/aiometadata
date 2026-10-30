@@ -27,7 +27,7 @@ export interface YearTitle {
 export interface TimedYear {
   plays: TimedPlay[];
   titles: YearTitle[];
-  counts: { built: number; held: number; missing: number; merged: number; overfullDays: number; sources: Record<RuntimeSource, number> };
+  counts: { stored: number; built: number; held: number; missing: number; merged: number; overfullDays: number; sources: Record<RuntimeSource, number> };
 }
 
 function dayOf(timeZone: string): (at: number) => string {
@@ -90,7 +90,7 @@ function median(values: number[]): number {
 
 export async function timeYear(userUUID: string, historyKey: string, plays: YearPlay[], timeZone: string): Promise<TimedYear> {
   const requests = factsRequests(plays);
-  const { facts, built, held, missing } = await titleFacts(userUUID, requests);
+  const { facts, stored, built, held, missing } = await titleFacts(userUUID, requests);
 
   const played = new Map<string, number>();
   for (const row of await database.listPlayedForProfile(userUUID, historyKey)) {
@@ -159,6 +159,6 @@ export async function timeYear(userUUID: string, historyKey: string, plays: Year
   return {
     plays: kept,
     titles: [...titles.values()].sort((a, b) => b.watchMs - a.watchMs),
-    counts: { built, held, missing, merged: requests.length - titles.size, overfullDays: overfull.size, sources },
+    counts: { stored, built, held, missing, merged: requests.length - titles.size, overfullDays: overfull.size, sources },
   };
 }
