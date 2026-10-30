@@ -164,6 +164,9 @@ export const simkl: Tracker = {
   id: 'simkl',
   name: 'Simkl',
   color: '#0d0d0f',
+  account: { key: 'simklTokenId', master: 'simklWatchTracking', fields: ['simklUser'] },
+  ownList: (id) => /^simkl\.(watchlist\..+|upnext(\.anime)?)$/.test(id),
+  resumeRank: 2,
   animeOnly: false,
   rewatch: {
     separate: true,

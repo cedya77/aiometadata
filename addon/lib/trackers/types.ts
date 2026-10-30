@@ -16,6 +16,9 @@ export interface Tracker {
   id: AccountService;
   name: string;
   color: string;
+  account: { key: string; master: string; fields?: string[] };
+  ownList: (id: string, catalog: { metadata?: any }) => boolean;
+  resumeRank?: number;
   animeOnly: boolean;
   datedHistory: boolean;
   wholeRatings: boolean;

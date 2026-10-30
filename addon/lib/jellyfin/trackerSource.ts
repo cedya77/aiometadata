@@ -1,12 +1,11 @@
-import { ACCOUNT_SERVICES, credentialOf, trackerConfig } from '../accounts';
-import { isAnimeList } from '../trackers';
+import { ACCOUNT_SERVICES, credentialOf, trackerConfig, type AccountService } from '../accounts';
+import { TRACKERS, isAnimeList, resumeTrackers } from '../trackers';
 
 /** Services that store a playback position or a watch history we can read. */
-export const CAPABLE = ['mdblist', 'simkl', 'publicmetadb', 'anilist', 'mal'] as const;
+export type Capable = AccountService;
 
-export type Capable = (typeof CAPABLE)[number];
-
-const POSITIONAL: readonly Capable[] = ['mdblist', 'simkl', 'publicmetadb'];
+const POSITIONAL: readonly Capable[] = resumeTrackers();
+export const CAPABLE: readonly Capable[] = [...POSITIONAL, ...(Object.keys(TRACKERS) as Capable[]).filter((service) => !POSITIONAL.includes(service))];
 
 export function credentialFor(config: any, service: Capable): string | undefined {
   return trackerConfig(config, service)?.[ACCOUNT_SERVICES[service].master] !== false ? credentialOf(config, service) : undefined;

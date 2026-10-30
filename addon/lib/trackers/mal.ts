@@ -7,6 +7,8 @@ export const mal: Tracker = {
   id: 'mal',
   name: 'MyAnimeList',
   color: '#2e51a2',
+  account: { key: 'malTokenId', master: 'malWatchTracking' },
+  ownList: (id) => /^mal\.(userlist\..+|suggestions)$/.test(id),
   animeOnly: true,
   datedHistory: false,
   wholeRatings: true,

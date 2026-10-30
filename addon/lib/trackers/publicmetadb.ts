@@ -103,6 +103,13 @@ export const publicmetadb: Tracker = {
   id: 'publicmetadb',
   name: 'PublicMetaDB',
   color: '#ebebeb',
+  account: { key: 'publicmetadb', master: 'publicmetadbWatchTracking', fields: ['publicmetadbWatchlist'] },
+  ownList: (id, catalog) => {
+    if (id.startsWith('publicmetadb.pick.')) return typeof catalog.metadata?.accountOwner === 'string' && catalog.metadata.accountOwner !== '';
+    if (id.startsWith('publicmetadb.list.')) return catalog.metadata?.listType === 'watchlist';
+    return /^publicmetadb\.(upnext|watchlist)$/.test(id);
+  },
+  resumeRank: 3,
   animeOnly: false,
   datedHistory: true,
   wholeRatings: false,

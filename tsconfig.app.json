@@ -26,5 +26,6 @@
     },
     "types": ["vite/client", "react", "react-dom"]
   },
-  "include": ["configure/src", "addon/lib/collectionBuilder"]
+  "include": ["configure/src", "addon/lib/collectionBuilder"],
+  "exclude": ["addon/lib/collectionBuilder/aiostreamsCollections.ts"]
 }

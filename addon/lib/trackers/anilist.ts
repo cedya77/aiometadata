@@ -7,6 +7,8 @@ export const anilist: Tracker = {
   id: 'anilist',
   name: 'AniList',
   color: '#152232',
+  account: { key: 'anilistTokenId', master: 'anilistWatchTracking' },
+  ownList: (id, catalog) => !catalog.metadata?.isCustomList && /^anilist\.(?!trending$)[^.]+$/.test(id),
   animeOnly: true,
   datedHistory: false,
   wholeRatings: false,
