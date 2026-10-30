@@ -3,6 +3,7 @@ import { pipeline } from 'stream/promises';
 import { LRUCache } from 'lru-cache';
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
+import { tmdbBackdropSize, tmdbLandscapeSize, tmdbLogoSize, tmdbPosterSize } from '../../utils/tmdbImageSize';
 import { mapWithConcurrency } from '../../utils/concurrency';
 import { hasAgeRatingCap } from '../../utils/ageRating';
 import { randomUUID, timingSafeEqual } from 'crypto';
@@ -2545,6 +2546,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     if (url.includes(TMDB_ORIGINAL)) {
       const bucket = kind === 'logo' ? 'logo' : kind === 'backdrop' || kind === 'thumb' ? 'backdrop' : 'poster';
       const widths = TMDB_WIDTHS[bucket];
+      if (!(maxWidth > 0)) {
+        const preferred = kind === 'thumb' ? tmdbLandscapeSize() : bucket === 'backdrop' ? tmdbBackdropSize() : bucket === 'logo' ? tmdbLogoSize() : tmdbPosterSize();
+        if (preferred === 'original') return url;
+      }
       const wanted = maxWidth > 0 ? maxWidth : bucket === 'backdrop' ? 1280 : bucket === 'logo' ? 500 : 780;
       const width = widths.find((w) => w >= wanted);
       return width ? url.replace(TMDB_ORIGINAL, `https://image.tmdb.org/t/p/w${width}/`) : url;
