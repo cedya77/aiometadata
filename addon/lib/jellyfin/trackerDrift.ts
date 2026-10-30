@@ -9,6 +9,7 @@ const idMappings: any = require('../id-mappings');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ANIME_LISTS = new Set<string>(['anilist', 'mal']);
+const ANIME_SCHEMES = new Set<string>(['kitsu', 'mal', 'anilist', 'anidb']);
 const OWN_ORIGINS = new Set(['server', 'play']);
 const WATCH_OPS = new Set(['scrobble', 'credit', 'catchUp', 'catchUps', 'anime', 'episodes']);
 const BATCHED = new Set<string>(['simkl', 'mdblist']);
@@ -130,14 +131,19 @@ function titlesOf(id: string): string[] {
 async function groupImported<T extends { video_id: any; last_played_at: number }>(rows: T[]): Promise<T[][]> {
   const groups = await groupBySpelling(rows.map((row) => ({ ...row, origin: null })));
   const dated = rows.some((row) => row.last_played_at > 0);
+  // What each id names, by itself and by its aliases, each at its own coordinate.
+  const named = new Map<string, Array<{ coordinate: string; title: string }>>();
+  for (const id of new Set(rows.map((row) => String(row.video_id)))) {
+    const spellings = [id, ...(await videoIdAliases(id).catch(() => [] as string[]))];
+    named.set(id, spellings.flatMap((spelling) => titlesOf(spelling).map((title) => ({ coordinate: coordinateOf(spelling), title }))));
+  }
   const parent = groups.map((_, i) => i);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
   const claimed = new Map<string, number>();
   groups.forEach((group, i) => {
     for (const row of group) {
-      const id = String(row.video_id);
-      for (const title of titlesOf(id)) {
-        const key = `${coordinateOf(id)}|${title}`;
+      for (const { coordinate, title } of named.get(String(row.video_id)) ?? []) {
+        const key = `${coordinate}|${title}`;
         const first = claimed.get(key);
         if (first === undefined) claimed.set(key, i);
         else parent[find(i)] = find(first);
@@ -153,9 +159,11 @@ async function groupImported<T extends { video_id: any; last_played_at: number }
   }
   const out: T[][] = [];
   for (const list of byCoordinate.values()) {
-    const schemes = list.map((group) => new Set(group.flatMap((row) => titlesOf(String(row.video_id)).map((id) => parseStremioId(id)?.idType ?? id))));
+    const schemes = list.map((group) => new Set(group.flatMap((row) => (named.get(String(row.video_id)) ?? []).map(({ title }) => parseStremioId(title)?.idType ?? title))));
     const apart = schemes.every((set, i) => schemes.every((other, j) => j <= i || [...set].every((scheme) => !other.has(scheme))));
-    if (dated && list.length > 1 && apart) out.push(list.flat());
+    // An anime spelling comes with its aliases, so the moment is only needed to join a regular title's IMDb and TMDB ids.
+    const regular = schemes.every((set) => [...set].every((scheme) => !ANIME_SCHEMES.has(scheme)));
+    if (dated && list.length > 1 && apart && regular) out.push(list.flat());
     else out.push(...list);
   }
   return out;
