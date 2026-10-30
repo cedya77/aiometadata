@@ -14,8 +14,13 @@ function filesOf(upload: Upload): Map<string, string> {
   if (FILES.includes(name)) return upload.files;
   const header = headerOf(text);
   if (!header.includes(URI)) return upload.files;
-  const guessed = header.includes('Watched Date') ? 'diary.csv' : header.includes('Rating') ? 'ratings.csv' : 'watched.csv';
-  return new Map([[guessed, text]]);
+  // watched.csv and watchlist.csv share one header, so only the file's name tells them apart.
+  const guessed = header.includes('Watched Date') ? 'diary.csv'
+    : header.includes('Rating') ? 'ratings.csv'
+    : name.includes('watchlist') ? 'watchlist.csv'
+    : name.includes('watched') ? 'watched.csv'
+    : null;
+  return guessed ? new Map([[guessed, text]]) : upload.files;
 }
 
 const filmKey = (name: string, year: string) => titleKey(name, year, 'movie');
