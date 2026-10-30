@@ -360,14 +360,17 @@ export async function searchTargets(service: string, credential: string, query: 
 
 async function tmdbSeasons(tmdb: number, config: any): Promise<TargetSeason[]> {
   const { tvInfo, seasonInfo } = require('../getTmdb');
-  const show = await tvInfo({ id: tmdb, language: 'en-US' }, config).catch(() => null);
+  // A season that could not be read would save as one with nothing to send, so a failed read fails the detail.
+  const show = await tvInfo({ id: tmdb, language: 'en-US' }, config);
+  if (!show) throw new Error('TMDB did not answer');
   const numbers: number[] = (Array.isArray(show?.seasons) ? show.seasons : [])
     .map((season: any) => Number(season?.season_number))
     .filter((number: number) => Number.isInteger(number) && number >= 0)
     .sort((a: number, b: number) => (a === 0 ? 1 : b === 0 ? -1 : a - b))
     .slice(0, 40);
   return Promise.all(numbers.map(async (number) => {
-    const detail = await seasonInfo({ id: tmdb, season_number: number, language: 'en-US' }, config).catch(() => null);
+    const detail = await seasonInfo({ id: tmdb, season_number: number, language: 'en-US' }, config);
+    if (!detail) throw new Error(`TMDB did not answer for season ${number}`);
     return {
       number,
       episodes: (Array.isArray(detail?.episodes) ? detail.episodes : []).map((episode: any) => ({
@@ -391,7 +394,8 @@ export async function targetDetail(service: string, credential: string, candidat
     if (detail?.ids?.tvdb) ids.tvdb = Number(detail.ids.tvdb);
     if (detail?.ids?.tmdb ?? candidate.ids.tmdb) ids.tmdb = Number(detail?.ids?.tmdb ?? candidate.ids.tmdb);
     if (candidate.kind === 'movie') return { ids, seasons: [] };
-    const response = await makeAuthenticatedSimklRequest(`https://api.simkl.com/${segment === 'anime' ? 'anime' : 'tv'}/episodes/${simkl}`, token, `Simkl episodes (${simkl})`, 'GET', undefined, 15000).catch(() => null);
+    const response = await makeAuthenticatedSimklRequest(`https://api.simkl.com/${segment === 'anime' ? 'anime' : 'tv'}/episodes/${simkl}`, token, `Simkl episodes (${simkl})`, 'GET', undefined, 15000);
+    if (!response) throw new Error('Simkl did not list the episodes');
     const seasons = new Map<number, TargetSeason>();
     for (const entry of Array.isArray(response?.data) ? response.data : []) {
       if (entry?.type !== 'episode' || !Number.isFinite(Number(entry.episode))) continue;

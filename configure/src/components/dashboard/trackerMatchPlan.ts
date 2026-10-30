@@ -71,7 +71,8 @@ export function planSeason(season: number, episodes: OurEpisode[], theirs: Their
       status = chosen[key] ? "chosen" : "none";
     } else if (held && key in held && prefer === undefined) {
       target = find(held[key]);
-      status = held[key] ? (target && target.norm === normed ? "same" : "chosen") : "none";
+      // A held episode the tracker no longer lists is looked at again, not saved as one to leave unsent.
+      status = held[key] ? (target ? (target.norm === normed ? "same" : "chosen") : "missing") : "none";
     } else {
       const own = generic(normed) ? [] : ownTitles.get(normed) ?? [];
       const elsewhere = own.length || generic(normed) || prefer !== undefined ? [] : allTitles.get(normed) ?? [];
