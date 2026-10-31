@@ -7,6 +7,12 @@ import { hoursOf, inWords, type YearModel } from "./yearModel";
 
 const CLUB_SIZE = 8;
 const SEASON_ROWS = 6;
+const SEASON_ROW_H = 69;
+const SEASON_FADES = {
+  start: "linear-gradient(to bottom, black calc(100% - 48px), transparent)",
+  middle: "linear-gradient(to bottom, transparent, black 32px, black calc(100% - 48px), transparent)",
+  end: "linear-gradient(to bottom, transparent, black 32px)",
+};
 const STUDIO_ROWS = 6;
 const STUDIO_COVERS = 3;
 const THEME_TAGS = 10;
@@ -199,6 +205,34 @@ function Audience({ entries }: { entries: JellyfinAnimeEntry[] }) {
   );
 }
 
+function SeasonList({ shows }: { shows: JellyfinAnimeEntry[] }) {
+  const [at, setAt] = useState<keyof typeof SEASON_FADES>("start");
+  const scrolls = shows.length > SEASON_ROWS;
+  const fade = scrolls ? SEASON_FADES[at] : undefined;
+  return (
+    <div
+      tabIndex={scrolls ? 0 : undefined}
+      aria-label={scrolls ? `${plural(shows.length, "show")}, scroll for more` : undefined}
+      onScroll={scrolls ? (event) => {
+        const list = event.currentTarget;
+        setAt(list.scrollTop <= 4 ? "start" : list.scrollTop + list.clientHeight >= list.scrollHeight - 4 ? "end" : "middle");
+      } : undefined}
+      className={`flex min-w-0 flex-col gap-3 ${scrolls ? "-mr-2 overflow-y-auto overscroll-contain pr-2 [scrollbar-width:thin]" : ""}`}
+      style={{ maxHeight: scrolls ? (SEASON_ROWS + 0.5) * SEASON_ROW_H : undefined, maskImage: fade, WebkitMaskImage: fade }}
+    >
+      {shows.map((entry) => (
+        <div key={entry.malId} className="flex min-w-0 items-center gap-2.5">
+          <div className="w-[38px] shrink-0"><Cover src={entry.image} className="rounded-md" /></div>
+          <div className="min-w-0">
+            <p className="truncate text-[13px] font-semibold">{compactName(entry.name)}</p>
+            <p className="mt-px text-[11px] text-muted-foreground">{plural(entry.episodes, "episode")}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Seasons({ model, entries }: { model: YearModel; entries: JellyfinAnimeEntry[] }) {
   const ofYear = entries.filter((entry) => entry.year === model.year && seasonOf(entry));
   if (!ofYear.length) return null;
@@ -222,16 +256,7 @@ function Seasons({ model, entries }: { model: YearModel; entries: JellyfinAnimeE
                   <p className="mt-0.5 text-xs text-muted-foreground">{shows.length ? plural(shows.length, "show") : now ? "Just started" : ahead ? "Not yet" : "None watched"}</p>
                 </div>
               </div>
-              {shows.slice(0, SEASON_ROWS).map((entry) => (
-                <div key={entry.malId} className="flex min-w-0 items-center gap-2.5">
-                  <div className="w-[38px] shrink-0"><Cover src={entry.image} className="rounded-md" /></div>
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-semibold">{compactName(entry.name)}</p>
-                    <p className="mt-px text-[11px] text-muted-foreground">{plural(entry.episodes, "episode")}</p>
-                  </div>
-                </div>
-              ))}
-              {shows.length > SEASON_ROWS && <p className="text-[11px] text-muted-foreground">and {shows.length - SEASON_ROWS} more</p>}
+              {shows.length > 0 && <SeasonList shows={shows} />}
               {!shows.length && (
                 <div className="flex min-h-[120px] flex-1 items-center justify-center rounded-2xl border border-dashed border-white/[0.16] p-4 text-center text-xs leading-[1.5] text-muted-foreground">
                   {now || ahead ? "This season's shows land here as you start them." : "Nothing from this season."}
