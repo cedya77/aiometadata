@@ -688,7 +688,7 @@ async function driftItems(userUUID: string, source: SyncSource, outcomes: Map<st
     const named = await withDeadline(describe(userUUID, spelling).catch(() => null));
     const bases = [...new Set(list.flatMap((v: any) => v.ids.map((video: string) => parseStremioId(video)?.base ?? video)))] as string[];
     const matchable = isMatchable(source.service);
-    const matched = matchable ? (await Promise.all(bases.map((base) => matchFor(userUUID, source.service, base)))).find(Boolean) ?? null : null;
+    const matched = matchable ? (await Promise.all(bases.map((base) => matchFor(userUUID, source.service, base).catch(() => null)))).find(Boolean) ?? null : null;
     return {
       id,
       kind: list[0].kind,
@@ -821,7 +821,7 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
   const { trackerConfig } = require('../accounts');
 
   const match = isMatchable(source.service)
-    ? (await Promise.all(shows.map((base) => matchFor(userUUID, source.service, base)))).find(Boolean) ?? null
+    ? (await Promise.all(shows.map((base) => matchFor(userUUID, source.service, base).catch(() => null)))).find(Boolean) ?? null
     : null;
   const aliases: string[] = await videoIdAliases(video).catch(() => []);
 

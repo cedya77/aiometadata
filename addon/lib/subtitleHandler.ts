@@ -750,7 +750,7 @@ async function markEpisodes(
       // A matched title or an anime entry can be one part of the TMDB show, so only a show of its own is cleared whole.
       for (const id of new Map(parsed.map((p) => [`${p.provider}:${p.id}`, p])).values()) {
         if (!['imdb', 'tmdb', 'tvdb'].includes(id.provider)) continue;
-        if (await matchedTarget(config?.userUUID, 'publicmetadb', baseOf(id)).catch(() => null)) continue;
+        if (await matchedTarget(config?.userUUID, 'publicmetadb', baseOf(id))) continue;
         const tmdbId = await tmdbIdFrom({ [id.provider]: id.id }, 'series').catch(() => null);
         if (tmdbId) shows.add(tmdbId);
       }

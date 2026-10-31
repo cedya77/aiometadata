@@ -2,6 +2,7 @@ import { LRUCache } from 'lru-cache';
 import { parseStremioId } from './idsCodec';
 import { videoIdAliases } from './aliases';
 import { isMatchable as matchable, trackerOf } from '../trackers';
+import { noteUnreadable } from '../../utils/trackerCalls';
 import type { EpisodeRef, MatchCandidate, MatchDetail, TargetSeason } from '../trackers/match';
 
 const database: any = require('../database');
@@ -69,10 +70,9 @@ async function indexFor(userUUID: string, service: string): Promise<Index> {
   const epoch = epochs.get(key) ?? 0;
   const index: Index = { byBase: new Map(), byTheirs: new Map() };
   const groups = new Map<string, TrackerMatch>();
-  let failed = false;
-  const rows = await database.listTrackerMatches(userUUID, service, true).catch(() => {
-    failed = true;
-    return [];
+  const rows = await database.listTrackerMatches(userUUID, service, true).catch((error: any) => {
+    noteUnreadable('tracker matches');
+    throw error;
   });
   for (const row of rows) {
     let match = groups.get(String(row.match_group));
@@ -89,7 +89,7 @@ async function indexFor(userUUID: string, service: string): Promise<Index> {
     index.byBase.set(String(row.base), match);
   }
   // A build that read the rows before a change is not kept.
-  if (!failed && (epochs.get(key) ?? 0) === epoch) indexes.set(key, index);
+  if ((epochs.get(key) ?? 0) === epoch) indexes.set(key, index);
   return index;
 }
 

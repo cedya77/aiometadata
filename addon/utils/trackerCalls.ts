@@ -34,6 +34,10 @@ export async function recordingTrackerCalls(work: () => Promise<unknown>): Promi
   }
 }
 
+export function noteUnreadable(source: string): void {
+  store.getStore()?.push({ host: source, status: 0 });
+}
+
 export function lastTrackerCall(): TrackerCall | undefined {
   const calls = store.getStore();
   return calls?.[calls.length - 1];
