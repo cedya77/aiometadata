@@ -31,7 +31,7 @@ export function ratingFrom(value: unknown): number | null {
   return Math.min(10, Math.max(1, Math.round(number)));
 }
 
-function titleKeys(metaId: string, ids: Record<string, any>): string[] {
+export function titleKeys(metaId: string, ids: Record<string, any>): string[] {
   const keys = new Set<string>([metaId]);
   if (ids.imdb) keys.add(String(ids.imdb));
   if (ids.tvdb) keys.add(`tvdb:${ids.tvdb}`);

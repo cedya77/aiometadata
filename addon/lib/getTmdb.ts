@@ -522,6 +522,13 @@ export async function tvContentRatings(id: string, config: UserConfig) {
   );
 }
 
+export async function networkInfo(id: string | number, config: UserConfig) {
+  return cacheWrapGlobal(`tmdb:network:${id}`, () =>
+    makeTmdbRequest(`/network/${id}`, getApiKey(config), {}, 'GET', null, config),
+    30 * 24 * 60 * 60
+  );
+}
+
 export async function movieKeywords(id: string, config: UserConfig) {
   return cacheWrapGlobal(`tmdb:movie:keywords:${id}`, () =>
     makeTmdbRequest(`/movie/${id}/keywords`, getApiKey(config), {}, 'GET', null, config),
@@ -1182,6 +1189,7 @@ module.exports = {
   getTranslations,
   movieReleaseDates,
   tvContentRatings,
+  networkInfo,
   movieKeywords,
   tvKeywords,
   keywordNamesOf,

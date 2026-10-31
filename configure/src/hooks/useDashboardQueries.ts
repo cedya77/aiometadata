@@ -1688,15 +1688,27 @@ export function useJellyfinShows(userUUID: string | null, profile: string | null
 
 export type JellyfinYearPlay = [videoId: string, at: number, runtimeMs: number, runtimeSource: string, batch: 0 | 1, overfull: 0 | 1, spellings: string[]];
 
+export interface JellyfinShowProgress {
+  aired: number;
+  seen: number;
+  seasons: number;
+  finishedAt: number | null;
+}
+
 export interface JellyfinYearTitle {
   key: string;
   kind: 'movie' | 'series';
   name: string | null;
   anime: boolean;
   watchMs: number;
+  ids: string[];
+  episodes: number;
+  progress: JellyfinShowProgress | null;
   facts: {
     source: string;
     year: number | null;
+    status: string | null;
+    runtimeMs: number;
     genres: string[];
     countries: string[];
     networks: string[];
@@ -1721,6 +1733,8 @@ export interface JellyfinYearData {
     anime: { titles: number; plays: number };
     rhythmPlays: number;
   };
+  topShows: string[];
+  network: { name: string; logo: string | null } | null;
   titles: JellyfinYearTitle[];
 }
 
@@ -1735,6 +1749,7 @@ export interface JellyfinYearReview {
   rebuilding: JellyfinYearBuild | null;
   builtAt: number | null;
   data: JellyfinYearData | null;
+  ratings: Record<string, number>;
 }
 
 const YEAR_BUILD_POLL_MS = 2000;

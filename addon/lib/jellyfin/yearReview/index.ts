@@ -5,15 +5,18 @@ import { envInt } from '../../../utils/envNumber';
 import { asProfile } from '../dashboard';
 import { profileKey } from '../profiles';
 import { viewingTimeZone } from '../viewingHours';
+import { titleKeys } from '../ratings';
 import { metaContextDigest } from './facts';
 import { safeTimeZone, yearBounds, yearPlays } from './plays';
+import { showProgress, type ShowProgress } from './progress';
 import { enqueue, ticketFor } from './queue';
-import { timeYear, type TimedYear } from './timed';
+import { timeYear, type TimedYear, type YearTitle } from './timed';
 
 const logger = consola.withTag('YearReview');
 const database: any = require('../../database');
 
-const REVIEW_VERSION = 2;
+const REVIEW_VERSION = 3;
+const RATING_BATCH = 500;
 const SETUP_DIGEST = 12;
 
 type Stored = { fingerprint: string; builtAt: number; data: any };
@@ -46,7 +49,29 @@ const digest = (parts: unknown[]): string => createHash('sha256').update(JSON.st
 
 const sameSetup = (a: string, b: string): boolean => a.slice(0, SETUP_DIGEST) === b.slice(0, SETUP_DIGEST);
 
-function summarise(year: number, timeZone: string, timed: TimedYear): any {
+function episodesOf(title: YearTitle): number {
+  return new Set(title.plays.filter((play) => play.episode !== null).map((play) => `${play.season ?? ''}:${play.episode}`)).size;
+}
+
+function rankShows(timed: TimedYear): YearTitle[] {
+  return timed.titles.filter((title) => title.kind === 'series').map((title) => ({ title, episodes: episodesOf(title) }))
+    .sort((a, b) => b.episodes - a.episodes || b.title.watchMs - a.title.watchMs).map(({ title }) => title);
+}
+
+async function networkOf(config: any, show: YearTitle | undefined): Promise<{ name: string; logo: string | null } | null> {
+  const name = show?.facts?.networks[0];
+  if (!name) return null;
+  try {
+    const { resolveTmdbNetworkByName } = require('../../tmdb-network-index');
+    const found = await resolveTmdbNetworkByName(name);
+    const info = found ? await require('../../getTmdb').networkInfo(found.id, config) : null;
+    return { name, logo: info?.logo_path ? `https://image.tmdb.org/t/p/w300${info.logo_path}` : null };
+  } catch {
+    return { name, logo: null };
+  }
+}
+
+function summarise(year: number, timeZone: string, timed: TimedYear, progress: Map<string, ShowProgress>, network: { name: string; logo: string | null } | null): any {
   const films = timed.titles.filter((title) => title.kind === 'movie');
   const shows = timed.titles.filter((title) => title.kind === 'series');
   const anime = timed.titles.filter((title) => title.anime);
@@ -56,6 +81,8 @@ function summarise(year: number, timeZone: string, timed: TimedYear): any {
     year,
     timeZone,
     counts: timed.counts,
+    topShows: rankShows(timed).map((title) => title.key),
+    network,
     totals: {
       plays: timed.plays.length,
       watchMs: timed.plays.reduce((total, play) => total + play.runtimeMs, 0),
@@ -70,7 +97,10 @@ function summarise(year: number, timeZone: string, timed: TimedYear): any {
       name: title.facts?.name ?? null,
       anime: title.anime,
       watchMs: title.watchMs,
-      facts: title.facts ? { source: title.facts.source, year: title.facts.year, genres: title.facts.genres, countries: title.facts.countries, networks: title.facts.networks, studios: title.facts.studios, language: title.facts.language, poster: title.facts.poster, background: title.facts.background, logo: title.facts.logo } : null,
+      ids: title.facts ? titleKeys(title.facts.id, title.facts.ids).filter((id) => id !== title.key) : [],
+      episodes: episodesOf(title),
+      progress: progress.get(title.key) ?? null,
+      facts: title.facts ? { source: title.facts.source, year: title.facts.year, status: title.facts.status, runtimeMs: title.facts.runtimeMs, genres: title.facts.genres, countries: title.facts.countries, networks: title.facts.networks, studios: title.facts.studios, language: title.facts.language, poster: title.facts.poster, background: title.facts.background, logo: title.facts.logo } : null,
       plays: title.plays.map((play) => [play.videoId, play.at, play.runtimeMs, play.runtimeSource, play.batch ? 1 : 0, play.overfull ? 1 : 0, play.spellings]),
     })),
   };
@@ -83,8 +113,12 @@ async function buildYear(userUUID: string, profile: string | null, year: number,
     const started = Date.now();
     const fingerprint = await fingerprintOf(userUUID, historyKey, year, timeZone);
     const timed = await timeYear(userUUID, historyKey, await yearPlays(userUUID, historyKey, year, timeZone), timeZone);
+    const [progress, network] = await Promise.all([
+      showProgress(userUUID, historyKey, yearBounds(year, timeZone).to, timed),
+      networkOf(config, rankShows(timed)[0]),
+    ]);
     const builtAt = Date.now();
-    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed) };
+    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed, progress, network) };
     memory.set(reviewKey(userUUID, historyKey, year), stored);
     await database.putYearReview(userUUID, historyKey, year, fingerprint, builtAt, stored.data);
     const maxAgeMs = envInt('JELLYFIN_YEAR_REVIEW_FACTS_HOURS', 7 * 24, 1) * 60 * 60 * 1000;
@@ -117,6 +151,27 @@ export async function dashboardYear(userUUID: string, profile: string | null, ye
       rebuilding: stored && ticket ? ticket.state : null,
       builtAt: stored?.builtAt ?? null,
       data: stored?.data ?? null,
+      ratings: stored?.data ? await ratingsOf(userUUID, historyKey, stored.data) : {},
     };
   });
+}
+
+async function ratingsOf(userUUID: string, historyKey: string, data: any): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  for (const kind of ['movie', 'series'] as const) {
+    const ownerOf = new Map<string, string>();
+    for (const title of data.titles ?? []) {
+      if (title.kind !== kind) continue;
+      for (const id of [title.key, ...(title.ids ?? [])]) if (!ownerOf.has(id)) ownerOf.set(id, title.key);
+    }
+    const ids = [...ownerOf.keys()];
+    for (let at = 0; at < ids.length; at += RATING_BATCH) {
+      const rows: any[] = await database.listRatings(userUUID, historyKey, ids.slice(at, at + RATING_BATCH), kind).catch(() => []);
+      for (const row of rows) {
+        const key = ownerOf.get(String(row.meta_id));
+        if (key && out[key] === undefined) out[key] = Number(row.rating);
+      }
+    }
+  }
+  return out;
 }

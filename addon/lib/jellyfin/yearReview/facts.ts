@@ -23,11 +23,15 @@ export interface TitleFacts {
   runtimeMs: number;
   episodeRuntimes: Record<string, number>;
   episodeCount: number;
+  releases: Record<string, number>;
   ids: Record<string, string>;
   source: FactsSource;
 }
 
 export type FactsSource = 'stored' | 'cache' | 'built';
+
+const FACTS_VERSION = 2;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const PER_ENTRY_ANIME = /^(kitsu|mal|anilist|anidb):/i;
 const ANIME_SPELLING = /^(kitsu|mal|anilist|anidb):/i;
@@ -70,6 +74,7 @@ export function factsFromMeta(meta: any, kind: 'movie' | 'series', source: Facts
   const genres = names(meta.genres);
   const language = originalLanguage(meta);
   const episodeRuntimes: Record<string, number> = {};
+  const releases: Record<string, number> = {};
   let episodeCount = 0;
   for (const video of Array.isArray(meta.videos) ? meta.videos : []) {
     const episode = Number(video?.episode);
@@ -79,6 +84,10 @@ export function factsFromMeta(meta: any, kind: 'movie' | 'series', source: Facts
     const key = episodeKey(season, episode);
     const runtime = runtimeMsOf(video?.runtime);
     if (runtime > 0) episodeRuntimes[key] = runtime;
+    if (season !== null && season > 0) {
+      const released = Date.parse(String(video?.released ?? ''));
+      if (Number.isFinite(released)) releases[key] = Math.floor(released / DAY_MS);
+    }
   }
   return {
     id: String(meta.id),
@@ -98,6 +107,7 @@ export function factsFromMeta(meta: any, kind: 'movie' | 'series', source: Facts
     runtimeMs: runtimeMsOf(meta.runtime),
     episodeRuntimes,
     episodeCount,
+    releases,
     ids: idsOf(meta),
     source,
   };
@@ -134,7 +144,7 @@ export async function metaContextDigest(userUUID: string): Promise<string> {
 
 function factsKey(config: any, request: FactsRequest): string {
   const { getMetaSmartLockContextHash } = require('../../getCache');
-  return `${request.kind}:${getMetaSmartLockContextHash(config, request.titleKey, request.kind, true, false)}:${request.titleKey}`;
+  return `v${FACTS_VERSION}:${request.kind}:${getMetaSmartLockContextHash(config, request.titleKey, request.kind, true, false)}:${request.titleKey}`;
 }
 
 export async function titleFacts(userUUID: string, requests: FactsRequest[]): Promise<{ facts: Map<string, TitleFacts>; stored: number; built: number; held: number; missing: number }> {

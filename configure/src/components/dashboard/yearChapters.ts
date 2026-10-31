@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import type { YearAccent } from "./JellyfinYearShared";
 import type { YearModel } from "./yearModel";
 import TimeChapter from "./JellyfinYearTime";
+import TitlesChapter from "./JellyfinYearTitles";
 
 export interface YearChapterProps {
   model: YearModel;
@@ -20,4 +21,5 @@ export interface YearChapter {
 
 export const YEAR_CHAPTERS: YearChapter[] = [
   { key: "time", label: "Time", accent: "blue", Chapter: TimeChapter },
+  { key: "titles", label: "Titles", accent: "blue", Chapter: TitlesChapter, shows: (model) => model.data.titles.length > 0 },
 ];

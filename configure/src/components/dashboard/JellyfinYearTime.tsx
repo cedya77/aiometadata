@@ -1,7 +1,7 @@
 import { useMemo, type CSSProperties } from "react";
 import { ChapterHeader, Deck, HATCH, Panel, Swatch, type YearAccent } from "./JellyfinYearShared";
 import { sizedArt } from "./art";
-import { MONTH_NAMES, WEEKDAY_NAMES, WEEKDAY_SHORT, capitalised, episodeLabel, formatDay, formatHour, formatPlayTime, hoursOf, inWords, type YearModel, type YearPlay } from "./yearModel";
+import { MONTH_NAMES, WEEKDAY_NAMES, WEEKDAY_SHORT, capitalised, displayName, episodeLabel, formatDay, formatHour, formatPlayTime, hoursOf, inWords, type YearModel, type YearPlay } from "./yearModel";
 
 interface Week {
   start: number;
@@ -72,7 +72,7 @@ function timeOf(model: YearModel) {
 type Time = ReturnType<typeof timeOf>;
 
 function playName(play: YearPlay): string {
-  const name = play.title.name ?? play.title.key;
+  const name = displayName(play.title);
   const episode = play.film ? null : episodeLabel(play.videoId);
   return episode ? `${name} ${episode}` : name;
 }

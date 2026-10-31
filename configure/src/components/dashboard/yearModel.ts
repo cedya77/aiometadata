@@ -17,6 +17,7 @@ export interface YearModel {
   year: number;
   timeZone: string;
   data: JellyfinYearData;
+  ratings: Record<string, number>;
   plays: YearPlay[];
   days: number;
   through: number;
@@ -37,7 +38,7 @@ function localParts(timeZone: string): (at: number) => { day: number; hour: numb
   };
 }
 
-export function buildYearModel(data: JellyfinYearData, now = Date.now()): YearModel {
+export function buildYearModel(data: JellyfinYearData, ratings: Record<string, number> = {}, now = Date.now()): YearModel {
   const local = localParts(data.timeZone);
   const plays: YearPlay[] = [];
   for (const title of data.titles) {
@@ -50,7 +51,13 @@ export function buildYearModel(data: JellyfinYearData, now = Date.now()): YearMo
   const days = Math.round((Date.UTC(data.year + 1, 0, 1) - Date.UTC(data.year, 0, 1)) / DAY_MS);
   const today = local(now);
   const partial = today.year === data.year;
-  return { year: data.year, timeZone: data.timeZone, data, plays, days, through: partial ? today.day : days - 1, partial };
+  return { year: data.year, timeZone: data.timeZone, data, ratings, plays, days, through: partial ? today.day : days - 1, partial };
+}
+
+export const displayName = (title: JellyfinYearTitle): string => (title.name ?? title.key).replace(/\s+\(\d{4}\)$/, "");
+
+export function localYearOf(at: number, timeZone: string): number {
+  return Number(new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric" }).format(new Date(at)));
 }
 
 export function episodeLabel(videoId: string): string | null {

@@ -136,7 +136,7 @@ export default function JellyfinYear({ userUUID, profile, profileName, activeTab
   useEffect(() => {
     if (current?.years.length && !current.years.includes(year) && !current.data?.totals.plays) setYear(current.years[0]);
   }, [current, year]);
-  const model = useMemo(() => (current?.data ? buildYearModel(current.data) : null), [current?.data]);
+  const model = useMemo(() => (current?.data ? buildYearModel(current.data, current.ratings) : null), [current?.data, current?.ratings]);
   const chapters = useMemo(() => (model ? YEAR_CHAPTERS.filter((chapter) => !chapter.shows || chapter.shows(model)) : []), [model]);
   const picker = <YearPicker years={review?.years ?? []} year={year} onYear={setYear} />;
 
