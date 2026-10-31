@@ -14,6 +14,7 @@ const logger = consola.withTag('YearReview');
 const database: any = require('../../database');
 
 const REVIEW_VERSION = 1;
+const SETUP_DIGEST = 12;
 
 type Stored = { fingerprint: string; builtAt: number; data: any };
 
@@ -36,18 +37,14 @@ async function yearsOf(userUUID: string, historyKey: string, timeZone: string): 
 async function fingerprintOf(userUUID: string, historyKey: string, year: number, timeZone: string): Promise<string> {
   const { from, to } = yearBounds(year, timeZone);
   const [stats, meta] = await Promise.all([database.watchStatsBetween(userUUID, historyKey, from, to), metaContextDigest(userUUID)]);
-  const parts = [
-    REVIEW_VERSION,
-    timeZone,
-    stats.count,
-    stats.last,
-    stats.sum,
-    meta,
-    envInt('JELLYFIN_YEAR_REVIEW_BATCH_PLAYS', 6, 2),
-    envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0),
-  ];
-  return createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 24);
+  const setup = [REVIEW_VERSION, timeZone, meta, envInt('JELLYFIN_YEAR_REVIEW_BATCH_PLAYS', 6, 2), envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0)];
+  const watches = [stats.count, stats.last, stats.sum];
+  return digest(setup) + digest(watches);
 }
+
+const digest = (parts: unknown[]): string => createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, SETUP_DIGEST);
+
+const sameSetup = (a: string, b: string): boolean => a.slice(0, SETUP_DIGEST) === b.slice(0, SETUP_DIGEST);
 
 function summarise(year: number, timeZone: string, timed: TimedYear): any {
   const films = timed.titles.filter((title) => title.kind === 'movie');
@@ -109,7 +106,7 @@ export async function dashboardYear(userUUID: string, profile: string | null, ye
       if (stored) memory.set(key, stored);
     }
     const fresh = stored?.fingerprint === fingerprint;
-    const recent = !!stored && Date.now() - stored.builtAt < envInt('JELLYFIN_YEAR_REVIEW_MIN_REBUILD_MINUTES', 30, 0) * 60 * 1000;
+    const recent = !!stored && sameSetup(stored.fingerprint, fingerprint) && Date.now() - stored.builtAt < envInt('JELLYFIN_YEAR_REVIEW_MIN_REBUILD_MINUTES', 30, 0) * 60 * 1000;
     const ticket = fresh || recent ? ticketFor(key) : enqueue(key, (waitedMs) => buildYear(userUUID, profile, year, waitedMs));
     return {
       year,
