@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { useQueryClient, type Query } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Bookmark, BookmarkCheck, CalendarPlus, Cast, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Clock, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, PencilLine, Play, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
+import { ArrowLeft, Bookmark, BookmarkCheck, CalendarPlus, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Clock, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, PencilLine, Play, Plus, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinTitle, useJellyfinTitleAction, useJellyfinWatchDate, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitlePerson, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
@@ -13,14 +13,12 @@ import WatchDateSheet, { type WatchDateAnchor, type WatchDateTarget } from "./Je
 import { anchorOf, duration, ordinal, rewatchLabel, timesWatched, useRemembered, watchedWhen, when } from "./jellyfinUtils";
 import { useTrackers } from "./trackers";
 import { nameDashboardPage, type DashboardPage } from "@/lib/dashboardRoute";
+import { artPalette, inkGround, type ArtPalette } from "./artPalette";
+import { cx, code, heroArt, HERO_DESKTOP_SHARE, HERO_DESKTOP_UPSCALE, HERO_PHONE_SHARE, episodeMenuItems, GLASS_PILL, orderedSeasons, PHONE_PLAY_PILL, PLAY_PILL, playLabel, seasonLabel, sizedStill, SOLID_AT, under, useCenteredTab, usePhone, type Anchor, type SeasonItem } from "./titleHelpers";
+import { Credits, DesktopTitleActions, EpisodeListRow, FactsBlock, MoodLine, PhoneTitleActions, SeasonPills, StarPicker, type TitleActionSpec } from "./JellyfinTitleParts";
 
-const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
-
-const PLAY_PILL = "inline-flex h-12 items-center gap-2 rounded-full bg-white px-7 text-[15px] font-semibold text-black shadow-lg shadow-black/30 transition hover:bg-white/90 active:scale-[0.98] disabled:opacity-60 [&_svg]:size-[18px]";
-const GLASS_PILL = "inline-flex h-12 shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/10 px-5 text-[15px] font-semibold text-white backdrop-blur-md transition-[background-color,transform] hover:bg-white/[0.18] active:scale-[0.97] disabled:opacity-60 [&_svg]:size-5";
 const SECTION_TITLE = "text-xl font-bold sm:text-3xl";
 
-const sizedStill = (src: string | null, width: number) => (src ? `${src}&maxWidth=${width}&quality=85` : null);
 
 const longDate = (at: number) => new Date(at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 
@@ -28,15 +26,7 @@ const longDate = (at: number) => new Date(at).toLocaleDateString(undefined, { ye
 const changedBy = (q: Query, since: number) =>
   q.queryKey[0] === "dashboard" && q.queryKey[1] === "jellyfin" && !(q.queryKey[2] === "title" && q.state.dataUpdatedAt >= since);
 
-function seasonLabel(season: number | null): string {
-  if (season === null) return "Episodes";
-  return season === 0 ? "Specials" : `Season ${season}`;
-}
 
-function code(ep: JellyfinTitleEpisode): string {
-  if (ep.number === null) return "";
-  return ep.season === null ? `E${ep.number}` : `S${ep.season} E${ep.number}`;
-}
 
 function nextUp(title: JellyfinTitle, now: number): JellyfinTitleEpisode | null {
   const regular = title.episodes.filter((ep) => ep.season !== 0);
@@ -53,7 +43,7 @@ function Badge({ children, tone }: { children: React.ReactNode; tone?: "brand" }
   );
 }
 
-function Overview({ text }: { text: string }) {
+function Overview({ text, phone }: { text: string; phone: boolean }) {
   const ref = useRef<HTMLParagraphElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [clamped, setClamped] = useState(false);
@@ -63,43 +53,19 @@ function Overview({ text }: { text: string }) {
   }, [text, expanded]);
   return (
     <div className="mt-1 max-w-3xl">
-      <p ref={ref} className={cx("text-base leading-relaxed text-foreground/90 sm:text-lg max-sm:text-[15px] max-sm:text-foreground/75", !expanded && "line-clamp-3")}>{text}</p>
-      {clamped && <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-1 text-sm font-semibold text-foreground/70 hover:text-foreground">{expanded ? "Less" : "More"}</button>}
+      <p ref={ref} onClick={() => clamped && !expanded && setExpanded(true)} className={cx(phone ? "text-[15px] leading-[1.55] text-[#f0eae3]/80" : "text-base leading-relaxed text-foreground/90 sm:text-lg", !expanded && "line-clamp-3")}>{text}</p>
+      {clamped && (
+        <button type="button" onClick={() => setExpanded((v) => !v)} className={phone ? "mt-2 text-sm font-semibold text-white/75" : "mt-1.5 text-xs text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"}>
+          {expanded ? "Show less" : phone ? "More" : "Show more"}
+        </button>
+      )}
     </div>
   );
 }
 
-function RatePicker({ value, onPick, onClose }: { value: number | null; onPick: (rating: number | null) => void; onClose: () => void }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const shown = hover ?? value ?? 0;
-  return (
-    <div className="glass absolute left-0 top-14 z-30 flex flex-col gap-2 rounded-2xl p-3 animate-fade-in" onMouseLeave={() => setHover(null)}>
-      <div className="flex items-center gap-0.5">
-        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-          <button key={n} type="button" onMouseEnter={() => setHover(n)} onClick={() => onPick(n)} aria-label={`${n} out of 10`} className="p-0.5">
-            <Star className={cx("size-5 transition", n <= shown ? "text-amber-400" : "text-white/25")} fill="currentColor" strokeWidth={0} />
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span className="tabular-nums">{shown ? `${shown}/10` : "Not rated"}</span>
-        <span className="flex gap-3">
-          {value !== null && <button type="button" onClick={() => onPick(null)} className="hover:text-foreground">Clear</button>}
-          <button type="button" onClick={onClose} className="hover:text-foreground">Close</button>
-        </span>
-      </div>
-    </div>
-  );
-}
 
-type Anchor = { x: number; y: number };
 
-const SHEET_WIDTH = 352;
 
-function under(button: Element): Anchor {
-  const box = button.getBoundingClientRect();
-  return { x: box.left + box.width / 2 - SHEET_WIDTH / 2, y: box.bottom + 8 };
-}
 
 function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, className, onToggleSelect, onAction, onPlayOn, onDate }: {
   ep: JellyfinTitleEpisode;
@@ -170,14 +136,7 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
             <MoreHorizontal className="size-4" />
           </button>
         )}
-        {menu && (
-          <ActionMenu at={menu} onClose={closeMenu} items={[
-            ...(unaired ? [] : [{ icon: <Cast className="size-4" />, label: "Play on a device", onSelect: () => onPlayOn({ x: menu.x, y: menu.y }) }]),
-            { icon: <Check className="size-4" />, label: "Mark watched", onSelect: () => onAction("played") },
-            { icon: <Undo2 className="size-4" />, label: "Mark unwatched", onSelect: () => onAction("unplayed") },
-            ...(ep.season === 0 ? [] : [{ icon: <CheckCheck className="size-4" />, label: "Watched up to here", onSelect: () => onAction("playedUpTo") }]),
-          ]} />
-        )}
+        {menu && <ActionMenu at={menu} onClose={closeMenu} items={episodeMenuItems(ep, unaired, menu, onAction, onPlayOn)} />}
       </div>
       {ep.overview && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{ep.overview}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -203,7 +162,6 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
   );
 }
 
-type SeasonItem = JellyfinTitle["seasons"][number];
 
 function SeasonPoster({ season, shared, number }: { season: SeasonItem; shared: boolean; number: string }) {
   const [failed, setFailed] = useState(false);
@@ -218,18 +176,13 @@ function SeasonPoster({ season, shared, number }: { season: SeasonItem; shared: 
 
 function SeasonRail({ seasons, watched, selected, onSelect, onMenu }: { seasons: SeasonItem[]; watched: Set<number>; selected: number | null; onSelect: (season: number) => void; onMenu: (season: SeasonItem, at: { x: number; y: number }) => void }) {
   const track = useRef<HTMLDivElement>(null);
-  const ordered = useMemo(() => [...seasons.filter((s) => s.season !== 0), ...seasons.filter((s) => s.season === 0)], [seasons]);
+  const ordered = useMemo(() => orderedSeasons(seasons), [seasons]);
   const sharedTags = useMemo(() => {
     const counts = new Map<string, number>();
     for (const season of seasons) if (season.tag) counts.set(season.tag, (counts.get(season.tag) ?? 0) + 1);
     return new Set([...counts].filter(([, count]) => count > 1).map(([tag]) => tag));
   }, [seasons]);
-  useEffect(() => {
-    const row = track.current;
-    const active = row?.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (!row || !active) return;
-    row.scrollTo({ left: Math.max(0, active.offsetLeft - (row.clientWidth - active.offsetWidth) / 2), behavior: "smooth" });
-  }, [selected]);
+  useCenteredTab(track, selected);
   useEffect(() => {
     const row = track.current;
     if (!row) return;
@@ -452,9 +405,10 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
   const closeSeasonMenu = useCallback(() => setSeasonMenu(null), []);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [rating, setRating] = useState(false);
   const [layout, setLayout] = useRemembered<"row" | "grid">("jellyfin.title.episodes", "row");
-  const [isPhone] = useState(() => window.matchMedia("(max-width: 639px)").matches);
+  const phone = usePhone();
+  const [palette, setPalette] = useState<ArtPalette | null>(null);
+  const [solid, setSolid] = useState(false);
   const [now] = useState(() => Date.now());
   const [heroLoaded, setHeroLoaded] = useState(false);
   const [posterLoaded, setPosterLoaded] = useState(false);
@@ -552,7 +506,7 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
     endSelect();
   };
 
-  const hero = sizedArt(title?.backdropUrl, 1280) ?? title?.backdropUrl ?? null;
+  const hero = phone ? heroArt(title?.backdropUrl, HERO_PHONE_SHARE) : heroArt(title?.backdropUrl, HERO_DESKTOP_SHARE, HERO_DESKTOP_UPSCALE);
   const wash = sizedArt(title?.backdropUrl, 342) ?? title?.backdropUrl ?? null;
   const allWatched = Boolean(title && isSeries && title.aired > 0 && title.watched >= title.aired);
   const progress = title && title.aired ? (title.watched / title.aired) * 100 : 0;
@@ -585,66 +539,136 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
     return { itemId: title.id, itemType: isSeries ? "Series" : "Movie", itemName: title.title, heading: title.title, sub: title.year, still: sizedArt(title.backdropUrl, 342) ?? title.backdropUrl };
   };
 
-  const card = (ep: JellyfinTitleEpisode, className?: string) => (
-    <EpisodeCard
-      key={ep.id}
-      ep={ep}
-      now={now}
-      className={className}
-      selecting={selecting}
-      selected={selected.has(ep.id)}
-      highlighted={!selecting && ep.id === next?.id}
-      busy={busy === ep.id + "played" || busy === ep.id + "unplayed" || busy === ep.id + "playedUpTo"}
-      onToggleSelect={() => toggleSelect(ep.id)}
-      onPlayOn={(at) => setRemote({ target: episodeTarget(ep), at })}
-      onDate={(anchor) => openDate(ep.id, ep.watches[0] ?? null, anchor)}
-      onAction={(action) => void run(action, [ep.id], action === "playedUpTo" ? `Watched up to ${code(ep)}` : action === "played" ? `${code(ep)} marked watched` : `${code(ep)} marked unwatched`, action === "playedUpTo" ? undefined : action === "played")}
-    />
-  );
+  const episodeProps = (ep: JellyfinTitleEpisode) => ({
+    ep,
+    now,
+    selecting,
+    selected: selected.has(ep.id),
+    highlighted: !selecting && ep.id === next?.id,
+    busy: busy === ep.id + "played" || busy === ep.id + "unplayed" || busy === ep.id + "playedUpTo",
+    onToggleSelect: () => toggleSelect(ep.id),
+    onPlayOn: (at: Anchor) => setRemote({ target: episodeTarget(ep), at }),
+    onDate: (anchor: WatchDateAnchor) => openDate(ep.id, ep.watches[0] ?? null, anchor),
+    onAction: (action: JellyfinTitleAction) => void run(action, [ep.id], action === "playedUpTo" ? `Watched up to ${code(ep)}` : action === "played" ? `${code(ep)} marked watched` : `${code(ep)} marked unwatched`, action === "playedUpTo" ? undefined : action === "played"),
+  });
+  const card = (ep: JellyfinTitleEpisode, className?: string) => <EpisodeCard key={ep.id} className={className} {...episodeProps(ep)} />;
+  const glow = phone && Boolean(hero);
+  useEffect(() => {
+    if (!glow || !wash) return;
+    let live = true;
+    void artPalette(wash).then((found) => { if (live) setPalette(found); });
+    return () => { live = false; };
+  }, [glow, wash]);
+  const playOn = (button: Element) => {
+    const target = titleTarget();
+    if (target) setRemote({ target, at: under(button) });
+  };
+  const centred = (): WatchDateAnchor => ({ left: window.innerWidth / 2, right: window.innerWidth / 2, top: window.innerHeight / 3, bottom: window.innerHeight / 3 });
+  const seasonCount = title?.seasons.filter((s) => s.season > 0).length ?? 0;
+  const titleBusy = (...actions: JellyfinTitleAction[]) => Boolean(title && actions.some((action) => busy === title.id + action));
+  const titleActions: TitleActionSpec[] = !title ? [] : [
+    {
+      key: "watchlist",
+      label: "Watchlist",
+      detail: title.onWatchlist ? "Remove from the watchlist" : "Add to the watchlist",
+      placement: "row",
+      active: title.onWatchlist,
+      busy: titleBusy("watchlist", "unwatchlist"),
+      icon: phone ? (title.onWatchlist ? <BookmarkCheck strokeWidth={1.75} className="fill-white/15" /> : <Bookmark strokeWidth={1.75} />) : title.onWatchlist ? <Check className="size-[22px]" strokeWidth={2.5} /> : <Plus className="size-[22px]" />,
+      run: () => void run(title.onWatchlist ? "unwatchlist" : "watchlist", [title.id], title.onWatchlist ? "Removed from the watchlist" : "Added to the watchlist"),
+    },
+    {
+      key: "rate",
+      label: title.rating !== null ? `${title.rating}/10` : "Rate",
+      detail: title.rating !== null ? `Rated ${title.rating}/10` : "Rate",
+      placement: "row",
+      active: title.rating !== null,
+      busy: titleBusy("rate"),
+      icon: <Star strokeWidth={phone ? 1.75 : 2} className={cx(!phone && "size-5", title.rating !== null && "!text-amber-400")} fill={title.rating !== null ? "currentColor" : "none"} />,
+      panel: (close) => <StarPicker value={title.rating} onPick={(value) => { close(); void run("rate", [title.id], value === null ? "Rating cleared" : `Rated ${value}/10`, undefined, value); }} />,
+    },
+    {
+      key: "played",
+      label: isSeries ? (allWatched ? "Mark unwatched" : "Mark all watched") : title.played ? "Mark unwatched" : "Mark watched",
+      detail: isSeries && !allWatched ? "Every aired episode" : undefined,
+      placement: "more",
+      busy: titleBusy("played", "unplayed"),
+      icon: (isSeries ? allWatched : title.played) ? <Undo2 className="size-4" /> : isSeries ? <CheckCheck className="size-4" /> : <Check className="size-4" />,
+      run: () => isSeries
+        ? void run(allWatched ? "unplayed" : "played", [title.id], allWatched ? "Marked unwatched" : "Every aired episode marked watched")
+        : void run(title.played ? "unplayed" : "played", [title.id], title.played ? "Marked unwatched" : "Marked watched", !title.played),
+    },
+    ...(isSeries ? [{
+      key: "drop",
+      label: title.dropped ? "Pick back up" : "Drop",
+      placement: "more" as const,
+      busy: titleBusy("drop", "undrop"),
+      icon: title.dropped ? <Undo2 className="size-4" /> : <ThumbsDown className="size-4" />,
+      run: () => void run(title.dropped ? "undrop" : "drop", [title.id], title.dropped ? "Picked back up" : "Dropped"),
+    }] : []),
+    ...(!isSeries && title.played ? [{
+      key: "date",
+      label: title.watches[0] ? "Change when you watched it" : "Add when you watched it",
+      placement: "more" as const,
+      icon: <CalendarPlus className="size-4" />,
+      run: () => openDate(title.id, title.watches[0] ?? null, centred()),
+    }] : []),
+  ];
+  const playText = isSeries && next ? playLabel(next) : "Play on…";
 
   return createPortal(
-    <div className={cx("fixed inset-0 z-[100] overflow-y-auto overflow-x-hidden overscroll-contain bg-background animate-fade-in", !shown && "invisible")} aria-hidden={!shown} role="dialog" aria-modal="true" aria-label={title?.title ?? "Title"}>
+    <div onScroll={phone ? (event) => setSolid(event.currentTarget.scrollTop > window.innerHeight * SOLID_AT) : undefined} className={cx("fixed inset-0 z-[100] overflow-y-auto overflow-x-hidden overscroll-contain bg-background animate-fade-in", !shown && "invisible")} aria-hidden={!shown} role="dialog" aria-modal="true" aria-label={title?.title ?? "Title"}>
       <div className="relative isolate min-h-full">
-        {wash && (
+        {glow && <div aria-hidden className="pointer-events-none fixed inset-0 -z-30 select-none" style={inkGround(palette)} />}
+        {wash && !glow && (
           <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 -z-20 h-[220vh] max-h-full select-none overflow-hidden [mask-image:linear-gradient(to_bottom,black_25%,transparent)] max-sm:hidden">
             <img src={wash} alt="" className={cx("h-full w-full scale-125 object-cover blur-[100px] saturate-150 transition-opacity duration-1000", heroLoaded ? "opacity-35" : "opacity-0")} />
           </div>
         )}
-        <div className="pointer-events-none absolute left-0 top-0 -z-10 h-[75vh] w-full select-none overflow-hidden max-sm:h-[55vh] sm:[mask-image:linear-gradient(to_bottom,black_50%,transparent)] md:h-[85vh]">
+        <div className={cx("pointer-events-none absolute left-0 top-0 -z-10 w-full select-none overflow-hidden", glow ? "h-[88vh] [mask-image:linear-gradient(to_bottom,black_72%,transparent)]" : "h-[75vh] max-sm:h-[55vh] sm:[mask-image:linear-gradient(to_bottom,black_50%,transparent)] md:h-[85vh]")}>
           {hero && (
             <div className="relative h-full w-full">
-              <img src={hero} alt="" onLoad={() => setHeroLoaded(true)} className={cx("h-full w-full object-cover transition-[filter,opacity] duration-700 ease-out", heroLoaded ? "opacity-45 blur-0 max-sm:opacity-80" : "opacity-0 blur-lg")} />
-              <div className="absolute inset-0 bg-gradient-to-r from-background via-background/75 to-transparent max-sm:hidden" />
-              <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-background via-background/85 to-transparent sm:hidden" />
+              <img src={hero} alt="" onLoad={() => setHeroLoaded(true)} className={cx("h-full w-full object-cover transition-[filter,opacity] duration-700 ease-out", heroLoaded ? (glow ? "opacity-100 blur-0" : "opacity-45 blur-0 max-sm:opacity-80") : "opacity-0 blur-lg")} />
+              {!glow && <div className="absolute inset-0 bg-gradient-to-r from-background via-background/75 to-transparent max-sm:hidden" />}
+              {glow
+                ? <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black/70 via-black/35 to-transparent" />
+                : <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-background via-background/85 to-transparent sm:hidden" />}
             </div>
           )}
           {!heroLoaded && <div className="absolute inset-0 animate-pulse bg-white/[0.03]" />}
         </div>
 
-        <div className="sticky top-0 z-40 flex items-center justify-between gap-3 px-4 pt-4 sm:px-12 sm:pt-6">
-          <button type="button" onClick={onBack} aria-label="Back" className="glass flex size-11 items-center justify-center rounded-full hover:bg-black/50"><ArrowLeft className="size-5" /></button>
-          <div className="flex items-center gap-2">
-            <span className="glass rounded-full px-3.5 py-2 text-xs text-muted-foreground">Viewing as <span className="font-semibold text-foreground">{profileName}</span></span>
-            <button type="button" onClick={onCloseAll} aria-label="Close" className="glass flex size-11 items-center justify-center rounded-full hover:bg-black/50"><X className="size-5" /></button>
+        <div className={cx("sticky top-0 z-40 flex items-center justify-between gap-3 px-4 pt-4 sm:px-12 sm:pt-6", phone && "h-14 px-3 pt-0 transition-[background-color,border-color] duration-300", phone && (solid ? "border-b border-white/5 bg-background/95" : "border-b border-transparent"))}>
+          <button type="button" onClick={onBack} aria-label="Back" className={cx("flex shrink-0 items-center justify-center rounded-full", phone ? cx("size-10 transition-colors duration-300", solid ? "bg-transparent" : "border border-white/10 bg-black/35 backdrop-blur-md") : "glass size-11 hover:bg-black/50")}><ArrowLeft className="size-5" /></button>
+          {phone && (
+            <div aria-hidden={!solid} className={cx("flex min-w-0 flex-1 items-center justify-center transition-[opacity,transform] duration-300", solid ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0")}>
+              {title?.logoUrl && !logoFailed ? <img src={sizedArt(title.logoUrl, 500) ?? title.logoUrl} alt={title.title} className="max-h-8 max-w-[70%] object-contain" /> : <span className="truncate text-base font-semibold">{title?.title}</span>}
+            </div>
+          )}
+          <div className="flex shrink-0 items-center gap-2">
+            {!(phone && solid) && <span className="glass rounded-full px-3.5 py-2 text-xs text-muted-foreground">Viewing as <span className="font-semibold text-foreground">{profileName}</span></span>}
+            <button type="button" onClick={onCloseAll} aria-label="Close" className={cx("flex items-center justify-center rounded-full", phone ? cx("size-10", solid ? "bg-transparent" : "border border-white/10 bg-black/35 backdrop-blur-md") : "glass size-11 hover:bg-black/50")}><X className="size-5" /></button>
           </div>
         </div>
 
         <div className={cx("relative z-10 px-4 pb-32 sm:px-12 transition-opacity", isFetching && !isLoading && "opacity-90")}>
-          <div className="mx-auto flex w-full flex-col gap-8 pt-[calc(55vh-11rem)] sm:gap-12 sm:pt-20">
+          <div className={cx("mx-auto flex w-full flex-col gap-8 sm:gap-12 sm:pt-20", glow ? "pt-[calc(55vh-10.5rem)]" : "pt-[calc(55vh-11rem)]")}>
             <div className="relative z-10 flex w-full flex-col items-start gap-8 lg:flex-row lg:gap-12">
-              <div className="mx-auto w-48 shrink-0 max-sm:hidden sm:w-64 md:w-72 lg:mx-0 lg:w-80">
-                <div className="relative flex aspect-[2/3] w-full items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-muted shadow-2xl shadow-black/85">
-                  {title?.posterUrl && !posterFailed ? (
-                    <>
-                      <Skeleton className="absolute inset-0 h-full w-full rounded-xl" />
-                      <img src={sizedArt(title.posterUrl, 500) ?? title.posterUrl} alt="" onLoad={() => setPosterLoaded(true)} onError={() => setPosterFailed(true)} className={cx("relative z-10 h-full w-full rounded-xl object-cover transition-[filter,opacity] duration-700 ease-out", posterLoaded ? "opacity-100 blur-0" : "opacity-0 blur-md")} />
-                    </>
-                  ) : isLoading ? <Skeleton className="absolute inset-0 rounded-xl" /> : <ImageOff className="size-12 text-muted-foreground" />}
-                  {(title?.played || allWatched) && <span className="absolute right-2.5 top-2.5 z-20 flex size-8 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg"><Check className="size-5" strokeWidth={3} /></span>}
+              {!phone && (
+                <div className="mx-auto w-48 shrink-0 sm:w-64 md:w-72 lg:mx-0 lg:w-80">
+                  <div className="relative flex aspect-[2/3] w-full items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-muted shadow-2xl shadow-black/85">
+                    {title?.posterUrl && !posterFailed ? (
+                      <>
+                        <Skeleton className="absolute inset-0 h-full w-full rounded-xl" />
+                        <img src={sizedArt(title.posterUrl, 500) ?? title.posterUrl} alt="" onLoad={() => setPosterLoaded(true)} onError={() => setPosterFailed(true)} className={cx("relative z-10 h-full w-full rounded-xl object-cover transition-[filter,opacity] duration-700 ease-out", posterLoaded ? "opacity-100 blur-0" : "opacity-0 blur-md")} />
+                      </>
+                    ) : isLoading ? <Skeleton className="absolute inset-0 rounded-xl" /> : <ImageOff className="size-12 text-muted-foreground" />}
+                    {(title?.played || allWatched) && <span className="absolute right-2.5 top-2.5 z-20 flex size-8 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg"><Check className="size-5" strokeWidth={3} /></span>}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="flex w-full flex-1 flex-col gap-5 text-left max-sm:items-center">
+              <div className={cx("flex w-full flex-1 flex-col gap-5", phone ? "items-center text-center" : "text-left")}>
                 {isLoading && !title ? (
                   <div className="space-y-4"><Skeleton className="h-24 w-80 rounded-xl" /><Skeleton className="h-4 w-96" /><Skeleton className="h-12 w-72 rounded-full" /></div>
                 ) : isError && !title ? (
@@ -655,83 +679,42 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
                 ) : title ? (
                   <>
                     {title.logoUrl && !logoFailed
-                      ? <img src={sizedArt(title.logoUrl, 500) ?? title.logoUrl} alt={title.title} onError={() => setLogoFailed(true)} className="mb-2 h-16 max-w-[85%] object-contain object-left sm:h-24 md:h-28 max-sm:object-center" />
-                      : <h1 className="mb-2 text-3xl font-bold tracking-tight sm:text-5xl md:text-6xl max-sm:text-center">{title.title}</h1>}
-                    <div className="flex flex-col gap-2 max-sm:items-center max-sm:gap-2.5">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-foreground/80 max-sm:justify-center max-sm:text-[13px]">
-                        {[
-                          title.year,
-                          title.score && <span key="s" className="inline-flex items-center gap-1 font-medium text-foreground"><Star className="size-3.5 fill-amber-400 text-amber-400" />{title.score}</span>,
-                          title.runtime,
-                          title.status && (title.status === "Ended" ? "Ended" : "Airing"),
-                          isSeries && title.aired ? `${title.aired} episodes` : null,
-                        ].filter(Boolean).map((part, index) => (
-                          <span key={index} className="inline-flex items-center gap-2">{index > 0 && <span aria-hidden className="text-foreground/35">·</span>}{part}</span>
-                        ))}
-                      </div>
-                      {title.genres.length > 0 && (
-                        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground max-sm:justify-center max-sm:text-[13px]">
-                          {title.genres.map((genre, index) => <span key={genre} className="inline-flex items-center gap-2">{index > 0 && <span aria-hidden className="text-foreground/35">·</span>}{genre}</span>)}
-                        </p>
-                      )}
-                    </div>
+                      ? <img src={sizedArt(title.logoUrl, 500) ?? title.logoUrl} alt={title.title} onError={() => setLogoFailed(true)} className={cx("mb-2 h-16 max-w-[85%] object-contain sm:h-24 md:h-28", phone ? "object-center" : "object-left")} />
+                      : <h1 className="mb-2 text-3xl font-bold tracking-tight sm:text-5xl md:text-6xl">{title.title}</h1>}
+                    <FactsBlock title={title} seasonCount={seasonCount} phone={phone} />
+                    {!phone && <MoodLine title={title} phone={false} />}
 
-                    <div className="flex w-full max-w-xl flex-col gap-2 max-sm:items-center">
-                      {!isSeries && title.played && title.watches[0] ? (
-                        <p className="text-[15px] font-semibold text-blue-200">
-                          <button type="button" onClick={(event) => openDate(title.id, title.watches[0], anchorOf(event.currentTarget))} className="group/date -mx-1 inline-flex items-center gap-1.5 rounded-md px-1 underline decoration-blue-300/30 decoration-dotted underline-offset-4 transition-colors hover:bg-white/10 hover:decoration-blue-200">
-                            {`Watched ${watchedWhen(title.watches[0])}`}
-                            <PencilLine className="size-3.5 opacity-60 transition-opacity group-hover/date:opacity-100" />
-                          </button>
-                          {stateLine?.replace(`Watched ${watchedWhen(title.watches[0])}`, "")}
-                        </p>
-                      ) : <p className="text-[15px] font-semibold text-blue-200">{stateLine}</p>}
-                      {isSeries && title.aired > 0 && (
-                        <div className="flex w-full items-center gap-3">
-                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/15"><div className={cx("h-full rounded-full transition-all duration-500", allWatched ? "bg-emerald-400" : "bg-blue-500")} style={{ width: `${Math.max(1, progress)}%` }} /></div>
-                          <span className="text-xs tabular-nums text-muted-foreground">{title.watched}/{title.aired}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3 max-sm:justify-center">
-                      {isSeries ? (
-                        <button type="button" className={PLAY_PILL} disabled={busy !== null} onClick={() => void run(allWatched ? "unplayed" : "played", [title.id], allWatched ? "Marked unwatched" : "Every aired episode marked watched")}>
-                          {busy === title.id + "played" || busy === title.id + "unplayed" ? <Loader2 className="animate-spin" /> : allWatched ? <Undo2 /> : <CheckCheck />}
-                          {allWatched ? "Mark unwatched" : "Mark all watched"}
-                        </button>
-                      ) : (
-                        <button type="button" className={PLAY_PILL} disabled={busy !== null} onClick={() => void run(title.played ? "unplayed" : "played", [title.id], title.played ? "Marked unwatched" : "Marked watched", !title.played)}>
-                          {busy === title.id + "played" || busy === title.id + "unplayed" ? <Loader2 className="animate-spin" /> : title.played ? <Undo2 /> : <Check />}
-                          {title.played ? "Mark unwatched" : "Mark watched"}
-                        </button>
-                      )}
-                      <button type="button" className={GLASS_PILL} onClick={(event) => { const target = titleTarget(); if (target) setRemote({ target, at: under(event.currentTarget) }); }}>
-                        <Cast /> Play on…
-                      </button>
-                      <div className="relative">
-                        <button type="button" className={cx(GLASS_PILL, title.rating !== null && "!bg-white/20")} onClick={() => setRating((v) => !v)}>
-                          <Star className={cx(title.rating !== null && "text-amber-400")} fill={title.rating !== null ? "currentColor" : "none"} />
-                          {title.rating !== null ? `${title.rating}/10` : "Rate"}
-                        </button>
-                        {rating && <RatePicker value={title.rating} onClose={() => setRating(false)} onPick={(value) => { setRating(false); void run("rate", [title.id], value === null ? "Rating cleared" : `Rated ${value}/10`, undefined, value); }} />}
+                    {(isSeries && title.aired > 0) || (!isSeries && stateLine) ? (
+                      <div className={cx("flex w-full flex-col gap-2", phone ? "max-w-xs items-center" : "max-w-xl")}>
+                        {isSeries ? (
+                          <div className="flex w-full items-center gap-3">
+                            <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/15"><div className={cx("h-full rounded-full transition-all duration-500", allWatched ? "bg-emerald-400" : "bg-blue-500")} style={{ width: `${Math.max(1, progress)}%` }} /></div>
+                            <span className="text-xs tabular-nums text-muted-foreground">{allWatched ? `${title.status === "Ended" ? "Finished" : "Caught up"} · ` : ""}{title.watched}/{title.aired}</span>
+                          </div>
+                        ) : title.played && title.watches[0] ? (
+                          <p className={cx("font-semibold text-blue-200", phone ? "text-[13px]" : "text-sm")}>
+                            <button type="button" onClick={(event) => openDate(title.id, title.watches[0], anchorOf(event.currentTarget))} className="group/date -mx-1 inline-flex items-center gap-1.5 rounded-md px-1 underline decoration-blue-300/30 decoration-dotted underline-offset-4 transition-colors hover:bg-white/10 hover:decoration-blue-200">
+                              {`Watched ${watchedWhen(title.watches[0])}`}
+                              <PencilLine className="size-3.5 opacity-60 transition-opacity group-hover/date:opacity-100" />
+                            </button>
+                            {stateLine?.replace(`Watched ${watchedWhen(title.watches[0])}`, "")}
+                          </p>
+                        ) : <p className={cx("font-semibold text-blue-200", phone ? "text-[13px]" : "text-sm")}>{stateLine}</p>}
                       </div>
-                      <button type="button" className={cx(GLASS_PILL, title.onWatchlist && "!bg-white/20")} disabled={busy !== null} onClick={() => void run(title.onWatchlist ? "unwatchlist" : "watchlist", [title.id], title.onWatchlist ? "Removed from the watchlist" : "Added to the watchlist")}>
-                        {title.onWatchlist ? <BookmarkCheck /> : <Bookmark />}
-                        {title.onWatchlist ? "On watchlist" : "Watchlist"}
-                      </button>
-                      {isSeries && (
-                        <button type="button" className={cx(GLASS_PILL, title.dropped && "!bg-white/20")} disabled={busy !== null} onClick={() => void run(title.dropped ? "undrop" : "drop", [title.id], title.dropped ? "Picked back up" : "Dropped")}>
-                          {title.dropped ? <Undo2 /> : <ThumbsDown />}
-                          {title.dropped ? "Pick back up" : "Drop"}
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground max-sm:text-center">
+                    ) : null}
+
+                    {phone ? (
+                      <PhoneTitleActions name={title.title} actions={titleActions} play={<button type="button" className={PHONE_PLAY_PILL} onClick={(event) => playOn(event.currentTarget)}><Play />{playText}</button>} />
+                    ) : (
+                      <DesktopTitleActions actions={titleActions} play={<button type="button" className={PLAY_PILL} onClick={(event) => playOn(event.currentTarget)}><Play className="fill-current" />{playText}</button>} />
+                    )}
+                    <p className="text-xs text-muted-foreground">
                       {sentTo.length ? `Changes are saved here and sent to ${sentTo.map(trackers.name).join(", ")}.` : "Changes are saved on this server."}
                     </p>
 
-                    {title.overview && <Overview text={title.overview} />}
+                    {title.overview && <Overview text={title.overview} phone={phone} />}
+                    {phone && <MoodLine title={title} phone />}
+                    <Credits title={title} onPerson={onPerson} />
                     <Details title={title} />
                   </>
                 ) : null}
@@ -752,13 +735,17 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
                       <button type="button" onClick={() => (selecting ? endSelect() : setSelecting(true))} className={cx("glass inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-medium hover:bg-white/15", selecting && "!bg-white/20")}>
                         <CheckSquare className="size-4" /> {selecting ? "Done" : "Select"}
                       </button>
-                      <div className="glass hidden h-10 items-center rounded-full p-1 sm:flex">
-                        <button type="button" aria-label="As a row" onClick={() => setLayout("row")} className={cx("flex h-full items-center rounded-full px-3", layout === "row" ? "bg-white/15" : "text-muted-foreground hover:text-foreground")}><Rows3 className="size-4" /></button>
-                        <button type="button" aria-label="As a grid" onClick={() => setLayout("grid")} className={cx("flex h-full items-center rounded-full px-3", layout === "grid" ? "bg-white/15" : "text-muted-foreground hover:text-foreground")}><LayoutGrid className="size-4" /></button>
-                      </div>
+                      {!phone && (
+                        <div className="glass flex h-10 items-center rounded-full p-1">
+                          <button type="button" aria-label="As a row" onClick={() => setLayout("row")} className={cx("flex h-full items-center rounded-full px-3", layout === "row" ? "bg-white/15" : "text-muted-foreground hover:text-foreground")}><Rows3 className="size-4" /></button>
+                          <button type="button" aria-label="As a grid" onClick={() => setLayout("grid")} className={cx("flex h-full items-center rounded-full px-3", layout === "grid" ? "bg-white/15" : "text-muted-foreground hover:text-foreground")}><LayoutGrid className="size-4" /></button>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  {title.seasons.length > 1 && <SeasonRail seasons={title.seasons} watched={watchedSeasons} selected={shownSeason} onSelect={setSeason} onMenu={(item, at) => setSeasonMenu({ season: item, at })} />}
+                  {title.seasons.length > 1 && (phone
+                    ? <SeasonPills seasons={title.seasons} watched={watchedSeasons} selected={shownSeason} onSelect={setSeason} onMenu={(item, at) => setSeasonMenu({ season: item, at })} />
+                    : <SeasonRail seasons={title.seasons} watched={watchedSeasons} selected={shownSeason} onSelect={setSeason} onMenu={(item, at) => setSeasonMenu({ season: item, at })} />)}
                   {seasonMenu && (() => {
                     const target = seasonMenu.season;
                     const aired = (seasons.find(([s]) => s === target.season)?.[1] ?? []).filter((ep) => !(ep.airsAt && ep.airsAt > now));
@@ -775,9 +762,11 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
                     );
                   })()}
                 </div>
-                {layout === "row" || isPhone
-                  ? <EpisodeRow key={shownSeason ?? ""} focus={next?.season === shownSeason ? next.id : null}>{episodes.map((ep) => card(ep, "w-64 shrink-0 snap-start lg:w-72 2xl:w-80"))}</EpisodeRow>
-                  : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">{episodes.map((ep) => card(ep))}</div>}
+                {phone
+                  ? <div key={shownSeason ?? ""} className="flex flex-col gap-1">{episodes.map((ep) => <EpisodeListRow key={ep.id} {...episodeProps(ep)} />)}</div>
+                  : layout === "row"
+                    ? <EpisodeRow key={shownSeason ?? ""} focus={next?.season === shownSeason ? next.id : null}>{episodes.map((ep) => card(ep, "w-64 shrink-0 snap-start lg:w-72 2xl:w-80"))}</EpisodeRow>
+                    : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">{episodes.map((ep) => card(ep))}</div>}
               </section>
             )}
 
