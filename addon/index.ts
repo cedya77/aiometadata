@@ -8306,7 +8306,8 @@ addon.get("/api/dashboard/jellyfin/:userUUID/year", requireDashboardAdmin, async
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const year = parseInt(String(req.query.year ?? ''), 10);
-    if (!Number.isInteger(year) || year < 1970 || year > 9999) {
+    // A year not yet begun has nothing to review, and each one asked for is built and stored.
+    if (!Number.isInteger(year) || year < 1970 || year > new Date().getUTCFullYear() + 1) {
       res.status(400).json({ error: 'Pick a year' });
       return;
     }
