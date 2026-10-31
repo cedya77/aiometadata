@@ -87,7 +87,7 @@ export function UserAccounts({ user, catalogs, onChange, onAddCatalogs, onRemove
               </button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs text-xs">
-              None of your Simkl, MDBList, PublicMetaDB, AniList or MyAnimeList accounts is used for {user.name}. Catalogs of your other accounts, such as Trakt or TMDB, still show your lists if their tags include them. When plays are recorded follows the Watch Tracking switches in General, for every user.
+              None of your Simkl, MDBList, PublicMetaDB, AniList or MyAnimeList accounts is used for {user.name}. Catalogs of your other accounts, such as Trakt or TMDB, still show your lists if their tags include them. When plays are recorded follows the Watch Tracking tab, for every user.
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
