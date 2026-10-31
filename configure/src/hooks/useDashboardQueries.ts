@@ -1598,18 +1598,24 @@ export interface JellyfinConfiguration {
   totals: { progress: number; played: number };
 }
 
-function useJellyfinQuery<T>(key: readonly unknown[], path: string, options: DashboardQueryOptions & { enabledWhen?: boolean; poll?: boolean; pollEvery?: (data: T | undefined) => number | false } = {}) {
+type Revalidation<T> = { pathFor: (held: T) => string | null; merge: (fresh: T, held: T) => T };
+
+function useJellyfinQuery<T>(key: readonly unknown[], path: string, options: DashboardQueryOptions & { enabledWhen?: boolean; poll?: boolean; pollEvery?: (data: T | undefined) => number | false; revalidate?: Revalidation<T> } = {}) {
   const { isAdmin, logout } = useAdmin();
   const getHeaders = useApiHeaders();
   const isVisible = usePageVisibility();
-  const { activeTab = 'overview', enabled = true, enabledWhen = true, poll = true, pollEvery } = options;
+  const queryClient = useQueryClient();
+  const { activeTab = 'overview', enabled = true, enabledWhen = true, poll = true, pollEvery, revalidate } = options;
   const isActiveTab = activeTab === 'jellyfin';
 
   return useQuery({
     queryKey: key,
     queryFn: async () => {
       try {
-        return await fetchDashboardData<T>(path, getHeaders());
+        const held = revalidate ? queryClient.getQueryData<T>(key) : undefined;
+        const asked = held !== undefined && revalidate ? revalidate.pathFor(held) : null;
+        const fresh = await fetchDashboardData<T>(asked ?? path, getHeaders());
+        return held !== undefined && asked && revalidate ? revalidate.merge(fresh, held) : fresh;
       } catch (error) {
         if (error instanceof Error && error.message === 'UNAUTHORIZED') logout();
         throw error;
@@ -1808,6 +1814,7 @@ export interface JellyfinYearReview {
   builtAt: number | null;
   data: JellyfinYearData | null;
   ratings: Record<string, number>;
+  unchanged?: boolean;
 }
 
 const YEAR_BUILD_POLL_MS = 2000;
@@ -1826,6 +1833,10 @@ export function useJellyfinYear(userUUID: string | null, profile: string | null,
         const build = data?.status === 'ready' ? data.rebuilding : data?.status;
         if (build === 'busy') return YEAR_BUSY_POLL_MS;
         return build ? YEAR_BUILD_POLL_MS : false;
+      },
+      revalidate: {
+        pathFor: (held) => (held.data && held.builtAt ? `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/year?${params}&have=${held.builtAt}` : null),
+        merge: (fresh, held) => (fresh.unchanged ? { ...fresh, unchanged: undefined, data: held.data } : fresh),
       },
     }
   );

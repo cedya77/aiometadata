@@ -8290,7 +8290,8 @@ addon.get("/api/dashboard/jellyfin/:userUUID/year", requireDashboardAdmin, async
       res.status(400).json({ error: 'Pick a year' });
       return;
     }
-    const payload = await require('./lib/jellyfin/yearReview').dashboardYear(String(req.params.userUUID), profile, year);
+    const have = Number(req.query.have);
+    const payload = await require('./lib/jellyfin/yearReview').dashboardYear(String(req.params.userUUID), profile, year, Number.isFinite(have) && have > 0 ? have : null);
     if (!payload) {
       res.status(404).json({ error: 'No such configuration' });
       return;

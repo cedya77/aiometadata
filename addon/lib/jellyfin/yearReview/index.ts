@@ -130,7 +130,7 @@ async function buildYear(userUUID: string, profile: string | null, year: number,
   });
 }
 
-export async function dashboardYear(userUUID: string, profile: string | null, year: number): Promise<any | null> {
+export async function dashboardYear(userUUID: string, profile: string | null, year: number, have: number | null = null): Promise<any | null> {
   return asProfile(userUUID, profile, async (config) => {
     const timeZone = safeTimeZone(viewingTimeZone(config));
     const historyKey = profileKey(config);
@@ -144,6 +144,7 @@ export async function dashboardYear(userUUID: string, profile: string | null, ye
     const fresh = stored?.fingerprint === fingerprint;
     const recent = !!stored && sameSetup(stored.fingerprint, fingerprint) && Date.now() - stored.builtAt < envInt('JELLYFIN_YEAR_REVIEW_MIN_REBUILD_MINUTES', 30, 0) * 60 * 1000;
     const ticket = fresh || recent ? ticketFor(key) : enqueue(key, (waitedMs) => buildYear(userUUID, profile, year, waitedMs));
+    const unchanged = !!stored && stored.builtAt === have;
     return {
       year,
       years,
@@ -152,7 +153,7 @@ export async function dashboardYear(userUUID: string, profile: string | null, ye
       stale: !!stored && !fresh,
       rebuilding: stored && ticket ? ticket.state : null,
       builtAt: stored?.builtAt ?? null,
-      data: stored?.data ?? null,
+      ...(unchanged ? { unchanged: true, data: null } : { data: stored?.data ?? null }),
       ratings: stored?.data ? await ratingsOf(userUUID, historyKey, stored.data) : {},
     };
   });
