@@ -308,7 +308,9 @@ function Coverflow({ films, opening, label, caption }: { films: JellyfinYearTitl
 type Shelf = "films" | "shows";
 
 function ShelfPanel({ model, films, shows, done }: { model: YearModel; films: JellyfinYearTitle[]; shows: JellyfinYearTitle[]; done: JellyfinYearTitle[] }) {
-  const [shelf, setShelf] = useState<Shelf>(films.length ? "films" : "shows");
+  const [picked, setShelf] = useState<Shelf>(films.length ? "films" : "shows");
+  // A rebuild can leave the picked shelf empty, and the tabs only show while both kinds have titles.
+  const shelf: Shelf = picked === "films" && !films.length ? "shows" : picked === "shows" && !shows.length ? "films" : picked;
   const { ratings } = model;
   const latest = (title: JellyfinYearTitle) => Math.max(...title.plays.map((play) => play[1]));
   const firstPlay = (title: JellyfinYearTitle) => Math.min(...title.plays.map((play) => play[1]));
@@ -366,7 +368,7 @@ function ShelfPanel({ model, films, shows, done }: { model: YearModel; films: Je
         {deck.length > 0 && (
           <div className="min-w-0 flex-[999_1_560px]">
             <Coverflow
-              key={shelf}
+              key={`${shelf}|${deck.length}`}
               films={deck}
               opening={Math.max(0, favourite ? deck.indexOf(favourite) : 0)}
               label={shelf === "films" ? "Your films this year, on a coverflow deck" : "Your shows this year, on a coverflow deck"}
@@ -436,7 +438,7 @@ export default function TitlesChapter({ model, number, label, accent }: YearChap
             : <>, from <TitleLink title={done[0]}>{displayName(done[0])}</TitleLink> to <TitleLink title={done[done.length - 1]}>{displayName(done[done.length - 1])}</TitleLink>.</>}
         </p>
       )}
-      {(films.length > 0 || shows.length > 0) && <ShelfPanel model={model} films={films} shows={shows} done={done} />}
+      {(films.length > 0 || shows.length > 0) && <ShelfPanel key={model.year} model={model} films={films} shows={shows} done={done} />}
     </>
   );
 }
