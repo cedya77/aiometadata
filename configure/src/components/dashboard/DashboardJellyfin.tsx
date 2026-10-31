@@ -120,7 +120,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   const [exporting, setExporting] = useState(false);
   const [allProgress, setAllProgress] = useRemembered<boolean>("jellyfin.allProgress", false);
   const exportJson = useJellyfinExport();
-  const { data, isLoading, isError, isFetching, isPlaceholderData } = useJellyfinConfiguration(userUUID, profile, null, { activeTab });
+  const { data, isLoading, isError, isPlaceholderData } = useJellyfinConfiguration(userUUID, profile, null, { activeTab });
   const pagedProgress = usePagedPlays(userUUID, profile, "progress", data?.inProgress ?? EMPTY_PLAYS, data?.totals?.progress ?? 0, activeTab);
   const clearResume = useJellyfinClearResume();
   const queryClient = useQueryClient();
@@ -206,7 +206,6 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
         <Button size="sm" variant={view === "cards" ? "secondary" : "ghost"} className="h-7 rounded-full px-2.5" onClick={() => setView("cards")} aria-label="Cards"><LayoutGrid className="h-3.5 w-3.5" /></Button>
         <Button size="sm" variant={view === "table" ? "secondary" : "ghost"} className="h-7 rounded-full px-2.5" onClick={() => setView("table")} aria-label="Table"><TableProperties className="h-3.5 w-3.5" /></Button>
       </div>}
-      {isFetching && !isLoading && !switching && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
       <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" onClick={runExport} disabled={exporting}>
         {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Export
       </Button>
@@ -233,7 +232,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
           <ShelfSkeleton />
         </div>
       ) : (
-      <div className={`min-h-screen divide-y divide-white/[0.06] border-t border-white/[0.06] transition-opacity ${isFetching && !isLoading ? "opacity-60" : "opacity-100"}`}>
+      <div className="min-h-screen divide-y divide-white/[0.06] border-t border-white/[0.06]">
         {section === "overview" && (
           <>
             <JellyfinSync key={`sync:${profile ?? ""}`} compact onOpen={() => setSection("trackers")} userUUID={userUUID} profile={profile} profileName={profileName} watched={watched} rows={data.sync} activeTab={activeTab} />
