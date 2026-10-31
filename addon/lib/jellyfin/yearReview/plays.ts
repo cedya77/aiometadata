@@ -94,32 +94,14 @@ function viewingsOf(times: Array<{ at: number; origin: string | null }>): Array<
   return out;
 }
 
-const spellingKind = (id: string): string => (id.startsWith('tt') ? 'tt' : id.split(':')[0]);
-
-function pairFilmSpellings(rows: Array<{ video_id: string; watched_at: number }>, union: (a: string, b: string) => void): void {
-  const batchSize = envInt('JELLYFIN_YEAR_REVIEW_BATCH_PLAYS', 6, 2);
-  const byInstant = new Map<number, Set<string>>();
-  for (const row of rows) byInstant.set(row.watched_at, (byInstant.get(row.watched_at) ?? new Set()).add(row.video_id));
-  for (const ids of byInstant.values()) {
-    if (ids.size >= batchSize) continue;
-    const films = [...ids].filter((id) => {
-      const parsed = parseStremioId(id);
-      return parsed && (parsed.episode === null || parsed.episode === undefined);
-    });
-    if (films.length < 2 || films.length !== ids.size) continue;
-    if (new Set(films.map(spellingKind)).size !== films.length) continue;
-    for (const id of films.slice(1)) union(films[0], id);
-  }
-}
-
 export async function foldPlays(rows: Array<{ video_id: string; watched_at: number; origin: string | null }>): Promise<YearPlay[]> {
   const ids = [...new Set(rows.map((row) => row.video_id))];
   const spellings = unionFind(ids);
   const aliases = await mapWithConcurrency(ids, envInt('JELLYFIN_YEAR_REVIEW_ALIAS_CONCURRENCY', 8, 1), (id) => videoIdAliases(id).catch(() => [] as string[]));
+  // Spellings join only by alias: an import dates every title of a day at one moment, so the moment links nothing.
   ids.forEach((id, i) => {
     for (const alias of aliases[i]) spellings.union(id, alias);
   });
-  pairFilmSpellings(rows, spellings.union);
 
   const bases = new Map<string, string>();
   for (const id of ids) {
