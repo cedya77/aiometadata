@@ -164,7 +164,7 @@ function placement(d: number): { x: number; z: number; rotate: number } {
   return { x: side * (150 + (depth - 1) * 70), z: -140 - depth * 70, rotate: -side * 58 };
 }
 
-function Coverflow({ films, opening }: { films: JellyfinYearTitle[]; opening: number }) {
+function Coverflow({ films, opening, label, caption }: { films: JellyfinYearTitle[]; opening: number; label: string; caption: (title: JellyfinYearTitle) => string }) {
   const [focus, setFocus] = useState(opening);
   const [goal, setGoal] = useState(opening);
   const [drag, setDrag] = useState<number | null>(null);
@@ -225,7 +225,7 @@ function Coverflow({ films, opening }: { films: JellyfinYearTitle[]; opening: nu
       <div
         ref={stage}
         role="img"
-        aria-label="Your films this year, on a coverflow deck"
+        aria-label={label}
         className="relative h-[310px] cursor-grab touch-pan-y select-none [--s:0.72] [perspective:1400px] active:cursor-grabbing sm:h-[430px] sm:[--s:1]"
         onPointerDown={(event) => {
           press.current = { x: event.clientX, samples: [[event.timeStamp, event.clientX]] };
@@ -288,24 +288,43 @@ function Coverflow({ films, opening }: { films: JellyfinYearTitle[]; opening: nu
           );
         })}
       </div>
+      {centre && (
+        <p className="truncate px-6 text-center text-sm font-semibold">
+          {displayName(centre)}
+          {caption(centre) && <span className="font-normal text-muted-foreground"> · {caption(centre)}</span>}
+        </p>
+      )}
     </>
   );
 }
 
-function FilmsPanel({ model, films }: { model: YearModel; films: JellyfinYearTitle[] }) {
+type Shelf = "films" | "shows";
+
+function ShelfPanel({ model, films, shows, done }: { model: YearModel; films: JellyfinYearTitle[]; shows: JellyfinYearTitle[]; done: JellyfinYearTitle[] }) {
+  const [shelf, setShelf] = useState<Shelf>(films.length ? "films" : "shows");
   const { ratings } = model;
   const latest = (title: JellyfinYearTitle) => Math.max(...title.plays.map((play) => play[1]));
-  const rated = films.filter((film) => ratings[film.key] !== undefined).sort((a, b) => ratings[b.key] - ratings[a.key] || latest(b) - latest(a));
-  const best = rated[0];
   const firstPlay = (title: JellyfinYearTitle) => Math.min(...title.plays.map((play) => play[1]));
-  const deck = films.filter((film) => film.facts?.poster).sort((a, b) => firstPlay(a) - firstPlay(b));
-  const favourite = rated.find((film) => film.facts?.poster) ?? [...deck].sort((a, b) => b.plays.length - a.plays.length || b.watchMs - a.watchMs)[0];
+  const titles = shelf === "films" ? films : shows;
+  const rated = titles.filter((title) => ratings[title.key] !== undefined).sort((a, b) => ratings[b.key] - ratings[a.key] || latest(b) - latest(a));
+  const best = rated[0];
+  const deck = titles.filter((title) => title.facts?.poster).sort((a, b) => firstPlay(a) - firstPlay(b));
+  const favourite = rated.find((title) => title.facts?.poster) ?? (shelf === "shows" ? shows.find((show) => show.facts?.poster) : [...deck].sort((a, b) => b.plays.length - a.plays.length || b.watchMs - a.watchMs)[0]);
   const runtimeOf = (film: JellyfinYearTitle) => film.facts?.runtimeMs || Math.max(0, ...film.plays.map((play) => play[2]));
-  const longest = [...films].sort((a, b) => runtimeOf(b) - runtimeOf(a))[0];
-  const oldest = films.filter((film) => film.facts?.year).sort((a, b) => a.facts!.year! - b.facts!.year!)[0];
-  const again = films.filter((film) => film.plays.length >= 2).sort((a, b) => b.plays.length - a.plays.length);
-  const released = films.filter((film) => film.facts?.year === model.year).length;
-  const hours = hoursOf(films.reduce((total, film) => total + film.watchMs, 0));
+  const oldest = titles.filter((title) => title.facts?.year).sort((a, b) => a.facts!.year! - b.facts!.year!)[0];
+  const released = titles.filter((title) => title.facts?.year === model.year).length;
+  const hours = hoursOf(titles.reduce((total, title) => total + title.watchMs, 0));
+  const binge = useMemo(() => {
+    const perDay = new Map<string, { title: JellyfinYearTitle; day: number; episodes: number }>();
+    for (const play of model.plays) {
+      if (play.film || play.catchUp) continue;
+      const key = `${play.title.key}|${play.day}`;
+      const held = perDay.get(key) ?? { title: play.title, day: play.day, episodes: 0 };
+      held.episodes += 1;
+      perDay.set(key, held);
+    }
+    return [...perDay.values()].sort((a, b) => b.episodes - a.episodes || a.day - b.day)[0];
+  }, [model]);
   const fact = (label: string, value: string, sub?: string, wide = false) => (
     <div className={`${YEAR_GLASS} rounded-2xl p-3.5 ${wide ? "col-span-2" : ""}`}>
       <p className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground">{label}</p>
@@ -313,29 +332,65 @@ function FilmsPanel({ model, films }: { model: YearModel; films: JellyfinYearTit
       {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
     </div>
   );
+  const facts = shelf === "films"
+    ? (() => {
+        const longest = [...films].sort((a, b) => runtimeOf(b) - runtimeOf(a))[0];
+        const again = films.filter((film) => film.plays.length >= 2).sort((a, b) => b.plays.length - a.plays.length);
+        return (
+          <>
+            {longest && runtimeOf(longest) > 0 && fact("Longest", displayName(longest), formatRuntime(runtimeOf(longest)))}
+            {oldest && fact("Oldest", displayName(oldest), String(oldest.facts!.year))}
+            {again.length > 0 && fact(again.every((film) => film.plays.length === 2) ? "Watched twice" : "Watched more than once", again.slice(0, 3).map(displayName).join(" · "), undefined, true)}
+          </>
+        );
+      })()
+    : (
+        <>
+          {binge && binge.episodes >= 2 && fact("Biggest binge", displayName(binge.title), `${plural(binge.episodes, "episode")} on ${formatDay(model.year, binge.day)}`)}
+          {oldest && fact("Oldest", displayName(oldest), String(oldest.facts!.year))}
+          {done.length > 0 && fact(done.length === 1 ? "Finished" : `${done.length} finished`, done.slice(-3).reverse().map(displayName).join(" · "), done.length > 3 ? `and ${(done.length - 3).toLocaleString()} more` : undefined, true)}
+        </>
+      );
+  const tabs: Array<[Shelf, string, number]> = [["films", "Films", films.length], ["shows", "Shows", shows.length]];
   return (
     <div className="relative isolate mt-[72px] overflow-hidden rounded-[28px]">
       <div aria-hidden="true" className="absolute inset-0 -z-10" style={{ background: "linear-gradient(90deg, #0c0d0f 0%, rgba(12,13,15,0.7) 50%, rgba(12,13,15,0.85) 100%)" }} />
       <div className="flex flex-wrap items-center gap-6 p-5 sm:p-10">
-        {deck.length > 0 && <div className="min-w-0 flex-[999_1_560px]"><Coverflow films={deck} opening={Math.max(0, deck.indexOf(favourite))} /></div>}
+        {deck.length > 0 && (
+          <div className="min-w-0 flex-[999_1_560px]">
+            <Coverflow
+              key={shelf}
+              films={deck}
+              opening={Math.max(0, favourite ? deck.indexOf(favourite) : 0)}
+              label={shelf === "films" ? "Your films this year, on a coverflow deck" : "Your shows this year, on a coverflow deck"}
+              caption={(title) => (shelf === "films" ? (title.facts?.year ? String(title.facts.year) : "") : plural(title.episodes, "episode"))}
+            />
+          </div>
+        )}
         <div className="min-w-0 flex-[1_1_340px]">
-          <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Films</span>
-          <p className="mt-2 text-5xl font-extrabold leading-none tracking-[-0.04em]">{plural(films.length, "film")}</p>
-          <p className="mt-1.5 text-base text-foreground/80">{plural(hours, "hour")}{released ? `, ${released} of them released this year.` : "."}</p>
+          {films.length > 0 && shows.length > 0
+            ? (
+                <div role="tablist" aria-label="Shelf" className={`${YEAR_GLASS} inline-flex rounded-full p-1`}>
+                  {tabs.map(([key, name]) => (
+                    <button key={key} type="button" role="tab" aria-selected={shelf === key} onClick={() => setShelf(key)} className={`rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition ${shelf === key ? "bg-white text-black" : "text-muted-foreground hover:text-foreground"}`}>
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              )
+            : <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{shelf === "films" ? "Films" : "Shows"}</span>}
+          <p className="mt-3 text-5xl font-extrabold leading-none tracking-[-0.04em]">{plural(titles.length, shelf === "films" ? "film" : "show")}</p>
+          <p className="mt-1.5 text-base text-foreground/80">{plural(hours, "hour")}{released ? `, ${released} of them ${shelf === "films" ? "released" : "premiered"} this year.` : "."}</p>
           {best && (
             <div className={`${YEAR_GLASS} mt-[22px] rounded-[20px] p-[18px]`}>
               {best.facts?.logo
                 ? <img src={best.facts.logo} alt={displayName(best)} className="block max-h-[54px] max-w-[75%] object-contain object-left" />
                 : <p className="text-xl font-bold">{displayName(best)}</p>}
-              <p className="mt-3 text-[13px] text-muted-foreground">Your highest rated film of the year</p>
+              <p className="mt-3 text-[13px] text-muted-foreground">Your highest rated {shelf === "films" ? "film" : "show"} of the year</p>
               <p className="mt-1.5 flex items-center gap-2"><Stars rating={ratings[best.key]} /><span className="text-[13px] font-bold text-amber-300">{ratings[best.key]}/10</span></p>
             </div>
           )}
-          <div className="mt-3.5 grid grid-cols-2 gap-2.5">
-            {longest && runtimeOf(longest) > 0 && fact("Longest", displayName(longest), formatRuntime(runtimeOf(longest)))}
-            {oldest && fact("Oldest", displayName(oldest), String(oldest.facts!.year))}
-            {again.length > 0 && fact(again.every((film) => film.plays.length === 2) ? "Watched twice" : "Watched more than once", again.slice(0, 3).map(displayName).join(" · "), undefined, true)}
-          </div>
+          <div className="mt-3.5 grid grid-cols-2 gap-2.5">{facts}</div>
         </div>
       </div>
     </div>
@@ -370,7 +425,7 @@ export default function TitlesChapter({ model, number, label, accent }: YearChap
           {done.length === 1 ? `: ${displayName(done[0])}.` : `, from ${displayName(done[0])} to ${displayName(done[done.length - 1])}.`}
         </p>
       )}
-      {films.length > 0 && <FilmsPanel model={model} films={films} />}
+      {(films.length > 0 || shows.length > 0) && <ShelfPanel model={model} films={films} shows={shows} done={done} />}
     </>
   );
 }
