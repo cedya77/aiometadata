@@ -2842,8 +2842,8 @@ class Database {
 
   async saveFingerprint(seriesId: string, season: number, episode: number, kind: string, startMs: number, points: string, contributor: string): Promise<void> {
     const query = this.type === 'sqlite'
-      ? 'INSERT INTO jellyfin_fingerprints (series_id, season, episode, kind, start_ms, points, updated_at, contributor) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (series_id, season, episode, kind) DO UPDATE SET start_ms = excluded.start_ms, points = excluded.points, updated_at = excluded.updated_at WHERE jellyfin_fingerprints.contributor = excluded.contributor'
-      : 'INSERT INTO jellyfin_fingerprints (series_id, season, episode, kind, start_ms, points, updated_at, contributor) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (series_id, season, episode, kind) DO UPDATE SET start_ms = EXCLUDED.start_ms, points = EXCLUDED.points, updated_at = EXCLUDED.updated_at WHERE jellyfin_fingerprints.contributor = EXCLUDED.contributor';
+      ? 'INSERT INTO jellyfin_fingerprints (series_id, season, episode, kind, start_ms, points, updated_at, contributor) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (series_id, season, episode, kind) DO UPDATE SET start_ms = excluded.start_ms, points = excluded.points, updated_at = excluded.updated_at, contributor = excluded.contributor WHERE jellyfin_fingerprints.contributor IS NULL OR jellyfin_fingerprints.contributor = excluded.contributor'
+      : 'INSERT INTO jellyfin_fingerprints (series_id, season, episode, kind, start_ms, points, updated_at, contributor) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (series_id, season, episode, kind) DO UPDATE SET start_ms = EXCLUDED.start_ms, points = EXCLUDED.points, updated_at = EXCLUDED.updated_at, contributor = EXCLUDED.contributor WHERE jellyfin_fingerprints.contributor IS NULL OR jellyfin_fingerprints.contributor = EXCLUDED.contributor';
     await this.runQuery(query, [seriesId, season, episode, kind, Math.round(startMs), points, Date.now(), contributor]);
   }
 
