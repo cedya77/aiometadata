@@ -1995,6 +1995,13 @@ export interface JellyfinTitleEpisode {
   watches: number[];
 }
 
+export interface JellyfinTitleRating {
+  source: string;
+  value: number;
+  scale: number;
+  url?: string;
+}
+
 export interface JellyfinTitle {
   id: string;
   metaId: string;
@@ -2004,6 +2011,10 @@ export interface JellyfinTitle {
   year: string | null;
   overview: string | null;
   genres: string[];
+  certification?: string | null;
+  studios?: string[];
+  tags?: string[];
+  ratings?: JellyfinTitleRating[];
   score: string | null;
   runtime: string | null;
   releasedAt: number | null;
