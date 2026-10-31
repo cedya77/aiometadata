@@ -33,7 +33,7 @@ import { buildViews, catalogView, collectionTypeFor, findCatalogByViewId, getCat
 import { decodeJellyfinId } from './ids';
 import { liveDevices, rememberTokenDevice, saveCapabilities, sendToDevice } from './socket';
 import { artTag, imageTag, isWideTag } from './imageTags';
-import { buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, filterByIncludeTypes, includeTypesFilter, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
+import { buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, includeTypesFilter, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
@@ -1387,7 +1387,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         ).catch(() => ({ items: [] as any[], hasMore: false }));
 
         const viewId = encodeJellyfinId({ k: 'view', t: catalog.type, c: catalog.id });
-        for (const meta of page.items) {
+        for (const meta of servedOrder(page.items, page)) {
           if (!meta?.id || collected.length >= limit) continue;
           collected.push(metaToBaseItem(meta, catalog.type, serverId, viewId));
         }
@@ -1560,7 +1560,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     );
     const hasMore = window.hasMore;
 
-    const items = window.items
+    const items = servedOrder(window.items, window)
       .filter((meta: any) => meta && meta.id)
       .map((meta: any) => metaToBaseItem(meta, catalog.type, serverId, String(parentId)));
     if (isLandscapeCatalog(config, catalog)) showLandscape(items);
@@ -2804,7 +2804,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const serverId = serverIdFor(userUUID);
     const played = await playedPick(req, userUUID, config, catalog.type, serverId, String(parentId));
     const window = await fetchWindow(userUUID, catalog, 0, limit, {}, undefined, profileTags(config), played.key, played.pick);
-    const items = window.items
+    const items = servedOrder(window.items, window)
       .filter((meta: any) => meta && meta.id)
       .map((meta: any) => metaToBaseItem(meta, catalog.type, serverId, String(parentId)));
     if (isLandscapeCatalog(config, catalog)) showLandscape(items);

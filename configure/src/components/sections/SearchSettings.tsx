@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Edit2, GripVertical, Star, Sparkles } from 'lucide-react';
 import { allSearchProviders } from '@/data/catalogs';
-import { GEMINI_MODELS, DEFAULT_GEMINI_MODEL, DEFAULT_OPENROUTER_MODEL, resolveGeminiModel } from '@/data/ai-models';
+import { GEMINI_MODELS, DEFAULT_GEMINI_MODEL, DEFAULT_OPENROUTER_MODEL, isPresetModel, resolveGeminiModel } from '@/data/ai-models';
 import { useOpenRouterModels } from '@/hooks/useOpenRouterModels';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -635,7 +635,9 @@ export function SearchSettings() {
                     label="Model"
                     description={
                       (config.search.ai_provider || 'gemini') === 'openrouter'
-                        ? `Any OpenRouter model ID, ${config.search.ai_openrouter_web_search !== false ? 'with Web Search' : 'without Web Search'}`
+                        ? isPresetModel(config.search.ai_model)
+                          ? 'Any OpenRouter model ID or @preset/name'
+                          : `Any OpenRouter model ID or @preset/name, ${config.search.ai_openrouter_web_search !== false ? 'with Web Search' : 'without Web Search'}`
                         : (() => {
                             const selected = GEMINI_MODELS.find(m => m.id === resolveGeminiModel(config.search.ai_model));
                             return (selected?.grounding && config.search.ai_web_search) ? 'with Web Search' : 'without Web Search';
@@ -719,19 +721,23 @@ export function SearchSettings() {
                   {(() => {
                     const provider = config.search.ai_provider || 'gemini';
                     if (provider !== 'openrouter') return null;
-                    const enabled = config.search.ai_openrouter_web_search !== false;
+                    const preset = isPresetModel(config.search.ai_model);
+                    const enabled = config.search.ai_openrouter_web_search !== false && !preset;
 
                     return (
                       <>
                         <SettingRow
                           htmlFor="ai-openrouter-web-search"
                           label="Web Search"
-                          description="Adds :online so the model sees live results. Billed by OpenRouter at roughly $0.005 per search, on top of the model."
+                          description={preset
+                            ? 'A preset takes web search from its own settings on OpenRouter.'
+                            : 'Adds :online so the model sees live results. Billed by OpenRouter at roughly $0.005 per search, on top of the model.'}
                           control={
                             <Switch
                               id="ai-openrouter-web-search"
                               className="shrink-0"
                               checked={enabled}
+                              disabled={preset}
                               onCheckedChange={(checked) => setConfig(prev => ({
                                 ...prev,
                                 search: { ...prev.search, ai_openrouter_web_search: checked },

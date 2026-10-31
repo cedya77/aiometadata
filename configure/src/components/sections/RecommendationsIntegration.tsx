@@ -12,7 +12,7 @@ import { Callout } from '@/components/settings/Callout';
 import { SettingRow } from '@/components/settings/SettingRow';
 import { useConfig } from '@/contexts/ConfigContext';
 import type { AppConfig, CatalogConfig } from '@/contexts/config';
-import { GEMINI_MODELS, resolveGeminiModel } from '@/data/ai-models';
+import { GEMINI_MODELS, isPresetModel, resolveCatalogModel, resolveGeminiModel } from '@/data/ai-models';
 import { useOpenRouterModels } from '@/hooks/useOpenRouterModels';
 
 /**
@@ -310,6 +310,8 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
   const currentModel = usingOpenRouter
     ? draft.openrouter_model || ''
     : draft.gemini_model || '';
+  const presetModel = usingOpenRouter && isPresetModel(currentModel || resolveCatalogModel(config, 'openrouter'));
+  const thinkingValue = draft.reasoning_effort || (presetModel ? 'preset' : thinking);
 
   const possessive = isMain ? 'your' : `${viewer.name}'s`;
   const counts = status?.counts;
@@ -559,18 +561,21 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
                     <SettingRow
                       htmlFor="recommendation-web-search"
                       label="Web search"
-                      description={usingOpenRouter
-                        ? 'Adds :online so the model sees live results. Billed by OpenRouter at roughly $0.005 per search, on top of the model.'
-                        : 'Lets the model look up what has come out lately. Requires a paid Gemini API key; free keys will get 429 errors.'}
+                      description={presetModel
+                        ? 'A preset takes web search from its own settings on OpenRouter.'
+                        : usingOpenRouter
+                          ? 'Adds :online so the model sees live results. Billed by OpenRouter at roughly $0.005 per search, on top of the model.'
+                          : 'Lets the model look up what has come out lately. Requires a paid Gemini API key; free keys will get 429 errors.'}
                       control={
                         <Switch
                           id="recommendation-web-search"
                           className="shrink-0"
-                          checked={webSearch}
+                          checked={webSearch && !presetModel}
+                          disabled={presetModel}
                           onCheckedChange={checked => patch({ web_search: checked })}
                         />
                       }
-                      note={!webSearch ? (
+                      note={!webSearch && !presetModel ? (
                         <Callout variant="info" className="text-xs">
                           Without it, nothing released after the model's training cut-off can be
                           recommended, however recent the rest of your library is.
@@ -584,11 +589,13 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
                         label="Thinking"
                         description="How long the model works before it writes the list. Thinking is billed like the answer and shares the same reply budget, so more of it costs more and leaves less room for the list itself."
                         control={
-                          <Select value={thinking} onValueChange={value => patch({ reasoning_effort: value })}>
+                          <Select value={thinkingValue}
+                            onValueChange={value => patch({ reasoning_effort: value === 'preset' ? undefined : value })}>
                             <SelectTrigger id="recommendation-thinking" aria-label="Thinking" className="w-full shrink-0 sm:w-[160px]">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
+                              {presetModel && <SelectItem value="preset">From the preset</SelectItem>}
                               <SelectItem value="none">Off</SelectItem>
                               <SelectItem value="minimal">Minimal</SelectItem>
                               <SelectItem value="low">Low</SelectItem>
@@ -597,7 +604,7 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
                             </SelectContent>
                           </Select>
                         }
-                        note={thinking === 'medium' || thinking === 'high' ? (
+                        note={thinkingValue === 'preset' ? undefined : thinking === 'medium' || thinking === 'high' ? (
                           <Callout variant="warn" className="text-xs">
                             A long list can come back unfinished at this setting, because the thinking
                             uses up the reply before the recommendations are written.

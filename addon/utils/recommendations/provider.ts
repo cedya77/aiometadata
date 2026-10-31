@@ -8,6 +8,7 @@ export interface ResolvedProvider {
   model: string;
   /** Gemini grounding, or the :online suffix already applied to the model. */
   webSearch: boolean;
+  preset: boolean;
   /** Import path for the client, so callers do not repeat the branch. */
   clientPath: string;
 }
@@ -71,7 +72,8 @@ export function budgetFor(replyTokens: number, effort: string, floor = 2048): nu
  *  disable it, so it is capped by default and turned off only when chosen. */
 export function reasoningEffort(config: any): string {
   const chosen = config?.recommendations?.reasoning_effort;
-  return (REASONING_EFFORTS as readonly string[]).includes(chosen) ? chosen : 'low';
+  if ((REASONING_EFFORTS as readonly string[]).includes(chosen)) return chosen;
+  return resolveProvider(config)?.preset ? '' : 'low';
 }
 
 export function resolveProvider(config: any): ResolvedProvider | null {
@@ -89,23 +91,21 @@ export function resolveProvider(config: any): ResolvedProvider | null {
   else if (openrouterKey) provider = 'openrouter';
   else return null;
 
-  const { resolveRecommendationModel }: any = require('../ai-model-resolver');
+  const { resolveRecommendationModel, isPresetModel, withWebSearch }: any = require('../ai-model-resolver');
   const webSearch = config?.recommendations?.web_search === true;
 
   // Gemini takes grounding as a request flag, OpenRouter as a model suffix, so
   // the suffix is settled here rather than at the call site.
   let model = resolveRecommendationModel({ config, provider });
-  if (provider === 'openrouter') {
-    model = webSearch
-      ? (model.endsWith(':online') ? model : `${model}:online`)
-      : model.replace(/:online$/, '');
-  }
+  const preset = provider === 'openrouter' && isPresetModel(model);
+  if (provider === 'openrouter') model = withWebSearch(model, webSearch);
 
   return {
     provider,
     apiKey: provider === 'openrouter' ? openrouterKey : geminiKey,
     model,
-    webSearch,
+    webSearch: webSearch && !preset,
+    preset,
     clientPath: provider === 'openrouter' ? '../openrouter-client' : '../gemini-client',
   };
 }

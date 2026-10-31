@@ -7,7 +7,7 @@ type AiProvider = 'gemini' | 'openrouter';
 // Model IDs are interpolated into the Gemini request path, so anything that
 // reaches a client must be charset-checked first.
 const GEMINI_MODEL_PATTERN = /^[a-z0-9][a-z0-9.-]*$/i;
-const OPENROUTER_MODEL_PATTERN = /^~?[a-z0-9][a-z0-9._-]*\/[a-z0-9._-]+(:[a-z0-9._-]+)?$/i;
+const OPENROUTER_MODEL_PATTERN = /^(?:~?[a-z0-9][a-z0-9._-]*\/[a-z0-9._-]+(:[a-z0-9._-]+)?(@preset\/[a-z0-9._-]+)?|@preset\/[a-z0-9._-]+)$/i;
 
 function isValidModelId(provider: AiProvider, model: unknown): model is string {
   if (typeof model !== 'string') return false;
@@ -16,6 +16,15 @@ function isValidModelId(provider: AiProvider, model: unknown): model is string {
   return provider === 'openrouter'
     ? OPENROUTER_MODEL_PATTERN.test(trimmed)
     : GEMINI_MODEL_PATTERN.test(trimmed);
+}
+
+function isPresetModel(model: unknown): boolean {
+  return typeof model === 'string' && /@preset\//i.test(model);
+}
+
+function withWebSearch(model: string, enabled: boolean): string {
+  const bare = model.replace(/:online$/, '');
+  return enabled && !isPresetModel(bare) ? `${bare}:online` : bare;
 }
 
 function defaultModelFor(provider: AiProvider): string {
@@ -67,6 +76,8 @@ export {
   resolveCatalogModel,
   resolveRecommendationModel,
   isValidModelId,
+  isPresetModel,
+  withWebSearch,
   defaultModelFor,
   DEFAULT_OPENROUTER_MODEL,
 };
@@ -74,6 +85,8 @@ module.exports = {
   resolveCatalogModel,
   resolveRecommendationModel,
   isValidModelId,
+  isPresetModel,
+  withWebSearch,
   defaultModelFor,
   DEFAULT_OPENROUTER_MODEL,
 };

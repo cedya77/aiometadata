@@ -3692,7 +3692,8 @@ async function getMergedCatalog(
 
       items = await applyCatalogFilters(items, { type, config, catalogConfig, cleanId: catalogId });
 
-      return { items, rawLength: raw.length };
+      const artSource = `${src.catalogId}:${src.catalogType}`;
+      return { items: items.map((meta: any) => (meta && typeof meta === 'object' ? { ...meta, _artSource: artSource } : meta)), rawLength: raw.length };
     } catch (err: any) {
       logger.warn(`[Merged] Source ${src.catalogId} failed: ${err.message}`);
       return { items: [], rawLength: 0 };

@@ -54,6 +54,7 @@ function picksFailure(config: any): string {
   const { reasoningEffort }: any = require('./provider');
   const effort = reasoningEffort(config);
   if (effort === 'none') return 'The model returned no usable picks';
+  if (!effort) return 'The model returned no usable picks. It may have spent the reply thinking, so try lowering the preset\'s reasoning on OpenRouter.';
   return effort === 'minimal'
     ? 'The model returned no usable picks. It may have spent the reply thinking, so try turning thinking off.'
     : `The model returned no usable picks. Thinking takes a share of the reply at ${effort}, so try a lower level.`;

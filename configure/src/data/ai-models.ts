@@ -65,6 +65,10 @@ export function isModelIdForProvider(provider: AIProvider, model?: string | null
   return provider === 'openrouter' ? model.includes('/') : !model.includes('/');
 }
 
+export function isPresetModel(model?: string | null): boolean {
+  return !!model && /@preset\//i.test(model);
+}
+
 export function defaultModelFor(provider: AIProvider): string {
   return provider === 'openrouter' ? DEFAULT_OPENROUTER_MODEL : DEFAULT_GEMINI_MODEL;
 }
