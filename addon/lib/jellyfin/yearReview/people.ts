@@ -1,3 +1,4 @@
+import { LRUCache } from 'lru-cache';
 import { mapWithConcurrency } from '../../../utils/concurrency';
 import { personIdOf } from '../items';
 import type { AnimeYear } from './anime';
@@ -136,7 +137,22 @@ async function networksOf(config: any, shows: YearTitle[]): Promise<PeopleYear['
   return mapWithConcurrency(top, 2, async ([name, count]) => ({ name, logo: await networkLogo(config, name), plays: count }));
 }
 
-export async function networkLogo(config: any, name: string): Promise<string | null> {
+// The top show's network is asked for by the review and again by its networks, so one lookup serves both.
+const logos = new LRUCache<string, Promise<string | null>>({ max: 500, ttl: 24 * 60 * 60 * 1000 });
+
+export function networkLogo(config: any, name: string): Promise<string | null> {
+  const held = logos.get(name);
+  if (held) return held;
+  const found = readNetworkLogo(config, name);
+  logos.set(name, found);
+  // A failed lookup reads as no logo, so it is not kept.
+  void found.then((logo) => {
+    if (logo === null) logos.delete(name);
+  });
+  return found;
+}
+
+async function readNetworkLogo(config: any, name: string): Promise<string | null> {
   try {
     const { resolveTmdbNetworkByName } = require('../../tmdb-network-index');
     const found = await resolveTmdbNetworkByName(name);
