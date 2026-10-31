@@ -34,8 +34,12 @@ const DETAIL_KEYS = [
   'synopsis',
   'title',
   'title_english',
+  'title_japanese',
   'genres',
   'broadcast',
+  'rank',
+  'source',
+  'season',
 ];
 
 // We only need `images.jpg.large_image_url` but keep the `images` sub-tree
@@ -52,7 +56,7 @@ const AIRED_KEYS = ['from', 'to'];
 const TRAILER_KEYS = ['youtube_id'];
 
 // /anime/{id}/characters
-const CHARACTER_KEYS = ['name'];
+const CHARACTER_KEYS = ['name', 'mal_id'];
 const VOICE_ACTOR_PERSON_KEYS = ['name', 'mal_id'];
 const VOICE_ACTOR_PERSON_IMAGE_JPG_KEYS = ['image_url'];
 
@@ -140,6 +144,8 @@ export function normalizeJikanAnimeDetailsForCache(detail: any) {
   if (Array.isArray(detail.genres)) {
     normalized.genres = mapIfArray(detail.genres, normalizeJikanGenreForCache);
   }
+  normalized.themes = Array.isArray(detail.themes) ? detail.themes.map(normalizeJikanGenreForCache) : [];
+  normalized.demographics = Array.isArray(detail.demographics) ? detail.demographics.map(normalizeJikanGenreForCache) : [];
 
   // relations - keep relation, entry[].mal_id, entry[].name
   if (Array.isArray(detail.relations)) {
@@ -176,11 +182,14 @@ function normalizeJikanVoiceActorPersonForCache(person: any) {
 function normalizeJikanCharacterEntryForCache(charEntry: any) {
   if (!charEntry || typeof charEntry !== 'object') return charEntry;
 
-  const result: any = {};
+  const result: any = { role: charEntry.role ?? null };
 
   // character - only keep name
   if (charEntry.character) {
     result.character = pickDefined(charEntry.character, CHARACTER_KEYS);
+    if (charEntry.character.images?.jpg) {
+      result.character.images = { jpg: pickDefined(charEntry.character.images.jpg, VOICE_ACTOR_PERSON_IMAGE_JPG_KEYS) };
+    }
   }
 
   // voice_actors - filter to Japanese only, then prune each VA
@@ -250,38 +259,6 @@ export function normalizeJikanCatalogForCache(items: any) {
   return items.map(normalizeJikanCatalogItemForCache);
 }
 
-const FACT_KEYS = ['mal_id', 'title', 'title_english', 'title_japanese', 'type', 'episodes', 'status', 'rank', 'score', 'source', 'season', 'year'];
-const SUPPORTING_CAST = 10;
-
-const namesOf = (list: any) => (Array.isArray(list) ? list.map((entry: any) => entry?.name).filter(Boolean) : []);
-
-export function normalizeJikanAnimeFactsForCache(detail: any) {
-  if (!detail || typeof detail !== 'object') return detail;
-  return {
-    ...pickDefined(detail, FACT_KEYS),
-    image: detail.images?.jpg?.large_image_url ?? detail.images?.jpg?.image_url ?? null,
-    aired: detail.aired ? normalizeJikanAiredForCache(detail.aired) : null,
-    studios: namesOf(detail.studios),
-    genres: namesOf(detail.genres),
-    themes: namesOf(detail.themes),
-    demographics: namesOf(detail.demographics),
-  };
-}
-
-export function normalizeJikanAnimeCastForCache(characters: any) {
-  if (!Array.isArray(characters)) return [];
-  const main = characters.filter((entry: any) => entry?.role === 'Main');
-  const supporting = characters.filter((entry: any) => entry?.role !== 'Main').slice(0, SUPPORTING_CAST);
-  return [...main, ...supporting].map((entry: any) => {
-    const voice = (entry.voice_actors || []).find((actor: any) => actor?.language === 'Japanese')?.person;
-    return {
-      role: entry.role ?? null,
-      character: { mal_id: entry.character?.mal_id ?? null, name: entry.character?.name ?? null, image: entry.character?.images?.jpg?.image_url ?? null },
-      voice: voice ? { mal_id: voice.mal_id ?? null, name: voice.name ?? null, image: voice.images?.jpg?.image_url ?? null } : null,
-    };
-  });
-}
-
 export function normalizeJikanPersonNameForCache(person: any) {
   if (!person || typeof person !== 'object') return person;
   return pickDefined(person, ['mal_id', 'name', 'given_name', 'family_name']);
@@ -293,7 +270,5 @@ export const jikanCacheNormalizers = {
   normalizeJikanAnimeEpisodesForCache,
   normalizeJikanCatalogItemForCache,
   normalizeJikanCatalogForCache,
-  normalizeJikanAnimeFactsForCache,
-  normalizeJikanAnimeCastForCache,
   normalizeJikanPersonNameForCache,
 };

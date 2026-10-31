@@ -16,7 +16,7 @@ const { isAnime: isAnimeFunc } = require('../utils/isAnime');
 const { tmdbImageUrl, tmdbLogoSize, tmdbBackdropSize, tmdbLandscapeSize, tmdbPosterSize } = require('../utils/tmdbImageSize');
 const e = require("express");
 const { resolveAllIds } = require('./id-resolver');
-const { cacheWrapMeta, cacheWrapJikanApi, cacheWrapGlobal } = require('./getCache');
+const { cacheWrapMeta, cacheWrapGlobal } = require('./getCache');
 const { deriveStabilityStamp } = require('./metaColdStore');
 function CATALOG_TTL() { return parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10); }
 const kitsu = require('./kitsu');
@@ -1194,7 +1194,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       logger.debug(`[AnimeMeta] Using provider 'mal' for ${stremioId}`);
       const [details, characters, episodes] = await Promise.all([
         jikan.getAnimeDetailsCached(allIds.malId),
-        includeVideos ? cacheWrapJikanApi(`anime-characters-${allIds.malId}`, () => jikan.getAnimeCharacters(allIds.malId), null) : null,
+        includeVideos ? jikan.getAnimeCharactersCached(allIds.malId) : null,
         includeVideos ? jikan.getAnimeEpisodes(allIds.malId) : null,
       ]);
       if (!details) {

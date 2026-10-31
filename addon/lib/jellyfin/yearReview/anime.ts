@@ -52,6 +52,10 @@ export interface AnimeYear {
   unmatched: number;
 }
 
+const named = (list: any): string[] => (Array.isArray(list) ? list.map((entry: any) => entry?.name).filter(Boolean) : []);
+const detailsCurrent = (details: any): boolean => !details || Array.isArray(details.themes);
+const charactersCurrent = (characters: any): boolean => !Array.isArray(characters) || !characters.length || characters[0]?.role !== undefined;
+
 const flipped = (name: string | null | undefined): string => {
   const parts = String(name ?? '').split(',').map((part) => part.trim()).filter(Boolean);
   return parts.length === 2 ? `${parts[1]} ${parts[0]}` : String(name ?? '').trim();
@@ -98,8 +102,9 @@ export async function animeYear(timed: TimedYear): Promise<AnimeYear | null> {
 
   const ranked = [...grouped.entries()].sort((a, b) => b[1].episodes.size - a[1].episodes.size || b[1].watchMs - a[1].watchMs);
   const factsBudget = envInt('JELLYFIN_YEAR_REVIEW_ANIME_ENTRIES', 80, 0);
+  const width = envInt('JELLYFIN_YEAR_REVIEW_META_CONCURRENCY', 4, 1);
   const castBudget = envInt('JELLYFIN_YEAR_REVIEW_ANIME_CAST', 40, 0);
-  const facts = await mapWithConcurrency(ranked.slice(0, factsBudget), 1, async ([malId]) => mal.getAnimeFactsCached(malId));
+  const facts = await mapWithConcurrency(ranked.slice(0, factsBudget), width, async ([malId]) => mal.getAnimeDetailsCached(malId, detailsCurrent).catch(() => null));
 
   const entries: AnimeEntry[] = [];
   ranked.slice(0, factsBudget).forEach(([malId, held], i) => {
@@ -122,24 +127,25 @@ export async function animeYear(timed: TimedYear): Promise<AnimeYear | null> {
       plays: held.plays,
       watchMs: held.watchMs,
       firstAt: held.firstAt,
-      image: fact.image ?? null,
+      image: fact.images?.jpg?.large_image_url ?? null,
       rank: fact.rank ?? null,
       score: fact.score ?? null,
       source: fact.source ?? null,
-      studios: fact.studios ?? [],
-      genres: fact.genres ?? [],
-      themes: fact.themes ?? [],
-      demographics: fact.demographics ?? [],
+      studios: named(fact.studios),
+      genres: named(fact.genres),
+      themes: named(fact.themes),
+      demographics: named(fact.demographics),
     });
   });
 
-  const casts = await mapWithConcurrency(entries.slice(0, castBudget), 1, async (entry) => mal.getAnimeCastCached(entry.malId));
+  const casts = await mapWithConcurrency(entries.slice(0, castBudget), width, async (entry) => mal.getAnimeCharactersCached(entry.malId, charactersCurrent).catch(() => []));
   const voices = new Map<number, AnimeVoice & { characters: Map<number, AnimeVoice['roles'][number]>; titles: Set<string> }>();
   entries.slice(0, castBudget).forEach((entry, i) => {
-    for (const member of casts[i] ?? []) {
-      if (member.role !== 'Main' || !member.voice?.mal_id || !member.character?.mal_id) continue;
-      const voice = voices.get(member.voice.mal_id) ?? { malId: member.voice.mal_id, name: flipped(member.voice.name), japanese: null, image: member.voice.image ?? null, episodes: 0, roles: [], characters: new Map(), titles: new Set<string>() };
-      const role = voice.characters.get(member.character.mal_id) ?? { character: flipped(member.character.name), image: member.character.image ?? null, entries: [] };
+    for (const member of Array.isArray(casts[i]) ? casts[i] : []) {
+      const actor = member.voice_actors?.find((candidate: any) => candidate?.language === 'Japanese')?.person;
+      if (member.role !== 'Main' || !actor?.mal_id || !member.character?.mal_id) continue;
+      const voice = voices.get(actor.mal_id) ?? { malId: actor.mal_id, name: flipped(actor.name), japanese: null, image: actor.images?.jpg?.image_url ?? null, episodes: 0, roles: [], characters: new Map(), titles: new Set<string>() };
+      const role = voice.characters.get(member.character.mal_id) ?? { character: flipped(member.character.name), image: member.character.images?.jpg?.image_url ?? null, entries: [] };
       if (!role.entries.includes(entry.malId)) {
         role.entries.push(entry.malId);
         voice.episodes += entry.episodes;
@@ -150,7 +156,7 @@ export async function animeYear(timed: TimedYear): Promise<AnimeYear | null> {
     }
   });
   const top = [...voices.values()].sort((a, b) => b.titles.size - a.titles.size || b.characters.size - a.characters.size || b.episodes - a.episodes).slice(0, VOICES);
-  const names = await mapWithConcurrency(top.slice(0, VOICE_NAMES), 1, async (voice) => mal.getPersonNameCached(voice.malId));
+  const names = await mapWithConcurrency(top.slice(0, VOICE_NAMES), width, async (voice) => mal.getPersonNameCached(voice.malId));
   return {
     entries,
     voices: top.map(({ characters, titles, ...voice }, i) => {

@@ -18,8 +18,6 @@ const {
   normalizeJikanAnimeCharactersForCache,
   normalizeJikanAnimeEpisodesForCache,
   normalizeJikanCatalogForCache,
-  normalizeJikanAnimeFactsForCache,
-  normalizeJikanAnimeCastForCache,
   normalizeJikanPersonNameForCache,
 }: any = require('./jikanCacheNormalizers');
 
@@ -412,9 +410,10 @@ function detailsTtl(details: any): number {
   return envInt('JIKAN_DETAILS_TTL', 30 * 24 * 60 * 60, 0);
 }
 
-async function getAnimeDetailsCached(malId: string | number): Promise<any> {
+async function getAnimeDetailsCached(malId: string | number, accept?: (cached: any) => boolean): Promise<any> {
   const { cacheWrapJikanApi, classifyResult }: any = require('./getCache');
   return cacheWrapJikanApi(`anime-details-${malId}`, () => getAnimeDetails(malId), null, {
+    ...(accept ? { accept } : {}),
     resultClassifier: (result: any, error: any = null, cacheKey: string | null = null) =>
       result && !error ? { type: 'SUCCESS', ttl: detailsTtl(result) } : classifyResult(result, error, cacheKey),
   });
@@ -513,13 +512,9 @@ async function jikanCached(key: string, path: string, normalize: (data: any) => 
   });
 }
 
-async function getAnimeFactsCached(malId: string | number): Promise<any> {
-  return jikanCached(`anime-facts-${malId}`, `/anime/${malId}/full`, normalizeJikanAnimeFactsForCache, detailsTtl).catch(() => null);
-}
-
-async function getAnimeCastCached(malId: string | number): Promise<any[]> {
-  const cast = await jikanCached(`anime-cast-${malId}`, `/anime/${malId}/characters`, normalizeJikanAnimeCastForCache, () => envInt('JIKAN_CAST_TTL', 30 * 24 * 60 * 60, 0)).catch(() => null);
-  return Array.isArray(cast) ? cast : [];
+async function getAnimeCharactersCached(malId: string | number, accept?: (cached: any) => boolean): Promise<any[]> {
+  const { cacheWrapJikanApi }: any = require('./getCache');
+  return cacheWrapJikanApi(`anime-characters-${malId}`, () => getAnimeCharacters(malId), null, accept ? { accept } : {});
 }
 
 async function getPersonNameCached(personId: string | number): Promise<any> {
@@ -973,8 +968,7 @@ export {
   searchAnime,
   getAnimeDetails,
   getAnimeDetailsCached,
-  getAnimeFactsCached,
-  getAnimeCastCached,
+  getAnimeCharactersCached,
   getPersonNameCached,
   getAnimeEpisodes,
   getAnimeEpisodeVideos,
@@ -1005,8 +999,7 @@ module.exports = {
   searchAnime,
   getAnimeDetails,
   getAnimeDetailsCached,
-  getAnimeFactsCached,
-  getAnimeCastCached,
+  getAnimeCharactersCached,
   getPersonNameCached,
   getAnimeEpisodes,
   getAnimeEpisodeVideos,

@@ -706,12 +706,12 @@ async function cacheWrapGlobal(key: string, method: () => Promise<any>, ttl: num
   // A refetch must not join a plain read already in flight, or it returns the
   // cached value it was meant to replace.
   const refetch = sourceList && sourceRefetchRequested();
-  const flightKey = refetch ? `refetch:${epochKey}` : epochKey;
+  const flightKey = refetch ? `refetch:${epochKey}` : options.accept ? `accept:${epochKey}` : epochKey;
   return singleFlight(flightKey, () => cacheWrapGlobalInternal(key, method, ttl, options, epochKey, refetch));
 }
 
 async function cacheWrapGlobalInternal(key: string, method: () => Promise<any>, ttl: number, options: any, versionedKey: string, refetch: boolean = false): Promise<any> {
-  const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries } = options;
+  const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries, accept } = options;
 
   let retries = 0;
 
@@ -736,10 +736,12 @@ async function cacheWrapGlobalInternal(key: string, method: () => Promise<any>, 
             globalCacheLogger.debug(`[Global-Cache] Cached error returned for ${truncateCacheKey(versionedKey)}`);
             updateCacheHealth(versionedKey, 'cached-error', true);
             return parsed;
-          } else {
+          } else if (!accept || accept(parsed)) {
             globalCacheLogger.debug(`⚡ [Global-Cache] HIT for ${truncateCacheKey(versionedKey)}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
+          } else {
+            globalCacheLogger.debug(`[Global-Cache] Refreshing ${truncateCacheKey(versionedKey)} cached in an older shape`);
           }
         } catch (parseError: any) {
           globalCacheLogger.warn(`Corrupted cache entry for ${versionedKey}, attempting self-healing`);
