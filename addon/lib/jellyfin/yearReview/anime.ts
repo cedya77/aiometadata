@@ -141,15 +141,17 @@ export async function animeYear(timed: TimedYear): Promise<AnimeYear | null> {
   });
 
   const casts = await mapWithConcurrency(entries.slice(0, castBudget), width, async (entry) => mal.getAnimeCharactersCached(entry.malId, charactersCurrent).catch(() => []));
-  const voices = new Map<number, Omit<AnimeVoice, 'id'> & { characters: Map<number, AnimeVoice['roles'][number]>; titles: Set<string> }>();
+  const voices = new Map<number, Omit<AnimeVoice, 'id'> & { characters: Map<number, AnimeVoice['roles'][number]>; titles: Set<string>; counted: Set<number> }>();
   entries.slice(0, castBudget).forEach((entry, i) => {
     for (const member of Array.isArray(casts[i]) ? casts[i] : []) {
       const actor = member.voice_actors?.find((candidate: any) => candidate?.language === 'Japanese')?.person;
       if (member.role !== 'Main' || !actor?.mal_id || !member.character?.mal_id) continue;
-      const voice = voices.get(actor.mal_id) ?? { malId: actor.mal_id, name: flipped(actor.name), japanese: null, image: actor.images?.jpg?.image_url ?? null, episodes: 0, roles: [], characters: new Map(), titles: new Set<string>() };
+      const voice = voices.get(actor.mal_id) ?? { malId: actor.mal_id, name: flipped(actor.name), japanese: null, image: actor.images?.jpg?.image_url ?? null, episodes: 0, roles: [], characters: new Map(), titles: new Set<string>(), counted: new Set<number>() };
       const role = voice.characters.get(member.character.mal_id) ?? { character: flipped(member.character.name), image: member.character.images?.jpg?.image_url ?? null, entries: [] };
-      if (!role.entries.includes(entry.malId)) {
-        role.entries.push(entry.malId);
+      if (!role.entries.includes(entry.malId)) role.entries.push(entry.malId);
+      // Two main roles in one season are still that season's episodes once.
+      if (!voice.counted.has(entry.malId)) {
+        voice.counted.add(entry.malId);
         voice.episodes += entry.episodes;
       }
       voice.characters.set(member.character.mal_id, role);
@@ -161,7 +163,7 @@ export async function animeYear(timed: TimedYear): Promise<AnimeYear | null> {
   const names = await mapWithConcurrency(top.slice(0, VOICE_NAMES), width, async (voice) => mal.getPersonNameCached(voice.malId));
   return {
     entries,
-    voices: top.map(({ characters, titles, ...voice }, i) => {
+    voices: top.map(({ characters, titles, counted, ...voice }, i) => {
       const person = names[i];
       const japanese = person?.family_name || person?.given_name ? `${person.family_name ?? ''}${person.given_name ?? ''}` : null;
       return { ...voice, id: personIdOf({ name: voice.name }), japanese, roles: [...characters.values()] };
