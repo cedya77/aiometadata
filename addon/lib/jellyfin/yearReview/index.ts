@@ -65,7 +65,7 @@ async function networkOf(config: any, show: YearTitle | undefined): Promise<{ na
   return name ? { name, logo: await networkLogo(config, name) } : null;
 }
 
-function summarise(year: number, timeZone: string, timed: TimedYear, progress: Map<string, ShowProgress>, network: { name: string; logo: string | null } | null, animeLayer: AnimeYear | null, people: PeopleYear | null, bulk: YearPlay[]): any {
+function summarise(year: number, timeZone: string, timed: TimedYear, progress: Map<string, ShowProgress>, network: { name: string; logo: string | null } | null, animeLayer: AnimeYear | null, people: PeopleYear | null, bulk: YearPlay[], incomplete: boolean): any {
   const films = timed.titles.filter((title) => title.kind === 'movie');
   const shows = timed.titles.filter((title) => title.kind === 'series');
   const anime = timed.titles.filter((title) => title.anime);
@@ -74,6 +74,7 @@ function summarise(year: number, timeZone: string, timed: TimedYear, progress: M
     version: REVIEW_VERSION,
     year,
     timeZone,
+    incomplete,
     counts: timed.counts,
     topShows: rankShows(timed).map((title) => title.key),
     network,
@@ -112,15 +113,20 @@ async function buildYear(userUUID: string, profile: string | null, year: number,
     const played = await yearPlays(userUUID, historyKey, year, timeZone);
     const bulk = played.filter((play) => play.batch);
     const timed = await timeYear(userUUID, historyKey, played.filter((play) => !play.batch), timeZone);
-    const animeLayer = animeYear(timed).catch(() => null);
+    let incomplete = timed.counts.unbuilt > 0;
+    const lost = () => {
+      incomplete = true;
+      return null;
+    };
+    const animeLayer = animeYear(timed).catch(lost);
     const [progress, network, anime, people] = await Promise.all([
       showProgress(userUUID, historyKey, yearBounds(year, timeZone).to, timed),
       networkOf(config, rankShows(timed)[0]),
       animeLayer,
-      animeLayer.then((layer) => peopleYear(config, timed.titles, layer)).catch(() => null),
+      animeLayer.then((layer) => peopleYear(config, timed.titles, layer)).catch(lost),
     ]);
     const builtAt = Date.now();
-    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed, progress, network, anime, people, bulk) };
+    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed, progress, network, anime, people, bulk, incomplete) };
     memory.set(reviewKey(userUUID, historyKey, year), stored);
     await database.putYearReview(userUUID, historyKey, year, fingerprint, builtAt, stored.data);
     const maxAgeMs = envInt('JELLYFIN_YEAR_REVIEW_FACTS_HOURS', 7 * 24, 1) * 60 * 60 * 1000;
@@ -141,8 +147,10 @@ export async function dashboardYear(userUUID: string, profile: string | null, ye
       stored = await database.getYearReview(userUUID, historyKey, year).catch(() => null);
       if (stored) memory.set(key, stored);
     }
-    const fresh = stored?.fingerprint === fingerprint;
-    const recent = !!stored && sameSetup(stored.fingerprint, fingerprint) && Date.now() - stored.builtAt < envInt('JELLYFIN_YEAR_REVIEW_MIN_REBUILD_MINUTES', 30, 0) * 60 * 1000;
+    const settleMs = envInt('JELLYFIN_YEAR_REVIEW_MIN_REBUILD_MINUTES', 30, 0) * 60 * 1000;
+    // A review a failed fetch or the build budget left short is built again once it has settled, though no play changed.
+    const fresh = stored?.fingerprint === fingerprint && !(stored.data?.incomplete && Date.now() - stored.builtAt >= settleMs);
+    const recent = !!stored && sameSetup(stored.fingerprint, fingerprint) && Date.now() - stored.builtAt < settleMs;
     const ticket = fresh || recent ? ticketFor(key) : enqueue(key, (waitedMs) => buildYear(userUUID, profile, year, waitedMs));
     const unchanged = !!stored && stored.builtAt === have;
     return {
