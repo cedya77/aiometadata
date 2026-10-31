@@ -18,6 +18,8 @@ export interface TagDef {
   hideKeywords?: string[];
   hideWords?: string[];
   hideGenres?: string[];
+  /** Titles, summaries and catalog names in this language for whoever reads through the tag; absent follows the configuration's. */
+  language?: string;
 }
 
 export type CardService = 'simkl' | 'mdblist' | 'publicmetadb' | 'anilist' | 'mal';
