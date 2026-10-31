@@ -6,13 +6,14 @@ import type { YearChapterProps } from "./yearChapters";
 import { displayName, formatDay, hoursOf, localYearOf, type YearModel } from "./yearModel";
 
 const TOP_TEN = 10;
-const DECK_SIZE = 7;
-const DECK_SLOTS = [3, 2, 4, 1, 5, 0, 6];
-const SWIPE_PX = 40;
+const DECK_REACH = 3;
 const DRAG_STEP_PX = 110;
 const CAPTURE_PX = 8;
-const WHEEL_STEP = 100;
-const WHEEL_GAP_MS = 140;
+const FLY_MS = 70;
+const MOMENTUM_MS = 260;
+const VELOCITY_SAMPLES = 4;
+const PAUSE_MS = 120;
+const WHEEL_STEP = 90;
 const WHEEL_IDLE_MS = 220;
 const OUTLINE: CSSProperties = { WebkitTextStroke: "2px rgba(255,255,255,0.28)", color: "transparent" };
 const NETWORK_LOGO: CSSProperties = { filter: "brightness(0) invert(1)" };
@@ -156,63 +157,96 @@ function Stars({ rating }: { rating: number }) {
   );
 }
 
-function Coverflow({ films }: { films: JellyfinYearTitle[] }) {
-  const ordered = useMemo(() => {
-    const slots: JellyfinYearTitle[] = [];
-    films.forEach((film, rank) => { slots[DECK_SLOTS[rank]] = film; });
-    return slots.filter(Boolean);
-  }, [films]);
-  const [focus, setFocus] = useState(() => ordered.indexOf(films[0]));
+function placement(d: number): { x: number; z: number; rotate: number } {
+  const side = Math.sign(d);
+  const depth = Math.abs(d);
+  if (depth <= 1) return { x: d * 150, z: 90 - depth * 300, rotate: -d * 58 };
+  return { x: side * (150 + (depth - 1) * 70), z: -140 - depth * 70, rotate: -side * 58 };
+}
+
+function Coverflow({ films, opening }: { films: JellyfinYearTitle[]; opening: number }) {
+  const [focus, setFocus] = useState(opening);
+  const [goal, setGoal] = useState(opening);
+  const [drag, setDrag] = useState<number | null>(null);
   const stage = useRef<HTMLDivElement>(null);
-  const start = useRef<number | null>(null);
+  const press = useRef<{ x: number; samples: Array<[number, number]> } | null>(null);
   const swiped = useRef(false);
-  const move = (by: number) => setFocus((at) => Math.min(ordered.length - 1, Math.max(0, at + by)));
+  const last = films.length - 1;
+  const clamp = (at: number) => Math.min(last, Math.max(0, at));
+  const move = (by: number) => setGoal((at) => clamp(at + by));
+  useEffect(() => {
+    if (goal === focus) return;
+    const timer = window.setTimeout(() => setFocus((at) => at + Math.sign(goal - at)), FLY_MS);
+    return () => window.clearTimeout(timer);
+  }, [goal, focus]);
   useEffect(() => {
     const element = stage.current;
     if (!element) return;
     let travel = 0;
-    let last = 0;
-    let moved = 0;
+    let lastAt = 0;
     const onWheel = (event: WheelEvent) => {
       const dx = event.deltaX || (event.shiftKey ? event.deltaY : 0);
       if (!dx || Math.abs(dx) < Math.abs(event.shiftKey ? 0 : event.deltaY)) return;
       event.preventDefault();
       const now = Date.now();
-      if (now - last > WHEEL_IDLE_MS || Math.sign(dx) !== Math.sign(travel)) travel = 0;
-      last = now;
-      travel = Math.max(-WHEEL_STEP * 2, Math.min(WHEEL_STEP * 2, travel + dx));
-      if (Math.abs(travel) < WHEEL_STEP || now - moved < WHEEL_GAP_MS) return;
-      setFocus((at) => Math.min(ordered.length - 1, Math.max(0, at + Math.sign(travel))));
-      travel -= Math.sign(travel) * WHEEL_STEP;
-      moved = now;
+      if (now - lastAt > WHEEL_IDLE_MS || Math.sign(dx) !== Math.sign(travel)) travel = 0;
+      lastAt = now;
+      travel += dx;
+      const steps = Math.trunc(travel / WHEEL_STEP);
+      if (!steps) return;
+      travel -= steps * WHEEL_STEP;
+      setGoal((at) => Math.min(last, Math.max(0, at + steps)));
     };
     element.addEventListener("wheel", onWheel, { passive: false });
     return () => element.removeEventListener("wheel", onWheel);
-  }, [ordered.length]);
-  const ambient = ordered[focus]?.facts?.background ?? ordered[focus]?.facts?.poster;
+  }, [last]);
+  const release = (x: number | null, stamp = 0) => {
+    const held = press.current;
+    press.current = null;
+    setDrag(null);
+    if (!held || x === null) return;
+    const dx = x - held.x;
+    if (!swiped.current) return;
+    const tail = held.samples.slice(-VELOCITY_SAMPLES);
+    const [fromAt, fromX] = tail[0];
+    const [toAt, toX] = tail[tail.length - 1];
+    const velocity = stamp - toAt > PAUSE_MS || toAt <= fromAt ? 0 : (toX - fromX) / (toAt - fromAt);
+    const landed = clamp(focus + Math.round(-dx / DRAG_STEP_PX));
+    setFocus(landed);
+    setGoal(clamp(landed + Math.round(-(velocity * MOMENTUM_MS) / DRAG_STEP_PX)));
+  };
+  const flying = goal !== focus;
+  const shown = focus - (drag ?? 0) / DRAG_STEP_PX;
+  const centre = films[Math.round(shown)] ?? films[focus];
+  const ambient = centre?.facts?.background ?? centre?.facts?.poster;
   return (
     <>
       {ambient && <div aria-hidden="true" className="absolute -inset-10 -z-20 scale-110 bg-cover bg-center opacity-45 blur-[40px] saturate-150" style={{ backgroundImage: `url("${sizedArt(ambient, 780) ?? ambient}")` }} />}
       <div
+        ref={stage}
         role="img"
         aria-label="Your films this year, on a coverflow deck"
-        ref={stage}
         className="relative h-[310px] cursor-grab touch-pan-y select-none [--s:0.72] [perspective:1400px] active:cursor-grabbing sm:h-[430px] sm:[--s:1]"
         onPointerDown={(event) => {
-          start.current = event.clientX;
+          press.current = { x: event.clientX, samples: [[event.timeStamp, event.clientX]] };
           swiped.current = false;
         }}
         onPointerMove={(event) => {
-          if (start.current !== null && Math.abs(event.clientX - start.current) > CAPTURE_PX && !event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
+          const held = press.current;
+          if (!held) return;
+          const dx = event.clientX - held.x;
+          held.samples.push([event.timeStamp, event.clientX]);
+          if (held.samples.length > 20) held.samples.shift();
+          if (!swiped.current && Math.abs(dx) <= CAPTURE_PX) return;
+          if (!swiped.current) {
+            swiped.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setGoal(focus);
+          }
+          setDrag(Math.max((focus - last) * DRAG_STEP_PX, Math.min(focus * DRAG_STEP_PX, dx)));
         }}
-        onPointerUp={(event) => {
-          if (start.current === null) return;
-          const dx = event.clientX - start.current;
-          start.current = null;
-          swiped.current = Math.abs(dx) >= SWIPE_PX;
-          if (swiped.current) move(-Math.sign(dx) * Math.max(1, Math.round(Math.abs(dx) / DRAG_STEP_PX)));
-        }}
-        onPointerCancel={() => { start.current = null; }}
+        onPointerUp={(event) => release(event.clientX, event.timeStamp)}
+        onPointerCancel={() => release(null)}
         onKeyDown={(event) => {
           if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
             event.preventDefault();
@@ -220,28 +254,33 @@ function Coverflow({ films }: { films: JellyfinYearTitle[] }) {
           }
         }}
       >
-        {ordered.map((film, i) => {
-          const d = i - focus;
-          const side = Math.sign(d);
+        {films.map((film, i) => {
+          const d = i - shown;
           const depth = Math.abs(d);
-          const transform = d === 0
-            ? "translate(-50%,-50%) translateZ(calc(var(--s) * 90px))"
-            : `translate(-50%,-50%) translateX(calc(var(--s) * ${side * (150 + (depth - 1) * 70)}px)) translateZ(calc(var(--s) * ${-140 - depth * 70}px)) rotateY(${-side * 58}deg)`;
+          if (depth > DECK_REACH + 1) return null;
+          const { x, z, rotate } = placement(d);
           const poster = film.facts?.poster ? sizedArt(film.facts.poster, 342) ?? film.facts.poster : null;
+          const hidden = depth > DECK_REACH;
           return (
             <button
               key={film.key}
               type="button"
-              tabIndex={depth > 3 ? -1 : 0}
+              tabIndex={hidden ? -1 : 0}
               aria-label={displayName(film)}
               onClick={() => {
-                if (!swiped.current) setFocus(i);
+                if (!swiped.current) setGoal(i);
                 swiped.current = false;
               }}
-              className="absolute left-1/2 top-[48%] w-[calc(var(--s)*210px)] cursor-pointer transition-[transform,filter,opacity] duration-500 ease-out [transform-style:preserve-3d]"
-              style={{ transform, zIndex: 20 - depth, filter: `brightness(${Math.max(0, 1 - depth * 0.16)})`, opacity: depth > 3 ? 0 : 1, pointerEvents: depth > 3 ? "none" : undefined }}
+              className={`absolute left-1/2 top-[48%] w-[calc(var(--s)*210px)] cursor-pointer ease-out [transform-style:preserve-3d] ${drag !== null ? "" : flying ? "transition-[transform,filter,opacity] duration-200" : "transition-[transform,filter,opacity] duration-500"}`}
+              style={{
+                transform: `translate(-50%,-50%) translateX(calc(var(--s) * ${x}px)) translateZ(calc(var(--s) * ${z}px)) rotateY(${rotate}deg)`,
+                zIndex: Math.round(100 - depth * 10),
+                filter: `brightness(${Math.max(0, 1 - depth * 0.16)})`,
+                opacity: Math.min(1, Math.max(0, DECK_REACH + 1 - depth)),
+                pointerEvents: hidden ? "none" : undefined,
+              }}
             >
-              <div className={`overflow-hidden rounded-[14px] ${d === 0 ? "shadow-[0_30px_80px_-20px_rgba(0,0,0,0.9),inset_0_0_0_1px_rgba(255,255,255,0.25)]" : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]"}`}>
+              <div className={`overflow-hidden rounded-[14px] ${depth < 0.5 ? "shadow-[0_30px_80px_-20px_rgba(0,0,0,0.9),inset_0_0_0_1px_rgba(255,255,255,0.25)]" : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]"}`}>
                 {poster ? <img src={poster} alt="" className="block aspect-[2/3] w-full object-cover" draggable={false} /> : <div className="aspect-[2/3] w-full bg-gradient-to-br from-zinc-700 to-zinc-900" />}
               </div>
               {poster && <div aria-hidden="true" className="mt-1 h-[60px] overflow-hidden rounded-[14px] opacity-30" style={REFLECT}><img src={poster} alt="" className="block aspect-[2/3] w-full object-cover object-bottom" draggable={false} /></div>}
@@ -258,8 +297,9 @@ function FilmsPanel({ model, films }: { model: YearModel; films: JellyfinYearTit
   const latest = (title: JellyfinYearTitle) => Math.max(...title.plays.map((play) => play[1]));
   const rated = films.filter((film) => ratings[film.key] !== undefined).sort((a, b) => ratings[b.key] - ratings[a.key] || latest(b) - latest(a));
   const best = rated[0];
-  const deck = [...rated, ...films.filter((film) => ratings[film.key] === undefined).sort((a, b) => b.plays.length - a.plays.length || b.watchMs - a.watchMs)]
-    .filter((film) => film.facts?.poster).slice(0, DECK_SIZE);
+  const firstPlay = (title: JellyfinYearTitle) => Math.min(...title.plays.map((play) => play[1]));
+  const deck = films.filter((film) => film.facts?.poster).sort((a, b) => firstPlay(a) - firstPlay(b));
+  const favourite = rated.find((film) => film.facts?.poster) ?? [...deck].sort((a, b) => b.plays.length - a.plays.length || b.watchMs - a.watchMs)[0];
   const runtimeOf = (film: JellyfinYearTitle) => film.facts?.runtimeMs || Math.max(0, ...film.plays.map((play) => play[2]));
   const longest = [...films].sort((a, b) => runtimeOf(b) - runtimeOf(a))[0];
   const oldest = films.filter((film) => film.facts?.year).sort((a, b) => a.facts!.year! - b.facts!.year!)[0];
@@ -277,7 +317,7 @@ function FilmsPanel({ model, films }: { model: YearModel; films: JellyfinYearTit
     <div className="relative isolate mt-[72px] overflow-hidden rounded-[28px]">
       <div aria-hidden="true" className="absolute inset-0 -z-10" style={{ background: "linear-gradient(90deg, #0c0d0f 0%, rgba(12,13,15,0.7) 50%, rgba(12,13,15,0.85) 100%)" }} />
       <div className="flex flex-wrap items-center gap-6 p-5 sm:p-10">
-        {deck.length > 0 && <div className="min-w-0 flex-[999_1_560px]"><Coverflow films={deck} /></div>}
+        {deck.length > 0 && <div className="min-w-0 flex-[999_1_560px]"><Coverflow films={deck} opening={Math.max(0, deck.indexOf(favourite))} /></div>}
         <div className="min-w-0 flex-[1_1_340px]">
           <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Films</span>
           <p className="mt-2 text-5xl font-extrabold leading-none tracking-[-0.04em]">{plural(films.length, "film")}</p>
