@@ -50,7 +50,8 @@ export interface PeopleYear {
   networks: Array<{ name: string; logo: string | null; plays: number }>;
 }
 
-const personKey = (name: string): string => name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+// Accents are folded off Latin names; any other script is kept, so a name in Hangul or kanji still has a key.
+const personKey = (name: string): string => name.normalize('NFD').replace(/[̀-ͯ]/g, '').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const nameOf = (title: YearTitle): string => (title.facts?.name ?? metaIdOf(title.key)).replace(/\s+\(\d{4}\)$/, '');
 const refOf = (title: YearTitle): TitleRef => ({ name: nameOf(title), key: title.key, kind: title.kind, poster: title.facts?.poster ?? null });
 
