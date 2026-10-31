@@ -13,7 +13,7 @@ import { timeYear, type TimedYear } from './timed';
 const logger = consola.withTag('YearReview');
 const database: any = require('../../database');
 
-const REVIEW_VERSION = 1;
+const REVIEW_VERSION = 2;
 const SETUP_DIGEST = 12;
 
 type Stored = { fingerprint: string; builtAt: number; data: any };
@@ -70,7 +70,7 @@ function summarise(year: number, timeZone: string, timed: TimedYear): any {
       name: title.facts?.name ?? null,
       anime: title.anime,
       watchMs: title.watchMs,
-      facts: title.facts ? { source: title.facts.source, year: title.facts.year, genres: title.facts.genres, countries: title.facts.countries, networks: title.facts.networks, studios: title.facts.studios, language: title.facts.language, poster: title.facts.poster } : null,
+      facts: title.facts ? { source: title.facts.source, year: title.facts.year, genres: title.facts.genres, countries: title.facts.countries, networks: title.facts.networks, studios: title.facts.studios, language: title.facts.language, poster: title.facts.poster, background: title.facts.background, logo: title.facts.logo } : null,
       plays: title.plays.map((play) => [play.videoId, play.at, play.runtimeMs, play.runtimeSource, play.batch ? 1 : 0, play.overfull ? 1 : 0, play.spellings]),
     })),
   };

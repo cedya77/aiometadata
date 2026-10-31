@@ -3,9 +3,9 @@ import type { DashboardTab, JellyfinTitlePerson, JellyfinTitleRef } from '@/hook
 
 export type DashboardPage = { kind: 'title'; ref: JellyfinTitleRef; season?: number | null } | { kind: 'person'; person: JellyfinTitlePerson };
 
-export type JellyfinSection = 'overview' | 'library' | 'shows' | 'calendar' | 'history' | 'trackers';
+export type JellyfinSection = 'overview' | 'library' | 'shows' | 'calendar' | 'history' | 'year' | 'trackers';
 
-export const JELLYFIN_SECTIONS: readonly JellyfinSection[] = ['overview', 'library', 'shows', 'calendar', 'history', 'trackers'];
+export const JELLYFIN_SECTIONS: readonly JellyfinSection[] = ['overview', 'library', 'shows', 'calendar', 'history', 'year', 'trackers'];
 
 export interface DashboardRoute {
   tab: DashboardTab | null;

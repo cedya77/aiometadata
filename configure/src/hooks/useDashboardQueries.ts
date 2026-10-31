@@ -1598,11 +1598,11 @@ export interface JellyfinConfiguration {
   totals: { progress: number; played: number };
 }
 
-function useJellyfinQuery<T>(key: readonly unknown[], path: string, options: DashboardQueryOptions & { enabledWhen?: boolean; poll?: boolean } = {}) {
+function useJellyfinQuery<T>(key: readonly unknown[], path: string, options: DashboardQueryOptions & { enabledWhen?: boolean; poll?: boolean; pollEvery?: (data: T | undefined) => number | false } = {}) {
   const { isAdmin, logout } = useAdmin();
   const getHeaders = useApiHeaders();
   const isVisible = usePageVisibility();
-  const { activeTab = 'overview', enabled = true, enabledWhen = true, poll = true } = options;
+  const { activeTab = 'overview', enabled = true, enabledWhen = true, poll = true, pollEvery } = options;
   const isActiveTab = activeTab === 'jellyfin';
 
   return useQuery({
@@ -1616,7 +1616,11 @@ function useJellyfinQuery<T>(key: readonly unknown[], path: string, options: Das
       }
     },
     enabled: enabled && enabledWhen && isAdmin && isActiveTab,
-    refetchInterval: poll && isVisible && isActiveTab && isAdmin ? POLLING_INTERVALS.JELLYFIN : false,
+    refetchInterval: (query) => {
+      if (!isVisible || !isActiveTab || !isAdmin) return false;
+      if (pollEvery) return pollEvery(query.state.data as T | undefined);
+      return poll ? POLLING_INTERVALS.JELLYFIN : false;
+    },
     refetchIntervalInBackground: false,
     placeholderData: (previous) => previous,
   });
@@ -1679,6 +1683,78 @@ export function useJellyfinShows(userUUID: string | null, profile: string | null
     ['dashboard', 'jellyfin', 'shows', userUUID, profile, fresh] as const,
     `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/shows${suffix}`,
     { ...options, enabledWhen: Boolean(userUUID), poll: false }
+  );
+}
+
+export type JellyfinYearPlay = [videoId: string, at: number, runtimeMs: number, runtimeSource: string, batch: 0 | 1, overfull: 0 | 1, spellings: string[]];
+
+export interface JellyfinYearTitle {
+  key: string;
+  kind: 'movie' | 'series';
+  name: string | null;
+  anime: boolean;
+  watchMs: number;
+  facts: {
+    source: string;
+    year: number | null;
+    genres: string[];
+    countries: string[];
+    networks: string[];
+    studios: string[];
+    language: string | null;
+    poster: string | null;
+    background?: string | null;
+    logo?: string | null;
+  } | null;
+  plays: JellyfinYearPlay[];
+}
+
+export interface JellyfinYearData {
+  version: number;
+  year: number;
+  timeZone: string;
+  totals: {
+    plays: number;
+    watchMs: number;
+    films: { titles: number; plays: number; watchMs: number };
+    shows: { titles: number; plays: number; watchMs: number };
+    anime: { titles: number; plays: number };
+    rhythmPlays: number;
+  };
+  titles: JellyfinYearTitle[];
+}
+
+export type JellyfinYearBuild = 'queued' | 'building' | 'busy';
+
+export interface JellyfinYearReview {
+  year: number;
+  years: number[];
+  status: 'ready' | JellyfinYearBuild;
+  ahead?: number;
+  stale: boolean;
+  rebuilding: JellyfinYearBuild | null;
+  builtAt: number | null;
+  data: JellyfinYearData | null;
+}
+
+const YEAR_BUILD_POLL_MS = 2000;
+const YEAR_BUSY_POLL_MS = 15000;
+
+export function useJellyfinYear(userUUID: string | null, profile: string | null, year: number, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams({ year: String(year) });
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<JellyfinYearReview>(
+    ['dashboard', 'jellyfin', 'year', userUUID, profile, year] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/year?${params}`,
+    {
+      ...options,
+      enabledWhen: Boolean(userUUID),
+      pollEvery: (data) => {
+        const build = data?.status === 'ready' ? data.rebuilding : data?.status;
+        if (build === 'busy') return YEAR_BUSY_POLL_MS;
+        return build ? YEAR_BUILD_POLL_MS : false;
+      },
+    }
   );
 }
 
