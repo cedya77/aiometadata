@@ -5477,32 +5477,49 @@ const catalogRoute = async function (req, res) {
     // Skip poster override for up next catalogs unless useShowPosterForUpNext is enabled
     // (when disabled, up next uses episode thumbnails as posters which shouldn't be overridden)
     const host = process.env.HOST_NAME.startsWith('http') ? process.env.HOST_NAME : `https://${process.env.HOST_NAME}`;
-    const upstreamArt = !config._currentSearchCatalogId && catalogConfig?.metadata?.useUpstreamArt === true;
-    const posterPatternsEnabled = config._currentSearchCatalogId
-      ? (config.search?.engineRatingPosters?.[config._currentSearchCatalogId] === true)
-      : (catalogConfig?.enableRatingPosters !== false && !upstreamArt);
-    const posterPattern = posterPatternsEnabled ? require('./utils/parseProps').resolvePosterPattern(config) : null;
-    const backgroundPattern = upstreamArt ? null : config.customBackgroundUrlPattern;
-    const logoPattern = upstreamArt ? null : config.customLogoUrlPattern;
-    const landscapeUrlPattern = upstreamArt ? null : config.customLandscapeUrlPattern;
-    if ((posterPattern || backgroundPattern || landscapeUrlPattern || logoPattern) && responseData?.metas && Array.isArray(responseData.metas)) {
-      const isUpNextCatalog = cleanId.includes('up_next') || cleanId.includes('upnext');
-      const upNextUsesShowPoster = isUpNextCatalog && catalogConfig?.metadata?.useShowPosterForUpNext === true;
-      const { resolveCustomArtUrl, getPosterRatingApiKey, resolveLandscapePattern, posterShapeOf } = require('./utils/parseProps');
-      const proxyApiKey = config.usePosterProxy ? getPosterRatingApiKey(config) : null;
+    const { resolveCustomArtUrl, getPosterRatingApiKey, resolvePosterPattern, resolveLandscapePattern, posterShapeOf } = require('./utils/parseProps');
+    const artSettings = (entry, entryId, starred) => {
+      const upstreamArt = !config._currentSearchCatalogId && entry?.metadata?.useUpstreamArt === true;
+      const posterPatternsEnabled = config._currentSearchCatalogId
+        ? (config.search?.engineRatingPosters?.[config._currentSearchCatalogId] === true)
+        : (starred && entry?.enableRatingPosters !== false && !upstreamArt);
+      const posterPattern = posterPatternsEnabled ? resolvePosterPattern(config) : null;
+      const isUpNextCatalog = entryId.includes('up_next') || entryId.includes('upnext');
+      const upNextUsesShowPoster = isUpNextCatalog && entry?.metadata?.useShowPosterForUpNext === true;
       const posterApplies = !!posterPattern && (!isUpNextCatalog || upNextUsesShowPoster);
+      const backgroundPattern = upstreamArt ? null : config.customBackgroundUrlPattern;
+      const logoPattern = upstreamArt ? null : config.customLogoUrlPattern;
       const landscapePattern = upstreamArt ? null : resolveLandscapePattern(config, posterApplies ? posterPattern : null);
+      const applies = !!(posterPattern || backgroundPattern || landscapePattern || logoPattern);
+      return { upstreamArt, posterPattern, posterApplies, backgroundPattern, logoPattern, landscapePattern, applies };
+    };
+    const catalogArt = artSettings(catalogConfig, cleanId, true);
+    const sourceArts = new Map();
+    const artOf = (meta) => {
+      const source = meta?._artSource;
+      if (!source) return catalogArt;
+      if (!sourceArts.has(source)) {
+        const entry = config.catalogs?.find((c) => `${c.id}:${c.type}` === source);
+        sourceArts.set(source, entry ? artSettings(entry, entry.id, catalogConfig?.enableRatingPosters !== false) : catalogArt);
+      }
+      return sourceArts.get(source);
+    };
+    const merged = cleanId.startsWith('merged.');
+    if ((merged || catalogArt.applies) && responseData?.metas && Array.isArray(responseData.metas)) {
+      const proxyApiKey = config.usePosterProxy ? getPosterRatingApiKey(config) : null;
       for (const meta of responseData.metas) {
+        const art = artOf(meta);
+        if (!art.applies) continue;
         const ids = extractIdsFromMeta(meta);
         const type = meta.type || actualType;
-        if (posterApplies) {
+        if (art.posterApplies) {
           if (proxyApiKey) {
             const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
             if (proxyId) {
               meta.poster = buildProxyArtUrl({ base: `${host}/poster-cache/proxy`, imageClass: 'poster', type: type, id: proxyId, fallback: meta.poster, ratingKey: proxyApiKey, lang: config.language });
             }
           } else {
-            const resolved = resolveCustomArtUrl(posterPattern, ids, type, config, { shape: posterShapeOf(meta) });
+            const resolved = resolveCustomArtUrl(art.posterPattern, ids, type, config, { shape: posterShapeOf(meta) });
             if (resolved) {
               if (config.usePosterProxy) {
                 const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
@@ -5517,8 +5534,8 @@ const catalogRoute = async function (req, res) {
             }
           }
         }
-        if (backgroundPattern) {
-          const resolved = resolveCustomArtUrl(backgroundPattern, ids, type, config, { shape: 'landscape' });
+        if (art.backgroundPattern) {
+          const resolved = resolveCustomArtUrl(art.backgroundPattern, ids, type, config, { shape: 'landscape' });
           if (resolved) {
             if (config.usePosterProxy) {
               const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
@@ -5532,8 +5549,8 @@ const catalogRoute = async function (req, res) {
             }
           }
         }
-        if (landscapePattern) {
-          const resolved = resolveCustomArtUrl(landscapePattern, ids, type, config, { shape: 'landscape' });
+        if (art.landscapePattern) {
+          const resolved = resolveCustomArtUrl(art.landscapePattern, ids, type, config, { shape: 'landscape' });
           if (resolved) {
             if (config.usePosterProxy) {
               const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
@@ -5547,8 +5564,8 @@ const catalogRoute = async function (req, res) {
             }
           }
         }
-        if (logoPattern) {
-          const resolved = resolveCustomArtUrl(logoPattern, ids, type, config);
+        if (art.logoPattern) {
+          const resolved = resolveCustomArtUrl(art.logoPattern, ids, type, config);
           if (resolved) {
             if (config.usePosterProxy) {
               const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
@@ -5575,11 +5592,15 @@ const catalogRoute = async function (req, res) {
     const isSearchCatalog = cleanId === 'search' || cleanId === 'people_search' || cleanId === 'gemini.search';
     if (isLandscapeCatalogConfig(config, catalogConfig) && !isSearchCatalog && req.params.forJellyfin !== '1' && Array.isArray(responseData?.metas)) {
       for (const meta of responseData.metas) {
-        const landscape = upstreamArt ? (meta.background || meta.landscapePoster) : (meta.landscapePoster || meta.background);
+        const landscape = artOf(meta).upstreamArt ? (meta.background || meta.landscapePoster) : (meta.landscapePoster || meta.background);
         if (meta.posterShape === 'landscape' || !landscape) continue;
         meta.poster = landscape;
         meta.posterShape = 'landscape';
       }
+    }
+
+    if (merged && Array.isArray(responseData?.metas)) {
+      for (const meta of responseData.metas) delete meta?._artSource;
     }
 
     if ((responseData as any)?.error) {
