@@ -1965,6 +1965,23 @@ class Database {
     return Number(this.type === 'sqlite' ? result?.changes : result?.rowCount) || 0;
   }
 
+  /** Episode watches before a moment of the shows spelled by these bases. */
+  async listEpisodeWatchesBefore(userUUID: string, profile: string, bases: string[], to: number): Promise<Array<{ video_id: string; watched_at: number; origin: string | null }>> {
+    const out: Array<{ video_id: string; watched_at: number; origin: string | null }> = [];
+    for (let at = 0; at < bases.length; at += 200) {
+      const p = this.type === 'sqlite' ? () => '?' : ((n = 0) => () => `$${++n}`)();
+      const params: any[] = [userUUID, profile, to];
+      const scope = `user_uuid = ${p()} AND profile = ${p()} AND watched_at < ${p()}`;
+      const spelled = bases.slice(at, at + 200).map((base) => {
+        params.push(`${base}:%`);
+        return `video_id LIKE ${p()}`;
+      });
+      const rows = await this.allQuery(`SELECT video_id, watched_at, origin FROM jellyfin_watches WHERE ${scope} AND (${spelled.join(' OR ')})`, params);
+      for (const row of rows || []) out.push({ video_id: String(row.video_id), watched_at: Number(row.watched_at), origin: row.origin ?? null });
+    }
+    return out;
+  }
+
   async listWatchesBetween(userUUID: string, profile: string, from: number, to: number): Promise<Array<{ video_id: string; watched_at: number; origin: string | null }>> {
     const query = this.type === 'sqlite'
       ? 'SELECT video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = ? AND profile = ? AND watched_at >= ? AND watched_at < ?'
