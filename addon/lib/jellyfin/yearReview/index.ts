@@ -17,7 +17,7 @@ import { timeYear, type TimedYear, type YearTitle } from './timed';
 const logger = consola.withTag('YearReview');
 const database: any = require('../../database');
 
-const REVIEW_VERSION = 2;
+const REVIEW_VERSION = 1;
 const RATING_BATCH = 500;
 const SETUP_DIGEST = 12;
 
@@ -122,7 +122,7 @@ async function buildYear(userUUID: string, profile: string | null, year: number,
     const historyKey = profileKey(config);
     const started = Date.now();
     const fingerprint = await fingerprintOf(userUUID, historyKey, year, timeZone);
-    const played = await yearPlays(userUUID, historyKey, year, timeZone);
+    const played = await yearPlays(userUUID, historyKey, year, timeZone, config);
     const bulk = played.filter((play) => play.batch);
     const timed = await timeYear(userUUID, historyKey, played.filter((play) => !play.batch), timeZone);
     let incomplete = timed.counts.unbuilt > 0;
