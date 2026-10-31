@@ -1868,6 +1868,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_YEAR_REVIEW_ALIAS_CONCURRENCY',
+    envVar: 'JELLYFIN_YEAR_REVIEW_ALIAS_CONCURRENCY',
+    label: 'Year in Review Id Matching Concurrency',
+    description: 'How many watched ids one Year in Review matches to their other spellings at once.',
+    category: 'Features',
+    type: 'number',
+    default: 8,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_YEAR_REVIEW_FACTS_HOURS',
     envVar: 'JELLYFIN_YEAR_REVIEW_FACTS_HOURS',
     label: 'Year in Review Title Facts Lifetime (hours)',

@@ -1945,10 +1945,19 @@ class Database {
 
   async putTitleFacts(rows: Array<{ key: string; data: any }>): Promise<void> {
     const now = Date.now();
-    const query = this.type === 'sqlite'
-      ? 'INSERT INTO title_facts (facts_key, data, updated_at) VALUES (?, ?, ?) ON CONFLICT (facts_key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
-      : 'INSERT INTO title_facts (facts_key, data, updated_at) VALUES ($1, $2, $3) ON CONFLICT (facts_key) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at';
-    for (const row of rows) await this.runQuery(query, [row.key, JSON.stringify(row.data), now]);
+    const size = this.type === 'sqlite' ? 150 : 500;
+    const conflict = this.type === 'sqlite'
+      ? 'ON CONFLICT (facts_key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
+      : 'ON CONFLICT (facts_key) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at';
+    for (let i = 0; i < rows.length; i += size) {
+      const params: any[] = [];
+      const values = rows.slice(i, i + size).map((row) => {
+        params.push(row.key, JSON.stringify(row.data), now);
+        const at = params.length - 3;
+        return this.type === 'sqlite' ? '(?, ?, ?)' : `($${at + 1}, $${at + 2}, $${at + 3})`;
+      });
+      await this.runQuery(`INSERT INTO title_facts (facts_key, data, updated_at) VALUES ${values.join(', ')} ${conflict}`, params);
+    }
   }
 
   async pruneTitleFacts(before: number): Promise<number> {

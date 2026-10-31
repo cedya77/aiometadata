@@ -1,4 +1,5 @@
 import { envInt } from '../../../utils/envNumber';
+import { mapWithConcurrency } from '../../../utils/concurrency';
 import { parseStremioId } from '../idsCodec';
 import { videoIdAliases } from '../aliases';
 
@@ -73,7 +74,9 @@ function unionFind(ids: string[]) {
     const out = new Map<string, string[]>();
     for (const id of parent.keys()) {
       const root = find(id);
-      out.set(root, [...(out.get(root) ?? []), id]);
+      const members = out.get(root);
+      if (members) members.push(id);
+      else out.set(root, [id]);
     }
     return [...out.values()];
   };
@@ -112,7 +115,10 @@ function pairFilmSpellings(rows: Array<{ video_id: string; watched_at: number }>
 export async function foldPlays(rows: Array<{ video_id: string; watched_at: number; origin: string | null }>): Promise<YearPlay[]> {
   const ids = [...new Set(rows.map((row) => row.video_id))];
   const spellings = unionFind(ids);
-  for (const id of ids) for (const alias of await videoIdAliases(id).catch(() => [] as string[])) spellings.union(id, alias);
+  const aliases = await mapWithConcurrency(ids, envInt('JELLYFIN_YEAR_REVIEW_ALIAS_CONCURRENCY', 8, 1), (id) => videoIdAliases(id).catch(() => [] as string[]));
+  ids.forEach((id, i) => {
+    for (const alias of aliases[i]) spellings.union(id, alias);
+  });
   pairFilmSpellings(rows, spellings.union);
 
   const bases = new Map<string, string>();
@@ -133,7 +139,11 @@ export async function foldPlays(rows: Array<{ video_id: string; watched_at: numb
   }
 
   const timesById = new Map<string, Array<{ at: number; origin: string | null }>>();
-  for (const row of rows) timesById.set(row.video_id, [...(timesById.get(row.video_id) ?? []), { at: row.watched_at, origin: row.origin }]);
+  for (const row of rows) {
+    const times = timesById.get(row.video_id);
+    if (times) times.push({ at: row.watched_at, origin: row.origin });
+    else timesById.set(row.video_id, [{ at: row.watched_at, origin: row.origin }]);
+  }
 
   const plays: YearPlay[] = [];
   for (const group of groups) {

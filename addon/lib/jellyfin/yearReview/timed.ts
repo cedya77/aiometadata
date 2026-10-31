@@ -61,7 +61,11 @@ function mergeTitles(keys: string[], facts: Map<string, TitleFacts>, weight: Map
     }
   }
   const groups = new Map<string, string[]>();
-  for (const key of keys) groups.set(find(key), [...(groups.get(find(key)) ?? []), key]);
+  for (const key of keys) {
+    const members = groups.get(find(key));
+    if (members) members.push(key);
+    else groups.set(find(key), [key]);
+  }
   const into = new Map<string, string>();
   for (const members of groups.values()) {
     const lead = [...members].sort((a, b) => Number(facts.has(b)) - Number(facts.has(a)) || Number(b.startsWith('tt')) - Number(a.startsWith('tt')) || (weight.get(b) ?? 0) - (weight.get(a) ?? 0) || a.localeCompare(b))[0];
@@ -112,7 +116,12 @@ export async function timeYear(userUUID: string, historyKey: string, plays: Year
   });
 
   const knownByTitle = new Map<string, number[]>();
-  for (const play of timed) if (play.runtimeMs > 0) knownByTitle.set(play.titleKey, [...(knownByTitle.get(play.titleKey) ?? []), play.runtimeMs]);
+  for (const play of timed) {
+    if (play.runtimeMs <= 0) continue;
+    const known = knownByTitle.get(play.titleKey);
+    if (known) known.push(play.runtimeMs);
+    else knownByTitle.set(play.titleKey, [play.runtimeMs]);
+  }
   const fallback = {
     movie: median(timed.filter((play) => play.kind === 'movie' && play.runtimeMs > 0).map((play) => play.runtimeMs)),
     episode: median(timed.filter((play) => play.kind === 'episode' && play.runtimeMs > 0).map((play) => play.runtimeMs)),
