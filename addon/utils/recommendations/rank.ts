@@ -165,6 +165,15 @@ export function eraBrief(rows: WatchedRow[], kind: RecommendKind, want: number, 
   ].filter(Boolean).join(' ');
 }
 
+/** Spelled out, since a name such as "French (France)" is plainer to a model than "fr-FR". */
+function languageName(language: string): string {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(language) || language;
+  } catch {
+    return language;
+  }
+}
+
 function buildPrompt(
   profile: TasteProfile,
   kind: RecommendKind,
@@ -172,7 +181,8 @@ function buildPrompt(
   want: number,
   watched: WatchedRow[] = [],
   searchMode: SearchMode = false,
-  recent = ''
+  recent = '',
+  language = 'en-US'
 ): string {
   // Each kind has its own row, so they must not overlap. Anime is television and
   // anime films are films, so without saying otherwise a quarter-anime library
@@ -204,6 +214,8 @@ function buildPrompt(
     '',
     'Score each pick\'s "fit" from 1 to 10 for how well it suits them.',
     'Return JSON: {"picks":[{"title":"…","year":1999,"kind":"movie"|"series","fit":8,"reason":"…"}]}',
+    // The reason sits above a synopsis written in the configuration's language.
+    `Write each reason in ${languageName(language)}, and keep titles as you would otherwise name them.`,
     'Keep each reason under 15 words. Long reasons cost more than they are worth here,',
     'and enough of them will truncate the reply before the list is finished.',
   ].join('\n');
@@ -422,7 +434,11 @@ export function picksKey(config: any, userUUID: string, kind: RecommendKind, wan
   const chosen = resolveProvider(config);
   const { resolveSources, viewerKey }: any = require('./history');
   const sources = resolveSources(config).choice;
-  return `recommendations:picks:v${RECOMMENDATION_EPOCH}:${viewerKey(config, userUUID)}:${kind}:${want}:${sources}:${chosen?.provider || 'none'}:${chosen?.model || 'none'}:${chosen?.webSearch ? 'web' : 'offline'}:${reasoningEffort(config)}`;
+  // The reasons are written in the configuration's language. English keeps the old key,
+  // whose reasons were already English, so upgrading rebuilds only the other languages' rows.
+  const language = config?.language || 'en-US';
+  const written = language.toLowerCase().startsWith('en') ? '' : `:${language}`;
+  return `recommendations:picks:v${RECOMMENDATION_EPOCH}:${viewerKey(config, userUUID)}:${kind}:${want}:${sources}:${chosen?.provider || 'none'}:${chosen?.model || 'none'}:${chosen?.webSearch ? 'web' : 'offline'}:${reasoningEffort(config)}${written}`;
 }
 
 export async function recommend(
@@ -468,7 +484,7 @@ export async function recommend(
       // The search happened in the pass above and its answer is in the prompt,
       // so this call reads context rather than paying to search again.
       model: recent ? String(model).replace(/:online$/, '') : model,
-      prompt: buildPrompt(profile, kind, exclude, asked, watched, searchMode, recent),
+      prompt: buildPrompt(profile, kind, exclude, asked, watched, searchMode, recent, config?.language || 'en-US'),
       systemPrompt: systemPrompt(searchMode),
       timeout: 90000,
       maxTokens: replyBudget(asked, reasoningEffort(config)),
