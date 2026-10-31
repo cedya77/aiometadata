@@ -1,7 +1,7 @@
 import { envInt } from '../../../utils/envNumber';
 import { mapWithConcurrency } from '../../../utils/concurrency';
 import { fetchMetaBeforeArt, originalLanguage, parseRuntimeTicks } from '../items';
-import type { YearPlay } from './plays';
+import { metaIdOf, type YearPlay } from './plays';
 
 const database: any = require('../../database');
 
@@ -177,7 +177,7 @@ export async function metaContextDigest(userUUID: string): Promise<string> {
 
 function factsKey(config: any, request: FactsRequest): string {
   const { getMetaSmartLockContextHash } = require('../../getCache');
-  return `v${FACTS_VERSION}:${request.kind}:${getMetaSmartLockContextHash(config, request.titleKey, request.kind, true, false)}:${request.titleKey}`;
+  return `v${FACTS_VERSION}:${request.kind}:${getMetaSmartLockContextHash(config, metaIdOf(request.titleKey), request.kind, true, false)}:${metaIdOf(request.titleKey)}`;
 }
 
 export async function titleFacts(userUUID: string, requests: FactsRequest[]): Promise<{ facts: Map<string, TitleFacts>; stored: number; built: number; held: number; missing: number }> {
@@ -199,8 +199,8 @@ export async function titleFacts(userUUID: string, requests: FactsRequest[]): Pr
   let built = 0;
   let held = 0;
   await mapWithConcurrency(ranked, width, async (request, rank) => {
-    const cached = await heldMeta(userUUID, config, request.kind, request.titleKey);
-    const meta = cached ?? (rank < buildBudget ? await fetchMetaBeforeArt(userUUID, request.kind, request.titleKey).catch(() => null) : null);
+    const cached = await heldMeta(userUUID, config, request.kind, metaIdOf(request.titleKey));
+    const meta = cached ?? (rank < buildBudget ? await fetchMetaBeforeArt(userUUID, request.kind, metaIdOf(request.titleKey)).catch(() => null) : null);
     if (!meta) return;
     if (cached) held += 1;
     else built += 1;

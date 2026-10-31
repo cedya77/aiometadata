@@ -1,6 +1,7 @@
 import { mapWithConcurrency } from '../../../utils/concurrency';
 import { personIdOf } from '../items';
 import type { AnimeYear } from './anime';
+import { metaIdOf } from './plays';
 import type { FactsPerson } from './facts';
 import type { YearTitle } from './timed';
 
@@ -50,7 +51,7 @@ export interface PeopleYear {
 }
 
 const personKey = (name: string): string => name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-const nameOf = (title: YearTitle): string => (title.facts?.name ?? title.key).replace(/\s+\(\d{4}\)$/, '');
+const nameOf = (title: YearTitle): string => (title.facts?.name ?? metaIdOf(title.key)).replace(/\s+\(\d{4}\)$/, '');
 const refOf = (title: YearTitle): TitleRef => ({ name: nameOf(title), key: title.key, kind: title.kind, poster: title.facts?.poster ?? null });
 
 interface Credit {

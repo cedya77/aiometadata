@@ -54,6 +54,10 @@ const spellingRank = (id: string): number => {
   return at < 0 ? SPELLING_ORDER.length : at;
 };
 
+// A film and a show can carry one TMDB number; the show's key then says so, and lookups take the mark off.
+const SHOW_MARK = 'series|';
+export const metaIdOf = (key: string): string => (key.startsWith(SHOW_MARK) ? key.slice(SHOW_MARK.length) : key);
+
 const preferred = (ids: string[]): string => [...ids].sort((a, b) => spellingRank(a) - spellingRank(b) || a.localeCompare(b))[0];
 
 function unionFind(ids: string[]) {
@@ -106,7 +110,8 @@ export async function foldPlays(rows: Array<{ video_id: string; watched_at: numb
   const bases = new Map<string, string>();
   for (const id of ids) {
     const parsed = parseStremioId(id);
-    bases.set(id, parsed?.base ? String(parsed.base) : id);
+    const kind = parsed && parsed.episode !== null && parsed.episode !== undefined ? 'series' : 'movie';
+    bases.set(id, `${kind}|${parsed?.base ? String(parsed.base) : id}`);
   }
   const titles = unionFind([...new Set(bases.values())]);
   const groups = spellings.groups();
@@ -114,10 +119,11 @@ export async function foldPlays(rows: Array<{ video_id: string; watched_at: numb
     const groupBases = group.map((id) => bases.get(id)!);
     for (const base of groupBases.slice(1)) titles.union(groupBases[0], base);
   }
+  const named = titles.groups().map((members) => ({ members, kind: members[0].split('|')[0], key: preferred(members.map((member) => member.slice(member.indexOf('|') + 1))) }));
+  const films = new Set(named.filter((title) => title.kind === 'movie').map((title) => title.key));
   const titleKeys = new Map<string, string>();
-  for (const members of titles.groups()) {
-    const key = preferred(members);
-    for (const member of members) titleKeys.set(member, key);
+  for (const { members, kind, key } of named) {
+    for (const member of members) titleKeys.set(member, kind === 'series' && films.has(key) ? `${SHOW_MARK}${key}` : key);
   }
 
   const timesById = new Map<string, Array<{ at: number; origin: string | null }>>();

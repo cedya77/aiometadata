@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { DashboardLink, personPage, titlePage } from "./DashboardLink";
+import { metaIdOf } from "./yearModel";
 
 export type YearAccent = "blue" | "pink";
 
@@ -13,7 +14,7 @@ export const TEXT_LINK = "decoration-white/35 underline-offset-4 hover:underline
 type TitleTarget = { key: string; kind: "movie" | "series" };
 
 export function TitleLink({ title, name, className = TEXT_LINK, children }: { title: TitleTarget; name?: string; className?: string; children: React.ReactNode }) {
-  return <DashboardLink page={titlePage(title.key, title.kind)} name={name ?? (typeof children === "string" ? children : undefined)} className={className}>{children}</DashboardLink>;
+  return <DashboardLink page={titlePage(metaIdOf(title.key), title.kind)} name={name ?? (typeof children === "string" ? children : undefined)} className={className}>{children}</DashboardLink>;
 }
 
 export function PersonLink({ person, className = TEXT_LINK, children }: { person: { id: string; name: string; photo?: string | null }; className?: string; children: React.ReactNode }) {

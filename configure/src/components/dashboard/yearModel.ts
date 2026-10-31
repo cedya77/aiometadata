@@ -54,7 +54,10 @@ export function buildYearModel(data: JellyfinYearData, ratings: Record<string, n
   return { year: data.year, timeZone: data.timeZone, data, ratings, plays, days, through: partial ? today.day : days - 1, partial };
 }
 
-export const displayName = (title: JellyfinYearTitle): string => (title.name ?? title.key).replace(/\s+\(\d{4}\)$/, "");
+// A show's key carries a mark when a film shares its number; the id it opens and names is without it.
+export const metaIdOf = (key: string): string => (key.startsWith("series|") ? key.slice("series|".length) : key);
+
+export const displayName = (title: JellyfinYearTitle): string => (title.name ?? metaIdOf(title.key)).replace(/\s+\(\d{4}\)$/, "");
 
 export function localYearOf(at: number, timeZone: string): number {
   return Number(new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric" }).format(new Date(at)));

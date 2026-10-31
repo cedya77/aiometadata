@@ -4,7 +4,7 @@ import { titlePage, useDashboardOpen } from "./DashboardLink";
 import { ChapterHeader, TitleLink, TitleList, YEAR_GLASS } from "./JellyfinYearShared";
 import { sizedArt } from "./art";
 import type { YearChapterProps } from "./yearChapters";
-import { displayName, formatDay, hoursOf, localYearOf, type YearModel } from "./yearModel";
+import { displayName, formatDay, hoursOf, localYearOf, metaIdOf, type YearModel } from "./yearModel";
 
 const TOP_TEN = 10;
 const DECK_REACH = 3;
@@ -273,7 +273,7 @@ function Coverflow({ films, opening, label, caption }: { films: JellyfinYearTitl
               aria-label={i === focus ? `Open ${displayName(film)}` : displayName(film)}
               onClick={() => {
                 if (!swiped.current) {
-                  if (i === focus && goal === focus && open) open(titlePage(film.key, film.kind));
+                  if (i === focus && goal === focus && open) open(titlePage(metaIdOf(film.key), film.kind));
                   else setGoal(i);
                 }
                 swiped.current = false;

@@ -17,7 +17,7 @@ import { timeYear, type TimedYear, type YearTitle } from './timed';
 const logger = consola.withTag('YearReview');
 const database: any = require('../../database');
 
-const REVIEW_VERSION = 1;
+const REVIEW_VERSION = 2;
 const RATING_BATCH = 500;
 const SETUP_DIGEST = 12;
 

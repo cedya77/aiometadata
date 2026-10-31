@@ -4,7 +4,7 @@ import { titlePage, useDashboardOpen } from "./DashboardLink";
 import { ChapterHeader, Deck, PersonLink, TitleLink, YEAR_GLASS } from "./JellyfinYearShared";
 import { sizedArt } from "./art";
 import type { YearChapterProps } from "./yearChapters";
-import { hoursOf, inWords, type YearModel } from "./yearModel";
+import { hoursOf, inWords, metaIdOf, type YearModel } from "./yearModel";
 
 const CLUB_SIZE = 8;
 const SEASON_ROWS = 6;
@@ -387,7 +387,7 @@ function CoverTreemap({ entries, label }: { entries: JellyfinAnimeEntry[]; label
               onFocus={() => setFocus(entry.malId)}
               onClick={() => {
                 const target = entryTarget(entry);
-                if (on && open) open(titlePage(target.key, target.kind));
+                if (on && open) open(titlePage(metaIdOf(target.key), target.kind));
                 else setFocus(entry.malId);
               }}
               className="absolute overflow-hidden rounded-lg transition-[left,top,width,height] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none"
