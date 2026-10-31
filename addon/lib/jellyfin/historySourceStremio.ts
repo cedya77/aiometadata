@@ -103,7 +103,7 @@ function watchedEpisodes(item: StremioItem, lists: Lists | undefined, miss: (nam
   }
   const latestMark = field && episodes.includes(field.anchor) ? field.anchor : episodes[episodes.length - 1] ?? null;
   const { videoId: current, timeOffset } = item.state;
-  // The episode Stremio was playing at lastWatched crossed the watched mark before its bit was set.
+  // Stremio leaves a season's last episode flagged but its bit unset once it has played through.
   if (item.state.flaggedWatched && current && !episodes.includes(current)) episodes = [...episodes, current];
   const watched = (id: string | null | undefined): id is string => Boolean(id) && episodes.includes(id!);
 

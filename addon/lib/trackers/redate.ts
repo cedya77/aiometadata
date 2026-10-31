@@ -2,6 +2,8 @@ export interface WatchDateChange {
   from: number;
   to: number;
   latest?: number | null;
+  /** The history kept this viewing beside another at the new date, so a tracker keeps both plays too. */
+  apart?: boolean;
 }
 
 export interface Redate {

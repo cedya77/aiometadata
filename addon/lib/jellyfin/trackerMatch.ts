@@ -174,7 +174,7 @@ function linkedEpisode(match: TrackerMatch, season: number, episode: number): Ep
   const links = Object.entries(match.seasons)
     .filter(([, link]) => link.season === season)
     .map(([ours, link]) => ({ season: Number(ours), offset: link.offset }));
-  if (!links.length) return match.seasons[String(season)] ? null : { season, episode };
+  if (!links.length) return match.seasons[String(season)] || season === 0 ? null : { season, episode };
   const best = links.filter((link) => episode - link.offset >= 1).sort((a, b) => b.offset - a.offset)[0];
   return best ? { season: best.season, episode: episode - best.offset } : null;
 }

@@ -307,8 +307,9 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     if (!titles.has(title)) titles.set(title, []);
     titles.get(title)!.push({ key, ...entry });
   }
+  // A finish near a held pause is that viewing ending, so it keeps its own, newer times.
   const sameViewing = (held: State, state: State): State =>
-    held.lastPlayedAt && state.lastPlayedAt && Math.abs(held.lastPlayedAt - state.lastPlayedAt) <= sameStateMs
+    (held.played || !state.played) && held.lastPlayedAt && state.lastPlayedAt && Math.abs(held.lastPlayedAt - state.lastPlayedAt) <= sameStateMs
       ? { ...state, lastPlayedAt: held.lastPlayedAt, updatedAt: Math.min(state.updatedAt, held.updatedAt) }
       : state;
   const mergedInto = (held: State, state: State) => mergeState(held, sameViewing(held, state));
@@ -379,12 +380,15 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
 
   const spellingsOf = (row: { metaId: string; also?: string[] }) => [row.metaId, ...(row.also ?? [])];
 
+  const sameKind = (held: any, metaType: string | null) => !held?.meta_type || !metaType || held.meta_type === metaType;
+
   const heldRatings = new Map<string, any>(ratings.map((row: any) => [keyOf(String(row.profile ?? ''), String(row.meta_id)), row]));
   const ratingKept = (held: any, row: RatingRow) => Number(held.rating) === row.rating || Number(held.updated_at) >= row.updatedAt;
   for (const row of newestPer(file.ratings).values()) {
-    const ids = spellingsOf(row);
+    // A TMDB number names a film and a show alike, so a spelling the other kind holds is neither its mark nor free to write.
+    const ids = spellingsOf(row).filter((id) => sameKind(heldRatings.get(keyOf(row.target, id)), row.metaType));
     const held = ids.map((id) => heldRatings.get(keyOf(row.target, id))).filter(Boolean);
-    if (held.some((mark) => ratingKept(mark, row))) {
+    if (!ids.length || held.some((mark) => ratingKept(mark, row))) {
       counts.ratings.unchanged += 1;
       continue;
     }
@@ -392,7 +396,7 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     queue('ratings', async () => {
       for (const id of ids) {
         const current = await database.currentMark('jellyfin_ratings', userUUID, row.target, id);
-        if (current && ratingKept(current, row)) return;
+        if (current && sameKind(current, row.metaType) && ratingKept(current, row)) return;
       }
       await database.setRating(userUUID, row.target, ids, row.rating, row.metaType, row.updatedAt);
     });
@@ -401,14 +405,19 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
   const heldListed = new Map<string, any>(watchlist.map((row: any) => [keyOf(String(row.profile ?? ''), String(row.meta_id)), row]));
   const listingKept = (held: any, row: WatchlistRow) => (held ? Boolean(Number(held.listed)) === row.listed || Number(held.updated_at) >= row.updatedAt : !row.listed);
   for (const row of newestPer(file.watchlist).values()) {
-    const heldId = spellingsOf(row).find((id) => heldListed.has(keyOf(row.target, id)));
+    const ids = spellingsOf(row).filter((id) => sameKind(heldListed.get(keyOf(row.target, id)), row.metaType));
+    if (!ids.length) {
+      counts.watchlist.unchanged += 1;
+      continue;
+    }
+    const heldId = ids.find((id) => heldListed.has(keyOf(row.target, id)));
     const held = heldId ? heldListed.get(keyOf(row.target, heldId)) : undefined;
     if (listingKept(held, row)) {
       counts.watchlist.unchanged += 1;
       continue;
     }
     counts.watchlist[held ? 'updated' : 'added'] += 1;
-    const metaId = heldId ?? row.metaId;
+    const metaId = heldId ?? ids[0];
     queue('watchlist', async () => {
       const current = await database.currentMark('jellyfin_watchlist', userUUID, row.target, metaId);
       if (listingKept(current, row)) return;

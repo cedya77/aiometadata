@@ -318,7 +318,10 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
   const list = useRef<HTMLDivElement>(null);
 
   const loaded = useRef<number[]>([]);
+  // A re-read still out when the tab or filter changes is of the list that was there before.
+  const generation = useRef(0);
   useEffect(() => {
+    generation.current += 1;
     setOffset(0);
     setRows([]);
     setIndex(0);
@@ -332,8 +335,9 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
       return;
     }
     const offsets = [...loaded.current];
+    const started = generation.current;
     void reloadPages<JellyfinLibraryRow>(queryClient, ["dashboard", "jellyfin", "library", userUUID, profile, tab, kind], offsets).then((pages) => {
-      if (pages) setRows(pages.flat());
+      if (pages && started === generation.current) setRows(pages.flat());
     });
   }, [current, data]);
 

@@ -104,7 +104,7 @@ async function redate({ config, ids, mediaType, season, episode, change, within 
     }
     return;
   }
-  if (placed) {
+  if (placed && !change.apart) {
     await api.removePlays([old.play_id], apiKey);
     return;
   }

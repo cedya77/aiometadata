@@ -172,6 +172,7 @@ function Timeline({ userUUID, profile, personId, kind, role, order, jump, active
   onOpen: (row: JellyfinPersonTitle) => void;
 }) {
   const [offset, setOffset] = useState(0);
+  const [next, setNext] = useState(0);
   const [rows, setRows] = useState<JellyfinPersonTitle[]>([]);
   const target = useRef<number | null>(null);
   const listRef = useRef<HTMLOListElement>(null);
@@ -179,7 +180,7 @@ function Timeline({ userUUID, profile, personId, kind, role, order, jump, active
   const page = useJellyfinPersonTitles(userUUID, profile, personId, kind, role, order, offset, { activeTab });
   const total = page.data?.total ?? null;
   const loading = page.isLoading || (page.isFetching && page.data?.offset !== offset);
-  const more = total !== null && rows.length < total && (page.data?.rows.length ?? 0) > 0;
+  const more = total !== null && next < total;
 
   const queryClient = useQueryClient();
   const loaded = useRef<number[]>([]);
@@ -196,22 +197,28 @@ function Timeline({ userUUID, profile, personId, kind, role, order, jump, active
       return;
     }
     if (!loaded.current.includes(offset)) loaded.current = [...loaded.current, offset];
+    setNext(data.next ?? offset + data.rows.length);
     setRows((held) => {
-      const kept = held.slice(0, offset);
+      const kept = offset === 0 ? [] : held;
       const seen = new Set(kept.map((row) => row.id));
       return [...kept, ...data.rows.filter((row) => !seen.has(row.id))];
     });
   }, [page.data, offset]);
 
-  const loadMore = () => { if (more && !loading) setOffset(rows.length); };
+  const loadMore = () => { if (more && !loading) setOffset(next); };
+
+  // A page the profile's cap emptied shows nothing to scroll past, so the next one is asked for straight away.
+  useEffect(() => {
+    if (more && !loading && page.data?.offset === offset && page.data.rows.length === 0) setOffset(next);
+  }, [more, loading, page.data, offset, next]);
 
   useEffect(() => {
     const end = endRef.current;
     if (!end || !more || loading) return;
-    const observer = new IntersectionObserver((entries) => { if (entries[0]?.isIntersecting) setOffset(rows.length); }, { rootMargin: "1200px 0px" });
+    const observer = new IntersectionObserver((entries) => { if (entries[0]?.isIntersecting) setOffset(next); }, { rootMargin: "1200px 0px" });
     observer.observe(end);
     return () => observer.disconnect();
-  }, [more, loading, rows.length]);
+  }, [more, loading, next]);
 
   useEffect(() => {
     if (jump) target.current = jump.decade;
@@ -239,7 +246,7 @@ function Timeline({ userUUID, profile, personId, kind, role, order, jump, active
   if (page.isError && rows.length === 0) {
     return <p className="text-sm text-muted-foreground">Could not load this filmography. <button type="button" onClick={() => void page.refetch()} className="underline">Retry</button></p>;
   }
-  if (rows.length === 0) return loading || total === null ? <TimelineSkeleton /> : <p className="text-sm text-muted-foreground">Nothing in this view.</p>;
+  if (rows.length === 0) return loading || more || total === null ? <TimelineSkeleton /> : <p className="text-sm text-muted-foreground">Nothing in this view.</p>;
   return (
     <>
       <ol ref={listRef} className="relative">

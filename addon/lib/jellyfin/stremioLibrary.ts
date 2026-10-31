@@ -96,7 +96,8 @@ export function imdbOfItem(item: StremioItem): string | null {
 
 export const isAnimeId = (id: string): boolean => ANIME_ID.test(id);
 
-export const filmWatched = (state: StremioState): boolean => state.timesWatched > 0 || state.flaggedWatched;
+// Unwatching a film zeroes its count and leaves flaggedWatched set, so the flag alone is a viewing taken back.
+export const filmWatched = (state: StremioState): boolean => state.timesWatched > 0;
 
 export const reallyPlayed = (state: StremioState): boolean => state.duration > 0 && state.overallTimeWatched >= WATCHED_SHARE * state.duration;
 

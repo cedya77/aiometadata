@@ -417,15 +417,15 @@ export async function runSearchCatalog(userUUID: string, config: any, catalog: {
 
 let personReader: {
   detail: (userUUID: string, config: any, personId: string) => Promise<{ item: any; credits: any[] } | null>;
-  titles: (userUUID: string, config: any, personId: string, types: string | undefined, roles: string[], start: number, take: number, ascending: boolean) => Promise<{ items: any[]; total: number }>;
+  titles: (userUUID: string, config: any, personId: string, types: string | undefined, roles: string[], start: number, take: number, ascending: boolean) => Promise<{ items: any[]; total: number; next: number }>;
 } | null = null;
 
 export async function readPerson(userUUID: string, config: any, personId: string): Promise<{ item: any; credits: any[] } | null> {
   return personReader ? personReader.detail(userUUID, config, personId) : null;
 }
 
-export async function readPersonTitles(userUUID: string, config: any, personId: string, types: string | undefined, roles: string[], start: number, take: number, ascending: boolean): Promise<{ items: any[]; total: number }> {
-  return personReader ? personReader.titles(userUUID, config, personId, types, roles, start, take, ascending) : { items: [], total: 0 };
+export async function readPersonTitles(userUUID: string, config: any, personId: string, types: string | undefined, roles: string[], start: number, take: number, ascending: boolean): Promise<{ items: any[]; total: number; next: number }> {
+  return personReader ? personReader.titles(userUUID, config, personId, types, roles, start, take, ascending) : { items: [], total: 0, next: start };
 }
 
 export async function readTitle(userUUID: string, config: any, itemId: string): Promise<{ meta: any; item: any; episodes: any[]; seasons: any[] } | null> {
@@ -2118,11 +2118,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     startIndex: number,
     take: number,
     ascending = false
-  ): Promise<{ items: any[]; total: number }> => {
+  ): Promise<{ items: any[]; total: number; next: number }> => {
     const descriptor = await decodeJellyfinId(personId);
-    if (!descriptor || descriptor.k !== 'person') return { items: [], total: 0 };
+    if (!descriptor || descriptor.k !== 'person') return { items: [], total: 0, next: startIndex };
     const person = await resolvePerson(config, descriptor);
-    if (!person) return { items: [], total: 0 };
+    if (!person) return { items: [], total: 0, next: startIndex };
     const wanted = includeItemTypes ? String(includeItemTypes) : undefined;
     const newest = (await personCredits(config, person)).filter(
       (meta: any) =>
@@ -2136,7 +2136,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const cards = await titleCards(config, userUUID, page);
     const items = cards.map((card: any, i: number) => metaToBaseItem(card, page[i].type, serverId, null)).filter(keepsUnderProfileCap(config));
     await applyWatchedState(items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
-    return { items, total: listed.length };
+    // The profile's cap thins a page after it is cut, so the next one starts past what was read, not what is shown.
+    return { items, total: listed.length, next: startIndex + page.length };
   };
 
   const searchAcross = async (

@@ -86,7 +86,7 @@ async function redate({ config, ids, mediaType, season, episode, change, within 
   const old = nearestPlay(plays, change.from, (play) => play.watched_at, within);
   if (!old?.id) return nothingToMove('https://publicmetadb.com/api/watched', 'no play near the old date');
   const placed = nearestPlay(plays.filter((play) => play !== old), change.to, (play) => play.watched_at, SAME_PLAY_MS);
-  if (placed) {
+  if (placed && !change.apart) {
     await removePlay(apiKey, String(old.id));
     await database.deleteTrackerMirror(mirrorKey, [`play:${old.id}`]).catch(() => undefined);
     await database.bumpTrackerSyncVersion(mirrorKey).catch(() => undefined);

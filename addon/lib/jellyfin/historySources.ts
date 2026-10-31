@@ -404,10 +404,13 @@ function historyBody(
   const watches: any[] = [];
   for (const [title, { spellings, dated, undated, marked, played, asOf, resume: paused }] of titles) {
     const viewings: number[] = [];
-    for (const at of dated.sort((a, b) => a - b)) if (!viewings.length || at - viewings[viewings.length - 1] > sameViewingMs) viewings.push(at);
-    // A source whose rows are each a viewing passes no window, and two of them at one moment are two plays.
-    const repeats = sameViewingMs === 0 ? dated.length - viewings.length : 0;
-    const count = viewings.length + repeats + undated;
+    for (const at of dated.sort((a, b) => a - b)) {
+      const prior = viewings[viewings.length - 1];
+      if (prior === undefined || at - prior > sameViewingMs) viewings.push(at);
+      // A source whose rows are each a viewing passes no window; two at one moment are two plays, a millisecond apart.
+      else if (sameViewingMs === 0) viewings.push(prior + 1);
+    }
+    const count = viewings.length + undated;
     const last = viewings.length ? viewings[viewings.length - 1] : null;
     // A position paused before the title was last finished is one the viewer has gone past.
     const finished = Math.max(last ?? 0, marked ?? 0);
