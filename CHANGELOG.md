@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.9.0](https://github.com/cedya77/aiometadata/compare/v3.8.3...v3.9.0) (2026-10-31)
+
+
+### Features
+
+* **catalogs:** place collections anywhere in the catalog list and give catalogs row options ([1ec84c5](https://github.com/cedya77/aiometadata/commit/1ec84c5f0257fedddf396eb912e847c79a31c148))
+* **jellyfin:** let catalog reads name the household user ([#864](https://github.com/cedya77/aiometadata/issues/864)) ([bf53c1c](https://github.com/cedya77/aiometadata/commit/bf53c1c6910adde0d89dff674bc240ad0736c3c6))
+* **jellyfin:** list a collection folder's catalogs on its folder item ([bcc5f72](https://github.com/cedya77/aiometadata/commit/bcc5f72113c0bb65687bae0d8ea3b126f48b7d3a))
+* **jellyfin:** send Infuse PNG logos where TMDB only has an SVG ([47bd2cd](https://github.com/cedya77/aiometadata/commit/47bd2cd3db49a986896bcd4e402b976d9c292057))
+* **simkl:** combined Plan to Watch catalog with release date sort ([c8bb07f](https://github.com/cedya77/aiometadata/commit/c8bb07fe79d3edd03cdf52ad354d1c91959b153a))
+* **upnext:** sort Trakt and Simkl Up Next by latest aired episode ([1a7e1e9](https://github.com/cedya77/aiometadata/commit/1a7e1e990de005e51f1d7d28411e6c18c371c0fe))
+* **warmer:** warm genres pinned in collections ([415c699](https://github.com/cedya77/aiometadata/commit/415c6995579e75ceaf5a45be9be1f5505f061717))
+
+
+### Bug Fixes
+
+* **ai:** accept OpenRouter presets as the model instead of falling back to another ([3b2b7f8](https://github.com/cedya77/aiometadata/commit/3b2b7f86c12bbeaded7688681c90a4ed0588ff2d))
+* **anime:** give the second part of a split season its own Kitsu and MAL episodes ([29b4ddc](https://github.com/cedya77/aiometadata/commit/29b4ddc8f698851ebe98b818fde9ab49bf0a0fde))
+* **anime:** keep the last episode of each part of a split season ([21239c1](https://github.com/cedya77/aiometadata/commit/21239c1000bba75b6b435448194db2dfa76b7294))
+* **anime:** place TMDB episodes on the parts the mapping data puts there when counting skips an OVA or ONA ([0c4522b](https://github.com/cedya77/aiometadata/commit/0c4522bec71255c49bf1175ab23be13d5bf965c3))
+* **anime:** share watched marks between a TMDB season split across anime entries and those entries ([f5a56c6](https://github.com/cedya77/aiometadata/commit/f5a56c67fa111717d4c3efe49d84c1cba35f5098))
+* **catalogs:** apply each source's art settings inside a merged catalog ([9271523](https://github.com/cedya77/aiometadata/commit/92715234224a83254f99aabb07b77411c833c672))
+* **id-resolver:** ask Cinemeta v3 when the live host has no TMDB or TVDB link ([a5e3767](https://github.com/cedya77/aiometadata/commit/a5e3767a532229d7f176f4234aae834b8399b3f1))
+* **jellyfin:** drop only what the table feeds, once, before clients are told ([ced450d](https://github.com/cedya77/aiometadata/commit/ced450d4c5a8ed04109052fcbfea376bd3cc38ad))
+* **jellyfin:** find a film held under its other id when syncing tracker watches ([3862303](https://github.com/cedya77/aiometadata/commit/38623036933b6c81f690cdeb6605bc00e6022ed8))
+* **jellyfin:** keep a randomized catalog's length stable across windows ([18d06d0](https://github.com/cedya77/aiometadata/commit/18d06d0274ba3473fb7f1f1b306e0ff4be1f3d1e))
+* **jellyfin:** refresh Next Up and series counts as soon as an episode is marked watched or unwatched ([1816644](https://github.com/cedya77/aiometadata/commit/1816644c74de053dcf1d08daf08c79e375a50a7a))
+* **jellyfin:** refresh Next Up and series counts as soon as an episode is marked watched/unwatched ([26bbc7c](https://github.com/cedya77/aiometadata/commit/26bbc7cd25d936dc1935dfa1c73e36a93fd8b796))
+* **jellyfin:** serve original TMDB art when the client sends no width and the smaller-art setting is off ([c5df7b6](https://github.com/cedya77/aiometadata/commit/c5df7b6a458d960e6c84e0b3e4e9fd0551e21037))
+* **jellyfin:** write remembered art in slices so a large burst is not lost ([b511e81](https://github.com/cedya77/aiometadata/commit/b511e815ed4aa651ebb10f252316da20321a01b8))
+* **mal:** fetch discover pages at the catalog page size ([5399b24](https://github.com/cedya77/aiometadata/commit/5399b24a50dbbcce613ee9ae2eee4aa7903e97b9))
+* **mal:** list only the episodes a finished anime has ([764d349](https://github.com/cedya77/aiometadata/commit/764d34963ea1109c6ef7031f65f38db9ede12555))
+* **publicmetadb:** page lists from cached blocks and serve watchlists newest first ([94b5d33](https://github.com/cedya77/aiometadata/commit/94b5d3379540e3c40d2bbe6ad3f0e7b4d8ca33aa)), closes [#861](https://github.com/cedya77/aiometadata/issues/861)
+* **publicmetadb:** read plays back in the episode numbering they were sent in ([99c916c](https://github.com/cedya77/aiometadata/commit/99c916c377b49e9192aad8bd6447ba616661e25f))
+* **recommendations:** page recommendation rows by the catalog list page size ([c358920](https://github.com/cedya77/aiometadata/commit/c3589209428886f5ac930fcaf79a6d6a0c2a4e32))
+* **tmdb:** fill runtime-filtered TV discover pages ([d6be3cf](https://github.com/cedya77/aiometadata/commit/d6be3cf3c7dc82e93a29b2036d3ab8b6c17e55f1))
+* **tvdb:** use Cinemeta for a series that TVDB lists with no episodes ([b6c538a](https://github.com/cedya77/aiometadata/commit/b6c538af43779c16d648e5aae70712f9bfccb891)), closes [#860](https://github.com/cedya77/aiometadata/issues/860)
+* **warmer:** warm hidden, MAL discover and merged-source catalogs under the keys requests use ([b48bbc3](https://github.com/cedya77/aiometadata/commit/b48bbc37a4eb749a9bd6545499d79ff9c7e96ef8))
+* **watch-tracking:** send a TVDB episode filed under another TMDB show to that show ([1280993](https://github.com/cedya77/aiometadata/commit/1280993f891ba63ddb02282e846b746c60b5a66c))
+
+
+### Performance Improvements
+
+* **catalogs:** keep confirmed end-of-list pages for a day ([b77663a](https://github.com/cedya77/aiometadata/commit/b77663a76c9a1f4d77d9f2dcb498701835e69a6f))
+* **jellyfin:** build only the located episode for history, resume and premieres ([c55a385](https://github.com/cedya77/aiometadata/commit/c55a38579f73e42dd92bb7bbb7ab050a7c5ff0c7))
+* **jellyfin:** build only the requested episode when opening one ([afb82ef](https://github.com/cedya77/aiometadata/commit/afb82efcd827b2e3c7ae20711550d5671690b00c))
+* **jellyfin:** remember the ids an episode goes by ([f712b55](https://github.com/cedya77/aiometadata/commit/f712b5515cbd93379c152701cf1bced78bb0c9f4))
+* **jellyfin:** send People in listings only when Fields asks for it ([13976ed](https://github.com/cedya77/aiometadata/commit/13976ed54026d3fb0d682e17faed975b4872b134))
+* **jellyfin:** store new id mappings in batched inserts ([#871](https://github.com/cedya77/aiometadata/issues/871)) ([de1109a](https://github.com/cedya77/aiometadata/commit/de1109ac7a759356613574191a0762eb99408751))
+* **trailers:** warm addon trailers with catalogs and keep empty answers a day ([300a7cb](https://github.com/cedya77/aiometadata/commit/300a7cb780eea480d95daacb4a28467e67d1e320))
+
 ## [3.8.3](https://github.com/cedya77/aiometadata/compare/v3.8.2...v3.8.3) (2026-10-28)
 
 
