@@ -41,9 +41,10 @@ async function yearsOf(userUUID: string, historyKey: string, timeZone: string): 
 
 async function fingerprintOf(userUUID: string, historyKey: string, year: number, timeZone: string): Promise<string> {
   const { from, to } = yearBounds(year, timeZone);
-  const [stats, meta] = await Promise.all([database.watchStatsBetween(userUUID, historyKey, from, to), metaContextDigest(userUUID)]);
+  // Show progress reads the watches before the year too, so a change to those makes the review stale as well.
+  const [stats, before, meta] = await Promise.all([database.watchStatsBetween(userUUID, historyKey, from, to), database.watchStatsBetween(userUUID, historyKey, 0, from), metaContextDigest(userUUID)]);
   const setup = [REVIEW_VERSION, timeZone, meta, envInt('JELLYFIN_YEAR_REVIEW_BATCH_PLAYS', 6, 2), envInt('JELLYFIN_YEAR_REVIEW_BULK_GAP_SECONDS', 60, 0), envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0)];
-  const watches = [stats.count, stats.last, stats.sum];
+  const watches = [stats.count, stats.last, stats.sum, before.count, before.sum];
   return digest(setup) + digest(watches);
 }
 
