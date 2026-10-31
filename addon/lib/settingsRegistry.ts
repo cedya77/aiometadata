@@ -858,6 +858,17 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     max: 60,
   },
   {
+    key: 'JELLYFIN_COPY_IDLE_TICK_SECONDS',
+    envVar: 'JELLYFIN_COPY_IDLE_TICK_SECONDS',
+    label: 'Jellyfin Tracker Copy Idle Check Interval (seconds)',
+    description: 'How often the copies are checked while none is running here, so one another server left behind is still picked up.',
+    category: 'Features',
+    type: 'number',
+    default: 60,
+    min: 5,
+    max: 3600,
+  },
+  {
     key: 'JELLYFIN_TRACKER_RECOVER_MINUTES',
     envVar: 'JELLYFIN_TRACKER_RECOVER_MINUTES',
     label: 'Jellyfin Tracker Recovery Interval (minutes)',
