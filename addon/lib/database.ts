@@ -2555,6 +2555,11 @@ class Database {
     )) || [];
   }
 
+  async hasRunningCopyJobs(): Promise<boolean> {
+    const rows = await this.allPrimaryQuery(`SELECT 1 FROM tracker_copy_jobs WHERE status = 'running' LIMIT 1`);
+    return (rows || []).length > 0;
+  }
+
   async dueCopyJobs(now: number): Promise<number[]> {
     const at = this.type === 'sqlite' ? '?' : '$1';
     const rows = await this.allPrimaryQuery(`SELECT id FROM tracker_copy_jobs WHERE status = 'running' AND next_at <= ${at} AND claimed_until <= ${at} ORDER BY next_at`, this.type === 'sqlite' ? [now, now] : [now]);

@@ -253,6 +253,17 @@ export async function copyTarget(service: string, item: CopyItem, config: any): 
 const strikes = new Map<number, number>();
 const busy = new Set<number>();
 let timer: NodeJS.Timeout | null = null;
+let wakes = 0;
+
+function keepTicking(on: boolean): void {
+  if (on && !timer) {
+    timer = setInterval(() => void tick(), envInt('JELLYFIN_COPY_TICK_SECONDS', 2, 1) * 1000);
+    timer.unref?.();
+  } else if (!on && timer) {
+    clearInterval(timer);
+    timer = null;
+  }
+}
 
 
 function statusOf(calls: Array<{ status: number }>, error: any): number {
@@ -430,20 +441,24 @@ async function runClaimed(id: number): Promise<void> {
 }
 
 async function tick(): Promise<void> {
+  const woken = wakes;
   const due: number[] = await database.dueCopyJobs(Date.now()).catch(() => []);
   for (const id of due) {
     if (busy.has(id)) continue;
     busy.add(id);
     void runClaimed(id).catch((error: any) => logger.warn(`Copy ${id} step failed: ${error?.message || error}`)).finally(() => busy.delete(id));
   }
+  if (due.length || busy.size) return;
+  const running = await database.hasRunningCopyJobs().catch(() => true);
+  if (!running && woken === wakes) keepTicking(false);
 }
 
 export function wakeCopies(): void {
+  wakes += 1;
+  keepTicking(true);
   void tick();
 }
 
 export function startTrackerCopy(): void {
-  if (timer) return;
-  timer = setInterval(() => void tick(), envInt('JELLYFIN_COPY_TICK_SECONDS', 2, 1) * 1000);
-  timer.unref?.();
+  wakeCopies();
 }
