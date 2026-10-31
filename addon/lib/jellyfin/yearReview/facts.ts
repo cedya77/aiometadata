@@ -198,9 +198,15 @@ export async function titleFacts(userUUID: string, requests: FactsRequest[]): Pr
   const fresh: Array<{ key: string; data: TitleFacts }> = [];
   let built = 0;
   let held = 0;
-  await mapWithConcurrency(ranked, width, async (request, rank) => {
+  // Only titles fetched here spend the budget; one already in the meta cache costs nothing.
+  let started = 0;
+  await mapWithConcurrency(ranked, width, async (request) => {
     const cached = await heldMeta(userUUID, config, request.kind, metaIdOf(request.titleKey));
-    const meta = cached ?? (rank < buildBudget ? await fetchMetaBeforeArt(userUUID, request.kind, metaIdOf(request.titleKey)).catch(() => null) : null);
+    let meta = cached;
+    if (!meta && started < buildBudget) {
+      started += 1;
+      meta = await fetchMetaBeforeArt(userUUID, request.kind, metaIdOf(request.titleKey)).catch(() => null);
+    }
     if (!meta) return;
     if (cached) held += 1;
     else built += 1;
