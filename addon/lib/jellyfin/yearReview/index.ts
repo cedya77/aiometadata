@@ -24,6 +24,7 @@ const SETUP_DIGEST = 12;
 type Stored = { fingerprint: string; builtAt: number; data: any };
 
 const memory = new LRUCache<string, Stored>({ max: envInt('JELLYFIN_YEAR_REVIEW_MEMORY', 20, 1) });
+const yearLists = new LRUCache<string, Promise<number[]>>({ max: 500, ttl: 60 * 1000 });
 
 const reviewKey = (userUUID: string, historyKey: string, year: number) => `${userUUID}|${historyKey}|${year}`;
 
@@ -31,7 +32,17 @@ function localYear(at: number, timeZone: string): number {
   return Number(new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric' }).format(new Date(at)));
 }
 
-async function yearsOf(userUUID: string, historyKey: string, timeZone: string): Promise<number[]> {
+function yearsOf(userUUID: string, historyKey: string, timeZone: string): Promise<number[]> {
+  const key = `${userUUID}|${historyKey}|${timeZone}`;
+  const held = yearLists.get(key);
+  if (held) return held;
+  const read = readYears(userUUID, historyKey, timeZone);
+  yearLists.set(key, read);
+  read.catch(() => yearLists.delete(key));
+  return read;
+}
+
+async function readYears(userUUID: string, historyKey: string, timeZone: string): Promise<number[]> {
   const stats = await database.watchStatsBetween(userUUID, historyKey, 0, Number.MAX_SAFE_INTEGER);
   if (stats.first === null || stats.last === null) return [];
   const years: number[] = [];
@@ -142,7 +153,10 @@ export async function dashboardYear(userUUID: string, profile: string | null, ye
     const timeZone = safeTimeZone(viewingTimeZone(config));
     const historyKey = profileKey(config);
     const key = reviewKey(userUUID, historyKey, year);
-    const [fingerprint, years] = await Promise.all([fingerprintOf(userUUID, historyKey, year, timeZone), yearsOf(userUUID, historyKey, timeZone)]);
+    // While this review builds, a poll only asks how far it got, so what the build will settle is not worked out again.
+    const inFlight = ticketFor(key);
+    const building = inFlight?.state === 'queued' || inFlight?.state === 'building';
+    const [fingerprint, years] = await Promise.all([building ? null : fingerprintOf(userUUID, historyKey, year, timeZone), yearsOf(userUUID, historyKey, timeZone)]);
     let stored = memory.get(key) ?? null;
     if (!stored) {
       stored = await database.getYearReview(userUUID, historyKey, year).catch(() => null);
@@ -150,9 +164,9 @@ export async function dashboardYear(userUUID: string, profile: string | null, ye
     }
     const settleMs = envInt('JELLYFIN_YEAR_REVIEW_MIN_REBUILD_MINUTES', 30, 0) * 60 * 1000;
     // A review a failed fetch or the build budget left short is built again once it has settled, though no play changed.
-    const fresh = stored?.fingerprint === fingerprint && !(stored.data?.incomplete && Date.now() - stored.builtAt >= settleMs);
-    const recent = !!stored && sameSetup(stored.fingerprint, fingerprint) && Date.now() - stored.builtAt < settleMs;
-    const ticket = fresh || recent ? ticketFor(key) : enqueue(key, (waitedMs) => buildYear(userUUID, profile, year, waitedMs));
+    const fresh = !building && stored?.fingerprint === fingerprint && !(stored.data?.incomplete && Date.now() - stored.builtAt >= settleMs);
+    const recent = !building && !!stored && sameSetup(stored.fingerprint, fingerprint!) && Date.now() - stored.builtAt < settleMs;
+    const ticket = building ? inFlight : fresh || recent ? ticketFor(key) : enqueue(key, (waitedMs) => buildYear(userUUID, profile, year, waitedMs));
     const unchanged = !!stored && stored.builtAt === have;
     return {
       year,
@@ -164,7 +178,7 @@ export async function dashboardYear(userUUID: string, profile: string | null, ye
       rebuilding: stored && ticket ? ticket.state : null,
       builtAt: stored?.builtAt ?? null,
       ...(unchanged ? { unchanged: true, data: null } : { data: stored?.data ?? null }),
-      ratings: stored?.data ? await ratingsOf(userUUID, historyKey, stored.data) : {},
+      ...(building && unchanged ? {} : { ratings: stored?.data ? await ratingsOf(userUUID, historyKey, stored.data) : {} }),
     };
   });
 }

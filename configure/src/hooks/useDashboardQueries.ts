@@ -1849,7 +1849,7 @@ export function useJellyfinYear(userUUID: string | null, profile: string | null,
       },
       revalidate: {
         pathFor: (held) => (held.data && held.builtAt ? `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/year?${params}&have=${held.builtAt}` : null),
-        merge: (fresh, held) => (fresh.unchanged ? { ...fresh, unchanged: undefined, data: held.data } : fresh),
+        merge: (fresh, held) => (fresh.unchanged ? { ...fresh, unchanged: undefined, data: held.data, ratings: fresh.ratings ?? held.ratings } : fresh),
       },
     }
   );
