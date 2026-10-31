@@ -266,6 +266,8 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptio
 
   const badge = userBadge(user, Boolean(main));
   const canForget = Boolean(onForget) && (main || !samePerson);
+  const hasMenu = canForget || Boolean(onRemove);
+  const openInstallLink = () => navigateToSettingsSection('configuration', `install-link-${user?.id || 'main'}`);
 
   return (
     <div id={`user-card-${user?.id || 'main'}`} className={cn('scroll-mt-16 rounded-lg border', open ? 'space-y-3 p-4' : 'px-3 py-2')}>
@@ -278,18 +280,20 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptio
           <span className="text-[11px] text-muted-foreground">{chosen.length ? scope : 'All catalogs'}</span>
         </button>
         {stremioOn ? (
-          <Button variant="ghost" size="sm" className="hidden h-7 gap-1 text-xs sm:inline-flex" onClick={() => navigateToSettingsSection('configuration')}>
+          <Button variant="ghost" size="sm" className="hidden h-7 gap-1 text-xs sm:inline-flex" onClick={openInstallLink}>
             Install link <ArrowRight className="h-3 w-3" />
           </Button>
         ) : null}
-        {canForget || onRemove ? (
+        {hasMenu || stremioOn ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground" aria-label={`More for ${name}`}>
+              <Button variant="ghost" size="sm" className={cn('h-7 w-7 p-0 text-muted-foreground', !hasMenu && 'sm:hidden')} aria-label={`More for ${name}`}>
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {stremioOn ? <DropdownMenuItem className="sm:hidden" onSelect={openInstallLink}>Install link</DropdownMenuItem> : null}
+              {stremioOn && hasMenu ? <DropdownMenuSeparator className="sm:hidden" /> : null}
               {canForget ? <DropdownMenuItem onSelect={() => onForget?.()}>Forget imported history</DropdownMenuItem> : null}
               {canForget && onRemove ? <DropdownMenuSeparator /> : null}
               {onRemove ? <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => onRemove()}>Remove {name || 'this user'}</DropdownMenuItem> : null}

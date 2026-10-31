@@ -64,7 +64,7 @@ export function InstallLinks({ userUUID, installUrl }: { userUUID: string; insta
             const url = person.id ? withViewer(installUrl, person.id) : installUrl;
             const state = status ? stremioLinkState(config.stremioScrobblingSince, status[person.id]) : null;
             return (
-              <div key={person.id || 'main'} className="space-y-1 rounded-md border p-2">
+              <div key={person.id || 'main'} id={`install-link-${person.id || 'main'}`} className="scroll-mt-16 space-y-1 rounded-md border p-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-medium">{person.name}{person.id ? '' : ' (you)'}</span>
                   {state === 'reinstall' ? (
