@@ -56,9 +56,12 @@ const countryCodes = (() => {
   };
 })();
 
+let regionNames: Intl.DisplayNames | null = null;
+
 function regionName(code: string): string {
   try {
-    return new Intl.DisplayNames(undefined, { type: "region" }).of(code) ?? code;
+    regionNames ??= new Intl.DisplayNames(undefined, { type: "region" });
+    return regionNames.of(code) ?? code;
   } catch {
     return code;
   }

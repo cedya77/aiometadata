@@ -221,7 +221,7 @@ function Coverflow({ films, opening, label, caption }: { films: JellyfinYearTitl
   const ambient = centre?.facts?.background ?? centre?.facts?.poster;
   return (
     <>
-      {ambient && <div aria-hidden="true" className="absolute -inset-10 -z-20 scale-110 bg-cover bg-center opacity-45 blur-[40px] saturate-150" style={{ backgroundImage: `url("${sizedArt(ambient, 780) ?? ambient}")` }} />}
+      {ambient && <div aria-hidden="true" className="absolute -inset-10 -z-20 scale-110 bg-cover bg-center opacity-45 blur-[40px] saturate-150" style={{ backgroundImage: `url("${sizedArt(ambient, 342) ?? ambient}")` }} />}
       <div
         ref={stage}
         role="img"
