@@ -151,6 +151,7 @@ async function buildYear(userUUID: string, profile: string | null, year: number,
 export async function dashboardYear(userUUID: string, profile: string | null, year: number, have: number | null = null): Promise<any | null> {
   return asProfile(userUUID, profile, async (config) => {
     const timeZone = safeTimeZone(viewingTimeZone(config));
+    if (year > localYear(Date.now(), timeZone)) return { notBegun: true };
     const historyKey = profileKey(config);
     const key = reviewKey(userUUID, historyKey, year);
     // While this review builds, a poll only asks how far it got, so what the build will settle is not worked out again.

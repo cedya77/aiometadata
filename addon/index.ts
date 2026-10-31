@@ -8379,7 +8379,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/year", requireDashboardAdmin, async
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const year = parseInt(String(req.query.year ?? ''), 10);
-    // A year not yet begun has nothing to review, and each one asked for is built and stored.
+    // Next year is let through for the zones already in it; the review checks the viewer's own zone.
     if (!Number.isInteger(year) || year < 1970 || year > new Date().getUTCFullYear() + 1) {
       res.status(400).json({ error: 'Pick a year' });
       return;
@@ -8388,6 +8388,10 @@ addon.get("/api/dashboard/jellyfin/:userUUID/year", requireDashboardAdmin, async
     const payload = await require('./lib/jellyfin/yearReview').dashboardYear(String(req.params.userUUID), profile, year, Number.isFinite(have) && have > 0 ? have : null);
     if (!payload) {
       res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (payload.notBegun) {
+      res.status(400).json({ error: 'Pick a year' });
       return;
     }
     res.json(payload);
