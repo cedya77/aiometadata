@@ -1757,6 +1757,25 @@ export interface JellyfinAnimeVoice {
   roles: Array<{ character: string; image: string | null; entries: number[] }>;
 }
 
+export interface JellyfinPeopleCard {
+  name: string;
+  photo: string | null;
+  titles: number;
+  shown: string[];
+  voiced: boolean;
+}
+
+export interface JellyfinYearPeople {
+  cast: JellyfinPeopleCard[];
+  directors: Array<{ name: string; photo: string | null; films: number }>;
+  together: { names: [string, string]; photos: [string | null, string | null]; films: number } | null;
+  link: { name: string; photo: string | null; show: { name: string; poster: string | null }; films: Array<{ name: string; poster: string | null }> } | null;
+  themes: Array<[string, number]>;
+  books: number;
+  manga: number;
+  networks: Array<{ name: string; logo: string | null; plays: number }>;
+}
+
 export interface JellyfinYearData {
   version: number;
   year: number;
@@ -1773,6 +1792,7 @@ export interface JellyfinYearData {
   topShows: string[];
   network: { name: string; logo: string | null } | null;
   anime: { entries: JellyfinAnimeEntry[]; voices: JellyfinAnimeVoice[]; missing: number; unmatched: number } | null;
+  people: JellyfinYearPeople | null;
   titles: JellyfinYearTitle[];
 }
 

@@ -8,6 +8,7 @@ import { viewingTimeZone } from '../viewingHours';
 import { titleKeys } from '../ratings';
 import { animeYear, type AnimeYear } from './anime';
 import { metaContextDigest } from './facts';
+import { networkLogo, peopleYear, type PeopleYear } from './people';
 import { safeTimeZone, yearBounds, yearPlays, type YearPlay } from './plays';
 import { showProgress, type ShowProgress } from './progress';
 import { enqueue, ticketFor } from './queue';
@@ -16,7 +17,7 @@ import { timeYear, type TimedYear, type YearTitle } from './timed';
 const logger = consola.withTag('YearReview');
 const database: any = require('../../database');
 
-const REVIEW_VERSION = 5;
+const REVIEW_VERSION = 1;
 const RATING_BATCH = 500;
 const SETUP_DIGEST = 12;
 
@@ -61,18 +62,10 @@ function rankShows(timed: TimedYear): YearTitle[] {
 
 async function networkOf(config: any, show: YearTitle | undefined): Promise<{ name: string; logo: string | null } | null> {
   const name = show?.facts?.networks[0];
-  if (!name) return null;
-  try {
-    const { resolveTmdbNetworkByName } = require('../../tmdb-network-index');
-    const found = await resolveTmdbNetworkByName(name);
-    const info = found ? await require('../../getTmdb').networkInfo(found.id, config) : null;
-    return { name, logo: info?.logo_path ? `https://image.tmdb.org/t/p/w300${info.logo_path}` : null };
-  } catch {
-    return { name, logo: null };
-  }
+  return name ? { name, logo: await networkLogo(config, name) } : null;
 }
 
-function summarise(year: number, timeZone: string, timed: TimedYear, progress: Map<string, ShowProgress>, network: { name: string; logo: string | null } | null, animeLayer: AnimeYear | null, bulk: YearPlay[]): any {
+function summarise(year: number, timeZone: string, timed: TimedYear, progress: Map<string, ShowProgress>, network: { name: string; logo: string | null } | null, animeLayer: AnimeYear | null, people: PeopleYear | null, bulk: YearPlay[]): any {
   const films = timed.titles.filter((title) => title.kind === 'movie');
   const shows = timed.titles.filter((title) => title.kind === 'series');
   const anime = timed.titles.filter((title) => title.anime);
@@ -85,6 +78,7 @@ function summarise(year: number, timeZone: string, timed: TimedYear, progress: M
     topShows: rankShows(timed).map((title) => title.key),
     network,
     anime: animeLayer,
+    people,
     totals: {
       plays: timed.plays.length,
       watchMs: timed.plays.reduce((total, play) => total + play.runtimeMs, 0),
@@ -118,13 +112,15 @@ async function buildYear(userUUID: string, profile: string | null, year: number,
     const played = await yearPlays(userUUID, historyKey, year, timeZone);
     const bulk = played.filter((play) => play.batch);
     const timed = await timeYear(userUUID, historyKey, played.filter((play) => !play.batch), timeZone);
-    const [progress, network, anime] = await Promise.all([
+    const animeLayer = animeYear(timed).catch(() => null);
+    const [progress, network, anime, people] = await Promise.all([
       showProgress(userUUID, historyKey, yearBounds(year, timeZone).to, timed),
       networkOf(config, rankShows(timed)[0]),
-      animeYear(timed).catch(() => null),
+      animeLayer,
+      animeLayer.then((layer) => peopleYear(config, timed.titles, layer)).catch(() => null),
     ]);
     const builtAt = Date.now();
-    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed, progress, network, anime, bulk) };
+    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed, progress, network, anime, people, bulk) };
     memory.set(reviewKey(userUUID, historyKey, year), stored);
     await database.putYearReview(userUUID, historyKey, year, fingerprint, builtAt, stored.data);
     const maxAgeMs = envInt('JELLYFIN_YEAR_REVIEW_FACTS_HOURS', 7 * 24, 1) * 60 * 60 * 1000;

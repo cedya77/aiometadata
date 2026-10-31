@@ -25,12 +25,23 @@ export interface TitleFacts {
   episodeCount: number;
   releases: Record<string, number>;
   ids: Record<string, string>;
+  cast: FactsPerson[];
+  directors: FactsPerson[];
+  keywords: string[];
   source: FactsSource;
+}
+
+export interface FactsPerson {
+  name: string;
+  role: string | null;
+  photo: string | null;
 }
 
 export type FactsSource = 'stored' | 'cache' | 'built';
 
-const FACTS_VERSION = 2;
+const FACTS_VERSION = 1;
+const CAST_KEPT = 10;
+const KEYWORDS_KEPT = 40;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const PER_ENTRY_ANIME = /^(kitsu|mal|anilist|anidb):/i;
@@ -47,6 +58,17 @@ function names(value: unknown): string[] {
   const list = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
   const out = list.map((entry: any) => String(typeof entry === 'string' ? entry : entry?.name ?? '').trim()).filter(Boolean);
   return [...new Set(out)];
+}
+
+function peopleOf(list: unknown, limit: number): FactsPerson[] {
+  const out: FactsPerson[] = [];
+  for (const entry of Array.isArray(list) ? list : []) {
+    const name = String(entry?.name ?? '').trim();
+    if (!name) continue;
+    out.push({ name, role: entry?.character && entry.character !== name ? String(entry.character) : null, photo: entry?.photo ? String(entry.photo) : null });
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 function yearOf(meta: any): number | null {
@@ -109,6 +131,9 @@ export function factsFromMeta(meta: any, kind: 'movie' | 'series', source: Facts
     episodeCount,
     releases,
     ids: idsOf(meta),
+    cast: peopleOf(meta.app_extras?.cast, CAST_KEPT),
+    directors: peopleOf(meta.app_extras?.directors, CAST_KEPT),
+    keywords: names(meta.keywords).slice(0, KEYWORDS_KEPT),
     source,
   };
 }
