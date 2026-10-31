@@ -1721,6 +1721,42 @@ export interface JellyfinYearTitle {
   plays: JellyfinYearPlay[];
 }
 
+export interface JellyfinAnimeEntry {
+  malId: number;
+  titleKey: string;
+  name: string;
+  title: string | null;
+  japanese: string | null;
+  type: string | null;
+  year: number | null;
+  season: string | null;
+  airedFrom: string | null;
+  airedTo: string | null;
+  status: string | null;
+  episodesTotal: number | null;
+  episodes: number;
+  plays: number;
+  watchMs: number;
+  firstAt: number;
+  image: string | null;
+  rank: number | null;
+  score: number | null;
+  source: string | null;
+  studios: string[];
+  genres: string[];
+  themes: string[];
+  demographics: string[];
+}
+
+export interface JellyfinAnimeVoice {
+  malId: number;
+  name: string;
+  japanese: string | null;
+  image: string | null;
+  episodes: number;
+  roles: Array<{ character: string; image: string | null; entries: number[] }>;
+}
+
 export interface JellyfinYearData {
   version: number;
   year: number;
@@ -1735,6 +1771,7 @@ export interface JellyfinYearData {
   };
   topShows: string[];
   network: { name: string; logo: string | null } | null;
+  anime: { entries: JellyfinAnimeEntry[]; voices: JellyfinAnimeVoice[]; missing: number; unmatched: number } | null;
   titles: JellyfinYearTitle[];
 }
 

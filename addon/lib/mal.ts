@@ -18,6 +18,9 @@ const {
   normalizeJikanAnimeCharactersForCache,
   normalizeJikanAnimeEpisodesForCache,
   normalizeJikanCatalogForCache,
+  normalizeJikanAnimeFactsForCache,
+  normalizeJikanAnimeCastForCache,
+  normalizeJikanPersonNameForCache,
 }: any = require('./jikanCacheNormalizers');
 
 const DEFAULT_JIKAN_API_BASE = 'https://api.tenrai.org/v1';
@@ -498,6 +501,31 @@ async function getAnimeCharacters(malId: string | number): Promise<any[]> {
     });
 }
 
+async function jikanCached(key: string, path: string, normalize: (data: any) => any, ttl: (result: any) => number): Promise<any> {
+  const { cacheWrapJikanApi, classifyResult }: any = require('./getCache');
+  const url = `${jikanApiBase()}${path}`;
+  return cacheWrapJikanApi(key, () => enqueueRequest(() => _makeJikanRequest(url), url).then((response: any) => {
+    const data = response.data?.data;
+    return data ? normalize(data) : null;
+  }), null, {
+    resultClassifier: (result: any, error: any = null, cacheKey: string | null = null) =>
+      result && !error ? { type: 'SUCCESS', ttl: ttl(result) } : classifyResult(result, error, cacheKey),
+  });
+}
+
+async function getAnimeFactsCached(malId: string | number): Promise<any> {
+  return jikanCached(`anime-facts-${malId}`, `/anime/${malId}/full`, normalizeJikanAnimeFactsForCache, detailsTtl).catch(() => null);
+}
+
+async function getAnimeCastCached(malId: string | number): Promise<any[]> {
+  const cast = await jikanCached(`anime-cast-${malId}`, `/anime/${malId}/characters`, normalizeJikanAnimeCastForCache, () => envInt('JIKAN_CAST_TTL', 30 * 24 * 60 * 60, 0)).catch(() => null);
+  return Array.isArray(cast) ? cast : [];
+}
+
+async function getPersonNameCached(personId: string | number): Promise<any> {
+  return jikanCached(`person-name-${personId}`, `/people/${personId}`, normalizeJikanPersonNameForCache, () => envInt('JIKAN_PERSON_TTL', 30 * 24 * 60 * 60, 0)).catch(() => null);
+}
+
 async function getAnimeByVoiceActor(personId: string | number): Promise<any[]> {
   const url = `${jikanApiBase()}/people/${personId}/full`;
   return enqueueRequest(() => _makeJikanRequest(url), url)
@@ -945,6 +973,9 @@ export {
   searchAnime,
   getAnimeDetails,
   getAnimeDetailsCached,
+  getAnimeFactsCached,
+  getAnimeCastCached,
+  getPersonNameCached,
   getAnimeEpisodes,
   getAnimeEpisodeVideos,
   getAnimeCharacters,
@@ -974,6 +1005,9 @@ module.exports = {
   searchAnime,
   getAnimeDetails,
   getAnimeDetailsCached,
+  getAnimeFactsCached,
+  getAnimeCastCached,
+  getPersonNameCached,
   getAnimeEpisodes,
   getAnimeEpisodeVideos,
   getAnimeCharacters,

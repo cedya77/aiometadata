@@ -9,11 +9,11 @@ export const YEAR_GLASS = "bg-white/[0.055] backdrop-blur-[18px] shadow-[inset_0
 
 export const HATCH: React.CSSProperties = { backgroundImage: "repeating-linear-gradient(135deg, rgba(147,197,253,0.6) 0 2px, rgba(147,197,253,0.08) 2px 6px)" };
 
-export function ChapterHeader({ number, label, accent, title, sub, children }: { number: number; label: string; accent: YearAccent; title: React.ReactNode; sub?: React.ReactNode; children?: React.ReactNode }) {
+export function ChapterHeader({ number, label, accent, title, sub, children, titleClassName = "" }: { number: number; label: string; accent: YearAccent; title: React.ReactNode; sub?: React.ReactNode; children?: React.ReactNode; titleClassName?: string }) {
   return (
     <header>
       <span className={`text-xs font-semibold uppercase tracking-[0.16em] ${ACCENT_TEXT[accent]}`}>{String(number).padStart(2, "0")} · {label}</span>
-      <h2 className="mt-3 text-4xl font-extrabold leading-none tracking-[-0.04em] sm:text-[64px]">
+      <h2 className={`mt-3 text-4xl font-extrabold leading-none tracking-[-0.04em] sm:text-[64px] ${titleClassName}`}>
         {title}
         {sub && <><br /><span className="text-muted-foreground">{sub}</span></>}
       </h2>

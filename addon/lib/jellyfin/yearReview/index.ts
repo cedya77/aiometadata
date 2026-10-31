@@ -6,6 +6,7 @@ import { asProfile } from '../dashboard';
 import { profileKey } from '../profiles';
 import { viewingTimeZone } from '../viewingHours';
 import { titleKeys } from '../ratings';
+import { animeYear, type AnimeYear } from './anime';
 import { metaContextDigest } from './facts';
 import { safeTimeZone, yearBounds, yearPlays } from './plays';
 import { showProgress, type ShowProgress } from './progress';
@@ -15,7 +16,7 @@ import { timeYear, type TimedYear, type YearTitle } from './timed';
 const logger = consola.withTag('YearReview');
 const database: any = require('../../database');
 
-const REVIEW_VERSION = 3;
+const REVIEW_VERSION = 4;
 const RATING_BATCH = 500;
 const SETUP_DIGEST = 12;
 
@@ -71,7 +72,7 @@ async function networkOf(config: any, show: YearTitle | undefined): Promise<{ na
   }
 }
 
-function summarise(year: number, timeZone: string, timed: TimedYear, progress: Map<string, ShowProgress>, network: { name: string; logo: string | null } | null): any {
+function summarise(year: number, timeZone: string, timed: TimedYear, progress: Map<string, ShowProgress>, network: { name: string; logo: string | null } | null, animeLayer: AnimeYear | null): any {
   const films = timed.titles.filter((title) => title.kind === 'movie');
   const shows = timed.titles.filter((title) => title.kind === 'series');
   const anime = timed.titles.filter((title) => title.anime);
@@ -83,6 +84,7 @@ function summarise(year: number, timeZone: string, timed: TimedYear, progress: M
     counts: timed.counts,
     topShows: rankShows(timed).map((title) => title.key),
     network,
+    anime: animeLayer,
     totals: {
       plays: timed.plays.length,
       watchMs: timed.plays.reduce((total, play) => total + play.runtimeMs, 0),
@@ -113,12 +115,13 @@ async function buildYear(userUUID: string, profile: string | null, year: number,
     const started = Date.now();
     const fingerprint = await fingerprintOf(userUUID, historyKey, year, timeZone);
     const timed = await timeYear(userUUID, historyKey, await yearPlays(userUUID, historyKey, year, timeZone), timeZone);
-    const [progress, network] = await Promise.all([
+    const [progress, network, anime] = await Promise.all([
       showProgress(userUUID, historyKey, yearBounds(year, timeZone).to, timed),
       networkOf(config, rankShows(timed)[0]),
+      animeYear(timed).catch(() => null),
     ]);
     const builtAt = Date.now();
-    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed, progress, network) };
+    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed, progress, network, anime) };
     memory.set(reviewKey(userUUID, historyKey, year), stored);
     await database.putYearReview(userUUID, historyKey, year, fingerprint, builtAt, stored.data);
     const maxAgeMs = envInt('JELLYFIN_YEAR_REVIEW_FACTS_HOURS', 7 * 24, 1) * 60 * 60 * 1000;
