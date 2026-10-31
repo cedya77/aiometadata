@@ -171,13 +171,6 @@ export function foldRows(config: any, entries: BuilderEntry[]): { catalogs: any[
   };
 }
 
-export function withRowsFolded<T extends { collections?: BuilderEntry[] }>(config: T): T {
-  const entries = Array.isArray(config?.collections) ? config.collections : [];
-  if (!entries.some((entry) => entry?.kind === 'classicRow')) return config;
-  const { catalogs, collections } = foldRows(config, entries);
-  return { ...config, catalogs, collections };
-}
-
 function unmovedPositions(order: Array<number | undefined>): Set<number> {
   const tails: number[] = [];
   const tailAt: number[] = [];
