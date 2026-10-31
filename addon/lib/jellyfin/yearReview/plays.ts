@@ -155,11 +155,16 @@ export async function foldPlays(rows: Array<{ video_id: string; watched_at: numb
     }
   }
 
-  const perInstant = new Map<number, number>();
-  for (const play of plays) perInstant.set(play.at, (perInstant.get(play.at) ?? 0) + 1);
+  plays.sort((a, b) => a.at - b.at);
   const batchSize = envInt('JELLYFIN_YEAR_REVIEW_BATCH_PLAYS', 6, 2);
-  for (const play of plays) play.batch = (perInstant.get(play.at) ?? 0) >= batchSize;
-  return plays.sort((a, b) => a.at - b.at);
+  const gapMs = envInt('JELLYFIN_YEAR_REVIEW_BULK_GAP_SECONDS', 60, 0) * 1000;
+  let start = 0;
+  for (let i = 1; i <= plays.length; i += 1) {
+    if (i < plays.length && plays[i].at - plays[i - 1].at <= gapMs) continue;
+    if (i - start >= batchSize) for (let j = start; j < i; j += 1) plays[j].batch = true;
+    start = i;
+  }
+  return plays;
 }
 
 export async function yearPlays(userUUID: string, historyKey: string, year: number, timeZone: string): Promise<YearPlay[]> {

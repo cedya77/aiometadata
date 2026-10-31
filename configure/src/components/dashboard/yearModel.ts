@@ -42,9 +42,9 @@ export function buildYearModel(data: JellyfinYearData, ratings: Record<string, n
   const local = localParts(data.timeZone);
   const plays: YearPlay[] = [];
   for (const title of data.titles) {
-    for (const [videoId, at, runtimeMs, , batch, overfull] of title.plays) {
+    for (const [videoId, at, runtimeMs, , overfull] of title.plays) {
       const parts = local(at);
-      plays.push({ title, videoId, at, runtimeMs, catchUp: batch === 1 || overfull === 1, film: title.kind === "movie", day: parts.day, hour: parts.hour, weekday: parts.weekday, month: parts.month });
+      plays.push({ title, videoId, at, runtimeMs, catchUp: overfull === 1, film: title.kind === "movie", day: parts.day, hour: parts.hour, weekday: parts.weekday, month: parts.month });
     }
   }
   plays.sort((a, b) => a.at - b.at);

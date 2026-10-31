@@ -8,7 +8,7 @@ import { viewingTimeZone } from '../viewingHours';
 import { titleKeys } from '../ratings';
 import { animeYear, type AnimeYear } from './anime';
 import { metaContextDigest } from './facts';
-import { safeTimeZone, yearBounds, yearPlays } from './plays';
+import { safeTimeZone, yearBounds, yearPlays, type YearPlay } from './plays';
 import { showProgress, type ShowProgress } from './progress';
 import { enqueue, ticketFor } from './queue';
 import { timeYear, type TimedYear, type YearTitle } from './timed';
@@ -16,7 +16,7 @@ import { timeYear, type TimedYear, type YearTitle } from './timed';
 const logger = consola.withTag('YearReview');
 const database: any = require('../../database');
 
-const REVIEW_VERSION = 4;
+const REVIEW_VERSION = 5;
 const RATING_BATCH = 500;
 const SETUP_DIGEST = 12;
 
@@ -41,7 +41,7 @@ async function yearsOf(userUUID: string, historyKey: string, timeZone: string): 
 async function fingerprintOf(userUUID: string, historyKey: string, year: number, timeZone: string): Promise<string> {
   const { from, to } = yearBounds(year, timeZone);
   const [stats, meta] = await Promise.all([database.watchStatsBetween(userUUID, historyKey, from, to), metaContextDigest(userUUID)]);
-  const setup = [REVIEW_VERSION, timeZone, meta, envInt('JELLYFIN_YEAR_REVIEW_BATCH_PLAYS', 6, 2), envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0)];
+  const setup = [REVIEW_VERSION, timeZone, meta, envInt('JELLYFIN_YEAR_REVIEW_BATCH_PLAYS', 6, 2), envInt('JELLYFIN_YEAR_REVIEW_BULK_GAP_SECONDS', 60, 0), envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0)];
   const watches = [stats.count, stats.last, stats.sum];
   return digest(setup) + digest(watches);
 }
@@ -72,7 +72,7 @@ async function networkOf(config: any, show: YearTitle | undefined): Promise<{ na
   }
 }
 
-function summarise(year: number, timeZone: string, timed: TimedYear, progress: Map<string, ShowProgress>, network: { name: string; logo: string | null } | null, animeLayer: AnimeYear | null): any {
+function summarise(year: number, timeZone: string, timed: TimedYear, progress: Map<string, ShowProgress>, network: { name: string; logo: string | null } | null, animeLayer: AnimeYear | null, bulk: YearPlay[]): any {
   const films = timed.titles.filter((title) => title.kind === 'movie');
   const shows = timed.titles.filter((title) => title.kind === 'series');
   const anime = timed.titles.filter((title) => title.anime);
@@ -91,7 +91,8 @@ function summarise(year: number, timeZone: string, timed: TimedYear, progress: M
       films: { titles: films.length, plays: sum(films, (title) => title.plays.length), watchMs: sum(films, (title) => title.watchMs) },
       shows: { titles: shows.length, plays: sum(shows, (title) => title.plays.length), watchMs: sum(shows, (title) => title.watchMs) },
       anime: { titles: anime.length, plays: sum(anime, (title) => title.plays.length) },
-      rhythmPlays: timed.plays.filter((play) => !play.batch && !play.overfull).length,
+      rhythmPlays: timed.plays.filter((play) => !play.overfull).length,
+      bulk: { plays: bulk.length, titles: new Set(bulk.map((play) => play.titleKey)).size },
     },
     titles: timed.titles.map((title) => ({
       key: title.key,
@@ -103,7 +104,7 @@ function summarise(year: number, timeZone: string, timed: TimedYear, progress: M
       episodes: episodesOf(title),
       progress: progress.get(title.key) ?? null,
       facts: title.facts ? { source: title.facts.source, year: title.facts.year, status: title.facts.status, runtimeMs: title.facts.runtimeMs, genres: title.facts.genres, countries: title.facts.countries, networks: title.facts.networks, studios: title.facts.studios, language: title.facts.language, poster: title.facts.poster, background: title.facts.background, logo: title.facts.logo } : null,
-      plays: title.plays.map((play) => [play.videoId, play.at, play.runtimeMs, play.runtimeSource, play.batch ? 1 : 0, play.overfull ? 1 : 0, play.spellings]),
+      plays: title.plays.map((play) => [play.videoId, play.at, play.runtimeMs, play.runtimeSource, play.overfull ? 1 : 0, play.spellings]),
     })),
   };
 }
@@ -114,14 +115,16 @@ async function buildYear(userUUID: string, profile: string | null, year: number,
     const historyKey = profileKey(config);
     const started = Date.now();
     const fingerprint = await fingerprintOf(userUUID, historyKey, year, timeZone);
-    const timed = await timeYear(userUUID, historyKey, await yearPlays(userUUID, historyKey, year, timeZone), timeZone);
+    const played = await yearPlays(userUUID, historyKey, year, timeZone);
+    const bulk = played.filter((play) => play.batch);
+    const timed = await timeYear(userUUID, historyKey, played.filter((play) => !play.batch), timeZone);
     const [progress, network, anime] = await Promise.all([
       showProgress(userUUID, historyKey, yearBounds(year, timeZone).to, timed),
       networkOf(config, rankShows(timed)[0]),
       animeYear(timed).catch(() => null),
     ]);
     const builtAt = Date.now();
-    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed, progress, network, anime) };
+    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed, progress, network, anime, bulk) };
     memory.set(reviewKey(userUUID, historyKey, year), stored);
     await database.putYearReview(userUUID, historyKey, year, fingerprint, builtAt, stored.data);
     const maxAgeMs = envInt('JELLYFIN_YEAR_REVIEW_FACTS_HOURS', 7 * 24, 1) * 60 * 60 * 1000;

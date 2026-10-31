@@ -1686,7 +1686,7 @@ export function useJellyfinShows(userUUID: string | null, profile: string | null
   );
 }
 
-export type JellyfinYearPlay = [videoId: string, at: number, runtimeMs: number, runtimeSource: string, batch: 0 | 1, overfull: 0 | 1, spellings: string[]];
+export type JellyfinYearPlay = [videoId: string, at: number, runtimeMs: number, runtimeSource: string, overfull: 0 | 1, spellings: string[]];
 
 export interface JellyfinShowProgress {
   aired: number;
@@ -1768,6 +1768,7 @@ export interface JellyfinYearData {
     shows: { titles: number; plays: number; watchMs: number };
     anime: { titles: number; plays: number };
     rhythmPlays: number;
+    bulk: { plays: number; titles: number };
   };
   topShows: string[];
   network: { name: string; logo: string | null } | null;

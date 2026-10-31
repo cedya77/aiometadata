@@ -32,6 +32,8 @@ function YearPicker({ years, year, onYear }: { years: number[]; year: number; on
   );
 }
 
+const bulkNote = (plays: number) => `${plays.toLocaleString()} more ${plays === 1 ? "play was" : "plays were"} marked in bulk, so ${plays === 1 ? "it is" : "they are"} left out.`;
+
 function Hero({ model, profileName, picker }: { model: YearModel; profileName: string; picker: ReactNode }) {
   const wall = useMemo(() => posters(model), [model]);
   const { totals } = model.data;
@@ -73,6 +75,7 @@ function Hero({ model, profileName, picker }: { model: YearModel; profileName: s
           {span}, {titles.toLocaleString()} title{titles === 1 ? "" : "s"}{gripped ? ", one show you could not put down." : "."}{" "}
           {model.partial && <span className="block text-muted-foreground">{formatDay(model.year, 0, false, "long")} to {formatDay(model.year, model.through, false, "long")}, still counting.</span>}
         </p>
+        {!!totals.bulk?.plays && <p className="mt-3 max-w-[640px] text-sm text-muted-foreground">{bulkNote(totals.bulk.plays)}</p>}
         <div className="mt-auto grid grid-cols-2 gap-6 pb-10 pt-10 sm:grid-cols-3 lg:grid-cols-6">
           {stats.map((s) => (
             <div key={s.label} className="min-w-0">
@@ -156,7 +159,7 @@ export default function JellyfinYear({ userUUID, profile, profileName, activeTab
         <div className="flex justify-end px-4 pt-6 sm:px-6">{picker}</div>
         <section className="px-4 py-24 sm:px-6">
           <p className="text-[112px] font-black leading-[0.82] tracking-[-0.065em] text-white/10 sm:text-[200px]">{year}</p>
-          <p className="mt-4 text-sm text-muted-foreground">Nothing played in {year} yet.</p>
+          <p className="mt-4 text-sm text-muted-foreground">Nothing played in {year} yet.{current.data.totals.bulk?.plays ? ` ${bulkNote(current.data.totals.bulk.plays)}` : ""}</p>
         </section>
       </div>
     );
