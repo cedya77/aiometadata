@@ -7,7 +7,7 @@ import { mapWithConcurrency } from '../../utils/concurrency';
 import { fetchMeta } from './items';
 import { upsertPlaystateEverywhere } from './aliases';
 import { scrobblesJellyfin, scrobblesStremio, type TrackerSource } from '../watchTracking';
-import { descriptorForVideo, isPlayed, type LibraryEvent, type PlayerEvent } from '../stremioEvents';
+import { descriptorForVideo, isPlayed, titleType, type LibraryEvent, type PlayerEvent } from '../stremioEvents';
 import type { Descriptor } from './idsCodec';
 
 const logger = consola.withTag('JellyfinPlaystate');
@@ -832,7 +832,7 @@ export async function recordStremioPlay(userUUID: string, config: any, event: Pl
 export async function recordStremioMark(userUUID: string, config: any, event: LibraryEvent): Promise<void> {
   if (event.action !== 'watched' && event.action !== 'unwatched') return;
   const played = event.action === 'watched';
-  const t = /^(kitsu|mal|anilist|anidb):/.test(event.metaId) ? 'anime' : event.type;
+  const t = titleType(event.metaId, event.type);
 
   let marked: MarkTarget;
   if (event.videoIds.length) {

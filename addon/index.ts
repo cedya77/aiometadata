@@ -5995,7 +5995,7 @@ function stremioEventRoute(resource) {
 
     const { configForViewer, profileForViewer } = require('./lib/jellyfin/profiles');
     const { scrobblesStremio, syncsStremioLibrary } = require('./lib/watchTracking');
-    const { parseStremioEvent, stremioEventTarget, stremioEventKey, stremioEventSlot, isRepeatEvent, runInOrder } = require('./lib/stremioEvents');
+    const { parseStremioEvent, stremioEventTarget, stremioEventKey, stremioEventSlot, isRepeatEvent, runInOrder, titleType } = require('./lib/stremioEvents');
     const viewer = configForViewer(config, userUUID, req.query.viewer);
     if (!viewer) return refuseUnknownViewer(res, 'Stremio', userUUID, req.query.viewer);
     const event = scrobblesStremio(viewer) ? parseStremioEvent(resource, type, id, extra) : null;
@@ -6015,8 +6015,7 @@ function stremioEventRoute(resource) {
       if (event.action === 'watched' || event.action === 'unwatched') return playstate.recordStremioMark(userUUID, viewer, event);
       if (!syncsStremioLibrary(viewer)) return;
       const { setWatchlisted } = require('./lib/jellyfin/watchlist');
-      const t = /^(kitsu|mal|anilist|anidb):/.test(event.metaId) ? 'anime' : event.type;
-      await setWatchlisted(userUUID, viewer, { k: event.type, t, i: event.metaId }, event.action === 'libraryAdd');
+      await setWatchlisted(userUUID, viewer, { k: event.type, t: titleType(event.metaId, event.type), i: event.metaId }, event.action === 'libraryAdd');
     })).catch((error) => consola.error(`[Stremio] ${resource} ${type}/${id} failed: ${error.message}`));
   };
 }

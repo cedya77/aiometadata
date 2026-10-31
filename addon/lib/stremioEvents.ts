@@ -1,6 +1,7 @@
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../utils/envNumber';
 import { parseStremioId, type Descriptor } from './jellyfin/idsCodec';
+import { isAnimeId } from './jellyfin/canonicalIds';
 
 export type PlayerAction = 'start' | 'pause' | 'stop';
 export type LibraryAction = 'libraryAdd' | 'libraryRemove' | 'watched' | 'unwatched';
@@ -10,7 +11,6 @@ export type StremioEvent = PlayerEvent | LibraryEvent;
 
 const PLAYER_ACTIONS: readonly string[] = ['start', 'pause', 'stop'];
 const LIBRARY_ACTIONS: readonly string[] = ['libraryAdd', 'libraryRemove', 'watched', 'unwatched'];
-const ANIME_ID = /^(kitsu|mal|anilist|anidb):/;
 
 function millis(value: string | null): number {
   const parsed = Number(value);
@@ -88,8 +88,12 @@ export function runInOrder(slot: string, work: () => Promise<unknown>): Promise<
   return next;
 }
 
+export function titleType(id: string, type: 'movie' | 'series'): 'movie' | 'series' | 'anime' {
+  return isAnimeId(id) ? 'anime' : type;
+}
+
 export function descriptorForVideo(type: 'movie' | 'series', videoId: string): Descriptor | null {
-  const t = ANIME_ID.test(videoId) ? 'anime' : type;
+  const t = titleType(videoId, type);
   if (type === 'movie') return { k: 'movie', t, i: videoId };
   const parsed = parseStremioId(videoId);
   if (!parsed || typeof parsed.episode !== 'number') return null;
