@@ -150,6 +150,7 @@ export async function dashboardYear(userUUID: string, profile: string | null, ye
       years,
       status: stored ? 'ready' : ticket?.state ?? 'queued',
       ...(ticket?.state === 'queued' ? { ahead: ticket.ahead } : {}),
+      ...(ticket?.state === 'failed' ? { retryAt: ticket.retryAt } : {}),
       stale: !!stored && !fresh,
       rebuilding: stored && ticket ? ticket.state : null,
       builtAt: stored?.builtAt ?? null,

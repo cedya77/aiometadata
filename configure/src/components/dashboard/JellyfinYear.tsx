@@ -107,15 +107,18 @@ function ChapterNav({ chapters }: { chapters: typeof YEAR_CHAPTERS }) {
 
 function BuildState({ review, year }: { review: JellyfinYearReview | undefined; year: number }) {
   const status = review?.status;
+  const failed = status === "failed";
   const text = status === "busy"
     ? "The server is busy building other reviews. This one will start as soon as there is room."
-    : status === "queued"
+    : failed
+      ? `Building ${year} failed. It will be tried again${review?.retryAt ? ` at ${new Date(review.retryAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : " soon"}.`
+      : status === "queued"
       ? `Waiting to be built${review?.ahead ? `, ${review.ahead} ahead` : ""}.`
       : `Putting ${year} together from every play.`;
   return (
     <section className="flex min-h-[420px] flex-col items-start justify-center gap-4 px-4 sm:px-6">
       <p className="text-[112px] font-black leading-[0.82] tracking-[-0.065em] text-white/10 sm:text-[200px]">{year}</p>
-      <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {text}</p>
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">{!failed && <Loader2 className="h-4 w-4 animate-spin" />} {text}</p>
     </section>
   );
 }
@@ -125,7 +128,7 @@ function Freshness({ review }: { review: JellyfinYearReview }) {
   return (
     <div className="px-4 pt-4 sm:px-6 lg:px-12">
       <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        {review.rebuilding && review.rebuilding !== "busy"
+        {review.rebuilding && review.rebuilding !== "busy" && review.rebuilding !== "failed"
           ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Adding your newest plays.</>
           : <>Built {review.builtAt ? when(review.builtAt) : "earlier"}. Newer plays show up on the next update.</>}
       </p>

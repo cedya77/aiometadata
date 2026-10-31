@@ -1814,13 +1814,14 @@ export interface JellyfinYearData {
   titles: JellyfinYearTitle[];
 }
 
-export type JellyfinYearBuild = 'queued' | 'building' | 'busy';
+export type JellyfinYearBuild = 'queued' | 'building' | 'busy' | 'failed';
 
 export interface JellyfinYearReview {
   year: number;
   years: number[];
   status: 'ready' | JellyfinYearBuild;
   ahead?: number;
+  retryAt?: number;
   stale: boolean;
   rebuilding: JellyfinYearBuild | null;
   builtAt: number | null;
@@ -1843,7 +1844,7 @@ export function useJellyfinYear(userUUID: string | null, profile: string | null,
       enabledWhen: Boolean(userUUID),
       pollEvery: (data) => {
         const build = data?.status === 'ready' ? data.rebuilding : data?.status;
-        if (build === 'busy') return YEAR_BUSY_POLL_MS;
+        if (build === 'busy' || build === 'failed') return YEAR_BUSY_POLL_MS;
         return build ? YEAR_BUILD_POLL_MS : false;
       },
       revalidate: {
