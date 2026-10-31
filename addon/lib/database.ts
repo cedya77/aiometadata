@@ -2897,8 +2897,8 @@ class Database {
     const marks = metaIds.map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
     const kind = metaType ? ` AND (meta_type IS NULL OR meta_type = ${sqlite ? '?' : `$${metaIds.length + 3}`})` : '';
     const query = sqlite
-      ? `SELECT meta_id, rating, pmdb_id, updated_at FROM jellyfin_ratings WHERE user_uuid = ? AND profile = ? AND meta_id IN (${marks})${kind}`
-      : `SELECT meta_id, rating, pmdb_id, updated_at FROM jellyfin_ratings WHERE user_uuid = $1 AND profile = $2 AND meta_id IN (${marks})${kind}`;
+      ? `SELECT meta_id, rating, pmdb_id, meta_type, updated_at FROM jellyfin_ratings WHERE user_uuid = ? AND profile = ? AND meta_id IN (${marks})${kind}`
+      : `SELECT meta_id, rating, pmdb_id, meta_type, updated_at FROM jellyfin_ratings WHERE user_uuid = $1 AND profile = $2 AND meta_id IN (${marks})${kind}`;
     return this.allQuery(query, [userUUID, profile, ...metaIds, ...(metaType ? [metaType] : [])]);
   }
 

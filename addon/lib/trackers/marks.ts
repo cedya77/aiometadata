@@ -77,6 +77,12 @@ export async function mirrored(service: string, credential: string, key: string)
 export const titleIds = (entry: MarkItem) => Object.fromEntries(TITLE_KEYS.filter((key) => entry.ids[key] && !(key === 'tvdb' && entry.kind === 'movie')).map((key) => [key, entry.ids[key]]));
 export const notFoundCount = (missed: any) => (typeof missed === 'number' ? missed : ['movies', 'shows', 'seasons', 'episodes', 'anime'].reduce((n, key) => n + (Array.isArray(missed?.[key]) ? missed[key].length : Number(missed?.[key]) || 0), 0));
 
+export function freeRatingKeys(keys: string[], held: Array<{ meta_id: string; meta_type?: string | null }>, kind: 'movie' | 'series'): string[] {
+  if (held.some((row) => !row.meta_type || row.meta_type === kind)) return [];
+  const taken = new Set(held.map((row) => String(row.meta_id)));
+  return keys.filter((key) => !taken.has(key));
+}
+
 export function ratingKeys(item: MarkItem): string[] {
   const { imdb, tvdb, tmdb, kitsu, mal } = item.ids;
   return [imdb, tvdb && item.kind === 'series' ? `tvdb:${tvdb}` : null, tmdb ? `tmdb:${tmdb}` : null, kitsu ? `kitsu:${kitsu}` : null, mal ? `mal:${mal}` : null].filter(Boolean) as string[];

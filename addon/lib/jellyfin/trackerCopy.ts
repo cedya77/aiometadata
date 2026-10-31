@@ -6,7 +6,7 @@ import { videoIdAliases } from './aliases';
 import { listProfiles, scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
 import { asListed, belongsOn, furthestPerEntry, pullDrift, spellingFor, spellingsFor, viewingOf, type Viewing } from './trackerDrift';
-import { MARKS, markVideo, planMarks, ratingKeys, writeMarks, type Mark, type MarkItem } from './trackerMarks';
+import { MARKS, freeRatingKeys, markVideo, planMarks, ratingKeys, writeMarks, type Mark, type MarkItem } from './trackerMarks';
 import { copyBatch, gapMs, isAnimeList, trackerName, trackerOf } from '../trackers';
 import { aliasesOf, copyTarget as targetOn, heldKeysOf, nativeKey, spellingsOf, type CopyItem, type CopyTarget, type MirrorRow, type WatchOutcome } from '../trackers/watches';
 
@@ -325,9 +325,10 @@ async function bringRatingsHome(userUUID: string, profile: string, items: MarkIt
     if ((item.kind !== 'movie' && item.kind !== 'series') || item.later || !item.rating) continue;
     const keys = ratingKeys(item);
     if (!keys.length) continue;
-    const held: any[] = await database.listRatings(userUUID, profile, keys, item.kind === 'movie' ? 'movie' : 'series').catch(() => []);
-    if (held.length) continue;
-    await database.setRating(userUUID, profile, keys, Math.min(10, Math.max(1, Math.round(item.rating))), item.kind === 'movie' ? 'movie' : 'series');
+    const held: any[] | null = await database.listRatings(userUUID, profile, keys).catch(() => null);
+    const free = held ? freeRatingKeys(keys, held, item.kind) : [];
+    if (!free.length) continue;
+    await database.setRating(userUUID, profile, free, Math.min(10, Math.max(1, Math.round(item.rating))), item.kind);
   }
 }
 

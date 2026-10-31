@@ -3,7 +3,7 @@ import { TITLE_KEYS, keysOf, markKeys, type MarkItem, type MarkOutcome, type Mar
 import { credentialFor } from './trackerSource';
 
 export type { Mark } from '../trackers';
-export { markKeys, ratingKeys, type MarkItem, type MarkSide } from '../trackers/marks';
+export { freeRatingKeys, markKeys, ratingKeys, type MarkItem, type MarkSide } from '../trackers/marks';
 export const MARKS = new Set<string>(MARK_KINDS);
 
 export interface MarkPlan {
