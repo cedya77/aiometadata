@@ -2,6 +2,7 @@ import 'dotenv/config';
 import consola from 'consola';
 import { generateContent } from './openrouter-client';
 import { buildPrompt, parseAIResponse } from './gemini-service';
+const { isPresetModel }: any = require('./ai-model-resolver');
 
 const logger = consola.withTag('OpenRouterService');
 
@@ -24,7 +25,7 @@ async function performOpenRouterSearch(apiKey: string, query: string, type: 'mov
   const selectedModel = model || DEFAULT_OPENROUTER_MODEL;
   // :online suffix = OpenRouter web search plugin injects search results into context
   const hasWebSearch = selectedModel.endsWith(':online');
-  const timeout = hasWebSearch ? 45000 : 30000;
+  const timeout = hasWebSearch || isPresetModel(selectedModel) ? 45000 : 30000;
 
   logger.debug(`Using model: ${selectedModel}, webSearch: ${hasWebSearch}, timeout: ${timeout}ms`);
 

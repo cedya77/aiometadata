@@ -15,6 +15,7 @@ const { resolveAllIds }: any = require('./id-resolver');
 const { isAnime }: any = require("../utils/isAnime");
 const { performGeminiSearch, resolveGeminiModel }: any = require('../utils/gemini-service');
 const { performOpenRouterSearch }: any = require('../utils/openrouter-service');
+const { withWebSearch }: any = require('../utils/ai-model-resolver');
 import consola from 'consola';
 import { tmdbImageUrl, tmdbLogoSize, tmdbBackdropSize, tmdbPosterSize } from '../utils/tmdbImageSize';
 import { hasAgeRatingCap } from '../utils/ageRating';
@@ -1460,9 +1461,7 @@ async function performAiSearch(query: string, language: string, config: any): Pr
 
     if (aiProvider === 'openrouter') {
       const openrouterKey = config.apiKeys?.openrouter;
-      const effectiveModel = aiWebSearch
-        ? (aiModel.endsWith(':online') ? aiModel : `${aiModel}:online`)
-        : aiModel.replace(/:online$/, '');
+      const effectiveModel = withWebSearch(aiModel, aiWebSearch);
       suggestions = await performOpenRouterSearch(openrouterKey, query, 'mixed', language, effectiveModel);
     } else {
       const geminiKey = config.apiKeys?.gemini || process.env.BUILT_IN_GEMINI_API_KEY;
