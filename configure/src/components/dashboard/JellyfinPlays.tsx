@@ -124,10 +124,14 @@ export function Row({ children, onEnd, loading }: { children: React.ReactNode; o
     </div>
   );
 }
+const STAMP_DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
+const STAMP_TIME = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const DAY_HEADING = new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric", year: "numeric" });
+const WEEKDAY = new Intl.DateTimeFormat(undefined, { weekday: "long" });
+
 function stamp(value: number | null): string {
   if (!value) return "—";
-  const d = new Date(value);
-  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} at ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+  return `${STAMP_DAY.format(value)} at ${STAMP_TIME.format(value)}`;
 }
 function episodeCode(row: JellyfinPlayRow, spaced = false): string {
   if (row.number === null) return "";
@@ -254,7 +258,7 @@ function PlayedDay({ day }: { day: DayGroup }) {
     <div className="space-y-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <p className="text-sm font-semibold">
-          {day.date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} · {day.date.toLocaleDateString(undefined, { weekday: "long" })}
+          {DAY_HEADING.format(day.date)} · {WEEKDAY.format(day.date)}
           {day.runtimeMs > 0 && <span className="ml-2 text-xs font-normal text-muted-foreground">{duration(day.runtimeMs)}</span>}
         </p>
         <p className="text-xs text-muted-foreground tabular-nums">

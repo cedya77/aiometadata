@@ -25,8 +25,11 @@ function useNow(active: boolean, every: number): number {
   return now;
 }
 
-const clock = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-const shortDay = (at: number) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const CLOCK = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const SHORT_DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+const LONG_DAY = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" });
+const clock = (at: number) => CLOCK.format(at);
+const shortDay = (at: number) => SHORT_DAY.format(at);
 
 function countdown(ms: number): string {
   if (ms <= 0) return "now";
@@ -757,7 +760,7 @@ const dayOf = (at: number): string => {
   const d = new Date(at);
   if (d.toDateString() === new Date().toDateString()) return "Today";
   if (d.toDateString() === new Date(Date.now() - 86_400_000).toDateString()) return "Yesterday";
-  return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  return LONG_DAY.format(d);
 };
 
 export default function JellyfinSync({ userUUID, profile, profileName, watched, rows, activeTab, compact = false, onOpen }: { userUUID: string; profile: string | null; profileName: string; watched: number; rows: JellyfinSyncRow[]; activeTab: DashboardTab; compact?: boolean; onOpen?: () => void }) {

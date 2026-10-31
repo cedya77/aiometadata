@@ -20,9 +20,10 @@ export function clock(ms: number): string {
 }
 export const percentOf = (row: JellyfinPlayRow): number | null =>
   row.runtimeMs > 0 ? Math.round((row.positionMs / row.runtimeMs) * 100) : null;
+const LONG_DATE = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "long", day: "numeric" });
 export function watchedWhen(at: number): string {
   if (Date.now() - at < 7 * 86_400_000) return when(at);
-  return `on ${new Date(at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}`;
+  return `on ${LONG_DATE.format(at)}`;
 }
 export function ordinal(n: number): string {
   const tens = n % 100;

@@ -122,7 +122,10 @@ export function Hero({ data, profile, onProfile, activity, controls, switching }
   );
 }
 const HEAT = ["bg-muted/50", "bg-blue-500/25", "bg-blue-500/50", "bg-blue-500/80", "bg-blue-400"];
-export function ActivityMap({ activity }: { activity: Activity }) {
+const MONTH = new Intl.DateTimeFormat(undefined, { month: "short" });
+const DAY_TITLE = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+
+export const ActivityMap = React.memo(function ActivityMap({ activity }: { activity: Activity }) {
   const scroller = useRef<HTMLDivElement>(null);
   const { weeks, months, cut } = useMemo(() => {
     const today = new Date();
@@ -145,7 +148,7 @@ export function ActivityMap({ activity }: { activity: Activity }) {
       }
       const first = week[0]?.date;
       if (first && first.getMonth() !== lastMonth) {
-        months.push({ at: weeks.length, label: first.toLocaleDateString(undefined, { month: "short" }) });
+        months.push({ at: weeks.length, label: MONTH.format(first) });
         lastMonth = first.getMonth();
       }
       weeks.push(week);
@@ -176,7 +179,7 @@ export function ActivityMap({ activity }: { activity: Activity }) {
             {weeks.map((week, w) => (
               <div key={w} className="grid gap-[3px]">
                 {week.map((day, d) => day
-                  ? <span key={day.key} title={`${day.date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}: ${day.n} watched`} className={`aspect-square w-full rounded-[3px] ${HEAT[level(day.n)]}`} />
+                  ? <span key={day.key} title={`${DAY_TITLE.format(day.date)}: ${day.n} watched`} className={`aspect-square w-full rounded-[3px] ${HEAT[level(day.n)]}`} />
                   : <span key={`empty-${d}`} className="aspect-square w-full" />)}
               </div>
             ))}
@@ -188,4 +191,4 @@ export function ActivityMap({ activity }: { activity: Activity }) {
       </div>
     </section>
   );
-}
+});

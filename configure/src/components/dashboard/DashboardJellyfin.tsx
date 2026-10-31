@@ -177,6 +177,9 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   }, [progress.rows, played.rows]);
   const openTitle = useCallback((ref: JellyfinTitleRef, season?: number | null) => navigateDashboard({ tab: "jellyfin", config: userUUID, profile, page: season === undefined ? { kind: "title", ref } : { kind: "title", ref, season } }), [userUUID, profile]);
   const openStack = useCallback((stack: DashboardPage[]) => navigateDashboard({ tab: "jellyfin", config: userUUID, profile, page: stack[stack.length - 1] }, { stack }), [userUUID, profile]);
+  const history = data ? (data.history === undefined ? data.profile : data.history) : null;
+  const shown = useMemo(() => (!data ? [] : history === null ? data.profiles : data.profiles.filter((p) => p.key === history)), [data, history]);
+  const activity = useMemo(() => activityOf(shown), [shown]);
 
   const runExport = async () => {
     setExporting(true);
@@ -194,9 +197,6 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   if (isError || !data) return <p className="text-xs text-red-500 px-4 py-3">Could not load this configuration's playback.</p>;
 
   const switching = isPlaceholderData && (data.userUUID !== userUUID || data.profile !== profile);
-  const history = data.history === undefined ? data.profile : data.history;
-  const shown = history === null ? data.profiles : data.profiles.filter((p) => p.key === history);
-  const activity = activityOf(shown);
   const profileName = (profile === null ? data.profiles[0]?.name : (data.viewers ?? data.profiles).find((p) => p.key === profile)?.name) ?? data.label;
   const historyName = (history === null ? data.profiles[0]?.name : data.profiles.find((p) => p.key === history)?.name) ?? profileName;
   const controls = (
