@@ -60,7 +60,7 @@ export const metaIdOf = (key: string): string => (key.startsWith(SHOW_MARK) ? ke
 
 const preferred = (ids: string[]): string => [...ids].sort((a, b) => spellingRank(a) - spellingRank(b) || a.localeCompare(b))[0];
 
-function unionFind(ids: string[]) {
+export function unionFind(ids: string[]) {
   const parent = new Map<string, string>(ids.map((id) => [id, id]));
   const find = (id: string): string => {
     let root = id;

@@ -1,6 +1,6 @@
 import { envInt } from '../../../utils/envNumber';
 import { episodeKey, factsRequests, spelledAsAnime, titleFacts, type TitleFacts } from './facts';
-import { safeTimeZone, type YearPlay } from './plays';
+import { safeTimeZone, unionFind, type YearPlay } from './plays';
 
 const database: any = require('../../database');
 
@@ -44,30 +44,18 @@ function identities(facts: TitleFacts): string[] {
 
 function mergeTitles(keys: string[], facts: Map<string, TitleFacts>, weight: Map<string, number>): Map<string, string> {
   const owner = new Map<string, string>();
-  const parent = new Map<string, string>(keys.map((key) => [key, key]));
-  const find = (key: string): string => {
-    let root = key;
-    while (parent.get(root) !== root) root = parent.get(root)!;
-    parent.set(key, root);
-    return root;
-  };
+  const sets = unionFind(keys);
   for (const key of keys) {
     const held = facts.get(key);
     if (!held) continue;
     for (const identity of identities(held)) {
       const seen = owner.get(identity);
       if (!seen) owner.set(identity, key);
-      else if (find(seen) !== find(key)) parent.set(find(seen), find(key));
+      else sets.union(seen, key);
     }
   }
-  const groups = new Map<string, string[]>();
-  for (const key of keys) {
-    const members = groups.get(find(key));
-    if (members) members.push(key);
-    else groups.set(find(key), [key]);
-  }
   const into = new Map<string, string>();
-  for (const members of groups.values()) {
+  for (const members of sets.groups()) {
     const lead = [...members].sort((a, b) => Number(facts.has(b)) - Number(facts.has(a)) || Number(b.startsWith('tt')) - Number(a.startsWith('tt')) || (weight.get(b) ?? 0) - (weight.get(a) ?? 0) || a.localeCompare(b))[0];
     for (const member of members) into.set(member, lead);
   }
