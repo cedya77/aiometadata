@@ -3,6 +3,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinYear, type DashboardTab, type JellyfinYearReview } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
+import { DashboardLinks } from "./DashboardLink";
 import { ACCENT_BADGE, YEAR_GLASS } from "./JellyfinYearShared";
 import { YEAR_CHAPTERS } from "./yearChapters";
 import { buildYearModel, capitalised, formatDay, hoursOf, inWords, type YearModel } from "./yearModel";
@@ -165,15 +166,17 @@ export default function JellyfinYear({ userUUID, profile, profileName, activeTab
     );
   }
   return (
-    <div className="pb-24">
-      <Hero model={model} profileName={profileName} picker={picker} />
-      <ChapterNav chapters={chapters} />
-      <Freshness review={current} />
-      {chapters.map((chapter, i) => (
-        <section key={chapter.key} id={`year-${chapter.key}`} className="scroll-mt-28 px-4 pb-10 pt-16 sm:px-6 sm:pt-[88px] lg:px-12">
-          <chapter.Chapter model={model} number={i + 1} label={chapter.label} accent={chapter.accent} />
-        </section>
-      ))}
-    </div>
+    <DashboardLinks>
+      <div className="pb-24">
+        <Hero model={model} profileName={profileName} picker={picker} />
+        <ChapterNav chapters={chapters} />
+        <Freshness review={current} />
+        {chapters.map((chapter, i) => (
+          <section key={chapter.key} id={`year-${chapter.key}`} className="scroll-mt-28 px-4 pb-10 pt-16 sm:px-6 sm:pt-[88px] lg:px-12">
+            <chapter.Chapter model={model} number={i + 1} label={chapter.label} accent={chapter.accent} />
+          </section>
+        ))}
+      </div>
+    </DashboardLinks>
   );
 }

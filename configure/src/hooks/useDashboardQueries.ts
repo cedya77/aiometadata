@@ -1756,6 +1756,7 @@ export interface JellyfinAnimeEntry {
 
 export interface JellyfinAnimeVoice {
   malId: number;
+  id: string;
   name: string;
   japanese: string | null;
   image: string | null;
@@ -1763,19 +1764,30 @@ export interface JellyfinAnimeVoice {
   roles: Array<{ character: string; image: string | null; entries: number[] }>;
 }
 
-export interface JellyfinPeopleCard {
+export interface JellyfinYearTitleRef {
+  name: string;
+  key: string;
+  kind: 'movie' | 'series';
+  poster: string | null;
+}
+
+export interface JellyfinYearPersonRef {
+  id: string;
   name: string;
   photo: string | null;
+}
+
+export interface JellyfinPeopleCard extends JellyfinYearPersonRef {
   titles: number;
-  shown: string[];
+  shown: JellyfinYearTitleRef[];
   voiced: boolean;
 }
 
 export interface JellyfinYearPeople {
   cast: JellyfinPeopleCard[];
-  directors: Array<{ name: string; photo: string | null; films: number }>;
-  together: { names: [string, string]; photos: [string | null, string | null]; films: number } | null;
-  link: { name: string; photo: string | null; show: { name: string; poster: string | null }; films: Array<{ name: string; poster: string | null }> } | null;
+  directors: Array<JellyfinYearPersonRef & { films: number }>;
+  together: { people: [JellyfinYearPersonRef, JellyfinYearPersonRef]; films: number } | null;
+  link: (JellyfinYearPersonRef & { show: JellyfinYearTitleRef; films: JellyfinYearTitleRef[] }) | null;
   themes: Array<[string, number]>;
   books: number;
   manga: number;

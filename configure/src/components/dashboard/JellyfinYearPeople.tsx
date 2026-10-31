@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, type CSSProperties } from "react";
 import type { JellyfinYearPeople, JellyfinYearTitle } from "@/hooks/useDashboardQueries";
-import { ChapterHeader, Deck, YEAR_GLASS } from "./JellyfinYearShared";
+import { ChapterHeader, Deck, PersonLink, TitleLink, TitleList, YEAR_GLASS } from "./JellyfinYearShared";
 import { sizedArt } from "./art";
 import type { YearChapterProps } from "./yearChapters";
 import { displayName, type YearModel } from "./yearModel";
@@ -79,18 +79,18 @@ function CastGrid({ people }: { people: JellyfinYearPeople }) {
     <div className="mt-10">
       <Deck columns="lg:grid-cols-4">
         {people.cast.map((person, i) => (
-          <div key={person.name} className={`${YEAR_GLASS} flex min-w-0 flex-col gap-3.5 rounded-3xl p-5`}>
-            <div className="flex items-center gap-3.5">
+          <div key={person.id} className={`${YEAR_GLASS} flex min-w-0 flex-col gap-3.5 rounded-3xl p-5`}>
+            <PersonLink person={person} className="group flex items-center gap-3.5">
               <div className="relative shrink-0">
-                <Face src={person.photo} className="h-[76px] w-[76px] rounded-full shadow-[0_0_0_3px_rgba(255,255,255,0.1)]" />
+                <Face src={person.photo} className="h-[76px] w-[76px] rounded-full shadow-[0_0_0_3px_rgba(255,255,255,0.1)] transition-shadow group-hover:shadow-[0_0_0_3px_rgba(255,255,255,0.35)]" />
                 <span className={`absolute -bottom-0.5 -right-1 flex h-[26px] min-w-[26px] items-center justify-center rounded-full px-1.5 text-[13px] font-extrabold text-[#0c0d0f] shadow-[0_0_0_3px_#17181b] ${i === 0 ? "bg-amber-400" : "bg-blue-300"}`}>{person.titles}</span>
               </div>
               <div className="min-w-0">
-                <p className="text-base font-bold leading-tight">{person.name}</p>
+                <p className="text-base font-bold leading-tight decoration-white/35 underline-offset-4 group-hover:underline">{person.name}</p>
                 <p className="mt-[3px] text-xs text-muted-foreground">{person.voiced ? `Voiced ${plural(person.titles, "of your shows", "of your shows")}` : `In ${plural(person.titles, "of your titles", "of your titles")}`}</p>
               </div>
-            </div>
-            <p className="text-xs leading-[1.5] text-foreground/80">{person.shown.join(", ")}</p>
+            </PersonLink>
+            <p className="text-xs leading-[1.5] text-foreground/80"><TitleList titles={person.shown} nameOf={(title) => title.name} separator=", " /></p>
           </div>
         ))}
       </Deck>
@@ -107,25 +107,25 @@ function Pairings({ people }: { people: JellyfinYearPeople }) {
       {together && (
         <div className={`${YEAR_GLASS} flex min-w-0 flex-[1_1_360px] items-center gap-[18px] rounded-3xl p-6`}>
           <div className="flex shrink-0">
-            <Face src={together.photos[0]} className="h-14 w-14 rounded-full shadow-[0_0_0_3px_#17181b]" />
-            <Face src={together.photos[1]} className="-ml-4 h-14 w-14 rounded-full shadow-[0_0_0_3px_#17181b]" />
+            <PersonLink person={together.people[0]} className="block rounded-full"><Face src={together.people[0].photo} className="h-14 w-14 rounded-full shadow-[0_0_0_3px_#17181b]" /></PersonLink>
+            <PersonLink person={together.people[1]} className="-ml-4 block rounded-full"><Face src={together.people[1].photo} className="h-14 w-14 rounded-full shadow-[0_0_0_3px_#17181b]" /></PersonLink>
           </div>
           <div className="min-w-0">
             <p className={kicker}>On screen together</p>
-            <p className="mt-1.5 text-[15px] leading-[1.45]">{together.names[0]} and {together.names[1]} shared <span className="font-bold">{plural(together.films, "of your films", "of your films")}</span>.</p>
+            <p className="mt-1.5 text-[15px] leading-[1.45]"><PersonLink person={together.people[0]}>{together.people[0].name}</PersonLink> and <PersonLink person={together.people[1]}>{together.people[1].name}</PersonLink> shared <span className="font-bold">{plural(together.films, "of your films", "of your films")}</span>.</p>
           </div>
         </div>
       )}
       {link && (
         <div className={`${YEAR_GLASS} flex min-w-0 flex-[1_1_360px] items-center gap-[18px] rounded-3xl p-6`}>
           <div className="flex shrink-0 items-center gap-1.5">
-            {link.show.poster && <img src={sizedArt(link.show.poster, 185) ?? link.show.poster} alt="" loading="lazy" className="aspect-[2/3] w-9 rounded-md object-cover" />}
-            <Face src={link.photo} className="h-12 w-12 rounded-full" />
-            {link.films[0]?.poster && <img src={sizedArt(link.films[0].poster, 185) ?? link.films[0].poster} alt="" loading="lazy" className="aspect-[2/3] w-9 rounded-md object-cover" />}
+            {link.show.poster && <TitleLink title={link.show} name={link.show.name} className="block"><img src={sizedArt(link.show.poster, 185) ?? link.show.poster} alt="" loading="lazy" className="aspect-[2/3] w-9 rounded-md object-cover" /></TitleLink>}
+            <PersonLink person={link} className="block rounded-full"><Face src={link.photo} className="h-12 w-12 rounded-full" /></PersonLink>
+            {link.films[0]?.poster && <TitleLink title={link.films[0]} name={link.films[0].name} className="block"><img src={sizedArt(link.films[0].poster, 185) ?? link.films[0].poster} alt="" loading="lazy" className="aspect-[2/3] w-9 rounded-md object-cover" /></TitleLink>}
           </div>
           <div className="min-w-0">
             <p className={kicker}>The link</p>
-            <p className="mt-1.5 text-[15px] leading-[1.45]">{link.name} connected {link.show.name} to {listed(link.films.slice(0, 2).map((film) => film.name))}.</p>
+            <p className="mt-1.5 text-[15px] leading-[1.45]"><PersonLink person={link}>{link.name}</PersonLink> connected <TitleLink title={link.show}>{link.show.name}</TitleLink> to <TitleList titles={link.films.slice(0, 2)} nameOf={(film) => film.name} separator=" and " />.</p>
           </div>
         </div>
       )}
@@ -140,14 +140,14 @@ function Directors({ people }: { people: JellyfinYearPeople }) {
       <h3 className="mb-[18px] mt-14 text-[22px] font-bold tracking-[-0.02em]">Behind the camera</h3>
       <div className="flex flex-wrap gap-4">
         {people.directors.map((director) => (
-          <div key={director.name} className={`${YEAR_GLASS} flex min-w-0 flex-[1_1_240px] items-center gap-3.5 rounded-[20px] py-3.5 pl-3.5 pr-[18px]`}>
+          <PersonLink key={director.id} person={director} className={`${YEAR_GLASS} group flex min-w-0 flex-[1_1_240px] items-center gap-3.5 rounded-[20px] py-3.5 pl-3.5 pr-[18px] transition-colors hover:bg-white/[0.08]`}>
             <Face src={director.photo} className="h-[52px] w-[52px] shrink-0 rounded-[14px]" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[15px] font-semibold">{director.name}</p>
+              <p className="truncate text-[15px] font-semibold decoration-white/35 underline-offset-4 group-hover:underline">{director.name}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">Directed {plural(director.films, "of your films", "of your films")}</p>
             </div>
             <span className="text-[30px] font-extrabold tracking-[-0.04em] text-blue-400">{director.films}</span>
-          </div>
+          </PersonLink>
         ))}
       </div>
     </>
@@ -304,8 +304,8 @@ function Decades({ titles }: { titles: JellyfinYearTitle[] }) {
       <div className="mt-5 flex h-[250px] items-end gap-2 sm:gap-3.5">
         {decades.map(({ decade, count, pin }) => (
           <div key={decade} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
-            {pin?.facts?.poster && <img src={sizedArt(pin.facts.poster, 185) ?? pin.facts.poster} alt="" loading="lazy" className="aspect-[2/3] w-full max-w-16 rounded-lg object-cover shadow-[0_12px_24px_-10px_rgba(0,0,0,0.9),0_0_0_1px_rgba(255,255,255,0.12)]" />}
-            {pin && <span className="max-w-full truncate text-center text-[10px] text-muted-foreground">{decade === latest ? displayName(pin) : `${displayName(pin)}, ${pin.facts?.year}`}</span>}
+            {pin?.facts?.poster && <TitleLink title={pin} name={displayName(pin)} className="block w-full max-w-16 transition-transform hover:-translate-y-0.5"><img src={sizedArt(pin.facts.poster, 185) ?? pin.facts.poster} alt="" loading="lazy" className="block aspect-[2/3] w-full rounded-lg object-cover shadow-[0_12px_24px_-10px_rgba(0,0,0,0.9),0_0_0_1px_rgba(255,255,255,0.12)]" /></TitleLink>}
+            {pin && <TitleLink title={pin} name={displayName(pin)} className="max-w-full truncate text-center text-[10px] text-muted-foreground decoration-white/35 underline-offset-4 hover:text-foreground hover:underline">{decade === latest ? displayName(pin) : `${displayName(pin)}, ${pin.facts?.year}`}</TitleLink>}
             <div className="w-full rounded-t-[10px] rounded-b-[4px]" style={{ height: Math.max(6, Math.round((count / most) * 96)), background: count === most ? "linear-gradient(180deg,#93c5fd,#2563eb)" : "rgba(255,255,255,0.14)" }} />
             <span className="text-[13px] font-semibold">{decade}s</span>
             <span className="-mt-1.5 text-[11px] text-muted-foreground">{plural(count, "title")}</span>

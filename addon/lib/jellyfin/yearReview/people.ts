@@ -1,5 +1,7 @@
 import { mapWithConcurrency } from '../../../utils/concurrency';
+import { personIdOf } from '../items';
 import type { AnimeYear } from './anime';
+import type { FactsPerson } from './facts';
 import type { YearTitle } from './timed';
 
 const CAST_CARDS = 8;
@@ -17,19 +19,30 @@ const THEME_NAMES: Record<string, string> = {
   'based on comic': 'based on a comic',
 };
 
-export interface PeopleCard {
+export interface TitleRef {
+  name: string;
+  key: string;
+  kind: 'movie' | 'series';
+  poster: string | null;
+}
+
+export interface PersonRef {
+  id: string;
   name: string;
   photo: string | null;
+}
+
+export interface PeopleCard extends PersonRef {
   titles: number;
-  shown: string[];
+  shown: TitleRef[];
   voiced: boolean;
 }
 
 export interface PeopleYear {
   cast: PeopleCard[];
-  directors: Array<{ name: string; photo: string | null; films: number }>;
-  together: { names: [string, string]; photos: [string | null, string | null]; films: number } | null;
-  link: { name: string; photo: string | null; show: { name: string; poster: string | null }; films: Array<{ name: string; poster: string | null }> } | null;
+  directors: Array<PersonRef & { films: number }>;
+  together: { people: [PersonRef, PersonRef]; films: number } | null;
+  link: (PersonRef & { show: TitleRef; films: TitleRef[] }) | null;
   themes: Array<[string, number]>;
   books: number;
   manga: number;
@@ -38,14 +51,18 @@ export interface PeopleYear {
 
 const personKey = (name: string): string => name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const nameOf = (title: YearTitle): string => (title.facts?.name ?? title.key).replace(/\s+\(\d{4}\)$/, '');
+const refOf = (title: YearTitle): TitleRef => ({ name: nameOf(title), key: title.key, kind: title.kind, poster: title.facts?.poster ?? null });
 
 interface Credit {
   name: string;
   photo: string | null;
+  member: FactsPerson;
   titles: YearTitle[];
 }
 
-function credits(titles: YearTitle[], pick: (title: YearTitle) => Array<{ name: string; photo: string | null }>): Map<string, Credit> {
+const personOf = (credit: Credit): PersonRef => ({ id: personIdOf(credit.member), name: credit.name, photo: credit.photo });
+
+function credits(titles: YearTitle[], pick: (title: YearTitle) => FactsPerson[]): Map<string, Credit> {
   const out = new Map<string, Credit>();
   for (const title of titles) {
     const seen = new Set<string>();
@@ -53,8 +70,9 @@ function credits(titles: YearTitle[], pick: (title: YearTitle) => Array<{ name: 
       const key = personKey(person.name);
       if (!key || seen.has(key)) continue;
       seen.add(key);
-      const held = out.get(key) ?? { name: person.name, photo: null, titles: [] };
+      const held = out.get(key) ?? { name: person.name, photo: null, member: person, titles: [] };
       held.photo = held.photo ?? person.photo;
+      if (!held.member.tmdbId && !held.member.tvdbId && (person.tmdbId || person.tvdbId)) held.member = person;
       held.titles.push(title);
       out.set(key, held);
     }
@@ -66,14 +84,19 @@ const playsOf = (titles: YearTitle[]): number => titles.reduce((total, title) =>
 const byReach = (a: Credit, b: Credit): number => b.titles.length - a.titles.length || playsOf(b.titles) - playsOf(a.titles);
 const byPlays = (a: YearTitle, b: YearTitle): number => b.plays.length - a.plays.length || b.watchMs - a.watchMs;
 
-function voiceCard(anime: AnimeYear | null): PeopleCard | null {
+function voiceCard(anime: AnimeYear | null, titles: Map<string, YearTitle>): PeopleCard | null {
   const voice = anime?.voices[0];
   if (!voice) return null;
   const keyOf = new Map(anime!.entries.map((entry) => [entry.malId, entry.titleKey]));
-  const nameOfKey = new Map(anime!.entries.map((entry) => [entry.titleKey, entry.name]));
+  const entryOf = new Map(anime!.entries.map((entry) => [entry.titleKey, entry]));
   const keys = [...new Set(voice.roles.flatMap((role) => role.entries.map((id) => keyOf.get(id)).filter((key): key is string => !!key)))];
   if (keys.length < 2) return null;
-  return { name: voice.name, photo: voice.image, titles: keys.length, shown: keys.slice(0, CAST_TITLES).map((key) => nameOfKey.get(key) ?? key), voiced: true };
+  const shown = keys.slice(0, CAST_TITLES).map((key): TitleRef => {
+    const title = titles.get(key);
+    const entry = entryOf.get(key);
+    return { name: entry?.name ?? (title ? nameOf(title) : key), key, kind: title?.kind ?? 'series', poster: entry?.image ?? title?.facts?.poster ?? null };
+  });
+  return { id: personIdOf({ name: voice.name }), name: voice.name, photo: voice.image, titles: keys.length, shown, voiced: true };
 }
 
 function togetherOf(films: YearTitle[]): PeopleYear['together'] {
@@ -88,7 +111,7 @@ function togetherOf(films: YearTitle[]): PeopleYear['together'] {
     }
   }
   const best = [...pairs.values()].sort((x, y) => y.films - x.films || playsOf(y.a.titles) + playsOf(y.b.titles) - playsOf(x.a.titles) - playsOf(x.b.titles))[0];
-  return best ? { names: [best.a.name, best.b.name], photos: [best.a.photo, best.b.photo], films: best.films } : null;
+  return best ? { people: [personOf(best.a), personOf(best.b)], films: best.films } : null;
 }
 
 function linkOf(cast: Map<string, Credit>): PeopleYear['link'] {
@@ -98,12 +121,7 @@ function linkOf(cast: Map<string, Credit>): PeopleYear['link'] {
     .sort((a, b) => Math.min(b.shows.length, b.films.length) - Math.min(a.shows.length, a.films.length) || b.films.length - a.films.length || playsOf(b.credit.titles) - playsOf(a.credit.titles));
   const best = candidates[0];
   if (!best) return null;
-  return {
-    name: best.credit.name,
-    photo: best.credit.photo,
-    show: { name: nameOf(best.shows[0]), poster: best.shows[0].facts?.poster ?? null },
-    films: best.films.slice(0, LINK_FILMS).map((film) => ({ name: nameOf(film), poster: film.facts?.poster ?? null })),
-  };
+  return { ...personOf(best.credit), show: refOf(best.shows[0]), films: best.films.slice(0, LINK_FILMS).map(refOf) };
 }
 
 async function networksOf(config: any, shows: YearTitle[]): Promise<PeopleYear['networks']> {
@@ -131,11 +149,11 @@ export async function peopleYear(config: any, titles: YearTitle[], anime: AnimeY
   const live = titles.filter((title) => !title.anime && title.facts);
   const films = live.filter((title) => title.kind === 'movie');
   const cast = credits(live, (title) => title.facts?.cast ?? []);
-  const voice = voiceCard(anime);
+  const voice = voiceCard(anime, new Map(titles.map((title) => [title.key, title])));
   const actors = [...cast.values()].filter((credit) => credit.titles.length >= 2).sort(byReach).slice(0, voice ? CAST_CARDS - 1 : CAST_CARDS)
-    .map((credit): PeopleCard => ({ name: credit.name, photo: credit.photo, titles: credit.titles.length, shown: [...credit.titles].sort(byPlays).slice(0, CAST_TITLES).map(nameOf), voiced: false }));
+    .map((credit): PeopleCard => ({ ...personOf(credit), titles: credit.titles.length, shown: [...credit.titles].sort(byPlays).slice(0, CAST_TITLES).map(refOf), voiced: false }));
   const directors = [...credits(films, (title) => title.facts?.directors ?? []).values()].filter((credit) => credit.titles.length >= 2).sort(byReach).slice(0, DIRECTORS)
-    .map((credit) => ({ name: credit.name, photo: credit.photo, films: credit.titles.length }));
+    .map((credit) => ({ ...personOf(credit), films: credit.titles.length }));
 
   const themes = new Map<string, number>();
   for (const title of titles) for (const keyword of new Set((title.facts?.keywords ?? []).map((word) => word.toLowerCase()))) themes.set(keyword, (themes.get(keyword) ?? 0) + 1);

@@ -1,5 +1,5 @@
 import { useMemo, type CSSProperties } from "react";
-import { ChapterHeader, Deck, HATCH, Panel, Swatch, type YearAccent } from "./JellyfinYearShared";
+import { ChapterHeader, Deck, HATCH, Panel, Swatch, TitleLink, type YearAccent } from "./JellyfinYearShared";
 import { sizedArt } from "./art";
 import { MONTH_NAMES, WEEKDAY_NAMES, WEEKDAY_SHORT, capitalised, displayName, episodeLabel, formatDay, formatHour, formatPlayTime, hoursOf, inWords, type YearModel, type YearPlay } from "./yearModel";
 
@@ -210,8 +210,8 @@ function Streak({ model, time }: { model: YearModel; time: Time }) {
         </div>
       )}
       <div className="mt-auto flex flex-col gap-2.5 pt-[18px] text-[13px]">
-        <div className="flex items-center gap-2.5"><Thumb play={first} /><span className="text-foreground/80"><span className="text-muted-foreground">First play, {formatPlayTime(first.at, model.timeZone)}:</span> {playName(first)}</span></div>
-        <div className="flex items-center gap-2.5"><Thumb play={last} /><span className="text-foreground/80"><span className="text-muted-foreground">Latest, {formatPlayTime(last.at, model.timeZone)}:</span> {playName(last)}</span></div>
+        <TitleLink title={first.title} name={displayName(first.title)} className="group flex items-center gap-2.5"><Thumb play={first} /><span className="text-foreground/80"><span className="text-muted-foreground">First play, {formatPlayTime(first.at, model.timeZone)}:</span> <span className="decoration-white/35 underline-offset-4 group-hover:underline">{playName(first)}</span></span></TitleLink>
+        <TitleLink title={last.title} name={displayName(last.title)} className="group flex items-center gap-2.5"><Thumb play={last} /><span className="text-foreground/80"><span className="text-muted-foreground">Latest, {formatPlayTime(last.at, model.timeZone)}:</span> <span className="decoration-white/35 underline-offset-4 group-hover:underline">{playName(last)}</span></span></TitleLink>
       </div>
     </Panel>
   );

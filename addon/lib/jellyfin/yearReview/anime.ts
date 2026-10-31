@@ -1,6 +1,7 @@
 import { envInt } from '../../../utils/envNumber';
 import { mapWithConcurrency } from '../../../utils/concurrency';
 import { parseStremioId } from '../idsCodec';
+import { personIdOf } from '../items';
 import type { TimedPlay, TimedYear } from './timed';
 
 const idMapper: any = require('../../id-mapper');
@@ -38,6 +39,7 @@ export interface AnimeEntry {
 
 export interface AnimeVoice {
   malId: number;
+  id: string;
   name: string;
   japanese: string | null;
   image: string | null;
@@ -139,7 +141,7 @@ export async function animeYear(timed: TimedYear): Promise<AnimeYear | null> {
   });
 
   const casts = await mapWithConcurrency(entries.slice(0, castBudget), width, async (entry) => mal.getAnimeCharactersCached(entry.malId, charactersCurrent).catch(() => []));
-  const voices = new Map<number, AnimeVoice & { characters: Map<number, AnimeVoice['roles'][number]>; titles: Set<string> }>();
+  const voices = new Map<number, Omit<AnimeVoice, 'id'> & { characters: Map<number, AnimeVoice['roles'][number]>; titles: Set<string> }>();
   entries.slice(0, castBudget).forEach((entry, i) => {
     for (const member of Array.isArray(casts[i]) ? casts[i] : []) {
       const actor = member.voice_actors?.find((candidate: any) => candidate?.language === 'Japanese')?.person;
@@ -162,7 +164,7 @@ export async function animeYear(timed: TimedYear): Promise<AnimeYear | null> {
     voices: top.map(({ characters, titles, ...voice }, i) => {
       const person = names[i];
       const japanese = person?.family_name || person?.given_name ? `${person.family_name ?? ''}${person.given_name ?? ''}` : null;
-      return { ...voice, japanese, roles: [...characters.values()] };
+      return { ...voice, id: personIdOf({ name: voice.name }), japanese, roles: [...characters.values()] };
     }),
     missing: grouped.size - entries.length,
     unmatched,

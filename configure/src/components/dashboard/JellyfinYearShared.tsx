@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { DashboardLink, personPage, titlePage } from "./DashboardLink";
 
 export type YearAccent = "blue" | "pink";
 
@@ -6,6 +7,22 @@ export const ACCENT_TEXT: Record<YearAccent, string> = { blue: "text-blue-400", 
 export const ACCENT_BADGE: Record<YearAccent, string> = { blue: "bg-blue-400 text-background", pink: "bg-pink-400/25 text-pink-300" };
 
 export const YEAR_GLASS = "bg-white/[0.055] backdrop-blur-[18px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]";
+
+export const TEXT_LINK = "decoration-white/35 underline-offset-4 hover:underline focus-visible:underline";
+
+type TitleTarget = { key: string; kind: "movie" | "series" };
+
+export function TitleLink({ title, name, className = TEXT_LINK, children }: { title: TitleTarget; name?: string; className?: string; children: React.ReactNode }) {
+  return <DashboardLink page={titlePage(title.key, title.kind)} name={name ?? (typeof children === "string" ? children : undefined)} className={className}>{children}</DashboardLink>;
+}
+
+export function PersonLink({ person, className = TEXT_LINK, children }: { person: { id: string; name: string; photo?: string | null }; className?: string; children: React.ReactNode }) {
+  return <DashboardLink page={personPage(person.id, person.name, person.photo ?? null)} name={person.name} className={className}>{children}</DashboardLink>;
+}
+
+export function TitleList<T extends TitleTarget>({ titles, nameOf, separator = " · " }: { titles: T[]; nameOf: (title: T) => string; separator?: string }) {
+  return <>{titles.map((title, i) => <React.Fragment key={title.key}>{i > 0 && separator}<TitleLink title={title}>{nameOf(title)}</TitleLink></React.Fragment>)}</>;
+}
 
 export const HATCH: React.CSSProperties = { backgroundImage: "repeating-linear-gradient(135deg, rgba(147,197,253,0.6) 0 2px, rgba(147,197,253,0.08) 2px 6px)" };
 

@@ -621,12 +621,16 @@ function endDate(meta: any): string | null {
   return end ? new Date(Date.UTC(Number(end), 11, 31)).toISOString() : null;
 }
 
+export function personIdOf(member: { name?: unknown; tmdbId?: unknown; tvdbId?: unknown } | null | undefined): string {
+  const source = Number(member?.tvdbId) > 0 ? { s: 'tvdb' as const, x: Number(member!.tvdbId) }
+    : Number(member?.tmdbId) > 0 ? { s: 'tmdb' as const, x: Number(member!.tmdbId) } : {};
+  return encodeJellyfinId({ k: 'person', n: String(member?.name || ''), ...source });
+}
+
 function peopleFrom(meta: any, serverId: string): any[] {
   const extras = meta.app_extras || {};
   const person = (member: any, type: string, role: string) => {
-    const source = Number(member?.tvdbId) > 0 ? { s: 'tvdb' as const, x: Number(member.tvdbId) }
-      : Number(member?.tmdbId) > 0 ? { s: 'tmdb' as const, x: Number(member.tmdbId) } : {};
-    const id = encodeJellyfinId({ k: 'person', n: String(member?.name || ''), ...source });
+    const id = personIdOf(member);
     // A client only asks for a portrait when the tag is present, so registering
     // the photo and setting it have to happen together.
     if (member?.photo) rememberImages(serverId, id, { primary: member.photo });

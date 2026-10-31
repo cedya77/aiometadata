@@ -1,6 +1,7 @@
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { JellyfinYearTitle } from "@/hooks/useDashboardQueries";
-import { ChapterHeader, YEAR_GLASS } from "./JellyfinYearShared";
+import { titlePage, useDashboardOpen } from "./DashboardLink";
+import { ChapterHeader, TitleLink, TitleList, YEAR_GLASS } from "./JellyfinYearShared";
 import { sizedArt } from "./art";
 import type { YearChapterProps } from "./yearChapters";
 import { displayName, formatDay, hoursOf, localYearOf, type YearModel } from "./yearModel";
@@ -83,9 +84,11 @@ function Spotlight({ model, show, rest }: { model: YearModel; show: JellyfinYear
       <div className="flex w-full flex-wrap items-end gap-10 p-6 sm:p-12">
         <div className="min-w-0 flex-[1_1_420px]">
           <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-amber-400">Your number one show</span>
-          {show.facts?.logo
-            ? <img src={show.facts.logo} alt={displayName(show)} className="mt-4 block w-full max-w-[420px] [filter:drop-shadow(0_4px_20px_rgba(0,0,0,0.6))]" />
-            : <p className="mt-4 text-4xl font-extrabold tracking-[-0.03em] sm:text-5xl">{displayName(show)}</p>}
+          <TitleLink title={show} name={displayName(show)} className="mt-4 block w-fit max-w-full transition-opacity hover:opacity-85">
+            {show.facts?.logo
+              ? <img src={show.facts.logo} alt={displayName(show)} className="block w-full max-w-[420px] [filter:drop-shadow(0_4px_20px_rgba(0,0,0,0.6))]" />
+              : <span className="block text-4xl font-extrabold tracking-[-0.03em] sm:text-5xl">{displayName(show)}</span>}
+          </TitleLink>
           <div className="mt-7 flex flex-wrap items-baseline gap-3">
             <span className="text-7xl font-black leading-[0.85] tracking-[-0.05em] sm:text-[96px]">{show.episodes.toLocaleString()}</span>
             <span className="text-lg text-foreground/80 sm:text-xl">{progress ? `episodes, of ${progress.aired.toLocaleString()}` : show.episodes === 1 ? "episode" : "episodes"}</span>
@@ -122,20 +125,20 @@ function TopTenCard({ title, rank }: { title: JellyfinYearTitle; rank: number })
     : done && title.episodes >= progress.aired ? `${title.episodes} of ${progress.aired} · all of it`
       : `${title.episodes} of ${progress.aired} episodes`;
   return (
-    <div className="relative w-[168px] shrink-0 snap-start">
+    <TitleLink title={title} name={displayName(title)} className="group relative block w-[168px] shrink-0 snap-start">
       <span aria-hidden="true" className="absolute -left-1.5 -top-[18px] z-0 text-[92px] font-black leading-none tracking-[-0.06em]" style={OUTLINE}>{rank}</span>
       <div className="relative z-[1] ml-[34px] overflow-hidden rounded-[14px] shadow-[0_20px_40px_-16px_rgba(0,0,0,0.8),inset_0_0_0_1px_rgba(255,255,255,0.1)]">
         {poster
-          ? <img src={sizedArt(poster, 342) ?? poster} alt="" loading="lazy" className="block aspect-[2/3] w-full object-cover" />
+          ? <img src={sizedArt(poster, 342) ?? poster} alt="" loading="lazy" className="block aspect-[2/3] w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]" />
           : <div className="aspect-[2/3] w-full bg-gradient-to-br from-zinc-700 to-zinc-900" />}
         {done && <span className={`${YEAR_GLASS} absolute right-2 top-2 rounded-full px-2 py-[3px] text-[10px] font-bold tracking-[0.04em] text-green-300`}>{state === "running" ? "CAUGHT UP" : "FINISHED"}</span>}
       </div>
       <div className="ml-[34px] mt-2.5">
-        <p className="truncate text-[13px] font-semibold">{displayName(title)}</p>
+        <p className="truncate text-[13px] font-semibold decoration-white/35 underline-offset-4 group-hover:underline">{displayName(title)}</p>
         <p className="mb-1.5 mt-0.5 text-[11px] text-muted-foreground">{line}</p>
         {progress && <div className="h-[3px] overflow-hidden rounded-full bg-white/10"><div className={`h-full ${done ? "bg-green-400" : "bg-blue-400"}`} style={{ width: `${Math.round((progress.seen / progress.aired) * 100)}%` }} /></div>}
       </div>
-    </div>
+    </TitleLink>
   );
 }
 
@@ -171,6 +174,7 @@ function Coverflow({ films, opening, label, caption }: { films: JellyfinYearTitl
   const stage = useRef<HTMLDivElement>(null);
   const press = useRef<{ x: number; samples: Array<[number, number]> } | null>(null);
   const swiped = useRef(false);
+  const open = useDashboardOpen();
   const last = films.length - 1;
   const clamp = (at: number) => Math.min(last, Math.max(0, at));
   const move = (by: number) => setGoal((at) => clamp(at + by));
@@ -266,9 +270,12 @@ function Coverflow({ films, opening, label, caption }: { films: JellyfinYearTitl
               key={film.key}
               type="button"
               tabIndex={hidden ? -1 : 0}
-              aria-label={displayName(film)}
+              aria-label={i === focus ? `Open ${displayName(film)}` : displayName(film)}
               onClick={() => {
-                if (!swiped.current) setGoal(i);
+                if (!swiped.current) {
+                  if (i === focus && goal === focus && open) open(titlePage(film.key, film.kind));
+                  else setGoal(i);
+                }
                 swiped.current = false;
               }}
               className={`absolute left-1/2 top-[48%] w-[calc(var(--s)*210px)] cursor-pointer ease-out [transform-style:preserve-3d] ${drag !== null ? "" : flying ? "transition-[transform,filter,opacity] duration-200" : "transition-[transform,filter,opacity] duration-500"}`}
@@ -290,7 +297,7 @@ function Coverflow({ films, opening, label, caption }: { films: JellyfinYearTitl
       </div>
       {centre && (
         <p className="truncate px-6 text-center text-sm font-semibold">
-          {displayName(centre)}
+          <TitleLink title={centre}>{displayName(centre)}</TitleLink>
           {caption(centre) && <span className="font-normal text-muted-foreground"> · {caption(centre)}</span>}
         </p>
       )}
@@ -325,7 +332,7 @@ function ShelfPanel({ model, films, shows, done }: { model: YearModel; films: Je
     }
     return [...perDay.values()].sort((a, b) => b.episodes - a.episodes || a.day - b.day)[0];
   }, [model]);
-  const fact = (label: string, value: string, sub?: string, wide = false) => (
+  const fact = (label: string, value: ReactNode, sub?: string, wide = false) => (
     <div className={`${YEAR_GLASS} rounded-2xl p-3.5 ${wide ? "col-span-2" : ""}`}>
       <p className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground">{label}</p>
       <p className="mt-1.5 text-sm font-semibold">{value}</p>
@@ -338,17 +345,17 @@ function ShelfPanel({ model, films, shows, done }: { model: YearModel; films: Je
         const again = films.filter((film) => film.plays.length >= 2).sort((a, b) => b.plays.length - a.plays.length);
         return (
           <>
-            {longest && runtimeOf(longest) > 0 && fact("Longest", displayName(longest), formatRuntime(runtimeOf(longest)))}
-            {oldest && fact("Oldest", displayName(oldest), String(oldest.facts!.year))}
-            {again.length > 0 && fact(again.every((film) => film.plays.length === 2) ? "Watched twice" : "Watched more than once", again.slice(0, 3).map(displayName).join(" · "), undefined, true)}
+            {longest && runtimeOf(longest) > 0 && fact("Longest", <TitleLink title={longest}>{displayName(longest)}</TitleLink>, formatRuntime(runtimeOf(longest)))}
+            {oldest && fact("Oldest", <TitleLink title={oldest}>{displayName(oldest)}</TitleLink>, String(oldest.facts!.year))}
+            {again.length > 0 && fact(again.every((film) => film.plays.length === 2) ? "Watched twice" : "Watched more than once", <TitleList titles={again.slice(0, 3)} nameOf={displayName} />, undefined, true)}
           </>
         );
       })()
     : (
         <>
-          {binge && binge.episodes >= 2 && fact("Biggest binge", displayName(binge.title), `${plural(binge.episodes, "episode")} on ${formatDay(model.year, binge.day)}`)}
-          {oldest && fact("Oldest", displayName(oldest), String(oldest.facts!.year))}
-          {done.length > 0 && fact(done.length === 1 ? "Finished" : `${done.length} finished`, done.slice(-3).reverse().map(displayName).join(" · "), done.length > 3 ? `and ${(done.length - 3).toLocaleString()} more` : undefined, true)}
+          {binge && binge.episodes >= 2 && fact("Biggest binge", <TitleLink title={binge.title}>{displayName(binge.title)}</TitleLink>, `${plural(binge.episodes, "episode")} on ${formatDay(model.year, binge.day)}`)}
+          {oldest && fact("Oldest", <TitleLink title={oldest}>{displayName(oldest)}</TitleLink>, String(oldest.facts!.year))}
+          {done.length > 0 && fact(done.length === 1 ? "Finished" : `${done.length} finished`, <TitleList titles={done.slice(-3).reverse()} nameOf={displayName} />, done.length > 3 ? `and ${(done.length - 3).toLocaleString()} more` : undefined, true)}
         </>
       );
   const tabs: Array<[Shelf, string, number]> = [["films", "Films", films.length], ["shows", "Shows", shows.length]];
@@ -383,9 +390,11 @@ function ShelfPanel({ model, films, shows, done }: { model: YearModel; films: Je
           <p className="mt-1.5 text-base text-foreground/80">{plural(hours, "hour")}{released ? `, ${released} of them ${shelf === "films" ? "released" : "premiered"} this year.` : "."}</p>
           {best && (
             <div className={`${YEAR_GLASS} mt-[22px] rounded-[20px] p-[18px]`}>
-              {best.facts?.logo
-                ? <img src={best.facts.logo} alt={displayName(best)} className="block max-h-[54px] max-w-[75%] object-contain object-left" />
-                : <p className="text-xl font-bold">{displayName(best)}</p>}
+              <TitleLink title={best} name={displayName(best)} className="block w-fit max-w-[75%] transition-opacity hover:opacity-85">
+                {best.facts?.logo
+                  ? <img src={best.facts.logo} alt={displayName(best)} className="block max-h-[54px] max-w-full object-contain object-left" />
+                  : <span className="block text-xl font-bold">{displayName(best)}</span>}
+              </TitleLink>
               <p className="mt-3 text-[13px] text-muted-foreground">Your highest rated {shelf === "films" ? "film" : "show"} of the year</p>
               <p className="mt-1.5 flex items-center gap-2"><Stars rating={ratings[best.key]} /><span className="text-[13px] font-bold text-amber-300">{ratings[best.key]}/10</span></p>
             </div>
@@ -422,7 +431,9 @@ export default function TitlesChapter({ model, number, label, accent }: YearChap
       {done.length > 0 && (
         <p className="mt-3 text-sm text-muted-foreground">
           You finished or caught up on <span className="font-semibold text-foreground">{plural(done.length, "show")}</span> this year
-          {done.length === 1 ? `: ${displayName(done[0])}.` : `, from ${displayName(done[0])} to ${displayName(done[done.length - 1])}.`}
+          {done.length === 1
+            ? <>: <TitleLink title={done[0]}>{displayName(done[0])}</TitleLink>.</>
+            : <>, from <TitleLink title={done[0]}>{displayName(done[0])}</TitleLink> to <TitleLink title={done[done.length - 1]}>{displayName(done[done.length - 1])}</TitleLink>.</>}
         </p>
       )}
       {(films.length > 0 || shows.length > 0) && <ShelfPanel model={model} films={films} shows={shows} done={done} />}

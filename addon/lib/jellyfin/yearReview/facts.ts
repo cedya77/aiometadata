@@ -35,6 +35,8 @@ export interface FactsPerson {
   name: string;
   role: string | null;
   photo: string | null;
+  tmdbId?: number;
+  tvdbId?: number;
 }
 
 export type FactsSource = 'stored' | 'cache' | 'built';
@@ -65,7 +67,13 @@ function peopleOf(list: unknown, limit: number): FactsPerson[] {
   for (const entry of Array.isArray(list) ? list : []) {
     const name = String(entry?.name ?? '').trim();
     if (!name) continue;
-    out.push({ name, role: entry?.character && entry.character !== name ? String(entry.character) : null, photo: entry?.photo ? String(entry.photo) : null });
+    out.push({
+      name,
+      role: entry?.character && entry.character !== name ? String(entry.character) : null,
+      photo: entry?.photo ? String(entry.photo) : null,
+      ...(Number(entry?.tmdbId) > 0 ? { tmdbId: Number(entry.tmdbId) } : {}),
+      ...(Number(entry?.tvdbId) > 0 ? { tvdbId: Number(entry.tvdbId) } : {}),
+    });
     if (out.length >= limit) break;
   }
   return out;
