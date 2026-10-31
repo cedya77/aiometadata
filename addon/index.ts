@@ -5468,10 +5468,9 @@ const catalogRoute = async function (req, res) {
 
 
     if (catalogConfig?.randomizePerPage && Array.isArray(responseData?.metas) && responseData.metas.length > 1) {
-      responseData = {
-        ...responseData,
-        metas: shuffleMetas(responseData.metas)
-      };
+      responseData = req.params.forJellyfin === '1'
+        ? { ...responseData, randomize: true }
+        : { ...responseData, metas: shuffleMetas(responseData.metas) };
     }
 
     // Art URL pattern overrides for catalog items

@@ -3,7 +3,7 @@ import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId } from './ids';
 import { collectionFolder, EMPTY_USER_DATA } from './dto';
-import { fetchWindow, includeTypesFilter, isLandscapeCatalog, knownCatalogLength, metaToBaseItem, rememberImages, showLandscape, warmCatalogLengths } from './items';
+import { fetchWindow, includeTypesFilter, isLandscapeCatalog, knownCatalogLength, metaToBaseItem, rememberImages, servedOrder, showLandscape, warmCatalogLengths } from './items';
 import { getCatalogs, requiresGenre, viewIdFor, viewTypeFor, type CatalogRef } from './views';
 import { viewerAccountOwner, viewerReadsExtensions } from './viewer';
 import { profileTags } from './profiles';
@@ -353,6 +353,7 @@ export async function boxSetMembers(
     const page = await fetchWindow(userUUID, catalog, from, toSkip + limit - collected.length, extras, keep, tags, includeItemTypes ?? '')
       .catch(() => ({ items: [] as any[], hasMore: false }));
 
+    const served: any[] = [];
     for (const meta of page.items) {
       if (!meta?.id || seen.has(String(meta.id))) continue;
       seen.add(String(meta.id));
@@ -360,6 +361,9 @@ export async function boxSetMembers(
         toSkip -= 1;
         continue;
       }
+      served.push(meta);
+    }
+    for (const meta of servedOrder(served, page)) {
       const item = metaToBaseItem(meta, catalog.type, serverId, parentId);
       if (landscape) showLandscape([item]);
       collected.push(item);
