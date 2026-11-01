@@ -76,6 +76,11 @@ export function reasoningEffort(config: any): string {
   return resolveProvider(config)?.preset ? '' : 'low';
 }
 
+export function reasonLanguage(config: any): string {
+  const language = config?.language || 'en-US';
+  return language.toLowerCase().startsWith('en') ? '' : language;
+}
+
 export function resolveProvider(config: any): ResolvedProvider | null {
   const geminiKey = config?.apiKeys?.gemini
     || process.env.GEMINI_API_KEY
@@ -111,6 +116,6 @@ export function resolveProvider(config: any): ResolvedProvider | null {
 }
 
 module.exports = {
-  resolveProvider, reasoningEffort, budgetFor, REASONING_EFFORTS, RECOMMENDATION_EPOCH,
+  resolveProvider, reasoningEffort, reasonLanguage, budgetFor, REASONING_EFFORTS, RECOMMENDATION_EPOCH,
   refreshTtl, REFRESH_HOURS, pickOrder, PICK_ORDERS, voteFloor,
 };
