@@ -4,7 +4,7 @@ import { parseStremioId } from './idsCodec';
 import { decodeJellyfinId, stremioIdFor } from './ids';
 import { liveSessions, liveSessionsFor, type LiveSession } from './playstate';
 import { syncStatus } from './playstateSync';
-import { seenConfigurations } from './context';
+import { clientRequest, seenConfigurations } from './context';
 import { seriesIndex } from './episodeIndex';
 import { fetchMeta, isBoxSetMeta, parseRuntimeTicks, seriesStatus } from './items';
 import { groupBySpelling } from './aliases';
@@ -1874,7 +1874,7 @@ export type TitleAction = 'played' | 'unplayed' | 'playedUpTo' | 'watchlist' | '
 export async function dashboardTitleAction(userUUID: string, profile: string | null, action: TitleAction, itemIds: string[], rating: number | null = null): Promise<boolean | null> {
   const { runInViewerScope } = require('./viewer');
   return runInViewerScope(false, async () => {
-    const req = { params: { userUUID }, jellyfin: { userUUID, profileId: profile || null }, query: {}, headers: {} };
+    const req = clientRequest(userUUID, profile || null);
     const { loadConfig } = require('./context');
     const config = await loadConfig(req).catch(() => null);
     if (!config || !scopedTo(config, profile)) return null;
@@ -1915,7 +1915,7 @@ export async function dashboardClearResume(userUUID: string, profileKey: string,
   if (profileKey && !listProfiles(config, userUUID).some((p) => p.id === profileKey)) return false;
   const { runInViewerScope } = require('./viewer');
   return runInViewerScope(false, async () => {
-    const req = { params: { userUUID }, jellyfin: { userUUID, profileId: profileKey || null }, query: {}, headers: {} };
+    const req = clientRequest(userUUID, profileKey || null);
     const done = await require('./playstate').recordUserData(req, { ItemId: itemIdForVideo(videoId), PlaybackPositionTicks: 0 }, 'dashboard');
     forgetMemos(userUUID);
     return Boolean(done);
@@ -1930,7 +1930,7 @@ function forgetMemos(userUUID: string): void {
 export async function dashboardWatchDate(userUUID: string, profile: string | null, itemId: string, from: number | null, to: number): Promise<boolean | null> {
   const { runInViewerScope } = require('./viewer');
   return runInViewerScope(false, async () => {
-    const req = { params: { userUUID }, jellyfin: { userUUID, profileId: profile || null }, query: {}, headers: {} };
+    const req = clientRequest(userUUID, profile || null);
     const { loadConfig } = require('./context');
     const config = await loadConfig(req).catch(() => null);
     if (!config || !scopedTo(config, profile)) return null;
@@ -1954,7 +1954,7 @@ export async function dashboardSameViewing(userUUID: string, profileKey: string,
     .sort((a, b) => Math.abs(a - theirs) - Math.abs(b - theirs))[0];
   const { runInViewerScope } = require('./viewer');
   return runInViewerScope(false, async () => {
-    const req = { params: { userUUID }, jellyfin: { userUUID, profileId: profileKey || null }, query: {}, headers: {} };
+    const req = clientRequest(userUUID, profileKey || null);
     const done = await require('./playstate').recordWatchDate(req, itemIdForVideo(video), at, kept ?? theirs, kept !== undefined);
     forgetMemos(userUUID);
     forgetDrift(userUUID);

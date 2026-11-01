@@ -6,8 +6,7 @@ import { dashedGuid, decodeJellyfinId, encodeJellyfinId, normaliseJellyfinId, pa
 import { mapWithConcurrency } from '../../utils/concurrency';
 import { fetchMeta } from './items';
 import { upsertPlaystateEverywhere } from './aliases';
-import { scrobblesJellyfin, scrobblesStremio, type TrackerSource } from '../watchTracking';
-import { descriptorForVideo, isPlayed, titleType, type LibraryEvent, type PlayerEvent } from '../stremioEvents';
+import { PLAY_SOURCES, type PlaySourceId } from '../playSources';
 import type { Descriptor } from './idsCodec';
 
 const logger = consola.withTag('JellyfinPlaystate');
@@ -475,20 +474,16 @@ async function writePlaystate(
 }
 
 // The table records every play; trackers hear these reports only when the switch for the play's source is on.
-type EditSource = TrackerSource | 'dashboard';
-
-function tellsTrackers(config: any, source: EditSource = 'jellyfin'): boolean {
+function tellsTrackers(config: any, source: PlaySourceId = 'jellyfin'): boolean {
   const { writesTrackers } = require('./profiles');
-  const on = source === 'dashboard'
-    ? scrobblesJellyfin(config) || scrobblesStremio(config)
-    : source === 'stremio' ? scrobblesStremio(config) : scrobblesJellyfin(config);
-  return on && writesTrackers(config);
+  return PLAY_SOURCES[source].scrobbles(config) && writesTrackers(config);
 }
 
 async function report(
   req: any,
   body: any,
-  event: 'start' | 'pause' | 'stop' | 'played' | 'unplayed'
+  event: 'start' | 'pause' | 'stop' | 'played' | 'unplayed',
+  source: PlaySourceId = 'jellyfin'
 ): Promise<void> {
   const userUUID = req.params?.userUUID;
   const itemId = bodyItemId(req, body);
@@ -553,7 +548,7 @@ async function report(
     if (event === 'stop') await recordPlaystate(userUUID, profile, session, event, positionMs, played, config);
     return;
   }
-  await settle(userUUID, config, profile, session, event, positionMs, played, edgeAt);
+  await settle(userUUID, config, profile, session, event, positionMs, played, edgeAt, source);
 }
 
 async function settle(
@@ -565,7 +560,7 @@ async function settle(
   positionMs: number,
   played: boolean | null,
   edgeAt: number | null = null,
-  source: TrackerSource = 'jellyfin'
+  source: PlaySourceId = 'jellyfin'
 ): Promise<void> {
   const tells = tellsTrackers(config, source);
   // The table is written before any tracker is told, so a read never waits on one.
@@ -620,12 +615,12 @@ async function tellTrackers(
   }
 }
 
-export async function recordPlaying(req: any, body: any): Promise<void> {
-  await report(req, body, 'start');
+export async function recordPlaying(req: any, body: any, source: PlaySourceId = 'jellyfin'): Promise<void> {
+  await report(req, body, 'start', source);
 }
 
-export async function recordStopped(req: any, body: any): Promise<void> {
-  await report(req, body, 'stop');
+export async function recordStopped(req: any, body: any, source: PlaySourceId = 'jellyfin'): Promise<void> {
+  await report(req, body, 'stop', source);
 }
 
 /** The mark-watched a client offers on an item, taken without it being played. */
@@ -633,7 +628,7 @@ export async function recordStopped(req: any, body: any): Promise<void> {
 // the mark applies to each aired episode in it. The table is written for all
 // of them before this returns, since the client reads the item back straight
 // after and a half-marked season shows no tick; the trackers are told after.
-async function markEach(req: any, body: any, event: 'played' | 'unplayed', upTo = false, source: EditSource = 'jellyfin'): Promise<void> {
+async function markEach(req: any, body: any, event: 'played' | 'unplayed', upTo = false, source: PlaySourceId = 'jellyfin'): Promise<void> {
   const userUUID = req.params?.userUUID;
   const itemId = bodyItemId(req, body);
   if (!userUUID || !itemId) return;
@@ -654,7 +649,7 @@ async function markEach(req: any, body: any, event: 'played' | 'unplayed', upTo 
 
 // A mark on a title the server still holds as playing is the stop that never arrived.
 // Marked watched, the session is kept until the client's own stop, which would otherwise save a resume point over the watch.
-async function closeOpenSession(userUUID: string, config: any, profile: string, itemId: string, played: boolean, source: EditSource): Promise<boolean> {
+async function closeOpenSession(userUUID: string, config: any, profile: string, itemId: string, played: boolean, source: PlaySourceId): Promise<boolean> {
   const key = `${userUUID}:${profile}:${itemId}`;
   const open = await getPosition(key);
   if (!open || !isPlayable(await decodeJellyfinId(itemId))) return false;
@@ -684,7 +679,7 @@ async function markItems(
   profile: string,
   marked: MarkTarget,
   event: 'played' | 'unplayed',
-  source: EditSource
+  source: PlaySourceId
 ): Promise<void> {
   const played = event === 'played';
   const itemId = marked.metaId ?? marked.ids[0];
@@ -790,102 +785,76 @@ async function markedItemIds(
   return { ids, meta, scope: descriptor.k, metaId: descriptor.i };
 }
 
-const STREMIO_APP = { client: 'Stremio', device: 'Stremio', version: '' };
-
-// Marked watched during a play: what Stremio still sends for it until the stop would save a resume point over the watch.
-const markedWhilePlaying = new LRUCache<string, true>({ max: 5000, ttl: 3 * 60 * 60 * 1000 });
-
-function guardPlay(key: string, runtimeMs: number | null, positionMs: number): void {
-  const left = runtimeMs && runtimeMs > positionMs ? runtimeMs - positionMs : 2 * 60 * 60 * 1000;
-  markedWhilePlaying.set(key, true, { ttl: left + 15 * 60 * 1000 });
+/** A play reported by a client that does not play through this server's own Jellyfin routes. */
+export interface ClientPlay {
+  action: 'start' | 'pause' | 'stop';
+  descriptor: Descriptor;
+  positionMs: number;
+  durationMs: number;
 }
 
-export async function recordStremioPlay(userUUID: string, config: any, event: PlayerEvent): Promise<void> {
-  const descriptor = descriptorForVideo(event.type, event.videoId);
-  if (!descriptor) return;
-  const itemId = encodeJellyfinId(descriptor);
-  const { profileKey } = require('./profiles');
-  const profile = profileKey(config);
-  const key = `${userUUID}:${profile}:${itemId}`;
+/** A watched or unwatched mark from such a client: one title, or the videos of it that changed. */
+export interface ClientMark {
+  played: boolean;
+  title: Descriptor;
+  videos: Descriptor[];
+  scope?: 'season';
+}
 
-  if (markedWhilePlaying.has(key)) {
-    if (event.action === 'stop') {
-      markedWhilePlaying.delete(key);
-      deletePosition(key);
-    }
-    return;
-  }
-
-  const known = await getPosition(key);
-  // A start before the stream knows its length still opens the play, so a mark during it is caught;
-  // it is held as paused so the start that follows with a length is still told to the trackers.
-  if (event.durationMs <= 0) {
-    if (event.action === 'start' && !known) {
-      setPosition(key, { positionMs: event.positionMs, at: Date.now(), paused: true, viewer: config?.jellyfinProfileId ?? null, device: 'stremio', app: STREMIO_APP });
-    } else if (event.action === 'stop') {
-      deletePosition(key);
-    }
-    return;
-  }
-
-  const resolved = await resolveSession(userUUID, itemId);
-  if (!resolved) return;
-  const session: ResolvedSession = { ...resolved, runtimeMs: event.durationMs, runtimeFrom: 'client' };
-
-  if (event.action === 'stop') {
-    deletePosition(key);
-    const watchedAt = await playedThresholdFor(userUUID, config?.jellyfinProfileId ?? null);
-    await settle(userUUID, config, profile, session, 'stop', event.positionMs, isPlayed(event.positionMs, event.durationMs, watchedAt), null, 'stremio');
-    return;
-  }
-
-  const position: SessionPosition = {
-    positionMs: event.positionMs, at: Date.now(), paused: event.action === 'pause',
-    viewer: config?.jellyfinProfileId ?? null, device: 'stremio', app: STREMIO_APP, playedAt: known?.playedAt,
+export async function recordClientPlay(req: any, play: ClientPlay, source: PlaySourceId): Promise<void> {
+  const body = {
+    ItemId: encodeJellyfinId(play.descriptor),
+    PositionTicks: play.positionMs * TICKS_PER_MS,
+    ...(play.durationMs > 0 ? { RunTimeTicks: play.durationMs * TICKS_PER_MS } : {}),
   };
-  setPosition(key, position);
-  // A seek re-sends start with the new position; only the change from paused or stopped is a transition.
-  if (event.action === 'start' && known && known.paused === false) return;
-  await settle(userUUID, config, profile, session, event.action, event.positionMs, null, null, 'stremio');
+  if (play.action === 'stop') return recordStopped(req, body, source);
+  const { loadConfig } = require('./context');
+  const { profileKey } = require('./profiles');
+  const config = await loadConfig(req);
+  if (!config) return;
+  const itemId = normaliseJellyfinId(body.ItemId);
+  const key = `${req.params.userUUID}:${profileKey(config)}:${itemId}`;
+  const known = await getPosition(key);
+  if (play.action === 'start' && known && !PLAY_SOURCES[source].sendsProgress && (await outlastedPlay(req.params.userUUID, itemId, known, play.durationMs))) {
+    deletePosition(key);
+    return recordPlaying(req, body, source);
+  }
+  if (play.action === 'start' && !known) return recordPlaying(req, body, source);
+  await recordProgress(req, { ...body, IsPaused: play.action === 'pause' }, source);
 }
 
-export async function recordStremioMark(userUUID: string, config: any, event: LibraryEvent): Promise<void> {
-  if (event.action !== 'watched' && event.action !== 'unwatched') return;
-  const played = event.action === 'watched';
-  const t = titleType(event.metaId, event.type);
+// A client silent while playing leaves a closed or killed play held as playing; held past what it had left, the next start is a new play.
+async function outlastedPlay(userUUID: string, itemId: string, known: SessionPosition, durationMs: number): Promise<boolean> {
+  if (known.paused !== false) return false;
+  const runtimeMs = durationMs > 0 ? durationMs : (await resolveSession(userUUID, itemId))?.runtimeMs ?? null;
+  if (!runtimeMs) return false;
+  const marginMs = envInt('PLAY_ENDED_MARGIN_MINUTES', 15, 0) * 60_000;
+  return Date.now() - known.at > Math.max(0, runtimeMs - known.positionMs) + marginMs;
+}
 
-  let marked: MarkTarget;
-  if (event.videoIds.length) {
-    const ids = event.videoIds
-      .map((videoId) => descriptorForVideo(event.type, videoId))
-      .filter((d): d is Descriptor => d !== null)
-      .map((d) => encodeJellyfinId(d));
-    marked = { ids, metaId: event.metaId, ...(ids.length > 1 ? { scope: 'season' as const } : {}) };
-  } else if (event.type === 'movie') {
-    marked = { ids: [encodeJellyfinId({ k: 'movie', t, i: event.metaId })] };
-  } else {
-    marked = await markedItemIds(userUUID, encodeJellyfinId({ k: 'series', t, i: event.metaId }));
-  }
+export async function recordClientMark(req: any, mark: ClientMark, source: PlaySourceId): Promise<void> {
+  const userUUID = req.params.userUUID;
+  const config = await require('./context').loadConfig(req);
+  if (!config) return;
+  const ids = mark.videos.map((video) => encodeJellyfinId(video));
+  const marked: MarkTarget = ids.length
+    ? { ids, metaId: mark.title.k === 'movie' || mark.title.k === 'series' ? mark.title.i : undefined, ...(mark.scope ? { scope: mark.scope } : {}) }
+    : mark.title.k === 'movie'
+      ? { ids: [encodeJellyfinId(mark.title)] }
+      : await markedItemIds(userUUID, encodeJellyfinId(mark.title));
   if (!marked.ids.length) return;
 
   const { profileKey } = require('./profiles');
   const profile = profileKey(config);
-  for (const id of marked.ids) {
-    const key = `${userUUID}:${profile}:${id}`;
-    const held = await getPosition(key);
-    await closeOpenSession(userUUID, config, profile, id, played, 'stremio');
-    if (!held) continue;
-    if (played) guardPlay(key, (await resolveSession(userUUID, id))?.runtimeMs ?? null, held.positionMs);
-    else markedWhilePlaying.delete(key);
-  }
-  await markItems(userUUID, config, profile, marked, played ? 'played' : 'unplayed', 'stremio');
+  for (const id of marked.ids) await closeOpenSession(userUUID, config, profile, id, mark.played, source);
+  await markItems(userUUID, config, profile, marked, mark.played ? 'played' : 'unplayed', source);
 }
 
-export async function recordPlayed(req: any, body: any, source: EditSource = 'jellyfin'): Promise<void> {
+export async function recordPlayed(req: any, body: any, source: PlaySourceId = 'jellyfin'): Promise<void> {
   await markEach(req, body, 'played', false, source);
 }
 
-export async function recordUnplayed(req: any, body: any, source: EditSource = 'jellyfin'): Promise<void> {
+export async function recordUnplayed(req: any, body: any, source: PlaySourceId = 'jellyfin'): Promise<void> {
   await markEach(req, body, 'unplayed', false, source);
 }
 
@@ -925,7 +894,7 @@ export async function recordWatchDate(req: any, itemId: string, from: number | n
 }
 
 /** The episode and every aired one before it in its series, specials left out. */
-export async function recordPlayedUpTo(req: any, itemId: string, source: EditSource = 'jellyfin'): Promise<void> {
+export async function recordPlayedUpTo(req: any, itemId: string, source: PlaySourceId = 'jellyfin'): Promise<void> {
   await markEach(req, { ItemId: itemId }, 'played', true, source);
 }
 
@@ -940,7 +909,7 @@ async function unplayedAmong(userUUID: string, config: any, profile: string, ids
  * Progress is not forwarded anywhere: no tracker has an endpoint for it. It is
  * only remembered, so a stop that arrives without a position still has one.
  */
-export async function recordProgress(req: any, body: any): Promise<void> {
+export async function recordProgress(req: any, body: any, source: PlaySourceId = 'jellyfin'): Promise<void> {
   const userUUID = req.params?.userUUID;
   const itemId = bodyItemId(req, body);
   const positionMs = ticksToMs(body?.PositionTicks ?? body?.positionTicks);
@@ -1003,7 +972,7 @@ export async function recordProgress(req: any, body: any): Promise<void> {
         if (finished && !previous?.playedAt) {
           next.playedAt = now;
           setPosition(key, next);
-          await settle(userUUID, config, profileKey(config), session, 'stop', positionMs, true);
+          await settle(userUUID, config, profileKey(config), session, 'stop', positionMs, true, null, source);
           return;
         }
         if (!finished) {
@@ -1021,7 +990,7 @@ export async function recordProgress(req: any, body: any): Promise<void> {
     return;
   }
 
-  await report(req, body, paused ? 'pause' : 'start');
+  await report(req, body, paused ? 'pause' : 'start', source);
 }
 
 /**
@@ -1029,7 +998,7 @@ export async function recordProgress(req: any, body: any): Promise<void> {
  * played flag, or a resume position, which cleared is what drops the item from
  * continue watching. Answers the state the item is now in.
  */
-export async function recordUserData(req: any, body: any, source: EditSource = 'jellyfin'): Promise<{ played: boolean; positionMs: number; rating?: number | null } | null> {
+export async function recordUserData(req: any, body: any, source: PlaySourceId = 'jellyfin'): Promise<{ played: boolean; positionMs: number; rating?: number | null } | null> {
   const userUUID = req.params?.userUUID;
   const itemId = bodyItemId(req, body);
   if (!userUUID || !itemId) return null;

@@ -5985,38 +5985,50 @@ function stremioEventRoute(resource) {
     res.setHeader('Access-Control-Allow-Headers', '*');
     res.setHeader('Cache-Control', 'no-store');
 
-    let config;
+    let stored;
     try {
-      config = await loadConfigFromDatabase(userUUID);
+      stored = await loadRouteConfig(userUUID);
     } catch {
-      config = null;
+      stored = null;
     }
-    if (!config) return res.json({ success: false });
+    if (!stored) return res.json({ success: false });
 
-    const { configForViewer, profileForViewer } = require('./lib/jellyfin/profiles');
-    const { scrobblesStremio, syncsStremioLibrary } = require('./lib/watchTracking');
-    const { parseStremioEvent, stremioEventTarget, stremioEventKey, stremioEventSlot, isRepeatEvent, runInOrder, titleType } = require('./lib/stremioEvents');
-    const viewer = configForViewer(config, userUUID, req.query.viewer);
-    if (!viewer) return refuseUnknownViewer(res, 'Stremio', userUUID, req.query.viewer);
-    const event = scrobblesStremio(viewer) ? parseStremioEvent(resource, type, id, extra) : null;
-    if (!event) return res.json({ success: false });
-    res.json({ success: true });
+    const { profileForViewer } = require('./lib/jellyfin/profiles');
+    const profile = profileForViewer(stored, userUUID, req.query.viewer);
+    if (profile === undefined) return refuseUnknownViewer(res, 'Stremio', userUUID, req.query.viewer);
 
-    require('./lib/stremioEventStatus').noteEvent(userUUID, profileForViewer(config, userUUID, req.query.viewer)?.id ?? '');
-    const { viewerScope } = require('./lib/playbackHandler');
-    const scope = viewerScope(userUUID, viewer);
-    if (isRepeatEvent(scope, stremioEventTarget(event), stremioEventKey(event))) return;
+    const { runInViewerScope } = require('./lib/jellyfin/viewer');
+    const { clientRequest, loadConfig } = require('./lib/jellyfin/context');
+    const { PLAY_SOURCES } = require('./lib/playSources');
+    const viewerReq = clientRequest(userUUID, profile?.id ?? null, PLAY_SOURCES.stremio.client);
+    return runInViewerScope(false, async () => {
+      const { syncsStremioLibrary } = require('./lib/watchTracking');
+      const { parseStremioEvent, stremioEventTarget, stremioEventKey, stremioEventSlot, isRepeatEvent, runInOrder, titleType, clientPlayOf, clientMarkOf } = require('./lib/stremioEvents');
+      const config = await loadConfig(viewerReq).catch(() => null);
+      const event = config && PLAY_SOURCES.stremio.scrobbles(config) ? parseStremioEvent(resource, type, id, extra) : null;
+      if (!event) return res.json({ success: false });
+      res.json({ success: true });
 
-    const { runAsAccountOwner } = require('./lib/jellyfin/viewer');
-    const { accountOwner } = require('./lib/accounts');
-    runInOrder(`${scope}|${stremioEventSlot(event)}`, () => runAsAccountOwner(accountOwner(viewer), async () => {
-      const playstate = require('./lib/jellyfin/playstate');
-      if (event.resource === 'player') return playstate.recordStremioPlay(userUUID, viewer, event);
-      if (event.action === 'watched' || event.action === 'unwatched') return playstate.recordStremioMark(userUUID, viewer, event);
-      if (!syncsStremioLibrary(viewer)) return;
-      const { setWatchlisted } = require('./lib/jellyfin/watchlist');
-      await setWatchlisted(userUUID, viewer, { k: event.type, t: titleType(event.metaId, event.type), i: event.metaId }, event.action === 'libraryAdd');
-    })).catch((error) => consola.error(`[Stremio] ${resource} ${type}/${id} failed: ${error.message}`));
+      require('./lib/stremioEventStatus').noteEvent(userUUID, profile?.id ?? '');
+      const { viewerScope } = require('./lib/playbackHandler');
+      const scope = viewerScope(userUUID, config);
+      if (isRepeatEvent(scope, stremioEventTarget(event), stremioEventKey(event))) return;
+
+      runInOrder(`${scope}|${stremioEventSlot(event)}`, async () => {
+        const playstate = require('./lib/jellyfin/playstate');
+        if (event.resource === 'player') {
+          const play = clientPlayOf(event);
+          return play ? playstate.recordClientPlay(viewerReq, play, 'stremio') : undefined;
+        }
+        if (event.action === 'watched' || event.action === 'unwatched') {
+          const mark = clientMarkOf(event);
+          return mark ? playstate.recordClientMark(viewerReq, mark, 'stremio') : undefined;
+        }
+        if (!syncsStremioLibrary(config)) return;
+        const { setWatchlisted } = require('./lib/jellyfin/watchlist');
+        await setWatchlisted(userUUID, config, { k: event.type, t: titleType(event.metaId, event.type), i: event.metaId }, event.action === 'libraryAdd');
+      }).catch((error) => consola.error(`[Stremio] ${resource} ${type}/${id} failed: ${error.message}`));
+    });
   };
 }
 addon.get("/stremio/:userUUID/player/:type/:id/:extra.json", stremioEventRoute('player'));

@@ -24,7 +24,8 @@ import { mergeGenreOptions } from '../utils/mergedCatalog';
 import { fetchLumiereGenres, lumiereApiBase, lumiereGenreLabel, lumiereListOf } from '../utils/lumiereLists';
 const { getSetting }: any = require('./settingsService');
 import consola from 'consola';
-import { hasAnyWatchTrackingEnabled, scrobbleResources, scrobblesJellyfin } from './watchTracking';
+import { hasAnyWatchTrackingEnabled, scrobblesJellyfin } from './watchTracking';
+import { scrobbleResources } from './playSources';
 const logger = consola.withTag('Manifest');
 
 

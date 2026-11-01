@@ -10,8 +10,6 @@ export type WatchTrackingService =
 
 export type WatchTrackingMediaType = 'movie' | 'series';
 
-export type TrackerSource = 'jellyfin' | 'stremio';
-
 export function scrobblesJellyfin(config: any): boolean {
   return config?.playbackReporting === true && config?.jellyfinScrobbling !== false;
 }
@@ -22,17 +20,6 @@ export function scrobblesStremio(config: any): boolean {
 
 export function syncsStremioLibrary(config: any): boolean {
   return scrobblesStremio(config) && config?.stremioLibraryWatchlist === true;
-}
-
-/**
- * Event resources the manifest declares; declaring one is what makes a front-end start delivering it.
- * Stremio events need no tracker: the play-state table records them on its own.
- */
-export function scrobbleResources(config: any, anyoneTracks: boolean): string[] {
-  return [
-    ...(anyoneTracks && scrobblesJellyfin(config) ? ['watch_state', 'playback'] : []),
-    ...(scrobblesStremio(config) ? ['player', 'library'] : []),
-  ];
 }
 
 export const WATCH_TRACKING_SERVICES: WatchTrackingService[] = [

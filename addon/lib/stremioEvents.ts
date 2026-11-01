@@ -2,6 +2,7 @@ import { LRUCache } from 'lru-cache';
 import { envInt } from '../utils/envNumber';
 import { parseStremioId, type Descriptor } from './jellyfin/idsCodec';
 import { isAnimeId } from './jellyfin/canonicalIds';
+import type { ClientMark, ClientPlay } from './jellyfin/playstate';
 
 export type PlayerAction = 'start' | 'pause' | 'stop';
 export type LibraryAction = 'libraryAdd' | 'libraryRemove' | 'watched' | 'unwatched';
@@ -100,6 +101,20 @@ export function descriptorForVideo(type: 'movie' | 'series', videoId: string): D
   return { k: 'episode', t, i: parsed.base, s: parsed.season, e: parsed.episode };
 }
 
-export function isPlayed(positionMs: number, durationMs: number, thresholdPercent: number): boolean {
-  return durationMs > 0 && (positionMs / durationMs) * 100 >= thresholdPercent;
+export function clientPlayOf(event: PlayerEvent): ClientPlay | null {
+  const descriptor = descriptorForVideo(event.type, event.videoId);
+  return descriptor ? { action: event.action, descriptor, positionMs: event.positionMs, durationMs: event.durationMs } : null;
+}
+
+// Stremio lists several videos only when a season is marked, at most 100 to an event.
+export function clientMarkOf(event: LibraryEvent): ClientMark | null {
+  if (event.action !== 'watched' && event.action !== 'unwatched') return null;
+  const videos = event.videoIds.map((videoId) => descriptorForVideo(event.type, videoId)).filter((d): d is Descriptor => d !== null);
+  if (event.videoIds.length && !videos.length) return null;
+  return {
+    played: event.action === 'watched',
+    title: { k: event.type, t: titleType(event.metaId, event.type), i: event.metaId },
+    videos,
+    ...(videos.length > 1 ? { scope: 'season' as const } : {}),
+  };
 }

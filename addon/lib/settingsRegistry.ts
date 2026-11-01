@@ -550,6 +550,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 0,
   },
   {
+    key: 'PLAY_ENDED_MARGIN_MINUTES',
+    envVar: 'PLAY_ENDED_MARGIN_MINUTES',
+    label: 'Ended Play Margin (minutes)',
+    description: 'Some clients send nothing while a video plays on. A play from one of them still held as playing for longer than it had left, plus this margin, ended without a stop, so the next start is a new play.',
+    category: 'Features',
+    type: 'number',
+    default: 15,
+    min: 0,
+  },
+  {
     key: 'JELLYFIN_MIN_RESUME_PERCENT',
     envVar: 'JELLYFIN_MIN_RESUME_PERCENT',
     label: 'Jellyfin Minimum Resume (%)',
