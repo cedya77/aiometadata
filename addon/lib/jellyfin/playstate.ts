@@ -91,6 +91,8 @@ interface SessionPosition {
   playedAt?: number;
   /** Below the mark again since, with a resume point written. */
   rewound?: boolean;
+  /** Marked watched during the play, so what the client still sends for it is ignored until its stop. */
+  marked?: boolean;
 }
 
 // A client that dies never sends a stop, so the last tick is kept and a stop
@@ -511,6 +513,11 @@ async function report(
   const app = appOf(req);
   const playSession = playSessionOf(body);
   const reported = ticksToMs(body?.PositionTicks ?? body?.positionTicks);
+  if (known?.marked) {
+    if (event === 'stop') deletePosition(key);
+    else setPosition(key, { ...known, positionMs: reported ?? known.positionMs, at: Date.now(), paused: event === 'pause' });
+    return;
+  }
   // A resume reported at zero is the client's habit, not a seek to the start.
   const resumedFrom = event === 'start' && known?.paused ? known.at : null;
   // A start, pause or resume can come back at a position already reported, so each carries when its state began.
@@ -646,17 +653,26 @@ async function markEach(req: any, body: any, event: 'played' | 'unplayed', upTo 
 }
 
 // A mark on a title the server still holds as playing is the stop that never arrived.
+// Marked watched, the session is kept until the client's own stop, which would otherwise save a resume point over the watch.
 async function closeOpenSession(userUUID: string, config: any, profile: string, itemId: string, played: boolean, source: EditSource): Promise<boolean> {
-  const open = await getPosition(`${userUUID}:${profile}:${itemId}`);
-  if (!open || open.paused || !isPlayable(await decodeJellyfinId(itemId))) return false;
-  const session = await resolveSession(userUUID, itemId);
-  deletePosition(`${userUUID}:${profile}:${itemId}`);
-  if (session && tellsTrackers(config, source)) {
-    const at = played ? (session.runtimeMs ?? open.positionMs) : open.positionMs;
-    await tellTrackers(userUUID, config, session, 'stop', at, played, false).catch((error: any) =>
-      logger.debug(`Closing the open session before a mark failed for ${itemId}: ${error?.message || error}`)
-    );
+  const key = `${userUUID}:${profile}:${itemId}`;
+  const open = await getPosition(key);
+  if (!open || !isPlayable(await decodeJellyfinId(itemId))) return false;
+  if (open.marked) {
+    if (!played) setPosition(key, { ...open, marked: undefined });
+    return true;
   }
+  if (!open.paused) {
+    const session = await resolveSession(userUUID, itemId);
+    if (session && tellsTrackers(config, source)) {
+      const at = played ? (session.runtimeMs ?? open.positionMs) : open.positionMs;
+      await tellTrackers(userUUID, config, session, 'stop', at, played, false).catch((error: any) =>
+        logger.debug(`Closing the open session before a mark failed for ${itemId}: ${error?.message || error}`)
+      );
+    }
+  }
+  if (played) setPosition(key, { ...open, at: Date.now(), marked: true });
+  else if (!open.paused) deletePosition(key);
   return true;
 }
 
@@ -679,7 +695,8 @@ async function markItems(
       logger.debug(`No playable session for ${id}`);
       return null;
     }
-    deletePosition(`${userUUID}:${profile}:${id}`);
+    const key = `${userUUID}:${profile}:${id}`;
+    if (!played || !(await getPosition(key))?.marked) deletePosition(key);
     await writePlaystate(userUUID, profile, session, event, 0, played);
     return session;
   })).filter((s): s is ResolvedSession => s !== null);
@@ -938,6 +955,10 @@ export async function recordProgress(req: any, body: any): Promise<void> {
   const key = `${userUUID}:${profileKey(await loadConfig(req))}:${itemId}`;
   const previous = await getPosition(key);
   const paused = body?.IsPaused === true || body?.isPaused === true;
+  if (previous?.marked) {
+    setPosition(key, { ...previous, positionMs, at: Date.now(), paused });
+    return;
+  }
 
   // A client keeps reporting every few seconds while paused, so only the change
   // is worth acting on: pausing stores a resume point, resuming reopens the
