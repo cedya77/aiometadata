@@ -711,6 +711,13 @@ function itemTypeOf(meta: any, mediaType: string): 'Movie' | 'Series' | 'BoxSet'
   return isBoxSetMeta(meta) ? 'BoxSet' : jellyfinTypeFor(meta?.type || mediaType);
 }
 
+function ratingFields(meta: any): { OfficialRating: string | null; CustomRating?: string | null } {
+  const extras = meta?.app_extras;
+  const rating = extras?.certification || null;
+  const local = extras?.certifications ? extras.certificationLocal || rating : rating;
+  return local === rating ? { OfficialRating: rating } : { OfficialRating: local, CustomRating: rating };
+}
+
 export function metaToBaseItem(
   meta: any,
   mediaType: string,
@@ -758,7 +765,7 @@ export function metaToBaseItem(
       Id: encodeJellyfinId({ k: 'genre', t: mediaType, c: 'all', g }),
     })),
     CommunityRating: parseRating(meta.imdbRating),
-    OfficialRating: meta.app_extras?.certification || null,
+    ...ratingFields(meta),
     RunTimeTicks: itemType === 'BoxSet' ? null : parseRuntimeTicks(meta.runtime),
     ProviderIds: ids,
     ExternalUrls: externalUrls(ids, itemType === 'Series'),
@@ -1168,7 +1175,7 @@ export function buildEpisode(
       SeriesId: seriesId,
       SeriesName: meta.name,
       OriginalLanguage: originalLanguage(meta),
-      OfficialRating: meta.app_extras?.certification || null,
+      ...ratingFields(meta),
       ParentIndexNumber: hasSeason ? video.season : null,
       IndexNumber: Number(video.episode),
       Overview: video.overview || null,
