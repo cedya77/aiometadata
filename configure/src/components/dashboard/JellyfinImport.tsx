@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BookOpen, Check, Download, FileUp, Film, Loader2, Tv } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, ChevronDown, Download, FileUp, Film, Loader2, Tv } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -265,15 +265,18 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
                   <label key={source.key} className="flex items-center gap-3 text-sm">
                     <span className="min-w-0 flex-1 truncate">{source.name}</span>
                     <span className="text-muted-foreground">into</span>
-                    <select
-                      value={mapping[source.key] ?? SKIP}
-                      disabled={loading || started}
-                      onChange={(event) => choose(source.key, event.target.value)}
-                      className="h-8 rounded-full bg-white/[0.06] px-3 text-sm ring-1 ring-inset ring-white/10"
-                    >
-                      {preview.targets.map((target) => <option key={target.key} value={target.key}>{target.name}</option>)}
-                      <option value={SKIP}>Don't import</option>
-                    </select>
+                    <span className="relative inline-flex">
+                      <select
+                        value={mapping[source.key] ?? SKIP}
+                        disabled={loading || started}
+                        onChange={(event) => choose(source.key, event.target.value)}
+                        className="h-8 appearance-none rounded-full bg-white/[0.06] pl-3 pr-8 text-sm ring-1 ring-inset ring-white/10"
+                      >
+                        {preview.targets.map((target) => <option key={target.key} value={target.key}>{target.name}</option>)}
+                        <option value={SKIP}>Don't import</option>
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    </span>
                   </label>
                 ))}
               </div>
