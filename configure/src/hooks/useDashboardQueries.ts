@@ -1789,6 +1789,7 @@ export interface JellyfinYearPeople {
   together: { people: [JellyfinYearPersonRef, JellyfinYearPersonRef]; films: number } | null;
   link: (JellyfinYearPersonRef & { show: JellyfinYearTitleRef; films: JellyfinYearTitleRef[] }) | null;
   themes: Array<[string, number]>;
+  themeTitles?: Record<string, string[]>;
   books: number;
   manga: number;
   networks: Array<{ name: string; logo: string | null; plays: number }>;

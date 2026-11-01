@@ -46,6 +46,8 @@ export interface PeopleYear {
   together: { people: [PersonRef, PersonRef]; films: number } | null;
   link: (PersonRef & { show: TitleRef; films: TitleRef[] }) | null;
   themes: Array<[string, number]>;
+  /** The titles carrying each theme shown, by its shown name. */
+  themeTitles: Record<string, string[]>;
   books: number;
   manga: number;
   networks: Array<{ name: string; logo: string | null; plays: number }>;
@@ -174,14 +176,24 @@ export async function peopleYear(config: any, titles: YearTitle[], anime: AnimeY
     .map((credit) => ({ ...personOf(credit), films: credit.titles.length }));
 
   const themes = new Map<string, number>();
-  for (const title of titles) for (const keyword of new Set((title.facts?.keywords ?? []).map((word) => word.toLowerCase()))) themes.set(keyword, (themes.get(keyword) ?? 0) + 1);
+  const carriers = new Map<string, string[]>();
+  for (const title of titles) {
+    for (const keyword of new Set((title.facts?.keywords ?? []).map((word) => word.toLowerCase()))) {
+      themes.set(keyword, (themes.get(keyword) ?? 0) + 1);
+      const keys = carriers.get(keyword);
+      if (keys) keys.push(title.key);
+      else carriers.set(keyword, [title.key]);
+    }
+  }
+  const shownThemes = [...themes].sort((a, b) => b[1] - a[1]).slice(0, THEMES);
 
   return {
     cast: voice && actors.length ? [...actors, voice] : actors,
     directors,
     together: togetherOf(films),
     link: linkOf(cast),
-    themes: [...themes].sort((a, b) => b[1] - a[1]).slice(0, THEMES).map(([name, n]) => [THEME_NAMES[name] ?? name, n]),
+    themes: shownThemes.map(([name, n]) => [THEME_NAMES[name] ?? name, n]),
+    themeTitles: Object.fromEntries(shownThemes.map(([name]) => [THEME_NAMES[name] ?? name, carriers.get(name) ?? []])),
     books: themes.get(BOOK) ?? 0,
     manga: themes.get(MANGA) ?? 0,
     networks: await networksOf(config, titles.filter((title) => title.kind === 'series')),

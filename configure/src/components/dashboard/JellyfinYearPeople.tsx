@@ -1,9 +1,11 @@
-import { lazy, Suspense, useMemo, type CSSProperties } from "react";
+import { lazy, Suspense, useMemo, useState, type CSSProperties } from "react";
+import { X } from "lucide-react";
 import type { JellyfinYearPeople, JellyfinYearTitle } from "@/hooks/useDashboardQueries";
-import { ChapterHeader, Deck, PersonLink, TitleLink, TitleList, YEAR_GLASS } from "./JellyfinYearShared";
+import { ChapterHeader, Deck, PersonLink, TitleLink, TitleList, YEAR_GLASS, plural } from "./JellyfinYearShared";
+import { TitleLeaderboard } from "./JellyfinYearLeaderboard";
 import { sizedArt } from "./art";
 import type { YearChapterProps } from "./yearChapters";
-import { displayName, type YearModel } from "./yearModel";
+import { displayName, hoursOf, type YearModel } from "./yearModel";
 
 const Globe = lazy(() => import("./JellyfinYearGlobe"));
 
@@ -26,7 +28,6 @@ const COUNTRY_ALIASES: Record<string, string> = {
   "taiwan, province of china": "TW",
 };
 
-const plural = (n: number, word: string, many = `${word}s`) => `${n.toLocaleString()} ${n === 1 ? word : many}`;
 
 function listed(items: string[]): string {
   if (items.length <= 1) return items[0] ?? "";
@@ -154,7 +155,10 @@ function Directors({ people }: { people: JellyfinYearPeople }) {
   );
 }
 
-function Genres({ model }: { model: YearModel }) {
+type Topic = { kind: "genre" | "theme"; name: string };
+type TopicPicker = { isPicked: (topic: Topic) => boolean; onPick: (topic: Topic) => void };
+
+function Genres({ model, picker }: { model: YearModel; picker: TopicPicker }) {
   const rows = useMemo(() => {
     const plays = new Map<string, number>();
     let total = 0;
@@ -168,37 +172,44 @@ function Genres({ model }: { model: YearModel }) {
   return (
     <div className={`${YEAR_GLASS} min-w-0 flex-[1_1_520px] rounded-3xl p-5 sm:p-7`}>
       <h3 className="text-[15px] font-semibold">Genres in your plays</h3>
-      <p className="mt-1 text-xs text-muted-foreground">Share of plays that carried each genre. A title can carry several.</p>
-      <div className="mt-[22px] flex flex-col gap-3.5">
-        {rows.map(([name, pct], i) => (
-          <div key={name} className="grid grid-cols-[110px_minmax(0,1fr)_44px] items-center gap-3.5 sm:grid-cols-[150px_minmax(0,1fr)_44px]">
-            <span className="truncate text-sm font-medium">{name}</span>
+      <p className="mt-1 text-xs text-muted-foreground">Share of plays that carried each genre. A title can carry several. Pick one to see its titles.</p>
+      <div className="mt-[22px] flex flex-col gap-1.5">
+        {rows.map(([name, pct], i) => {
+          const on = picker.isPicked({ kind: "genre", name });
+          return (
+          <button key={name} type="button" aria-pressed={on} onClick={() => picker.onPick({ kind: "genre", name })} className={`-mx-2 grid grid-cols-[110px_minmax(0,1fr)_44px] items-center gap-3.5 rounded-lg px-2 py-1 text-left transition-colors sm:grid-cols-[150px_minmax(0,1fr)_44px] ${on ? "bg-blue-400/[0.12]" : "hover:bg-white/[0.05]"}`}>
+            <span className={`truncate text-sm font-medium ${on ? "text-blue-300" : ""}`}>{name}</span>
             <div className="h-2.5 overflow-hidden rounded-full bg-white/[0.07]">
               <div className="h-full rounded-full" style={{ width: `${pct}%`, background: i === 0 ? "linear-gradient(90deg,#2563eb,#60a5fa)" : `rgba(147,197,253,${(0.75 - i * 0.08).toFixed(2)})` }} />
             </div>
             <span className="text-right text-[13px] tabular-nums text-foreground/80">{pct}%</span>
-          </div>
-        ))}
+          </button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function Themes({ people }: { people: JellyfinYearPeople }) {
+function Themes({ people, picker }: { people: JellyfinYearPeople; picker: TopicPicker }) {
   const { themes, books, manga } = people;
+  const pickable = Boolean(people.themeTitles);
   if (!themes.length) return null;
   const most = themes[0][1];
   const least = themes[themes.length - 1][1];
   return (
     <div className={`${YEAR_GLASS} min-w-0 flex-[1_1_400px] rounded-3xl p-5 sm:p-7`}>
       <h3 className="text-[15px] font-semibold">What your year was about</h3>
-      <p className="mt-1 text-xs text-muted-foreground">The themes tagged on your titles, sized by how many carried them.</p>
+      <p className="mt-1 text-xs text-muted-foreground">The themes tagged on your titles, sized by how many carried them.{pickable ? " Pick one to see them." : ""}</p>
       <div className="mt-5 flex flex-wrap items-center gap-2">
         {themes.map(([name, n], i) => {
           const size = 12 + Math.round(((n - least) / Math.max(1, most - least)) * 18);
-          return (
-            <span key={name} className={`inline-flex items-center rounded-full ${i ? "bg-white/[0.07]" : "bg-blue-400/[0.22]"} ${n >= most * 0.4 ? "font-bold" : "font-medium"} ${n >= most * 0.33 ? "text-foreground" : "text-foreground/80"}`} style={{ fontSize: size, padding: `${Math.round(size * 0.35)}px ${Math.round(size * 0.8)}px` }}>{name}</span>
-          );
+          const on = picker.isPicked({ kind: "theme", name });
+          const look = `inline-flex items-center rounded-full ${on ? "bg-blue-400/[0.3] shadow-[inset_0_0_0_1px_rgba(96,165,250,0.6)]" : i ? "bg-white/[0.07]" : "bg-blue-400/[0.22]"} ${n >= most * 0.4 ? "font-bold" : "font-medium"} ${n >= most * 0.33 || on ? "text-foreground" : "text-foreground/80"}`;
+          const style = { fontSize: size, padding: `${Math.round(size * 0.35)}px ${Math.round(size * 0.8)}px` };
+          return pickable
+            ? <button key={name} type="button" aria-pressed={on} onClick={() => picker.onPick({ kind: "theme", name })} className={`${look} transition-colors ${on ? "" : "hover:bg-white/[0.12]"}`} style={style}>{name}</button>
+            : <span key={name} className={look} style={style}>{name}</span>;
         })}
       </div>
       {(books > 0 || manga > 0) && (
@@ -206,6 +217,42 @@ function Themes({ people }: { people: JellyfinYearPeople }) {
           {books > 0 && <><span className="font-bold text-foreground">{plural(books, "title")}</span> started life as a book.</>}
           {manga > 0 && ` ${manga.toLocaleString()} ${manga === 1 ? "was" : "were"} manga first.`}
         </p>
+      )}
+    </div>
+  );
+}
+
+// Genres and themes share one pick, and its titles open beneath both.
+function Topics({ model, people }: { model: YearModel; people: JellyfinYearPeople | null }) {
+  const [picked, setPicked] = useState<Topic | null>(null);
+  const titles = model.data.titles;
+  const matching = useMemo(() => {
+    if (!picked) return [];
+    const byKey = new Map(titles.map((title) => [title.key, title]));
+    const found = picked.kind === "genre"
+      ? titles.filter((title) => title.facts?.genres.includes(picked.name))
+      : (people?.themeTitles?.[picked.name] ?? []).map((key) => byKey.get(key)).filter((title): title is JellyfinYearTitle => !!title);
+    return [...found].sort((a, b) => b.watchMs - a.watchMs);
+  }, [picked, titles, people]);
+  const picker: TopicPicker = {
+    isPicked: (topic) => picked?.kind === topic.kind && picked.name === topic.name,
+    onPick: (topic) => setPicked((now) => (now?.kind === topic.kind && now.name === topic.name ? null : topic)),
+  };
+  return (
+    <div className="mt-14 flex flex-wrap gap-5">
+      <Genres model={model} picker={picker} />
+      {people && <Themes people={people} picker={picker} />}
+      {picked && matching.length > 0 && (
+        <div className={`${YEAR_GLASS} flex min-w-0 basis-full flex-col rounded-3xl p-5 sm:p-7`}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h3 className="text-[15px] font-semibold">{picked.name}</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">{plural(matching.length, "title")} · {plural(hoursOf(matching.reduce((sum, title) => sum + title.watchMs, 0)), "hour")}, ranked by time watched</p>
+            </div>
+            <button type="button" aria-label={`Close ${picked.name}`} onClick={() => setPicked(null)} className="-mr-1 -mt-1 rounded-full p-1 text-muted-foreground transition-colors hover:bg-white/[0.08] hover:text-foreground"><X className="h-4 w-4" /></button>
+          </div>
+          <TitleLeaderboard titles={matching} timeZone={model.timeZone} />
+        </div>
       )}
     </div>
   );
@@ -327,10 +374,7 @@ export default function PeopleChapter({ model, number, label, accent }: YearChap
       {people && <CastGrid people={people} />}
       {people && <Pairings people={people} />}
       {people && <Directors people={people} />}
-      <div className="mt-14 flex flex-wrap gap-5">
-        <Genres model={model} />
-        {people && <Themes people={people} />}
-      </div>
+      <Topics model={model} people={people} />
       {people && <Networks people={people} />}
       <div className="mt-5 flex flex-wrap gap-5">
         <Countries titles={titles} />
