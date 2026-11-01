@@ -35,7 +35,7 @@ const { stripReleaseAvailabilityForResponse } = require('./utils/releaseAvailabi
 
 const configApi = require('./lib/configApi');
 const database = require('./lib/database');
-const { loadConfigFromDatabase, loadRouteConfig } = require('./lib/configApi');
+const { loadConfigFromDatabase, loadRouteConfig, loadSharedConfig } = require('./lib/configApi');
 const { getTrending } = require("./lib/getTrending");
 const { resolveProxyRatingPosterUrl, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
 const { extractIdsFromMeta, extractCanonicalIdFromDynamicUpNextId } = require("./utils/metaIds");
@@ -5987,7 +5987,7 @@ function stremioEventRoute(resource) {
 
     let stored;
     try {
-      stored = await loadRouteConfig(userUUID);
+      stored = await loadSharedConfig(userUUID);
     } catch {
       stored = null;
     }

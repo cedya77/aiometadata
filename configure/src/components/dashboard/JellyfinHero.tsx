@@ -22,10 +22,10 @@ function HeroStat({ label, value, hint }: { label: string; value: string | numbe
   );
 }
 function NowPlaying({ s }: { s: JellyfinSessionRow }) {
-  // Between reports a playing session moves on from where it was last reported.
-  const ticking = !s.paused && s.runtimeMs > 0;
-  const now = useNow(ticking, 1000);
-  const positionMs = ticking ? Math.min(s.runtimeMs, s.positionMs + Math.max(0, now - s.at)) : s.positionMs;
+  // Between reports a playing session moves on from where it was last reported, until it reaches the end.
+  const moving = !s.paused && s.runtimeMs > 0;
+  const now = useNow(moving && Date.now() < s.at + s.runtimeMs - s.positionMs, 1000);
+  const positionMs = moving ? Math.min(s.runtimeMs, s.positionMs + Math.max(0, now - s.at)) : s.positionMs;
   const pct = s.runtimeMs > 0 ? Math.min(100, Math.max(1, (positionMs / s.runtimeMs) * 100)) : null;
   return (
     <div className="glass flex items-center gap-3 rounded-xl px-3 py-2">

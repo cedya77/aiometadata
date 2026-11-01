@@ -7,7 +7,6 @@ import { displayName, tasteStats, type YearModel } from "./yearModel";
 const SCORES = 10;
 const BAR_MAX = 130;
 
-
 function rated(model: YearModel): Array<{ title: JellyfinYearTitle; score: number }> {
   return model.data.titles.flatMap((title) => (typeof model.ratings[title.key] === "number" ? [{ title, score: Math.min(SCORES, Math.max(1, Math.round(model.ratings[title.key]))) }] : []));
 }

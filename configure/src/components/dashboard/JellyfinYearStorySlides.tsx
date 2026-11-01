@@ -148,7 +148,7 @@ function Clock({ hours, peak }: { hours: number[]; peak: number }) {
 }
 
 export function RhythmSlide({ model }: StorySlideProps) {
-  const time = useMemo(() => yearTime(model), [model]);
+  const time = yearTime(model);
   const first = model.plays.find((play) => !play.catchUp);
   const peak = formatHour(time.peakHour);
   return (

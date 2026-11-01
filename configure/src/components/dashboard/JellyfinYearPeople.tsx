@@ -173,10 +173,9 @@ function Topics({ model, people }: { model: YearModel; people: JellyfinYearPeopl
   const matching = useMemo(() => {
     if (!picked) return [];
     const byKey = new Map(titles.map((title) => [title.key, title]));
-    const found = picked.kind === "genre"
+    return picked.kind === "genre"
       ? titles.filter((title) => title.facts?.genres.includes(picked.name))
       : (people?.themeTitles?.[picked.name] ?? []).map((key) => byKey.get(key)).filter((title): title is JellyfinYearTitle => !!title);
-    return [...found].sort((a, b) => b.watchMs - a.watchMs);
   }, [picked, titles, people]);
   const picker: TopicPicker = {
     isPicked: (topic) => picked?.kind === topic.kind && picked.name === topic.name,

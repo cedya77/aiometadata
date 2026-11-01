@@ -46,7 +46,7 @@ export default function YearStory({ model, owner, onClose, onShare }: { model: Y
   }, []);
 
   useEffect(() => {
-    for (const src of [...(index === 0 ? slides[0].art?.(model) ?? [] : []), ...(slides[index + 1]?.art?.(model) ?? [])]) {
+    for (const src of slides[index + 1]?.art?.(model) ?? []) {
       if (!src) continue;
       const image = new Image();
       image.decoding = "async";

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { JellyfinYearTitle } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
 import { duration } from "./jellyfinUtils";
@@ -17,13 +18,19 @@ function Poster({ src, className = "" }: { src: string | null | undefined; class
 
 /** Titles ranked by time watched: the first few as posters, then every one as a row. */
 export function TitleLeaderboard({ titles, timeZone }: { titles: JellyfinYearTitle[]; timeZone: string }) {
-  const ranked = [...titles].sort((a, b) => b.watchMs - a.watchMs);
+  const { ranked, metas } = useMemo(() => {
+    const month = new Intl.DateTimeFormat(undefined, { month: "short", timeZone });
+    const sorted = [...titles].sort((a, b) => b.watchMs - a.watchMs);
+    return {
+      ranked: sorted,
+      metas: new Map(sorted.map((title) => {
+        const first = title.plays.reduce((min, play) => Math.min(min, play[1]), Infinity);
+        return [title, [title.kind === "movie" ? "Film" : plural(title.episodes, "episode"), Number.isFinite(first) ? `started ${month.format(first)}` : null].filter(Boolean).join(" · ")];
+      })),
+    };
+  }, [titles, timeZone]);
   const most = ranked[0]?.watchMs || 1;
-  const month = new Intl.DateTimeFormat(undefined, { month: "short", timeZone });
-  const meta = (title: JellyfinYearTitle) => {
-    const first = Math.min(...title.plays.map((play) => play[1]));
-    return [title.kind === "movie" ? "Film" : plural(title.episodes, "episode"), Number.isFinite(first) ? `started ${month.format(first)}` : null].filter(Boolean).join(" · ");
-  };
+  const meta = (title: JellyfinYearTitle) => metas.get(title) ?? "";
   const bar = (title: JellyfinYearTitle) => `${Math.max(3, Math.round((title.watchMs / most) * 100))}%`;
   const rows = ranked.slice(PODIUM_PHONE);
   return (

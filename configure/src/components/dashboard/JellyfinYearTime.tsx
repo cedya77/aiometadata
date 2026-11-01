@@ -152,7 +152,7 @@ function Streak({ model, time }: { model: YearModel; time: Time }) {
 }
 
 export default function TimeChapter({ model, number, label, accent }: { model: YearModel; number: number; label: string; accent: YearAccent }) {
-  const time = useMemo(() => yearTime(model), [model]);
+  const time = yearTime(model);
   const hours = hoursOf(model.data.totals.watchMs);
   const lead = [
     time.afterDark ? "Mostly after dark." : null,

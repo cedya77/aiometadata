@@ -149,7 +149,7 @@ export function tasteStats(model: YearModel): Array<{ value: number; label: stri
   const animeSeries = titles.filter((title) => title.anime && title.kind === "series").length;
   return [
     { value: finished, label: finished === 1 ? "show finished or caught up" : "shows finished or caught up" },
-    { value: model.data.taste?.watchlist ?? 0, label: "waiting on your watchlist" },
+    { value: model.partial ? model.data.taste?.watchlist ?? 0 : 0, label: "waiting on your watchlist" },
     { value: model.data.taste?.dropped ?? 0, label: model.data.taste?.dropped === 1 ? "show dropped" : "shows dropped" },
     { value: animeSeries, label: "anime series" },
   ].filter((stat) => stat.value > 0);
@@ -162,8 +162,7 @@ interface Week {
   catchUp: number;
 }
 
-/** When the year's plays happened: by week, hour, weekday and month, with the longest run of days. */
-export function yearTime(model: YearModel) {
+function timeOf(model: YearModel) {
   const lastWeek = Math.floor(model.through / 7);
   const weeks: Week[] = Array.from({ length: lastWeek + 1 }, (_, i) => ({ start: i * 7, episodes: 0, films: 0, catchUp: 0 }));
   const hours = new Array<number>(24).fill(0);
@@ -222,7 +221,16 @@ export function yearTime(model: YearModel) {
   };
 }
 
-export type YearTime = ReturnType<typeof yearTime>;
+export type YearTime = ReturnType<typeof timeOf>;
+
+const times = new WeakMap<YearModel, YearTime>();
+
+/** When the year's plays happened: by week, hour, weekday and month, with the longest run of days. Worked out once per model. */
+export function yearTime(model: YearModel): YearTime {
+  let time = times.get(model);
+  if (!time) times.set(model, (time = timeOf(model)));
+  return time;
+}
 
 /** The genres carried by the most plays, each as its share of all plays. */
 export function genreShares(model: YearModel, limit: number): Array<readonly [string, number]> {

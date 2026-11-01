@@ -120,10 +120,11 @@ function summarise(year: number, timeZone: string, timed: TimedYear, progress: M
 }
 
 // The watchlist is counted as it stands when the review is built, from the merged shelves a client sees.
-async function tasteOf(userUUID: string, historyKey: string, config: any, bounds: { from: number; to: number }): Promise<Taste> {
+// The watchlist is only what it holds today, so only the current year reads it.
+async function tasteOf(userUUID: string, historyKey: string, config: any, bounds: { from: number; to: number }, current: boolean): Promise<Taste> {
   const [dropped, watchlist] = await Promise.all([
     database.listDropped(userUUID, historyKey).catch(() => []),
-    require('../watchlist').watchlistEntries(userUUID, config).then((held: { entries: unknown[] }) => held.entries.length).catch(() => null),
+    current ? require('../watchlist').watchlistEntries(userUUID, config).then((held: { entries: unknown[] }) => held.entries.length).catch(() => null) : null,
   ]);
   return { watchlist, dropped: (dropped as Array<{ updated_at: number }>).filter((row) => Number(row.updated_at) >= bounds.from && Number(row.updated_at) < bounds.to).length };
 }
@@ -148,7 +149,7 @@ async function buildYear(userUUID: string, profile: string | null, year: number,
       networkOf(config, rankShows(timed)[0]),
       animeLayer,
       animeLayer.then((layer) => peopleYear(config, timed.titles, layer)).catch(lost),
-      tasteOf(userUUID, historyKey, config, yearBounds(year, timeZone)),
+      tasteOf(userUUID, historyKey, config, yearBounds(year, timeZone), year === localYear(Date.now(), timeZone)),
     ]);
     const builtAt = Date.now();
     const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed, progress, network, anime, people, taste, bulk, incomplete) };
