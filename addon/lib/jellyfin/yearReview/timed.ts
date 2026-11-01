@@ -85,7 +85,7 @@ export async function timeYear(userUUID: string, historyKey: string, plays: Year
   const { facts, stored, built, held, missing, unbuilt } = await titleFacts(userUUID, requests);
 
   const played = new Map<string, number>();
-  for (const row of await database.listPlayedForProfile(userUUID, historyKey)) {
+  for (const row of await database.listPlayedRuntimes(userUUID, historyKey, [...new Set(plays.flatMap((play) => play.spellings))])) {
     const runtime = Number(row.runtime_ms) || 0;
     if (runtime > 0) played.set(String(row.video_id), runtime);
   }

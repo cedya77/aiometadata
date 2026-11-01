@@ -23,6 +23,9 @@ const IMPORTED_PLAYSTATE = `(origin IS NOT NULL AND origin NOT IN ('server', 'pl
       OR ((origin IS NULL OR origin = 'play') AND (played = 1 OR position_ms > 0)
         AND (last_played_at IS NULL OR ABS(updated_at - last_played_at) >= 2000))`;
 
+// Under SQLite's bound-parameter limit with room for the other parameters.
+const PLAYSTATE_KEY_BATCH = 500;
+
 function dbTypeFromUri(uri: string | undefined): DbType | null {
   if (!uri) return null;
   if (uri.startsWith('sqlite://')) return 'sqlite';
@@ -2917,6 +2920,21 @@ class Database {
       ? 'SELECT video_id, played, position_ms, runtime_ms, play_count, last_played_at, updated_at, origin FROM jellyfin_playstate WHERE user_uuid = ? AND profile = ? AND (played = 1 OR position_ms > 0)'
       : 'SELECT video_id, played, position_ms, runtime_ms, play_count, last_played_at, updated_at, origin FROM jellyfin_playstate WHERE user_uuid = $1 AND profile = $2 AND (played = 1 OR position_ms > 0)';
     return (await this.allQuery(query, [userUUID, profile])) || [];
+  }
+
+  /** The runtimes listPlayedForProfile would give for these videos, read by key. */
+  async listPlayedRuntimes(userUUID: string, profile: string, videoIds: string[]): Promise<Array<{ video_id: string; runtime_ms: number }>> {
+    const sqlite = this.type === 'sqlite';
+    const out: Array<{ video_id: string; runtime_ms: number }> = [];
+    for (let at = 0; at < videoIds.length; at += PLAYSTATE_KEY_BATCH) {
+      const ids = videoIds.slice(at, at + PLAYSTATE_KEY_BATCH);
+      const marks = ids.map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
+      const query = sqlite
+        ? `SELECT video_id, runtime_ms FROM jellyfin_playstate WHERE user_uuid = ? AND profile = ? AND video_id IN (${marks}) AND runtime_ms > 0 AND (played = 1 OR position_ms > 0)`
+        : `SELECT video_id, runtime_ms FROM jellyfin_playstate WHERE user_uuid = $1 AND profile = $2 AND video_id IN (${marks}) AND runtime_ms > 0 AND (played = 1 OR position_ms > 0)`;
+      out.push(...((await this.allQuery(query, [userUUID, profile, ...ids])) || []));
+    }
+    return out;
   }
 
   async hasPlays(userUUID: string): Promise<boolean> {

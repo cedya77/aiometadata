@@ -7,6 +7,8 @@ import world from "world-atlas/countries-110m.json";
 const SIZE = 220;
 const MAX_DPR = 2;
 const SPIN_DEG_PER_S = 7;
+// A slow spin looks the same at 30 frames a second, at half the drawing of a 60 Hz screen; a drag still follows every frame.
+const FRAME_MS = 1000 / 30;
 const TILT = -18;
 const DRAG_DEG_PER_PX = 0.4;
 const RANK_FILLS = ["#60a5fa", "#fbbf24"];
@@ -92,6 +94,7 @@ export default function Globe({ countries, codeOf }: { countries: Map<string, Gl
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let frame = 0;
     let last = 0;
+    let drawn = 0;
     let onScreen = false;
     let dragging: { x: number; lambda: number } | null = null;
     const tick = (now: number) => {
@@ -99,7 +102,10 @@ export default function Globe({ countries, codeOf }: { countries: Map<string, Gl
       if (!onScreen || document.hidden) return;
       if (!dragging) lambda += ((now - (last || now)) / 1000) * SPIN_DEG_PER_S;
       last = now;
-      draw();
+      if (dragging || now - drawn >= FRAME_MS) {
+        drawn = now;
+        draw();
+      }
       frame = requestAnimationFrame(tick);
     };
     const start = () => {
