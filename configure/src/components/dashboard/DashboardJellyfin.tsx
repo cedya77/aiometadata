@@ -35,9 +35,10 @@ import { navigateDashboard, useDashboardRoute, type DashboardLocation, type Dash
 
 type View = "cards" | "table";
 
-const SECTIONS: Array<{ key: JellyfinSection; label: string; icon: typeof Tv }> = [
+// A section with `under` is reached from inside another and lights that one in the bar.
+const SECTIONS: Array<{ key: JellyfinSection; label: string; icon: typeof Tv; under?: JellyfinSection }> = [
   { key: "overview", label: "Overview", icon: ActivityIcon },
-  { key: "library", label: "Library", icon: Bookmark },
+  { key: "library", label: "Library", icon: Bookmark, under: "overview" },
   { key: "shows", label: "Shows", icon: Tv },
   { key: "calendar", label: "Calendar", icon: CalendarDays },
   { key: "history", label: "History", icon: History },
@@ -47,6 +48,7 @@ const SECTIONS: Array<{ key: JellyfinSection; label: string; icon: typeof Tv }> 
 
 function SectionBar({ section, onSection }: { section: JellyfinSection; onSection: (next: JellyfinSection) => void }) {
   const scroller = useRef<HTMLDivElement>(null);
+  const lit = SECTIONS.find((entry) => entry.key === section)?.under ?? section;
   useEffect(() => {
     const strip = scroller.current;
     const active = strip?.querySelector<HTMLElement>("[aria-current=page]");
@@ -55,17 +57,17 @@ function SectionBar({ section, onSection }: { section: JellyfinSection; onSectio
     if (left < strip.scrollLeft || left + active.offsetWidth > strip.scrollLeft + strip.clientWidth) {
       strip.scrollTo({ left: left - (strip.clientWidth - active.offsetWidth) / 2, behavior: "smooth" });
     }
-  }, [section]);
+  }, [lit]);
   return (
     <nav aria-label="Sections" className="sticky top-[57px] z-20 border-t border-white/[0.06] bg-background/80 backdrop-blur-lg">
       <div ref={scroller} className="flex gap-1 overflow-x-auto px-4 py-2 [scrollbar-width:none] sm:px-6 [&::-webkit-scrollbar]:hidden">
-        {SECTIONS.map(({ key, label, icon: Icon }) => (
+        {SECTIONS.filter((entry) => !entry.under).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             type="button"
             onClick={() => onSection(key)}
-            aria-current={key === section ? "page" : undefined}
-            className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${key === section ? "bg-foreground text-background" : "text-muted-foreground hover:bg-white/10 hover:text-foreground"}`}
+            aria-current={key === lit ? "page" : undefined}
+            className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${key === lit ? "bg-foreground text-background" : "text-muted-foreground hover:bg-white/10 hover:text-foreground"}`}
           >
             <Icon className="h-3.5 w-3.5" /> {label}
           </button>
@@ -260,6 +262,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
                       </>
                     )}
             </Shelf>
+            <JellyfinLibrary key={`library:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} activeTab={activeTab} />
             <ActivityMap activity={activity} />
           </>
         )}
