@@ -355,7 +355,7 @@ function reportFor(
   event: 'start' | 'pause' | 'stop' | 'played' | 'unplayed',
   positionMs: number | null,
   played: boolean | null,
-  resumedFrom: number | null = null
+  edgeAt: number | null = null
 ): any {
   const d = session.descriptor;
   return {
@@ -368,7 +368,7 @@ function reportFor(
     id:
       event === 'played' || event === 'unplayed'
         ? `jellyfin|${session.videoId}|${event}|${Date.now()}`
-        : `jellyfin|${session.videoId}|${event}|${positionMs ?? 0}${resumedFrom ? `|r${resumedFrom}` : ''}`,
+        : `jellyfin|${session.videoId}|${event}|${positionMs ?? 0}${edgeAt ? `|r${edgeAt}` : ''}`,
     event,
     at: Math.floor(Date.now() / 1000),
     metaId: d.i,
@@ -513,6 +513,9 @@ async function report(
   const reported = ticksToMs(body?.PositionTicks ?? body?.positionTicks);
   // A resume reported at zero is the client's habit, not a seek to the start.
   const resumedFrom = event === 'start' && known?.paused ? known.at : null;
+  // A start, pause or resume can come back at a position already reported, so each carries when its state began.
+  const fresh = event === 'start' && (!known || (known.paused === false && !sameSession(known, device, playSession)));
+  const edgeAt = resumedFrom ?? (event === 'pause' && known?.paused === false ? known.at : fresh ? Date.now() : null);
   const positionMs = (resumedFrom && !reported ? known?.positionMs : reported) ?? known?.positionMs ?? 0;
   logger.debug(`${event} ${session.videoId}: client sent ${reported ?? 'no'} position, held ${known?.positionMs ?? 'none'}, using ${positionMs}ms`);
 
@@ -543,7 +546,7 @@ async function report(
     if (event === 'stop') await recordPlaystate(userUUID, profile, session, event, positionMs, played, config);
     return;
   }
-  await settle(userUUID, config, profile, session, event, positionMs, played, resumedFrom);
+  await settle(userUUID, config, profile, session, event, positionMs, played, edgeAt);
 }
 
 async function settle(
@@ -554,7 +557,7 @@ async function settle(
   event: 'start' | 'pause' | 'stop' | 'played' | 'unplayed',
   positionMs: number,
   played: boolean | null,
-  resumedFrom: number | null = null,
+  edgeAt: number | null = null,
   source: TrackerSource = 'jellyfin'
 ): Promise<void> {
   const tells = tellsTrackers(config, source);
@@ -575,7 +578,7 @@ async function settle(
     return;
   }
 
-  await tellTrackers(userUUID, config, session, event, positionMs, played, true, resumedFrom);
+  await tellTrackers(userUUID, config, session, event, positionMs, played, true, edgeAt);
 }
 
 async function tellTrackers(
@@ -586,13 +589,13 @@ async function tellTrackers(
   positionMs: number,
   played: boolean | null,
   refreshWatched = true,
-  resumedFrom: number | null = null
+  edgeAt: number | null = null
 ): Promise<void> {
   const { handlePlaybackReport } = require('../playbackHandler');
   await handlePlaybackReport(
     session.stremioType,
     session.videoId,
-    reportFor(session, event, positionMs, played, resumedFrom),
+    reportFor(session, event, positionMs, played, edgeAt),
     config,
     userUUID
   );
