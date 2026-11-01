@@ -9,6 +9,34 @@ export const ACCENT_BADGE: Record<YearAccent, string> = { blue: "bg-blue-400 tex
 
 export const YEAR_GLASS = "bg-white/[0.055] backdrop-blur-[18px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]";
 
+const SCROLL_FADES = {
+  start: "linear-gradient(to bottom, black calc(100% - 48px), transparent)",
+  middle: "linear-gradient(to bottom, transparent, black 32px, black calc(100% - 48px), transparent)",
+  end: "linear-gradient(to bottom, transparent, black 32px)",
+};
+
+/** A list held to a height and scrolled inside, faded at the edges it can still scroll past. */
+export function FadeScroll({ scrolls, maxHeight, label, className = "", children }: { scrolls: boolean; maxHeight: number; label?: string; className?: string; children: React.ReactNode }) {
+  const [at, setAt] = useState<keyof typeof SCROLL_FADES>("start");
+  const fade = scrolls ? SCROLL_FADES[at] : undefined;
+  return (
+    <div
+      tabIndex={scrolls ? 0 : undefined}
+      aria-label={scrolls ? label : undefined}
+      onScroll={scrolls ? (event) => {
+        const list = event.currentTarget;
+        setAt(list.scrollTop <= 4 ? "start" : list.scrollTop + list.clientHeight >= list.scrollHeight - 4 ? "end" : "middle");
+      } : undefined}
+      className={`${className} ${scrolls ? "-mr-2 overflow-y-auto overscroll-contain pr-2 [scrollbar-width:thin]" : ""}`}
+      style={{ maxHeight: scrolls ? maxHeight : undefined, maskImage: fade, WebkitMaskImage: fade }}
+    >
+      {children}
+    </div>
+  );
+}
+
+export const plural = (n: number, word: string, many = `${word}s`) => `${n.toLocaleString()} ${n === 1 ? word : many}`;
+
 export const TEXT_LINK = "decoration-white/35 underline-offset-4 hover:underline focus-visible:underline";
 
 type TitleTarget = { key: string; kind: "movie" | "series" };

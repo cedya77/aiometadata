@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { JellyfinAnimeEntry, JellyfinAnimeVoice, JellyfinYearTitle } from "@/hooks/useDashboardQueries";
 import { titlePage, useDashboardOpen } from "./DashboardLink";
-import { ChapterHeader, Deck, PersonLink, TitleLink, YEAR_GLASS } from "./JellyfinYearShared";
+import { ChapterHeader, Deck, FadeScroll, PersonLink, TitleLink, YEAR_GLASS, plural } from "./JellyfinYearShared";
+import { CoverTreemap } from "./JellyfinYearCovers";
 import { sizedArt } from "./art";
 import type { YearChapterProps } from "./yearChapters";
 import { hoursOf, inWords, metaIdOf, type YearModel } from "./yearModel";
@@ -9,19 +10,9 @@ import { hoursOf, inWords, metaIdOf, type YearModel } from "./yearModel";
 const CLUB_SIZE = 8;
 const SEASON_ROWS = 6;
 const SEASON_ROW_H = 69;
-const SEASON_FADES = {
-  start: "linear-gradient(to bottom, black calc(100% - 48px), transparent)",
-  middle: "linear-gradient(to bottom, transparent, black 32px, black calc(100% - 48px), transparent)",
-  end: "linear-gradient(to bottom, transparent, black 32px)",
-};
 const STUDIO_ROWS = 6;
 const STUDIO_COVERS = 3;
 const THEME_TAGS = 10;
-const TILE_GAP = 4;
-const TILE_LABEL_W = 80;
-const TILE_LABEL_H = 60;
-const TILE_ROW = 5;
-const TILE_ROW_H = 72;
 const VOICE_CARDS = 4;
 const VOICE_ROLES = 3;
 const SOURCE_ROWS = 6;
@@ -35,7 +26,6 @@ const SEASONS = [
 const OUTLINE_PINK: CSSProperties = { WebkitTextStroke: "1.5px rgba(244,114,182,0.32)", color: "transparent", writingMode: "vertical-rl", fontSynthesis: "none" };
 const COVER_RING = "shadow-[0_0_0_1px_rgba(255,255,255,0.12)]";
 
-const plural = (n: number, word: string, many = `${word}s`) => `${n.toLocaleString()} ${n === 1 ? word : many}`;
 
 function counted<T>(items: T[], keys: (item: T) => string[], weight: (item: T) => number = () => 1): Array<[string, number]> {
   const out = new Map<string, number>();
@@ -211,20 +201,9 @@ function Audience({ entries }: { entries: JellyfinAnimeEntry[] }) {
 }
 
 function SeasonList({ shows }: { shows: JellyfinAnimeEntry[] }) {
-  const [at, setAt] = useState<keyof typeof SEASON_FADES>("start");
   const scrolls = shows.length > SEASON_ROWS;
-  const fade = scrolls ? SEASON_FADES[at] : undefined;
   return (
-    <div
-      tabIndex={scrolls ? 0 : undefined}
-      aria-label={scrolls ? `${plural(shows.length, "show")}, scroll for more` : undefined}
-      onScroll={scrolls ? (event) => {
-        const list = event.currentTarget;
-        setAt(list.scrollTop <= 4 ? "start" : list.scrollTop + list.clientHeight >= list.scrollHeight - 4 ? "end" : "middle");
-      } : undefined}
-      className={`flex min-w-0 flex-col gap-3 ${scrolls ? "-mr-2 overflow-y-auto overscroll-contain pr-2 [scrollbar-width:thin]" : ""}`}
-      style={{ maxHeight: scrolls ? (SEASON_ROWS + 0.5) * SEASON_ROW_H : undefined, maskImage: fade, WebkitMaskImage: fade }}
-    >
+    <FadeScroll scrolls={scrolls} maxHeight={(SEASON_ROWS + 0.5) * SEASON_ROW_H} label={`${plural(shows.length, "show")}, scroll for more`} className="flex min-w-0 flex-col gap-3">
       {shows.map((entry) => (
         <TitleLink key={entry.malId} title={entryTarget(entry)} name={entry.name} className="group flex min-w-0 items-center gap-2.5">
           <div className="w-[38px] shrink-0"><Cover src={entry.image} className="rounded-md" /></div>
@@ -234,7 +213,7 @@ function SeasonList({ shows }: { shows: JellyfinAnimeEntry[] }) {
           </div>
         </TitleLink>
       ))}
-    </div>
+    </FadeScroll>
   );
 }
 
@@ -308,114 +287,6 @@ function Studios({ entries, titleOf }: { entries: JellyfinAnimeEntry[]; titleOf:
 
 type Pick = { kind: "theme" | "genre"; name: string };
 
-type Tile = { x: number; y: number; w: number; h: number };
-
-function squarify(values: number[], width: number, height: number): Tile[] {
-  const out: Tile[] = [];
-  const total = values.reduce((sum, value) => sum + value, 0);
-  if (!total || width <= 0 || height <= 0) return values.map(() => ({ x: 0, y: 0, w: 0, h: 0 }));
-  const areas = values.map((value) => (value / total) * width * height);
-  const worst = (sum: number, largest: number, smallest: number, side: number) => Math.max((side * side * largest) / (sum * sum), (sum * sum) / (side * side * smallest));
-  let x = 0;
-  let y = 0;
-  let w = width;
-  let h = height;
-  let i = 0;
-  while (i < areas.length) {
-    const side = Math.min(w, h);
-    let end = i + 1;
-    let sum = areas[i];
-    while (end < areas.length && worst(sum + areas[end], areas[i], areas[end], side) <= worst(sum, areas[i], areas[end - 1], side)) {
-      sum += areas[end];
-      end += 1;
-    }
-    if (w >= h) {
-      const strip = sum / h;
-      let at = y;
-      for (let k = i; k < end; k += 1) {
-        const size = areas[k] / strip;
-        out.push({ x, y: at, w: strip, h: size });
-        at += size;
-      }
-      x += strip;
-      w -= strip;
-    } else {
-      const strip = sum / w;
-      let at = x;
-      for (let k = i; k < end; k += 1) {
-        const size = areas[k] / strip;
-        out.push({ x: at, y, w: size, h: strip });
-        at += size;
-      }
-      y += strip;
-      h -= strip;
-    }
-    i = end;
-  }
-  return out;
-}
-
-function CoverTreemap({ entries, label }: { entries: JellyfinAnimeEntry[]; label: string }) {
-  const stage = useRef<HTMLDivElement>(null);
-  const [box, setBox] = useState({ w: 0, h: 0 });
-  const [focus, setFocus] = useState<number | null>(null);
-  const open = useDashboardOpen();
-  useEffect(() => {
-    const element = stage.current;
-    if (!element) return;
-    const observer = new ResizeObserver(([entry]) => setBox({ w: entry.contentRect.width, h: entry.contentRect.height }));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  const tiles = useMemo(() => squarify(entries.map((entry) => Math.sqrt(Math.max(1, entry.episodes))), box.w, box.h), [entries, box]);
-  const placed = new Map(entries.map((entry, i) => [entry.malId, tiles[i]]));
-  const focused = entries.find((entry) => entry.malId === focus) ?? null;
-  return (
-    <div className="mt-5 flex min-h-[220px] flex-1 flex-col">
-      <div ref={stage} className="relative flex-1" style={{ minHeight: Math.max(200, Math.ceil(entries.length / TILE_ROW) * TILE_ROW_H) }} onPointerLeave={(event) => event.pointerType === "mouse" && setFocus(null)}>
-        {entries.map((entry) => {
-          const tile = placed.get(entry.malId);
-          if (!tile) return null;
-          const big = tile.w >= TILE_LABEL_W && tile.h >= TILE_LABEL_H;
-          const on = focus === entry.malId;
-          return (
-            <button
-              key={entry.malId}
-              type="button"
-              aria-label={`Open ${entry.name}, ${plural(entry.episodes, "episode")}`}
-              onPointerEnter={(event) => event.pointerType === "mouse" && setFocus(entry.malId)}
-              onFocus={() => setFocus(entry.malId)}
-              onClick={() => {
-                const target = entryTarget(entry);
-                if (on && open) open(titlePage(metaIdOf(target.key), target.kind));
-                else setFocus(entry.malId);
-              }}
-              className="absolute overflow-hidden rounded-lg transition-[left,top,width,height] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none"
-              style={{ left: tile.x + TILE_GAP / 2, top: tile.y + TILE_GAP / 2, width: Math.max(0, tile.w - TILE_GAP), height: Math.max(0, tile.h - TILE_GAP) }}
-            >
-              {entry.image
-                ? <img src={sizedArt(entry.image, 342) ?? entry.image} alt="" loading="lazy" draggable={false} className={`h-full w-full object-cover object-top transition-transform duration-500 ${on ? "scale-105" : ""}`} />
-                : <div className="h-full w-full bg-gradient-to-br from-zinc-700 to-zinc-900" />}
-              <span aria-hidden="true" className={`pointer-events-none absolute inset-0 rounded-lg transition-shadow ${on ? "shadow-[inset_0_0_0_2px_rgba(244,114,182,0.85)]" : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"}`} />
-              {big && (
-                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-2 pb-1.5 pt-5 text-left">
-                  <span className="block truncate text-[11px] font-semibold leading-tight">{compactName(entry.name)}</span>
-                  <span className="block text-[10px] text-white/70">{plural(entry.episodes, "episode")}</span>
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-      <p className="mt-3 text-[12px] text-muted-foreground">
-        {focused
-          ? <><TitleLink title={entryTarget(focused)} name={focused.name} className="font-semibold text-foreground decoration-white/35 underline-offset-4 hover:underline">{compactName(focused.name)}</TitleLink> · {plural(focused.episodes, "episode")}</>
-          : <>{label}, larger for more episodes</>}
-      </p>
-    </div>
-  );
-}
-
 function Themes({ entries }: { entries: JellyfinAnimeEntry[] }) {
   const tags = counted(entries, (entry) => entry.themes).slice(0, THEME_TAGS);
   const genres = counted(entries, (entry) => entry.genres).slice(0, 3).map(([name]) => name);
@@ -454,7 +325,13 @@ function Themes({ entries }: { entries: JellyfinAnimeEntry[] }) {
           {isekai >= 2 ? ` ${isekai} of your shows were isekai.` : ""}
         </p>
       )}
-      {current && matching.length > 0 && <CoverTreemap entries={matching} label={`${plural(matching.length, "season")} ${current.kind === "theme" ? `tagged ${tagName(current.name)}` : `of ${current.name.toLowerCase()}`}`} />}
+      {current && matching.length > 0 && (
+        <CoverTreemap
+          accent="pink"
+          tiles={matching.map((entry) => ({ id: String(entry.malId), name: entry.name, short: compactName(entry.name), image: entry.image, weight: Math.sqrt(Math.max(1, entry.episodes)), detail: plural(entry.episodes, "episode"), target: entryTarget(entry) }))}
+          label={`${plural(matching.length, "season")} ${current.kind === "theme" ? `tagged ${tagName(current.name)}` : `of ${current.name.toLowerCase()}`}, larger for more episodes`}
+        />
+      )}
     </div>
   );
 }

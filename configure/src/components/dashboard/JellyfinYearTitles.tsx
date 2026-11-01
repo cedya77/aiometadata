@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { JellyfinYearTitle } from "@/hooks/useDashboardQueries";
 import { titlePage, useDashboardOpen } from "./DashboardLink";
-import { ChapterHeader, TitleLink, TitleList, YEAR_GLASS } from "./JellyfinYearShared";
+import { ChapterHeader, TitleLink, TitleList, YEAR_GLASS, plural } from "./JellyfinYearShared";
 import { sizedArt } from "./art";
 import type { YearChapterProps } from "./yearChapters";
 import { displayName, formatDay, hoursOf, localYearOf, metaIdOf, type YearModel } from "./yearModel";
@@ -20,7 +20,6 @@ const OUTLINE: CSSProperties = { WebkitTextStroke: "2px rgba(255,255,255,0.28)",
 const NETWORK_LOGO: CSSProperties = { filter: "brightness(0) invert(1)" };
 const REFLECT: CSSProperties = { transform: "scaleY(-1)", WebkitMaskImage: "linear-gradient(to top, black, transparent 75%)", maskImage: "linear-gradient(to top, black, transparent 75%)" };
 
-const plural = (n: number, word: string, many = `${word}s`) => `${n.toLocaleString()} ${n === 1 ? word : many}`;
 
 function formatRuntime(ms: number): string {
   const minutes = Math.round(ms / 60_000);
