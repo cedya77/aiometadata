@@ -11,19 +11,9 @@ import JellyfinCopy from "./JellyfinCopy";
 import TrackerMatchDialog, { Poster, type MatchSubject } from "./JellyfinTrackerMatch";
 import DriftInfo from "./JellyfinDriftInfo";
 import { Ambient } from "./JellyfinShared";
-import { useOpenTitle, useRemembered, when } from "./jellyfinUtils";
+import { useNow, useOpenTitle, useRemembered, when } from "./jellyfinUtils";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
-
-function useNow(active: boolean, every: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    const timer = window.setInterval(() => setNow(Date.now()), every);
-    return () => window.clearInterval(timer);
-  }, [active, every]);
-  return now;
-}
 
 const CLOCK = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const SHORT_DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });

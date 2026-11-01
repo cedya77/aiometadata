@@ -3,7 +3,7 @@ import { sizedArt } from "./art";
 import { Loader2, Pause, Play } from "lucide-react";
 import { type JellyfinConfiguration, type JellyfinProfileSummary, type JellyfinSessionRow } from "@/hooks/useDashboardQueries";
 import { Art, ShelfTitle } from "./JellyfinShared";
-import { when, clock, duration, dayKey, type Activity } from "./jellyfinUtils";
+import { when, clock, duration, dayKey, useNow, type Activity } from "./jellyfinUtils";
 
 function Avatar({ src, name, size }: { src: string | null; name: string; size: "sm" | "lg" }) {
   const [failed, setFailed] = useState(false);
@@ -22,7 +22,11 @@ function HeroStat({ label, value, hint }: { label: string; value: string | numbe
   );
 }
 function NowPlaying({ s }: { s: JellyfinSessionRow }) {
-  const pct = s.runtimeMs > 0 ? Math.min(100, Math.max(1, (s.positionMs / s.runtimeMs) * 100)) : null;
+  // Between reports a playing session moves on from where it was last reported.
+  const ticking = !s.paused && s.runtimeMs > 0;
+  const now = useNow(ticking, 1000);
+  const positionMs = ticking ? Math.min(s.runtimeMs, s.positionMs + Math.max(0, now - s.at)) : s.positionMs;
+  const pct = s.runtimeMs > 0 ? Math.min(100, Math.max(1, (positionMs / s.runtimeMs) * 100)) : null;
   return (
     <div className="glass flex items-center gap-3 rounded-xl px-3 py-2">
       <div className="w-20 shrink-0"><Art src={s.imageUrl} title={s.title} wide /></div>
@@ -38,7 +42,7 @@ function NowPlaying({ s }: { s: JellyfinSessionRow }) {
           <div className="h-1 flex-1 rounded-full bg-white/10 overflow-hidden">
             {pct !== null && <div className="h-full bg-gradient-to-r from-blue-600 to-blue-400" style={{ width: `${pct}%` }} />}
           </div>
-          <span className="text-[10px] tabular-nums text-muted-foreground whitespace-nowrap">{clock(s.positionMs)}{s.runtimeMs > 0 ? ` / ${clock(s.runtimeMs)}` : ""}</span>
+          <span className="text-[10px] tabular-nums text-muted-foreground whitespace-nowrap">{clock(positionMs)}{s.runtimeMs > 0 ? ` / ${clock(s.runtimeMs)}` : ""}</span>
         </div>
         <p className="text-[10px] text-muted-foreground truncate">{s.viewer ? `${s.viewer}, into ${s.profile}'s history` : s.profile} · {when(s.at)}</p>
       </div>

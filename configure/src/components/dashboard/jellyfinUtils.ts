@@ -2,6 +2,17 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useJellyfinPlays, type JellyfinTitleRef, type DashboardTab, type JellyfinPlayKind, type JellyfinPlayRow, type JellyfinProfileSummary } from "@/hooks/useDashboardQueries";
 
+/** The current time, kept fresh every `every` ms while active. */
+export function useNow(active: boolean, every: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const timer = window.setInterval(() => setNow(Date.now()), every);
+    return () => window.clearInterval(timer);
+  }, [active, every]);
+  return now;
+}
+
 export function when(value: number | null | undefined): string {
   if (!value) return "—";
   const diff = Date.now() - value;
