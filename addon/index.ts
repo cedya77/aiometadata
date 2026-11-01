@@ -6852,18 +6852,30 @@ addon.use('/configure', express.static(clientDistDir, { setHeaders: setClientDis
 addon.use(express.static(publicDir));
 addon.use(express.static(clientDistDir, { setHeaders: setClientDistCacheHeaders }));
 
+addon.get(require('./lib/dashboardApp').DASHBOARD_APP_MANIFEST, (req, res) => {
+  const manifest = require('./lib/dashboardApp').dashboardAppManifest(req.query);
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.type('application/manifest+json').send(JSON.stringify(manifest));
+});
+
 // Dedicated Dashboard Page Route
 addon.get(["/dashboard", "/dashboard/{*page}"], (req, res) => {
   // Serve the same HTML but with dashboard-specific handling
   try {
     let html = fs.readFileSync(clientIndexPath, 'utf8');
-    
+
     // Inject dashboard-specific meta tags and title
     html = html.replace(
       /<title>.*?<\/title>/,
       '<title>AIO Metadata Dashboard</title>'
     );
-    
+
+    const { dashboardAppHead, DASHBOARD_APP_THEME } = require('./lib/dashboardApp');
+    html = html
+      .replace(/\s*<link rel="apple-touch-icon"[^>]*>/, '')
+      .replace(/<meta name="theme-color" content="[^"]*"/, `<meta name="theme-color" content="${DASHBOARD_APP_THEME}"`)
+      .replace('</head>', `    ${dashboardAppHead(req.path, req.query)}\n</head>`);
+
     // Add dashboard-specific script to auto-navigate to dashboard
     html = html.replace(
       '</head>',

@@ -30,6 +30,7 @@ import RemoteSheet, { type RemoteTarget } from "./JellyfinRemote";
 import { Sentinel, Shelf, Stat } from "./JellyfinShared";
 import { Shows } from "./JellyfinShows";
 import { when, useRemembered, activityOf, usePagedPlays, OpenTitleContext, titleRefOf, recall, remember, SELECTED_KEY, profileKey } from "./jellyfinUtils";
+import { useDashboardApp } from "@/lib/dashboardApp";
 import { navigateDashboard, useDashboardRoute, type DashboardLocation, type DashboardPage, type JellyfinSection } from "@/lib/dashboardRoute";
 
 
@@ -117,6 +118,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
     if (window.scrollY > top) requestAnimationFrame(() => window.scrollTo({ top, behavior: "instant" }));
   };
   useEffect(() => remember(profileKey(userUUID), profile, null), [userUUID, profile]);
+  useDashboardApp(userUUID, profile);
   const setProfile = (next: string | null) => navigateDashboard({ tab: "jellyfin", config: userUUID, profile: next, page: null }, { replace: true });
   const [view, setView] = useRemembered<View>("jellyfin.view", "cards");
   const [exporting, setExporting] = useState(false);
