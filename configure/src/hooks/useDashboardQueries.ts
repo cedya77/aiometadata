@@ -1796,6 +1796,7 @@ export interface JellyfinYearPeople {
 }
 
 export interface JellyfinYearData {
+  taste?: { watchlist: number | null; dropped: number };
   version: number;
   year: number;
   timeZone: string;

@@ -5,7 +5,7 @@ import { ChapterHeader, Deck, PersonLink, TitleLink, TitleList, YEAR_GLASS, plur
 import { TitleLeaderboard } from "./JellyfinYearLeaderboard";
 import { sizedArt } from "./art";
 import type { YearChapterProps } from "./yearChapters";
-import { displayName, hoursOf, type YearModel } from "./yearModel";
+import { displayName, genreShares, hoursOf, type YearModel } from "./yearModel";
 
 const Globe = lazy(() => import("./JellyfinYearGlobe"));
 
@@ -159,15 +159,7 @@ type Topic = { kind: "genre" | "theme"; name: string };
 type TopicPicker = { isPicked: (topic: Topic) => boolean; onPick: (topic: Topic) => void };
 
 function Genres({ model, picker }: { model: YearModel; picker: TopicPicker }) {
-  const rows = useMemo(() => {
-    const plays = new Map<string, number>();
-    let total = 0;
-    for (const title of model.data.titles) {
-      total += title.plays.length;
-      for (const genre of new Set(title.facts?.genres ?? [])) plays.set(genre, (plays.get(genre) ?? 0) + title.plays.length);
-    }
-    return [...plays].sort((a, b) => b[1] - a[1]).slice(0, GENRES).map(([name, n]) => [name, total ? Math.round((n / total) * 100) : 0] as const);
-  }, [model]);
+  const rows = useMemo(() => genreShares(model, GENRES), [model]);
   if (!rows.length) return null;
   return (
     <div className={`${YEAR_GLASS} min-w-0 flex-[1_1_520px] rounded-3xl p-5 sm:p-7`}>

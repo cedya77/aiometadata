@@ -1,75 +1,9 @@
 import { useMemo, type CSSProperties } from "react";
 import { ChapterHeader, Deck, HATCH, Panel, Swatch, TitleLink, type YearAccent } from "./JellyfinYearShared";
 import { sizedArt } from "./art";
-import { MONTH_NAMES, WEEKDAY_NAMES, WEEKDAY_SHORT, capitalised, displayName, episodeLabel, formatDay, formatHour, formatPlayTime, hoursOf, inWords, type YearModel, type YearPlay } from "./yearModel";
+import { MONTH_NAMES, WEEKDAY_NAMES, WEEKDAY_SHORT, capitalised, displayName, episodeLabel, formatDay, formatHour, formatPlayTime, hoursOf, inWords, yearTime, type YearModel, type YearPlay, type YearTime } from "./yearModel";
 
-interface Week {
-  start: number;
-  episodes: number;
-  films: number;
-  catchUp: number;
-}
-
-function timeOf(model: YearModel) {
-  const lastWeek = Math.floor(model.through / 7);
-  const weeks: Week[] = Array.from({ length: lastWeek + 1 }, (_, i) => ({ start: i * 7, episodes: 0, films: 0, catchUp: 0 }));
-  const hours = new Array<number>(24).fill(0);
-  const weekdays = new Array<number>(7).fill(0);
-  const months = new Array<number>(12).fill(0);
-  const catchUpDays = new Array<Set<number>>(12).fill(null as never).map(() => new Set<number>());
-  const catchUpPlays = new Array<number>(12).fill(0);
-  const catchUpFilms = new Array<number>(12).fill(0);
-  const days = new Map<number, number>();
-  let rhythm = 0;
-  for (const play of model.plays) {
-    const week = weeks[Math.min(lastWeek, Math.floor(play.day / 7))];
-    if (play.catchUp) week.catchUp += 1;
-    else if (play.film) week.films += 1;
-    else week.episodes += 1;
-    months[play.month] += 1;
-    days.set(play.day, (days.get(play.day) ?? 0) + 1);
-    if (play.catchUp) {
-      catchUpDays[play.month].add(play.day);
-      catchUpPlays[play.month] += 1;
-      if (play.film) catchUpFilms[play.month] += 1;
-      continue;
-    }
-    rhythm += 1;
-    hours[play.hour] += 1;
-    weekdays[play.weekday] += 1;
-  }
-  const sorted = [...days.keys()].sort((a, b) => a - b);
-  let streak = { length: 0, from: 0, to: 0 };
-  let runFrom = sorted[0] ?? 0;
-  for (let i = 0; i < sorted.length; i += 1) {
-    if (i > 0 && sorted[i] !== sorted[i - 1] + 1) runFrom = sorted[i];
-    const length = sorted[i] - runFrom + 1;
-    if (length > streak.length) streak = { length, from: runFrom, to: sorted[i] };
-  }
-  const peak = (list: number[]) => list.reduce((best, n, i) => (n > list[best] ? i : best), 0);
-  const busiestMonth = peak(months);
-  const afterDark = [18, 19, 20, 21, 22, 23, 0, 1, 2, 3].reduce((sum, h) => sum + hours[h], 0);
-  return {
-    weeks,
-    hours,
-    weekdays,
-    rhythm,
-    streak,
-    activeDays: days.size,
-    peakHour: peak(hours),
-    peakDay: peak(weekdays),
-    busiestMonth,
-    busiestPlays: months[busiestMonth],
-    busiestCatchUpDays: catchUpDays[busiestMonth].size,
-    busiestCatchUpPlays: catchUpPlays[busiestMonth],
-    busiestCatchUpEpisodesOnly: catchUpFilms[busiestMonth] === 0,
-    playsOnDay: days,
-    afterMidnight: hours[0] + hours[1] + hours[2] + hours[3],
-    afterDark: rhythm > 0 && afterDark / rhythm > 0.5,
-  };
-}
-
-type Time = ReturnType<typeof timeOf>;
+type Time = YearTime;
 
 function playName(play: YearPlay): string {
   const name = displayName(play.title);
@@ -218,7 +152,7 @@ function Streak({ model, time }: { model: YearModel; time: Time }) {
 }
 
 export default function TimeChapter({ model, number, label, accent }: { model: YearModel; number: number; label: string; accent: YearAccent }) {
-  const time = useMemo(() => timeOf(model), [model]);
+  const time = useMemo(() => yearTime(model), [model]);
   const hours = hoursOf(model.data.totals.watchMs);
   const lead = [
     time.afterDark ? "Mostly after dark." : null,

@@ -107,3 +107,97 @@ export function inWords(n: number): string {
 }
 
 export const capitalised = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
+export const finishedShows = (model: YearModel): number => model.data.titles.filter((title) => title.kind === "series" && title.progress && title.progress.aired > 0 && title.progress.seen >= title.progress.aired).length;
+
+export function tasteStats(model: YearModel): Array<{ value: number; label: string }> {
+  const titles = model.data.titles;
+  const finished = finishedShows(model);
+  const animeSeries = titles.filter((title) => title.anime && title.kind === "series").length;
+  return [
+    { value: finished, label: finished === 1 ? "show finished or caught up" : "shows finished or caught up" },
+    { value: model.data.taste?.watchlist ?? 0, label: "waiting on your watchlist" },
+    { value: model.data.taste?.dropped ?? 0, label: model.data.taste?.dropped === 1 ? "show dropped" : "shows dropped" },
+    { value: animeSeries, label: "anime series" },
+  ].filter((stat) => stat.value > 0);
+}
+
+interface Week {
+  start: number;
+  episodes: number;
+  films: number;
+  catchUp: number;
+}
+
+/** When the year's plays happened: by week, hour, weekday and month, with the longest run of days. */
+export function yearTime(model: YearModel) {
+  const lastWeek = Math.floor(model.through / 7);
+  const weeks: Week[] = Array.from({ length: lastWeek + 1 }, (_, i) => ({ start: i * 7, episodes: 0, films: 0, catchUp: 0 }));
+  const hours = new Array<number>(24).fill(0);
+  const weekdays = new Array<number>(7).fill(0);
+  const months = new Array<number>(12).fill(0);
+  const catchUpDays = new Array<Set<number>>(12).fill(null as never).map(() => new Set<number>());
+  const catchUpPlays = new Array<number>(12).fill(0);
+  const catchUpFilms = new Array<number>(12).fill(0);
+  const days = new Map<number, number>();
+  let rhythm = 0;
+  for (const play of model.plays) {
+    const week = weeks[Math.min(lastWeek, Math.floor(play.day / 7))];
+    if (play.catchUp) week.catchUp += 1;
+    else if (play.film) week.films += 1;
+    else week.episodes += 1;
+    months[play.month] += 1;
+    days.set(play.day, (days.get(play.day) ?? 0) + 1);
+    if (play.catchUp) {
+      catchUpDays[play.month].add(play.day);
+      catchUpPlays[play.month] += 1;
+      if (play.film) catchUpFilms[play.month] += 1;
+      continue;
+    }
+    rhythm += 1;
+    hours[play.hour] += 1;
+    weekdays[play.weekday] += 1;
+  }
+  const sorted = [...days.keys()].sort((a, b) => a - b);
+  let streak = { length: 0, from: 0, to: 0 };
+  let runFrom = sorted[0] ?? 0;
+  for (let i = 0; i < sorted.length; i += 1) {
+    if (i > 0 && sorted[i] !== sorted[i - 1] + 1) runFrom = sorted[i];
+    const length = sorted[i] - runFrom + 1;
+    if (length > streak.length) streak = { length, from: runFrom, to: sorted[i] };
+  }
+  const peak = (list: number[]) => list.reduce((best, n, i) => (n > list[best] ? i : best), 0);
+  const busiestMonth = peak(months);
+  const afterDark = [18, 19, 20, 21, 22, 23, 0, 1, 2, 3].reduce((sum, h) => sum + hours[h], 0);
+  return {
+    weeks,
+    hours,
+    weekdays,
+    rhythm,
+    streak,
+    activeDays: days.size,
+    peakHour: peak(hours),
+    peakDay: peak(weekdays),
+    busiestMonth,
+    busiestPlays: months[busiestMonth],
+    busiestCatchUpDays: catchUpDays[busiestMonth].size,
+    busiestCatchUpPlays: catchUpPlays[busiestMonth],
+    busiestCatchUpEpisodesOnly: catchUpFilms[busiestMonth] === 0,
+    playsOnDay: days,
+    afterMidnight: hours[0] + hours[1] + hours[2] + hours[3],
+    afterDark: rhythm > 0 && afterDark / rhythm > 0.5,
+  };
+}
+
+export type YearTime = ReturnType<typeof yearTime>;
+
+/** The genres carried by the most plays, each as its share of all plays. */
+export function genreShares(model: YearModel, limit: number): Array<readonly [string, number]> {
+  const plays = new Map<string, number>();
+  let total = 0;
+  for (const title of model.data.titles) {
+    total += title.plays.length;
+    for (const genre of new Set(title.facts?.genres ?? [])) plays.set(genre, (plays.get(genre) ?? 0) + title.plays.length);
+  }
+  return [...plays].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([name, n]) => [name, total ? Math.round((n / total) * 100) : 0] as const);
+}

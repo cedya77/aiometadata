@@ -77,7 +77,9 @@ async function networkOf(config: any, show: YearTitle | undefined): Promise<{ na
   return name ? { name, logo: await networkLogo(config, name) } : null;
 }
 
-function summarise(year: number, timeZone: string, timed: TimedYear, progress: Map<string, ShowProgress>, network: { name: string; logo: string | null } | null, animeLayer: AnimeYear | null, people: PeopleYear | null, bulk: YearPlay[], incomplete: boolean): any {
+type Taste = { watchlist: number | null; dropped: number };
+
+function summarise(year: number, timeZone: string, timed: TimedYear, progress: Map<string, ShowProgress>, network: { name: string; logo: string | null } | null, animeLayer: AnimeYear | null, people: PeopleYear | null, taste: Taste, bulk: YearPlay[], incomplete: boolean): any {
   const films = timed.titles.filter((title) => title.kind === 'movie');
   const shows = timed.titles.filter((title) => title.kind === 'series');
   const anime = timed.titles.filter((title) => title.anime);
@@ -92,6 +94,7 @@ function summarise(year: number, timeZone: string, timed: TimedYear, progress: M
     network,
     anime: animeLayer,
     people,
+    taste,
     totals: {
       plays: timed.plays.length,
       watchMs: timed.plays.reduce((total, play) => total + play.runtimeMs, 0),
@@ -116,6 +119,15 @@ function summarise(year: number, timeZone: string, timed: TimedYear, progress: M
   };
 }
 
+// The watchlist is counted as it stands when the review is built, from the merged shelves a client sees.
+async function tasteOf(userUUID: string, historyKey: string, config: any, bounds: { from: number; to: number }): Promise<Taste> {
+  const [dropped, watchlist] = await Promise.all([
+    database.listDropped(userUUID, historyKey).catch(() => []),
+    require('../watchlist').watchlistEntries(userUUID, config).then((held: { entries: unknown[] }) => held.entries.length).catch(() => null),
+  ]);
+  return { watchlist, dropped: (dropped as Array<{ updated_at: number }>).filter((row) => Number(row.updated_at) >= bounds.from && Number(row.updated_at) < bounds.to).length };
+}
+
 async function buildYear(userUUID: string, profile: string | null, year: number, waitedMs: number): Promise<void> {
   await asProfile(userUUID, profile, async (config) => {
     const timeZone = safeTimeZone(viewingTimeZone(config));
@@ -131,14 +143,15 @@ async function buildYear(userUUID: string, profile: string | null, year: number,
       return null;
     };
     const animeLayer = animeYear(timed).catch(lost);
-    const [progress, network, anime, people] = await Promise.all([
+    const [progress, network, anime, people, taste] = await Promise.all([
       showProgress(userUUID, historyKey, yearBounds(year, timeZone).to, timed),
       networkOf(config, rankShows(timed)[0]),
       animeLayer,
       animeLayer.then((layer) => peopleYear(config, timed.titles, layer)).catch(lost),
+      tasteOf(userUUID, historyKey, config, yearBounds(year, timeZone)),
     ]);
     const builtAt = Date.now();
-    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed, progress, network, anime, people, bulk, incomplete) };
+    const stored: Stored = { fingerprint, builtAt, data: summarise(year, timeZone, timed, progress, network, anime, people, taste, bulk, incomplete) };
     memory.set(reviewKey(userUUID, historyKey, year), stored);
     await database.putYearReview(userUUID, historyKey, year, fingerprint, builtAt, stored.data);
     const maxAgeMs = envInt('JELLYFIN_YEAR_REVIEW_FACTS_HOURS', 7 * 24, 1) * 60 * 60 * 1000;
