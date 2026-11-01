@@ -1,4 +1,5 @@
-import type { JellyfinYearData, JellyfinYearTitle } from "@/hooks/useDashboardQueries";
+import type { JellyfinAnimeEntry, JellyfinYearData, JellyfinYearTitle } from "@/hooks/useDashboardQueries";
+import { artAt } from "./art";
 
 export interface YearPlay {
   title: JellyfinYearTitle;
@@ -72,6 +73,13 @@ export function episodeLabel(videoId: string): string | null {
   return Number.isFinite(season) ? `S${season} E${episode}` : `E${episode}`;
 }
 
+export function seasonOf(videoId: string): number | null {
+  const parts = videoId.split(":");
+  if (parts.length < 3) return null;
+  const season = Number(parts[parts.length - 2]);
+  return Number.isFinite(season) ? season : null;
+}
+
 export function dateOfDay(year: number, day: number): Date {
   return new Date(Date.UTC(year, 0, 1) + day * DAY_MS);
 }
@@ -115,6 +123,23 @@ export function topShowOf(model: YearModel): JellyfinYearTitle | null {
 }
 
 export const byWatchTime = (model: YearModel): JellyfinYearTitle[] => [...model.data.titles].sort((a, b) => b.watchMs - a.watchMs);
+
+export const rankedAnime = (model: YearModel): JellyfinAnimeEntry[] => [...(model.data.anime?.entries ?? [])].sort((a, b) => b.plays - a.plays || b.watchMs - a.watchMs);
+
+/** The backdrop of the most watched title that has one. */
+export const yearBackdrop = (model: YearModel): string | null => byWatchTime(model).find((title) => title.facts?.background)?.facts?.background ?? null;
+
+/** Posters of the most watched titles, repeated to fill the wall when there are fewer. */
+export function wallPosters(model: YearModel, count: number): string[] {
+  const out: string[] = [];
+  for (const title of byWatchTime(model)) {
+    const poster = artAt(title.facts?.poster, "w342", 342);
+    if (poster) out.push(poster);
+    if (out.length === count) break;
+  }
+  while (out.length && out.length < count) out.push(...out.slice(0, count - out.length));
+  return out;
+}
 
 export const finishedShows = (model: YearModel): number => model.data.titles.filter((title) => title.kind === "series" && title.progress && title.progress.aired > 0 && title.progress.seen >= title.progress.aired).length;
 

@@ -6,6 +6,7 @@ import { TitleLeaderboard } from "./JellyfinYearLeaderboard";
 import { sizedArt } from "./art";
 import type { YearChapterProps } from "./yearChapters";
 import { displayName, genreShares, hoursOf, type YearModel } from "./yearModel";
+import { codeOf, regionName, yearPlaces } from "./yearPlaces";
 
 const Globe = lazy(() => import("./JellyfinYearGlobe"));
 
@@ -13,59 +14,10 @@ const GENRES = 7;
 const COUNTRIES = 5;
 const MORE_COUNTRIES = 5;
 const NETWORK_LOGO: CSSProperties = { filter: "brightness(0) invert(1)" };
-const COUNTRY_ALIASES: Record<string, string> = {
-  "united states of america": "US",
-  usa: "US",
-  uk: "GB",
-  "great britain": "GB",
-  "republic of korea": "KR",
-  "korea, republic of": "KR",
-  korea: "KR",
-  "russian federation": "RU",
-  "czech republic": "CZ",
-  "viet nam": "VN",
-  "iran, islamic republic of": "IR",
-  "taiwan, province of china": "TW",
-};
-
 
 function listed(items: string[]): string {
   if (items.length <= 1) return items[0] ?? "";
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
-}
-
-const codeOf = (name: string): string | undefined => countryCodes().get(name.toLowerCase());
-
-const countryCodes = (() => {
-  let codes: Map<string, string> | null = null;
-  return (): Map<string, string> => {
-    if (codes) return codes;
-    codes = new Map(Object.entries(COUNTRY_ALIASES));
-    try {
-      const english = new Intl.DisplayNames(["en"], { type: "region" });
-      for (let a = 65; a <= 90; a += 1) {
-        for (let b = 65; b <= 90; b += 1) {
-          const code = String.fromCharCode(a, b);
-          const name = english.of(code);
-          if (name && name !== code && !codes.has(name.toLowerCase())) codes.set(name.toLowerCase(), code);
-        }
-      }
-    } catch {
-      return codes;
-    }
-    return codes;
-  };
-})();
-
-let regionNames: Intl.DisplayNames | null = null;
-
-function regionName(code: string): string {
-  try {
-    regionNames ??= new Intl.DisplayNames(undefined, { type: "region" });
-    return regionNames.of(code) ?? code;
-  } catch {
-    return code;
-  }
 }
 
 function Face({ src, className = "" }: { src: string | null; className?: string }) {
@@ -272,17 +224,9 @@ function Networks({ people }: { people: JellyfinYearPeople }) {
 
 function Countries({ titles }: { titles: JellyfinYearTitle[] }) {
   const { rows, more, languages, shading } = useMemo(() => {
-    const codes = countryCodes();
-    const counts = new Map<string, number>();
-    const spoken = new Set<string>();
-    for (const title of titles) {
-      if (title.facts?.language) spoken.add(title.facts.language);
-      const found = new Set((title.facts?.countries ?? []).map((name) => codes.get(name.toLowerCase())).filter((code): code is string => !!code));
-      for (const code of found) counts.set(code, (counts.get(code) ?? 0) + 1);
-    }
-    const ranked = [...counts].sort((a, b) => b[1] - a[1]);
+    const { ranked, languages } = yearPlaces(titles);
     const shading = new Map(ranked.map(([code], rank) => [code, { rank, shaded: rank < COUNTRIES }]));
-    return { rows: ranked.slice(0, COUNTRIES), more: ranked.slice(COUNTRIES), languages: spoken.size, shading };
+    return { rows: ranked.slice(0, COUNTRIES), more: ranked.slice(COUNTRIES), languages, shading };
   }, [titles]);
   if (!rows.length) return null;
   const top = rows[0][1];

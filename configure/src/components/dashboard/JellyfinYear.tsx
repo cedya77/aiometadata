@@ -3,25 +3,13 @@ import { YearTakeaway } from "./JellyfinYearShare";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinYear, type DashboardTab, type JellyfinYearReview } from "@/hooks/useDashboardQueries";
-import { sizedArt } from "./art";
 import { DashboardLinks } from "./DashboardLink";
-import { ACCENT_BADGE, YEAR_GLASS } from "./JellyfinYearShared";
+import { ACCENT_BADGE, YEAR_GLASS, yearFill } from "./JellyfinYearShared";
 import { YEAR_CHAPTERS } from "./yearChapters";
-import { buildYearModel, capitalised, formatDay, hoursOf, inWords, type YearModel } from "./yearModel";
+import { buildYearModel, byWatchTime, capitalised, formatDay, hoursOf, inWords, wallPosters, yearBackdrop, type YearModel } from "./yearModel";
 import { when } from "./jellyfinUtils";
 
 const WALL_SIZE = 48;
-
-function posters(model: YearModel): string[] {
-  const out: string[] = [];
-  for (const title of [...model.data.titles].sort((a, b) => b.watchMs - a.watchMs)) {
-    const poster = title.facts?.poster;
-    if (poster) out.push(sizedArt(poster, 342) ?? poster);
-    if (out.length === WALL_SIZE) break;
-  }
-  while (out.length && out.length < WALL_SIZE) out.push(...out.slice(0, WALL_SIZE - out.length));
-  return out;
-}
 
 function YearPicker({ years, year, onYear }: { years: number[]; year: number; onYear: (year: number) => void }) {
   const list = years.includes(year) ? years : [year, ...years];
@@ -37,7 +25,7 @@ function YearPicker({ years, year, onYear }: { years: number[]; year: number; on
 const bulkNote = (plays: number) => `${plays.toLocaleString()} more ${plays === 1 ? "play was" : "plays were"} marked in bulk, so ${plays === 1 ? "it is" : "they are"} left out.`;
 
 function Hero({ model, profileName, picker }: { model: YearModel; profileName: string; picker: ReactNode }) {
-  const wall = useMemo(() => posters(model), [model]);
+  const wall = useMemo(() => wallPosters(model, WALL_SIZE), [model]);
   const { totals } = model.data;
   const activeDays = useMemo(() => new Set(model.plays.map((play) => play.day)).size, [model]);
   const stats = [
@@ -49,15 +37,11 @@ function Hero({ model, profileName, picker }: { model: YearModel; profileName: s
     { value: activeDays.toLocaleString(), label: "Days with a play" },
   ];
   const titles = model.data.titles.length;
-  const ranked = useMemo(() => [...model.data.titles].sort((a, b) => b.watchMs - a.watchMs), [model]);
-  const backdrop = ranked.find((title) => title.facts?.background)?.facts?.background ?? null;
+  const ranked = useMemo(() => byWatchTime(model), [model]);
   const topShow = ranked.find((title) => title.kind === "series");
   const gripped = !!topShow && totals.watchMs > 0 && topShow.watchMs / totals.watchMs >= 0.25;
   const months = model.partial ? new Date(Date.UTC(model.year, 0, 1 + model.through)).getUTCMonth() + 1 : 12;
   const span = months === 12 ? "A full year" : `${capitalised(inWords(months))} month${months === 1 ? "" : "s"}`;
-  const yearFill = backdrop
-    ? { backgroundImage: `linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0) 70%), url("${sizedArt(backdrop, 1280) ?? backdrop}")`, backgroundSize: "cover", backgroundPosition: "center 30%" }
-    : { backgroundImage: "linear-gradient(180deg, #ffffff, rgba(255,255,255,0.4))" };
   return (
     <section className="relative isolate overflow-hidden [clip-path:inset(0)]">
       {wall.length > 0 && (
@@ -72,7 +56,7 @@ function Hero({ model, profileName, picker }: { model: YearModel; profileName: s
           <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{profileName}'s year in review</span>
           {picker}
         </div>
-        <h1 className="-ml-1 mt-7 w-fit bg-clip-text text-[112px] font-black leading-[0.82] tracking-[-0.065em] text-transparent sm:-ml-2.5 sm:text-[200px] lg:text-[248px]" style={yearFill}>{model.year}</h1>
+        <h1 className="-ml-1 mt-7 w-fit bg-clip-text text-[112px] font-black leading-[0.82] tracking-[-0.065em] text-transparent sm:-ml-2.5 sm:text-[200px] lg:text-[248px]" style={yearFill(yearBackdrop(model))}>{model.year}</h1>
         <p className="mt-[18px] max-w-[640px] text-lg leading-[1.4] text-foreground/85 sm:text-[22px]">
           {span}, {titles.toLocaleString()} title{titles === 1 ? "" : "s"}{gripped ? ", one show you could not put down." : "."}{" "}
           {model.partial && <span className="block text-muted-foreground">{formatDay(model.year, 0, false, "long")} to {formatDay(model.year, model.through, false, "long")}, still counting.</span>}

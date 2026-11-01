@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { artAt } from "./art";
 import { DashboardLink, personPage, titlePage } from "./DashboardLink";
 import { metaIdOf } from "./yearModel";
 
@@ -8,6 +9,14 @@ export const ACCENT_TEXT: Record<YearAccent, string> = { blue: "text-blue-400", 
 export const ACCENT_BADGE: Record<YearAccent, string> = { blue: "bg-blue-400 text-background", pink: "bg-pink-400/25 text-pink-300" };
 
 export const YEAR_GLASS = "bg-white/[0.055] backdrop-blur-[18px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]";
+
+/** The year's number painted with a backdrop, or plain white when there is none. */
+export function yearFill(backdrop: string | null): React.CSSProperties {
+  const art = artAt(backdrop, "w1280", 1280);
+  return art
+    ? { backgroundImage: `linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0) 70%), url("${art}")`, backgroundSize: "cover", backgroundPosition: "center 30%" }
+    : { backgroundImage: "linear-gradient(180deg, #ffffff, rgba(255,255,255,0.4))" };
+}
 
 const SCROLL_FADES = {
   start: "linear-gradient(to bottom, black calc(100% - 48px), transparent)",

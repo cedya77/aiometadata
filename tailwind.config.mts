@@ -62,10 +62,20 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "story-fill": {
+          from: { transform: "scaleX(0)" },
+          to: { transform: "scaleX(1)" },
+        },
+        "story-drift": {
+          from: { transform: "translate3d(0, 0, 0)" },
+          to: { transform: "translate3d(-6%, -10%, 0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "story-drift": "story-drift 40s ease-in-out infinite alternate",
+        "story-fill": "story-fill linear forwards",
       },
     },
   },
