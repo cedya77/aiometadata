@@ -1,7 +1,7 @@
 const consola: any = require('consola');
 const idMapper: any = require('./id-mapper');
 const { resolveTmdbEpisodeFromKitsu }: any = require('./id-mapper');
-const { resolveTvdbEpisodeFromAnidbEpisode, resolveAnidbEpisodeFromTvdbEpisode }: any = require('./anime-list-mapper');
+const { resolveTvdbEpisodeFromAnidbEpisode, resolveTrackedAnidbEpisode }: any = require('./anime-list-mapper');
 const anilistTracker: any = require('./anilistTracker');
 const malTracker: any = require('./malTracker');
 const simklUtils: any = require('../utils/simklUtils');
@@ -83,7 +83,7 @@ function parseMediaId(id: any): ParsedMediaId | null {
       const [seasonStr, episodeStr] = rest;
       const season = parseInt(seasonStr, 10);
       const episode = parseInt(episodeStr, 10);
-      if (Number.isNaN(season) || season < 1 || season > 9999) {
+      if (Number.isNaN(season) || season < 0 || season > 9999) {
         logger.debug(`[Watch Tracking] Invalid season value in IMDb ID: season=${seasonStr}`);
         return null;
       }
@@ -138,7 +138,7 @@ function parseMediaId(id: any): ParsedMediaId | null {
     const [seasonStr, episodeStr] = rest.slice(1);
     const season = parseInt(seasonStr, 10);
     const episode = parseInt(episodeStr, 10);
-    if (Number.isNaN(season) || season < 1 || season > 9999) {
+    if (Number.isNaN(season) || season < 0 || season > 9999) {
       logger.debug(`[Watch Tracking] Invalid season value for provider ${provider}: ${seasonStr}`);
       return null;
     }
@@ -359,8 +359,8 @@ async function resolveSeriesIds(parsedId: ParsedMediaId, config: any = {}, isSim
       const animeMapping = found;
       if (animeMapping?.tvdb_id && !isSimkl) {
         try {
-          const anidbInfo = await resolveAnidbEpisodeFromTvdbEpisode(
-            animeMapping.tvdb_id, parsedId.season || 1, parsedId.episode
+          const anidbInfo = await resolveTrackedAnidbEpisode(
+            animeMapping.tvdb_id, parsedId.season ?? 1, parsedId.episode
           );
           if (anidbInfo) {
             const anidbMapping = idMapper.getMappingByAnidbId(anidbInfo.anidbId);
@@ -370,8 +370,8 @@ async function resolveSeriesIds(parsedId: ParsedMediaId, config: any = {}, isSim
                 const resolved = await resolveTmdbEpisodeFromKitsu(
                   anilistMapping.kitsu_id, anidbInfo.anidbEpisode, config
                 );
-                if (resolved?.isFranchiseFallback && (Number(resolved.seasonNumber) !== (parsedId.season || 1) || Number(resolved.episodeNumber) !== Number(parsedId.episode))) {
-                  return byTvdbEpisode(Number(animeMapping.tvdb_id), parsedId.season || 1, Number(parsedId.episode), config);
+                if (resolved?.isFranchiseFallback && (Number(resolved.seasonNumber) !== (parsedId.season ?? 1) || Number(resolved.episodeNumber) !== Number(parsedId.episode))) {
+                  return byTvdbEpisode(Number(animeMapping.tvdb_id), parsedId.season ?? 1, Number(parsedId.episode), config);
                 }
                 if (resolved) {
                   logger.debug(

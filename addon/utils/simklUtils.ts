@@ -1200,7 +1200,7 @@ async function checkinSeries(
   const progress = typeof options.progress === 'number' ? options.progress : 1;
   const normalizedIds = normalizeEpisodeIdInput(idInput);
 
-  if (!normalizedIds || !accessToken || season < 1 || episode < 1) {
+  if (!normalizedIds || !accessToken || season < 0 || episode < 1) {
     logger.warn('[Simkl Checkin] Invalid parameters for checkinSeries', {
       id: idInput,
       season,

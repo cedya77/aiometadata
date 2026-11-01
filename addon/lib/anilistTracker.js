@@ -11,7 +11,7 @@ const consola = require('consola');
 const { httpPost } = require('../utils/httpClient');
 const database = require('./database');
 const idMapper = require('./id-mapper');
-const { resolveAnidbEpisodeFromTvdbEpisode } = require('./anime-list-mapper');
+const { resolveTrackedAnidbEpisode } = require('./anime-list-mapper');
 const { ownTokenId } = require('./accounts');
 
 
@@ -639,11 +639,11 @@ async function resolveAniListId(parsedId) {
           return null;
         }
         
-        const seasonNumber = parsedId.season || 1;
+        const seasonNumber = parsedId.season ?? 1;
         const episodeNumber = parsedId.episode || 1;
         
         // Resolve TVDB episode to AniDB episode info
-        const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, seasonNumber, episodeNumber);
+        const anidbEpisodeInfo = await resolveTrackedAnidbEpisode(tvdbId, seasonNumber, episodeNumber);
         if (!anidbEpisodeInfo) {
           logger.debug(`[AniList Tracker] No AniDB episode info found for TVDB ${tvdbId} S${seasonNumber}E${episodeNumber}`);
           return null;

@@ -14,7 +14,7 @@ import { noteTrackerCall } from '../utils/trackerCalls';
 
 const database: any = require('./database');
 const idMapper: any = require('./id-mapper');
-const { resolveAnidbEpisodeFromTvdbEpisode } = require('./anime-list-mapper');
+const { resolveTrackedAnidbEpisode } = require('./anime-list-mapper');
 import { ownTokenId } from './accounts';
 
 const logger = consola.withTag('MALTracker');
@@ -460,10 +460,10 @@ async function resolveMalId(parsedId: ParsedMediaId): Promise<{ malId: number; e
           return null;
         }
 
-        const seasonNumber = parsedId.season || 1;
+        const seasonNumber = parsedId.season ?? 1;
         const episodeNumber = parsedId.episode || 1;
 
-        const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, seasonNumber, episodeNumber);
+        const anidbEpisodeInfo = await resolveTrackedAnidbEpisode(tvdbId, seasonNumber, episodeNumber);
         if (!anidbEpisodeInfo) {
           logger.debug(`[MAL Tracker] No AniDB episode info found for TVDB ${tvdbId} S${seasonNumber}E${episodeNumber}`);
           return null;
