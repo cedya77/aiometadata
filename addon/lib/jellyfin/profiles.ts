@@ -230,7 +230,9 @@ export function keepsUnderProfileCap(config: any): (item: any) => boolean {
   const unrated = allowsUnrated(config);
   return (item: any) => {
     const type = item?.Type === 'Movie' ? 'movie' : 'series';
-    return passesAgeRating(item?.OfficialRating, type, cap, unrated);
+    // A null CustomRating means no US rating: it stays unrated, never the local one.
+    const rating = item && 'CustomRating' in item ? item.CustomRating : item?.OfficialRating;
+    return passesAgeRating(rating, type, cap, unrated);
   };
 }
 
