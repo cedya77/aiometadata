@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 import type { JellyfinYearPeople, JellyfinYearTitle } from "@/hooks/useDashboardQueries";
 import { ChapterHeader, Deck, PersonLink, TitleLink, TitleList, YEAR_GLASS, plural } from "./JellyfinYearShared";
 import { TitleLeaderboard } from "./JellyfinYearLeaderboard";
-import { sizedArt } from "./art";
+import { artAt } from "./art";
 import type { YearChapterProps } from "./yearChapters";
 import { displayName, genreShares, hoursOf, type YearModel } from "./yearModel";
 import { codeOf, regionName, yearPlaces } from "./yearPlaces";
@@ -22,7 +22,7 @@ function listed(items: string[]): string {
 
 function Face({ src, className = "" }: { src: string | null; className?: string }) {
   return src
-    ? <img src={sizedArt(src, 185) ?? src} alt="" loading="lazy" className={`block object-cover ${className}`} />
+    ? <img src={artAt(src, "w185", 185) ?? src} alt="" loading="lazy" className={`block object-cover ${className}`} />
     : <div className={`bg-gradient-to-br from-zinc-600 to-zinc-800 ${className}`} />;
 }
 
@@ -72,9 +72,9 @@ function Pairings({ people }: { people: JellyfinYearPeople }) {
       {link && (
         <div className={`${YEAR_GLASS} flex min-w-0 flex-[1_1_360px] items-center gap-[18px] rounded-3xl p-6`}>
           <div className="flex shrink-0 items-center gap-1.5">
-            {link.show.poster && <TitleLink title={link.show} name={link.show.name} className="block"><img src={sizedArt(link.show.poster, 185) ?? link.show.poster} alt="" loading="lazy" className="aspect-[2/3] w-9 rounded-md object-cover" /></TitleLink>}
+            {link.show.poster && <TitleLink title={link.show} name={link.show.name} className="block"><img src={artAt(link.show.poster, "w185", 185) ?? link.show.poster} alt="" loading="lazy" className="aspect-[2/3] w-9 rounded-md object-cover" /></TitleLink>}
             <PersonLink person={link} className="block rounded-full"><Face src={link.photo} className="h-12 w-12 rounded-full" /></PersonLink>
-            {link.films[0]?.poster && <TitleLink title={link.films[0]} name={link.films[0].name} className="block"><img src={sizedArt(link.films[0].poster, 185) ?? link.films[0].poster} alt="" loading="lazy" className="aspect-[2/3] w-9 rounded-md object-cover" /></TitleLink>}
+            {link.films[0]?.poster && <TitleLink title={link.films[0]} name={link.films[0].name} className="block"><img src={artAt(link.films[0].poster, "w185", 185) ?? link.films[0].poster} alt="" loading="lazy" className="aspect-[2/3] w-9 rounded-md object-cover" /></TitleLink>}
           </div>
           <div className="min-w-0">
             <p className={kicker}>The link</p>
@@ -211,7 +211,7 @@ function Networks({ people }: { people: JellyfinYearPeople }) {
         {people.networks.map((network, i) => (
           <div key={network.name} className={`${YEAR_GLASS} relative flex items-center justify-center rounded-[20px] ${i === 0 ? "col-span-2 row-span-2" : i < 3 ? "sm:col-span-2" : ""}`} style={i === 0 ? { background: "linear-gradient(135deg,rgba(96,165,250,0.18),rgba(255,255,255,0.04))" } : undefined}>
             {network.logo
-              ? <img src={network.logo} alt={network.name} loading="lazy" className={`object-contain ${i === 0 ? "max-h-24 max-w-[55%]" : "max-h-[34px] max-w-[58%] opacity-85"}`} style={NETWORK_LOGO} />
+              ? <img src={artAt(network.logo, "w300", 300)!} alt={network.name} loading="lazy" className={`object-contain ${i === 0 ? "max-h-24 max-w-[55%]" : "max-h-[34px] max-w-[58%] opacity-85"}`} style={NETWORK_LOGO} />
               : <span className={`px-3 text-center font-bold ${i === 0 ? "text-2xl" : "text-sm"}`}>{network.name}</span>}
             <span className="absolute bottom-2.5 left-3.5 text-xs tabular-nums text-muted-foreground">{plural(network.plays, "play")}</span>
           </div>
@@ -286,7 +286,7 @@ function Decades({ titles }: { titles: JellyfinYearTitle[] }) {
       <div className="mt-5 flex h-[250px] items-end gap-2 sm:gap-3.5">
         {decades.map(({ decade, count, pin }) => (
           <div key={decade} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
-            {pin?.facts?.poster && <TitleLink title={pin} name={displayName(pin)} className="block w-full max-w-16 transition-transform hover:-translate-y-0.5"><img src={sizedArt(pin.facts.poster, 185) ?? pin.facts.poster} alt="" loading="lazy" className="block aspect-[2/3] w-full rounded-lg object-cover shadow-[0_12px_24px_-10px_rgba(0,0,0,0.9),0_0_0_1px_rgba(255,255,255,0.12)]" /></TitleLink>}
+            {pin?.facts?.poster && <TitleLink title={pin} name={displayName(pin)} className="block w-full max-w-16 transition-transform hover:-translate-y-0.5"><img src={artAt(pin.facts.poster, "w185", 185) ?? pin.facts.poster} alt="" loading="lazy" className="block aspect-[2/3] w-full rounded-lg object-cover shadow-[0_12px_24px_-10px_rgba(0,0,0,0.9),0_0_0_1px_rgba(255,255,255,0.12)]" /></TitleLink>}
             {pin && <TitleLink title={pin} name={displayName(pin)} className="max-w-full truncate text-center text-[10px] text-muted-foreground decoration-white/35 underline-offset-4 hover:text-foreground hover:underline">{decade === latest ? displayName(pin) : `${displayName(pin)}, ${pin.facts?.year}`}</TitleLink>}
             <div className="w-full rounded-t-[10px] rounded-b-[4px]" style={{ height: Math.max(6, Math.round((count / most) * 96)), background: count === most ? "linear-gradient(180deg,#93c5fd,#2563eb)" : "rgba(255,255,255,0.14)" }} />
             <span className="text-[13px] font-semibold">{decade}s</span>

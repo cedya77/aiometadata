@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { JellyfinYearTitle } from "@/hooks/useDashboardQueries";
-import { sizedArt } from "./art";
+import { artAt } from "./art";
 import { duration } from "./jellyfinUtils";
 import { FadeScroll, TitleLink, plural } from "./JellyfinYearShared";
 import { displayName } from "./yearModel";
@@ -10,9 +10,9 @@ const PODIUM_PHONE = 3;
 const ROW_H = 57;
 const ROWS_SHOWN = 6.5;
 
-function Poster({ src, className = "" }: { src: string | null | undefined; className?: string }) {
+function Poster({ src, size = "w500", className = "" }: { src: string | null | undefined; size?: "w92" | "w500"; className?: string }) {
   return src
-    ? <img src={sizedArt(src, 342) ?? src} alt="" loading="lazy" draggable={false} className={`h-full w-full object-cover ${className}`} />
+    ? <img src={artAt(src, size, size === "w92" ? 92 : 500) ?? src} alt="" loading="lazy" draggable={false} className={`h-full w-full object-cover ${className}`} />
     : <div className={`h-full w-full bg-gradient-to-br from-zinc-700 to-zinc-900 ${className}`} />;
 }
 
@@ -54,7 +54,7 @@ export function TitleLeaderboard({ titles, timeZone }: { titles: JellyfinYearTit
             return (
               <TitleLink key={title.key} title={title} name={displayName(title)} className={`group grid min-w-0 grid-cols-[22px_26px_minmax(0,1fr)_52px] items-center gap-2.5 rounded-lg border-b border-white/[0.05] px-1 py-1.5 transition-colors hover:bg-white/[0.04] sm:grid-cols-[30px_30px_minmax(0,1fr)_200px_64px] sm:gap-3 ${rank <= PODIUM ? "sm:hidden" : ""}`}>
                 <span className="text-right text-[11px] tabular-nums text-muted-foreground sm:text-xs">{rank}</span>
-                <div className="aspect-[2/3] overflow-hidden rounded"><Poster src={title.facts?.poster} /></div>
+                <div className="aspect-[2/3] overflow-hidden rounded"><Poster src={title.facts?.poster} size="w92" /></div>
                 <div className="min-w-0">
                   <p className="truncate text-xs font-medium decoration-white/35 underline-offset-4 group-hover:underline sm:text-[13px]">{displayName(title)}</p>
                   <p className="hidden truncate text-[11px] text-muted-foreground sm:block">{meta(title)}</p>

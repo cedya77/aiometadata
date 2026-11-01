@@ -1,6 +1,6 @@
 import { useMemo, type CSSProperties } from "react";
 import { ChapterHeader, Deck, HATCH, Panel, Swatch, TitleLink, type YearAccent } from "./JellyfinYearShared";
-import { sizedArt } from "./art";
+import { artAt } from "./art";
 import { MONTH_NAMES, WEEKDAY_NAMES, WEEKDAY_SHORT, capitalised, displayName, episodeLabel, formatDay, formatHour, formatPlayTime, hoursOf, inWords, yearTime, type YearModel, type YearPlay, type YearTime } from "./yearModel";
 
 type Time = YearTime;
@@ -122,7 +122,7 @@ const STREAK_SQUARES = 90;
 function Thumb({ play }: { play: YearPlay }) {
   const poster = play.title.facts?.poster;
   return poster
-    ? <img src={sizedArt(poster, 92) ?? poster} alt="" loading="lazy" className="aspect-[2/3] w-7 shrink-0 rounded object-cover" />
+    ? <img src={artAt(poster, "w92", 92) ?? poster} alt="" loading="lazy" className="aspect-[2/3] w-7 shrink-0 rounded object-cover" />
     : <span className="aspect-[2/3] w-7 shrink-0 rounded bg-gradient-to-br from-zinc-700 to-zinc-900" />;
 }
 

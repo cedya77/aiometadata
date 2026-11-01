@@ -10,6 +10,7 @@ import { fetchMeta, isBoxSetMeta, parseRuntimeTicks, seriesStatus } from './item
 import { groupBySpelling } from './aliases';
 import { itemIdForVideo } from './history';
 import { defaultUserName, listProfiles, profileKey, scopeConfigToProfile } from './profiles';
+import { isClassEnabled, POSTER_CACHE_ROUTE } from '../posterCache/config';
 import { CAPABLE, credentialFor } from './trackerSource';
 import { isMatchable, trackerName, trackerOf, type Mark } from '../trackers';
 import { sourceKeyFor } from './trackerMirror';
@@ -1134,6 +1135,16 @@ export async function dashboardCopyControl(userUUID: string, id: number, action:
   return require('./trackerCopy').controlCopy(userUUID, id, action);
 }
 
+const AVATAR_CLASSES = ['cast', 'logo', 'thumbnail'] as const;
+const AVATAR_WIDTH = 185;
+
+/** An avatar is often a large picture shown small, so it goes through the poster cache's resizer when a class that keeps its shape is on. */
+function smallAvatar(url: string | null | undefined): string | null {
+  if (!url || !/^https?:\/\//i.test(url)) return url ?? null;
+  const imageClass = AVATAR_CLASSES.find(isClassEnabled);
+  return imageClass ? `${POSTER_CACHE_ROUTE}/w${AVATAR_WIDTH}/${imageClass}/${url}` : url;
+}
+
 /** One configuration: its profiles with counts, and the sessions, positions and recent plays of one profile or all. */
 export async function dashboardConfiguration(userUUID: string, profile: string | null, rows?: number, offsetMinutes = 0): Promise<any> {
   const config = await database.getUserConfig(userUUID).catch(() => null);
@@ -1147,7 +1158,7 @@ export async function dashboardConfiguration(userUUID: string, profile: string |
   ]);
   const everyProfile = listProfiles(config, userUUID);
   const history = historyKeyOf(config, userUUID, profile);
-  const avatars = new Map(everyProfile.map((p) => [p.id ?? '', p.avatar]));
+  const avatars = new Map(everyProfile.map((p) => [p.id ?? '', smallAvatar(p.avatar)]));
   const profiles = historyProfiles(config, userUUID).map(({ key, name, sharedWith }) => {
     const p = byProfile.find((row: any) => String(row.profile ?? '') === key);
     const titles = counts.get(key);
@@ -1177,7 +1188,7 @@ export async function dashboardConfiguration(userUUID: string, profile: string |
     history,
     rows: limit,
     profiles,
-    viewers: everyProfile.map((p) => ({ key: p.id ?? '', name: p.name, avatar: p.avatar, historyKey: p.id && !p.sharesHistory ? p.id : '' })),
+    viewers: everyProfile.map((p) => ({ key: p.id ?? '', name: p.name, avatar: smallAvatar(p.avatar), historyKey: p.id && !p.sharesHistory ? p.id : '' })),
     sync,
     sessions,
     inProgress: inProgress.rows.slice(0, limit),

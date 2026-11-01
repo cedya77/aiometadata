@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type R
 import type { JellyfinYearTitle } from "@/hooks/useDashboardQueries";
 import { titlePage, useDashboardOpen } from "./DashboardLink";
 import { ChapterHeader, TitleLink, TitleList, YEAR_GLASS, plural } from "./JellyfinYearShared";
-import { sizedArt } from "./art";
+import { artAt } from "./art";
 import type { YearChapterProps } from "./yearChapters";
 import { displayName, formatDay, hoursOf, localYearOf, metaIdOf, type YearModel } from "./yearModel";
 
@@ -70,7 +70,7 @@ function Spotlight({ model, show, rest }: { model: YearModel; show: JellyfinYear
     network && (
       <span key="network">
         {state === "running" ? "Airs on" : "Aired on"}{" "}
-        {network.logo ? <img src={network.logo} alt={network.name} className="ml-0.5 inline-block h-3 align-[-1px]" style={NETWORK_LOGO} /> : network.name}
+        {network.logo ? <img src={artAt(network.logo, "w92", 92)!} alt={network.name} className="ml-0.5 inline-block h-3 align-[-1px]" style={NETWORK_LOGO} /> : network.name}
       </span>
     ),
     show.facts?.year && <span key="year">since {show.facts.year}</span>,
@@ -78,14 +78,14 @@ function Spotlight({ model, show, rest }: { model: YearModel; show: JellyfinYear
   ].filter(Boolean);
   return (
     <div className="relative isolate flex min-h-[520px] items-end overflow-hidden rounded-[28px]">
-      {background && <div aria-hidden="true" className="absolute inset-0 -z-20 bg-cover" style={{ backgroundImage: `url("${sizedArt(background, 1280) ?? background}")`, backgroundPosition: "center 25%" }} />}
+      {background && <div aria-hidden="true" className="absolute inset-0 -z-20 bg-cover" style={{ backgroundImage: `url("${artAt(background, "w1280", 1280) ?? background}")`, backgroundPosition: "center 25%" }} />}
       <div aria-hidden="true" className="absolute inset-0 -z-10" style={{ background: "linear-gradient(90deg, rgba(12,13,15,0.96) 0%, rgba(12,13,15,0.75) 45%, rgba(12,13,15,0.1) 100%), linear-gradient(0deg, rgba(12,13,15,0.9), rgba(12,13,15,0) 50%)" }} />
       <div className="flex w-full flex-wrap items-end gap-10 p-6 sm:p-12">
         <div className="min-w-0 flex-[1_1_420px]">
           <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-amber-400">Your number one show</span>
           <TitleLink title={show} name={displayName(show)} className="mt-4 block w-fit max-w-full transition-opacity hover:opacity-85">
             {show.facts?.logo
-              ? <img src={show.facts.logo} alt={displayName(show)} className="block w-full max-w-[420px] [filter:drop-shadow(0_4px_20px_rgba(0,0,0,0.6))]" />
+              ? <img src={artAt(show.facts.logo, "w500", 500)!} alt={displayName(show)} className="block w-full max-w-[420px] [filter:drop-shadow(0_4px_20px_rgba(0,0,0,0.6))]" />
               : <span className="block text-4xl font-extrabold tracking-[-0.03em] sm:text-5xl">{displayName(show)}</span>}
           </TitleLink>
           <div className="mt-7 flex flex-wrap items-baseline gap-3">
@@ -128,7 +128,7 @@ function TopTenCard({ title, rank }: { title: JellyfinYearTitle; rank: number })
       <span aria-hidden="true" className="absolute -left-1.5 -top-[18px] z-0 text-[92px] font-black leading-none tracking-[-0.06em]" style={OUTLINE}>{rank}</span>
       <div className="relative z-[1] ml-[34px] overflow-hidden rounded-[14px] shadow-[0_20px_40px_-16px_rgba(0,0,0,0.8),inset_0_0_0_1px_rgba(255,255,255,0.1)]">
         {poster
-          ? <img src={sizedArt(poster, 342) ?? poster} alt="" loading="lazy" className="block aspect-[2/3] w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]" />
+          ? <img src={artAt(poster, "w342", 342) ?? poster} alt="" loading="lazy" className="block aspect-[2/3] w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]" />
           : <div className="aspect-[2/3] w-full bg-gradient-to-br from-zinc-700 to-zinc-900" />}
         {done && <span className={`${YEAR_GLASS} absolute right-2 top-2 rounded-full px-2 py-[3px] text-[10px] font-bold tracking-[0.04em] text-green-300`}>{state === "running" ? "CAUGHT UP" : "FINISHED"}</span>}
       </div>
@@ -221,10 +221,10 @@ function Coverflow({ films, opening, label, caption }: { films: JellyfinYearTitl
   const flying = goal !== focus;
   const shown = focus - (drag ?? 0) / DRAG_STEP_PX;
   const centre = films[Math.round(shown)] ?? films[focus];
-  const ambient = centre?.facts?.background ?? centre?.facts?.poster;
+  const ambient = artAt(centre?.facts?.background, "w300", 300) ?? artAt(centre?.facts?.poster, "w185", 185);
   return (
     <>
-      {ambient && <div aria-hidden="true" className="absolute -inset-10 -z-20 scale-110 bg-cover bg-center opacity-45 blur-[40px] saturate-150" style={{ backgroundImage: `url("${sizedArt(ambient, 342) ?? ambient}")` }} />}
+      {ambient && <div aria-hidden="true" className="absolute -inset-10 -z-20 scale-110 bg-cover bg-center opacity-45 blur-[40px] saturate-150" style={{ backgroundImage: `url("${ambient}")` }} />}
       <div
         ref={stage}
         role="img"
@@ -262,7 +262,7 @@ function Coverflow({ films, opening, label, caption }: { films: JellyfinYearTitl
           const depth = Math.abs(d);
           if (depth > DECK_REACH + 1) return null;
           const { x, z, rotate } = placement(d);
-          const poster = film.facts?.poster ? sizedArt(film.facts.poster, 342) ?? film.facts.poster : null;
+          const poster = artAt(film.facts?.poster, "w500", 500);
           const hidden = depth > DECK_REACH;
           return (
             <button
@@ -393,7 +393,7 @@ function ShelfPanel({ model, films, shows, done }: { model: YearModel; films: Je
             <div className={`${YEAR_GLASS} mt-[22px] rounded-[20px] p-[18px]`}>
               <TitleLink title={best} name={displayName(best)} className="block w-fit max-w-[75%] transition-opacity hover:opacity-85">
                 {best.facts?.logo
-                  ? <img src={best.facts.logo} alt={displayName(best)} className="block max-h-[54px] max-w-full object-contain object-left" />
+                  ? <img src={artAt(best.facts.logo, "w500", 500)!} alt={displayName(best)} className="block max-h-[54px] max-w-full object-contain object-left" />
                   : <span className="block text-xl font-bold">{displayName(best)}</span>}
               </TitleLink>
               <p className="mt-3 text-[13px] text-muted-foreground">Your highest rated {shelf === "films" ? "film" : "show"} of the year</p>

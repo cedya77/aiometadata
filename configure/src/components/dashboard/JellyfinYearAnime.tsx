@@ -3,7 +3,7 @@ import type { JellyfinAnimeEntry, JellyfinAnimeVoice, JellyfinYearTitle } from "
 import { titlePage, useDashboardOpen } from "./DashboardLink";
 import { ChapterHeader, Deck, FadeScroll, PersonLink, TitleLink, YEAR_GLASS, plural } from "./JellyfinYearShared";
 import { CoverTreemap } from "./JellyfinYearCovers";
-import { sizedArt } from "./art";
+import { artAt, pixelsFor } from "./art";
 import type { YearChapterProps } from "./yearChapters";
 import { hoursOf, inWords, metaIdOf, type YearModel } from "./yearModel";
 
@@ -65,9 +65,9 @@ function franchiseOf(entries: JellyfinAnimeEntry[]): string {
 
 const entryTarget = (entry: JellyfinAnimeEntry): { key: string; kind: "movie" | "series" } => ({ key: `mal:${entry.malId}`, kind: entry.type === "Movie" ? "movie" : "series" });
 
-function Cover({ src, className = "" }: { src: string | null; className?: string }) {
+function Cover({ src, width, className = "" }: { src: string | null; width: number; className?: string }) {
   return src
-    ? <img src={src} alt="" loading="lazy" className={`block aspect-[2/3] w-full object-cover ${className}`} />
+    ? <img src={artAt(src, "w342", pixelsFor(width)) ?? src} alt="" loading="lazy" className={`block aspect-[2/3] w-full object-cover ${className}`} />
     : <div className={`aspect-[2/3] w-full bg-gradient-to-br from-zinc-700 to-zinc-900 ${className}`} />;
 }
 
@@ -92,14 +92,14 @@ function LongRoad({ title, entries }: { title: JellyfinYearTitle; entries: Jelly
   let studioIndex = -1;
   return (
     <div className="relative isolate mt-10 overflow-hidden rounded-[28px]">
-      {background && <img src={sizedArt(background, 1280) ?? background} alt="" aria-hidden="true" className="absolute inset-0 -z-20 h-full w-full object-cover" />}
+      {background && <img src={artAt(background, "w1280", 1280) ?? background} alt="" aria-hidden="true" className="absolute inset-0 -z-20 h-full w-full object-cover" />}
       <div aria-hidden="true" className="absolute inset-0 -z-10" style={{ background: "linear-gradient(90deg, rgba(12,13,15,0.97) 0%, rgba(12,13,15,0.85) 40%, rgba(12,13,15,0.55) 100%)" }} />
       <div className="flex flex-wrap items-center gap-9 p-6 sm:p-10">
         <div className="min-w-0 flex-[1_1_300px]">
           <span className="text-xs font-bold uppercase tracking-[0.16em] text-pink-400">The long road</span>
           <TitleLink title={title} name={franchise} className="mt-3.5 block w-fit max-w-full transition-opacity hover:opacity-85">
             {title.facts?.logo
-              ? <img src={title.facts.logo} alt={franchise} className="block w-full max-w-[300px] [filter:drop-shadow(0_4px_18px_rgba(0,0,0,0.7))]" />
+              ? <img src={artAt(title.facts.logo, "w500", 500)!} alt={franchise} className="block w-full max-w-[300px] [filter:drop-shadow(0_4px_18px_rgba(0,0,0,0.7))]" />
               : <span className="block text-4xl font-extrabold tracking-[-0.03em]">{franchise}</span>}
           </TitleLink>
           {first.japanese && <p className="mt-2.5 text-base tracking-[0.08em] text-foreground/80">{first.japanese}</p>}
@@ -119,7 +119,7 @@ function LongRoad({ title, entries }: { title: JellyfinYearTitle; entries: Jelly
             return (
               <TitleLink key={entry.malId} title={entryTarget(entry)} name={entry.name} className="group block w-24 min-w-0 shrink-0 sm:w-auto sm:max-w-[132px] sm:flex-1">
                 <span className={`mb-2 block h-4 truncate text-[10px] font-bold uppercase tracking-[0.12em] ${studioIndex % 2 ? "text-pink-300" : "text-blue-300"}`}>{changed ? studio.replace(/ Studio$/, "") : ""}</span>
-                <Cover src={entry.image} className="rounded-xl shadow-[0_18px_36px_-14px_rgba(0,0,0,0.9),0_0_0_1px_rgba(255,255,255,0.14)] transition-transform duration-300 group-hover:-translate-y-1" />
+                <Cover src={entry.image} width={132} className="rounded-xl shadow-[0_18px_36px_-14px_rgba(0,0,0,0.9),0_0_0_1px_rgba(255,255,255,0.14)] transition-transform duration-300 group-hover:-translate-y-1" />
                 <p className="mt-2 truncate text-xs font-semibold decoration-white/35 underline-offset-4 group-hover:underline">{shortName(entry, franchise)}</p>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">{entry.year ?? "?"} · {entry.episodes} eps</p>
               </TitleLink>
@@ -146,7 +146,7 @@ function Club({ entries }: { entries: JellyfinAnimeEntry[] }) {
         {club.map((entry) => (
           <TitleLink key={entry.malId} title={entryTarget(entry)} name={entry.name} className="group block min-w-0">
             <div className="relative overflow-hidden rounded-[14px]">
-              <Cover src={entry.image} className={`rounded-[14px] ${COVER_RING} transition-transform duration-300 group-hover:scale-[1.04]`} />
+              <Cover src={entry.image} width={260} className={`rounded-[14px] ${COVER_RING} transition-transform duration-300 group-hover:scale-[1.04]`} />
               <span className="absolute left-2 top-2 flex h-[30px] min-w-[30px] items-center justify-center rounded-full bg-pink-400 px-2 text-sm font-black text-background">#{entry.rank}</span>
             </div>
             <p className="mt-2.5 text-[13px] font-semibold leading-[1.3] decoration-white/35 underline-offset-4 group-hover:underline">{compactName(entry.name)}</p>
@@ -206,7 +206,7 @@ function SeasonList({ shows }: { shows: JellyfinAnimeEntry[] }) {
     <FadeScroll scrolls={scrolls} maxHeight={(SEASON_ROWS + 0.5) * SEASON_ROW_H} label={`${plural(shows.length, "show")}, scroll for more`} className="flex min-w-0 flex-col gap-3">
       {shows.map((entry) => (
         <TitleLink key={entry.malId} title={entryTarget(entry)} name={entry.name} className="group flex min-w-0 items-center gap-2.5">
-          <div className="w-[38px] shrink-0"><Cover src={entry.image} className="rounded-md" /></div>
+          <div className="w-[38px] shrink-0"><Cover src={entry.image} width={38} className="rounded-md" /></div>
           <div className="min-w-0">
             <p className="truncate text-[13px] font-semibold decoration-white/35 underline-offset-4 group-hover:underline">{compactName(entry.name)}</p>
             <p className="mt-px text-[11px] text-muted-foreground">{plural(entry.episodes, "episode")}</p>
@@ -274,7 +274,7 @@ function Studios({ entries, titleOf }: { entries: JellyfinAnimeEntry[]; titleOf:
                 <div className="h-full rounded-full" style={{ width: `${Math.round((n / top) * 100)}%`, background: i ? `rgba(249,168,212,${(0.7 - i * 0.08).toFixed(2)})` : "linear-gradient(90deg, #db2777, #f472b6)" }} />
               </div>
               <span className="flex justify-end">
-                {covers.map((entry, j) => <TitleLink key={entry.malId} title={entryTarget(entry)} name={entry.name} className={`relative block transition-transform hover:z-10 hover:-translate-y-0.5 ${j ? "-ml-2" : ""}`}><img src={entry.image!} alt={entry.name} loading="lazy" className="block aspect-[2/3] w-[26px] rounded object-cover shadow-[0_0_0_2px_#17181b]" /></TitleLink>)}
+                {covers.map((entry, j) => <TitleLink key={entry.malId} title={entryTarget(entry)} name={entry.name} className={`relative block transition-transform hover:z-10 hover:-translate-y-0.5 ${j ? "-ml-2" : ""}`}><img src={artAt(entry.image, "w342", pixelsFor(40))!} alt={entry.name} loading="lazy" className="block aspect-[2/3] w-[26px] rounded object-cover shadow-[0_0_0_2px_#17181b]" /></TitleLink>)}
               </span>
             </div>
           );

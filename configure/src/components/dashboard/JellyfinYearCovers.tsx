@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { titlePage, useDashboardOpen } from "./DashboardLink";
 import { FadeScroll, TitleLink, plural, type YearAccent } from "./JellyfinYearShared";
-import { sizedArt } from "./art";
+import { artAt, pixelsFor, tmdbPosterFor } from "./art";
 import { metaIdOf } from "./yearModel";
 
 const TILE_GAP = 4;
@@ -115,7 +115,7 @@ export function CoverTreemap({ tiles: items, label, accent }: { tiles: CoverTile
               style={{ left: tile.x + TILE_GAP / 2, top: tile.y + TILE_GAP / 2, width: Math.max(0, tile.w - TILE_GAP), height: Math.max(0, tile.h - TILE_GAP) }}
             >
               {item.image
-                ? <img src={sizedArt(item.image, 342) ?? item.image} alt="" loading="lazy" draggable={false} className={`h-full w-full object-cover object-top transition-transform duration-500 ${on ? "scale-105" : ""}`} />
+                ? <img src={artAt(item.image, tmdbPosterFor(pixelsFor(tile.w)), pixelsFor(tile.w)) ?? item.image} alt="" loading="lazy" draggable={false} className={`h-full w-full object-cover object-top transition-transform duration-500 ${on ? "scale-105" : ""}`} />
                 : <div className="h-full w-full bg-gradient-to-br from-zinc-700 to-zinc-900" />}
               <span aria-hidden="true" className={`pointer-events-none absolute inset-0 rounded-lg transition-shadow ${on ? FOCUS_RING[accent] : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"}`} />
               {big && (
