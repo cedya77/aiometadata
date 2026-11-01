@@ -3,8 +3,6 @@ export const NUVIO_KEY = 'sb_publishable_1Clq8rlTVACkdcZuqr6_AD__xUUC_EN';
 export const NUVIO_FILE_NAME = 'nuvio-library.json';
 
 const PAGE = 500;
-const PROGRESS_CAP = 200;
-const DELTA_PAGE = 1000;
 const LIBRARY_FIELDS = ['content_id', 'content_type', 'name', 'added_at'];
 const WATCHED_FIELDS = ['content_id', 'content_type', 'title', 'season', 'episode', 'watched_at'];
 const PROGRESS_FIELDS = ['content_id', 'content_type', 'video_id', 'season', 'episode', 'position', 'duration', 'last_watched'];
@@ -93,31 +91,11 @@ async function paged(read: (page: number) => Promise<unknown>): Promise<any[]> {
   }
 }
 
-async function foldedProgress(token: string, index: number): Promise<Map<string, any>> {
-  const held = new Map<string, any>();
-  let cursor = 0;
-  for (;;) {
-    const events = rowsOf(await rpc('sync_pull_watch_progress_delta', token, { p_profile_id: index, p_since_event_id: cursor, p_limit: DELTA_PAGE }));
-    for (const event of [...events].sort((a, b) => Number(a?.event_id) - Number(b?.event_id))) {
-      if (typeof event?.progress_key !== 'string') continue;
-      if (event.operation === 'delete') held.delete(event.progress_key);
-      else if (event.operation === 'upsert') held.set(event.progress_key, event);
-    }
-    const next = Math.max(cursor, ...events.map((event) => Number(event?.event_id) || 0));
-    if (events.length < DELTA_PAGE || next === cursor) return held;
-    cursor = next;
-  }
-}
-
 export async function readProfile(token: string, index: number): Promise<NuvioProfileRows> {
   const library = await paged((page) => rpc('sync_pull_library', token, { p_profile_id: index, p_limit: PAGE, p_offset: page * PAGE }));
   const watched = await paged((page) => rpc('sync_pull_watched_items', token, { p_profile_id: index, p_page: page + 1, p_page_size: PAGE }));
-  let progress = rowsOf(await rpc('sync_pull_watch_progress', token, { p_profile_id: index, p_since_last_watched: 0 }));
-  if (progress.length === PROGRESS_CAP) {
-    const merged = new Map<string, any>(progress.map((row, at) => [typeof row?.progress_key === 'string' ? row.progress_key : `#${at}`, row]));
-    for (const [key, row] of await foldedProgress(token, index)) merged.set(key, row);
-    progress = [...merged.values()];
-  }
+  // Without a limit Nuvio returns every progress row in one answer.
+  const progress = rowsOf(await rpc('sync_pull_watch_progress', token, { p_profile_id: index, p_since_last_watched: 0 }));
   return { library: library.map(keep(LIBRARY_FIELDS)), watched: watched.map(keep(WATCHED_FIELDS)), progress: progress.map(keep(PROGRESS_FIELDS)) };
 }
 
