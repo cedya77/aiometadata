@@ -15,7 +15,7 @@ import { useTrackers } from "./trackers";
 import { nameDashboardPage, type DashboardPage } from "@/lib/dashboardRoute";
 import { artPalette, inkGround, type ArtPalette } from "./artPalette";
 import { cx, code, heroArt, HERO_DESKTOP_SHARE, HERO_DESKTOP_UPSCALE, HERO_PHONE_SHARE, episodeMenuItems, GLASS_PILL, orderedSeasons, PHONE_PLAY_PILL, PLAY_PILL, playLabel, seasonLabel, sizedStill, SOLID_AT, under, useCenteredTab, usePhone, type Anchor, type SeasonItem } from "./titleHelpers";
-import { Credits, DesktopTitleActions, EpisodeListRow, FactsBlock, MoodLine, PhoneTitleActions, SeasonPills, StarPicker, type TitleActionSpec } from "./JellyfinTitleParts";
+import { Credits, DesktopTitleActions, EpisodeListRow, FactsBlock, MoodLine, PhoneTitleActions, SeasonPills, StarPicker, TitleSkeleton, type TitleActionSpec } from "./JellyfinTitleParts";
 
 const SECTION_TITLE = "text-xl font-bold sm:text-3xl";
 
@@ -670,7 +670,7 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
 
               <div className={cx("flex w-full flex-1 flex-col gap-5", phone ? "items-center text-center" : "text-left")}>
                 {isLoading && !title ? (
-                  <div className="space-y-4"><Skeleton className="h-24 w-80 rounded-xl" /><Skeleton className="h-4 w-96" /><Skeleton className="h-12 w-72 rounded-full" /></div>
+                  <TitleSkeleton phone={phone} />
                 ) : isError && !title ? (
                   <div className="space-y-3">
                     <p className="text-lg font-semibold">Could not load this title.</p>

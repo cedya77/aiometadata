@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, CheckSquare, Ellipsis, Film, Loader2, MoreHorizontal, PencilLine, Play, Repeat, Square, Star, Tv } from "lucide-react";
 import type { JellyfinTitle, JellyfinTitleAction, JellyfinTitleEpisode, JellyfinTitlePerson } from "@/hooks/useDashboardQueries";
 import { ActionMenu } from "./JellyfinShared";
+import { Skeleton } from "@/components/ui/skeleton";
 import { CHIP, CREDIT_LIMIT, cx, episodeMenuItems, GLASS_ROUND, orderedSeasons, PHONE_ACTION, seasonLabel, sizedStill, titleFacts, under, untilAir, useCenteredTab, type Anchor, type SeasonItem } from "./titleHelpers";
 import CriticRatings from "./CriticRatings";
 import { hasCriticRatings } from "./criticRatingSources";
@@ -397,6 +398,26 @@ export function EpisodeListRow({ ep, now, selecting, selected, busy, highlighted
           {!ep.played && ep.positionMs > 0 && ep.runtimeMs > 0 && <span className={CHIP}>{duration(Math.max(0, ep.runtimeMs - ep.positionMs))} left</span>}
         </div>
       )}
+    </div>
+  );
+}
+
+/** The title page while it loads, in the shape of the layout that follows: centred on a phone, beside the poster elsewhere. */
+export function TitleSkeleton({ phone }: { phone: boolean }) {
+  if (!phone) {
+    return <div className="space-y-4"><Skeleton className="h-24 w-80 rounded-xl" /><Skeleton className="h-4 w-96" /><Skeleton className="h-12 w-72 rounded-full" /></div>;
+  }
+  return (
+    <div aria-hidden="true" className="flex w-full flex-col items-center gap-3">
+      <Skeleton className="mb-2 h-16 w-[70%] rounded-xl" />
+      <Skeleton className="h-4 w-44" />
+      <Skeleton className="h-4 w-60" />
+      <div className="flex gap-2">{[64, 76, 64, 72].map((width, i) => <Skeleton key={i} className="h-6 rounded-full" style={{ width }} />)}</div>
+      <Skeleton className="mt-12 h-1 w-[55%] rounded-full" />
+      <Skeleton className="mt-8 h-[52px] w-full rounded-full" />
+      <div className="flex w-full justify-around pt-4">
+        {[0, 1, 2].map((i) => <div key={i} className="flex flex-col items-center gap-1.5"><Skeleton className="size-[23px] rounded-md" /><Skeleton className="h-3 w-14" /></div>)}
+      </div>
     </div>
   );
 }
