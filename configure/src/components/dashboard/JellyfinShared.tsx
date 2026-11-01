@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { sheetProps } from "@/lib/phoneSheet";
 import { sizedArt } from "./art";
 import { ChevronDown } from "lucide-react";
 import { duration } from "./jellyfinUtils";
@@ -119,14 +120,16 @@ export function ActionMenu({ at, items, header, onClose }: { at: { x: number; y:
   }, [onClose]);
   const item = "flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm hover:bg-white/10 [&>svg]:shrink-0";
   return createPortal(
-    <div ref={ref} onClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()} style={{ left: place.x, top: place.y }} className="fixed z-[120] min-w-56 max-w-[calc(100vw-1rem)] rounded-xl bg-popover/95 p-1 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl animate-fade-in">
+    <div data-sheet-wrap="">
+    <div ref={ref} role="menu" {...sheetProps()} onClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()} style={{ left: place.x, top: place.y }} className="fixed z-[120] min-w-56 max-w-[calc(100vw-1rem)] rounded-xl bg-popover/95 p-1 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl animate-fade-in">
       {header && <div className="border-b border-white/10 px-2 pt-1.5 pb-2.5 mb-1">{header}</div>}
       {items.map((entry) => (
         <React.Fragment key={entry.label}>
           {entry.divider && <div className="mx-2 my-1 h-px bg-white/10" />}
-          <button type="button" className={item} onClick={() => { onClose(); entry.onSelect(); }}>{entry.icon} {entry.label}</button>
+          <button type="button" role="menuitem" className={item} onClick={() => { onClose(); entry.onSelect(); }}>{entry.icon} {entry.label}</button>
         </React.Fragment>
       ))}
+    </div>
     </div>,
     document.body,
   );

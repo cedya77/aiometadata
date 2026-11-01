@@ -52,7 +52,7 @@ function Side({ label, lane, lanes, onPick, accent }: { label: string; lane: Jel
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
+      <DropdownMenuContent sheet align="start" className="w-64">
         {lanes.map((option) => (
           <DropdownMenuItem key={option.key} onSelect={() => onPick(option.key)} className="gap-3">
             <Logo service={option.service} size={22} /> {trackers.name(option.service)}

@@ -7,8 +7,10 @@ import './index.css'
 import { ConfigProvider } from './contexts/ConfigContext'
 import { ThemeProvider } from './components/ThemeProvider'
 import { installSigninRedirect } from './lib/signinRedirect'
+import { installSheetSwipe } from './lib/phoneSheet'
 
 installSigninRedirect()
+installSheetSwipe()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

@@ -395,7 +395,7 @@ function CalendarSubscribe({ userUUID, profile, profileName, activeTab }: { user
           {busy ? <Loader2 className="size-4 animate-spin" /> : <CalendarPlus className="size-4" />}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72">
+      <DropdownMenuContent sheet align="end" className="w-72">
         <DropdownMenuLabel className="text-xs font-normal leading-relaxed text-muted-foreground">
           {secret
             ? `Calendar apps holding this link follow ${profileName}'s episodes and watchlisted films as they are scheduled.`

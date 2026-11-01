@@ -437,7 +437,7 @@ function MatchRow({ match, service, onEdit, onRemove }: { match: JellyfinTracker
         <DropdownMenuTrigger asChild>
           <button type="button" aria-label={`Options for the match of ${match.title ?? "this title"}`} className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"><MoreHorizontal className="size-4" /></button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuContent sheet align="end" className="w-48">
           <DropdownMenuItem onSelect={onEdit}><Pencil className="size-4" /> Edit match</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={onRemove} className="text-red-300 focus:text-red-200"><Trash2 className="size-4" /> Remove match</DropdownMenuItem>
@@ -519,7 +519,7 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
             <DropdownMenuTrigger asChild>
               <button type="button" aria-label={`More for ${name}`} className="flex size-9 items-center justify-center rounded-full border border-white/[0.12] transition-colors hover:bg-white/10"><MoreHorizontal className="size-4" /></button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuContent sheet align="end" className="w-64">
               <DropdownMenuItem disabled={reading} onSelect={() => onRun(true)}><RotateCcw className="size-4" /> Read all of {name} again</DropdownMenuItem>
               <DropdownMenuItem disabled={!ids.length} onSelect={() => void onOutbox("retry", ids)}><Send className="size-4" /> Send waiting writes now</DropdownMenuItem>
               <DropdownMenuSeparator />

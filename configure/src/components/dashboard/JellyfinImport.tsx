@@ -220,7 +220,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
           {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Import
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56" onCloseAutoFocus={(event) => event.preventDefault()}>
+      <DropdownMenuContent sheet align="end" className="w-56" onCloseAutoFocus={(event) => event.preventDefault()}>
         <DropdownMenuItem onSelect={() => input.current?.click()}><FileUp className="size-4" /> From an export file</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setStremioOpen(true)}><Tv className="size-4" /> From a Stremio account</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setNuvioOpen(true)}><Tv className="size-4" /> From a Nuvio account</DropdownMenuItem>

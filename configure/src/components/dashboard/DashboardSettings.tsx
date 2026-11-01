@@ -413,7 +413,7 @@ function SettingRow({ setting }: { setting: SettingItem }) {
             <SelectTrigger className="h-8 w-full sm:w-48 text-xs">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent sheet>
               {setting.options.map((opt) => (
                 <SelectItem key={opt} value={opt} className="text-xs">
                   {opt}

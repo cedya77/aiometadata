@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { sheetProps } from "@/lib/phoneSheet";
 import { Bot, Check, ChevronDown, Film, Layers, Loader2, Search, Sparkles, Tv, Users, Zap } from "lucide-react";
 import { useJellyfinFind, useJellyfinSearches, type DashboardTab, type JellyfinSearchCatalog, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
@@ -196,12 +197,13 @@ export default function JellyfinSearch({ userUUID, profile, profileName, local, 
           : <kbd className="hidden shrink-0 rounded border border-white/15 px-1.5 text-[10px] text-muted-foreground sm:block">/</kbd>}
       </div>
       {menu && menuPlace && options.length > 0 && createPortal(
-        <div ref={menuRef} style={{ position: "fixed", top: menuPlace.bottom + 8, left: Math.max(8, menuPlace.left), minWidth: 240 }} className="z-[95] max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-popover/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl animate-fade-in">
+        <div data-sheet-wrap="">
+        <div ref={menuRef} role="menu" {...sheetProps()} onKeyDown={(event) => { if (event.key === "Escape") setMenu(false); }} style={{ position: "fixed", top: menuPlace.bottom + 8, left: Math.max(8, menuPlace.left), minWidth: 240 }} className="z-[95] max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-popover/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl animate-fade-in">
           <p className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Search with</p>
           {options.map((option) => {
             const selected = (source?.id ?? QUICK) === option.id;
             return (
-              <button key={option.id} type="button" onClick={() => chooseSource(option.id)} className={cx("flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors", selected ? "bg-white/[0.12]" : "hover:bg-white/[0.06]")}>
+              <button key={option.id} type="button" role="menuitem" onClick={() => chooseSource(option.id)} className={cx("flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors", selected ? "bg-white/[0.12]" : "hover:bg-white/[0.06]")}>
                 <span className="text-muted-foreground"><SourceIcon source={option.source} /></span>
                 <span className="min-w-0 flex-1 truncate">{option.label}</span>
                 {option.id === QUICK && <span className="text-[11px] text-muted-foreground">as you type</span>}
@@ -209,6 +211,7 @@ export default function JellyfinSearch({ userUUID, profile, profileName, local, 
               </button>
             );
           })}
+        </div>
         </div>,
         document.body
       )}

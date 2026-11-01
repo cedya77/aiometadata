@@ -365,7 +365,7 @@ export function DashboardLogs({ data, loading, paused = false, onPauseToggle, on
                   {levelFilter.size === 0 ? "All Levels" : `${levelFilter.size} level${levelFilter.size > 1 ? "s" : ""}`}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuContent sheet align="end" className="w-44">
                 <DropdownMenuLabel>Filter by level</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {LEVEL_OPTIONS.map((lvl) => (
@@ -385,7 +385,7 @@ export function DashboardLogs({ data, loading, paused = false, onPauseToggle, on
               <SelectTrigger className="w-[150px] h-9">
                 <SelectValue placeholder="Tag" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent sheet>
                 <SelectItem value="all">All Tags</SelectItem>
                 {tags.map((t) => (
                   <SelectItem key={t} value={t}>{t}</SelectItem>
@@ -396,7 +396,7 @@ export function DashboardLogs({ data, loading, paused = false, onPauseToggle, on
               <SelectTrigger className="w-[150px] h-9">
                 <SelectValue placeholder="Service" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent sheet>
                 <SelectItem value="all">All Services</SelectItem>
                 {/* Keep the active filter listed even if it has aged out of the buffer. */}
                 {Array.from(new Set(serviceFilter === 'all' ? services : [...services, serviceFilter])).map((s) => (
