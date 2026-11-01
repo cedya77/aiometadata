@@ -17,7 +17,7 @@ const queues = new Map<string, Promise<void>>();
 function note(userUUID: string, linkId: string, field: 'manifestAt' | 'eventAt'): void {
   const throttle = `${userUUID}:${linkId}:${field}`;
   if (noted.has(throttle)) return;
-  noted.set(throttle, true);
+  noted.set(throttle, true, { ttl: envInt('STREMIO_STATUS_WRITE_SECONDS', 300, 1) * 1000 });
 
   const slot = `${userUUID}:${linkId}`;
   const at = Date.now();

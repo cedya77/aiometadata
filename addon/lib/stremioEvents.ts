@@ -68,7 +68,7 @@ const lastEvents = new LRUCache<string, string>({
 export function isRepeatEvent(scope: string, target: string, key: string): boolean {
   const slot = `${scope}|${target}`;
   const repeat = lastEvents.get(slot) === key;
-  lastEvents.set(slot, key);
+  lastEvents.set(slot, key, { ttl: envInt('STREMIO_EVENT_DEDUPE_SECONDS', 60, 1) * 1000 });
   return repeat;
 }
 

@@ -550,6 +550,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 0,
   },
   {
+    key: 'STREMIO_EVENT_DEDUPE_SECONDS',
+    envVar: 'STREMIO_EVENT_DEDUPE_SECONDS',
+    label: 'Stremio Event Repeat Window (seconds)',
+    description: 'Every install of a configuration in one Stremio profile receives each event; a repeat of the last event for the same title within this window is dropped.',
+    category: 'Features',
+    type: 'number',
+    default: 60,
+    min: 1,
+  },
+  {
     key: 'PLAY_ENDED_MARGIN_MINUTES',
     envVar: 'PLAY_ENDED_MARGIN_MINUTES',
     label: 'Ended Play Margin (minutes)',
@@ -558,6 +568,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     type: 'number',
     default: 15,
     min: 0,
+  },
+  {
+    key: 'STREMIO_STATUS_WRITE_SECONDS',
+    envVar: 'STREMIO_STATUS_WRITE_SECONDS',
+    label: 'Stremio Link Status Write Interval (seconds)',
+    description: 'How often each install link records when it last fetched the manifest or sent an event.',
+    category: 'Features',
+    type: 'number',
+    default: 300,
+    min: 1,
   },
   {
     key: 'JELLYFIN_MIN_RESUME_PERCENT',
