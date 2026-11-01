@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { DASHBOARD_QUERY_KEYS, useJellyfinHistoryImport, useJellyfinHistoryImportJob, type HistoryImportJob, type HistoryImportPreview, type HistoryImportSection } from "@/hooks/useDashboardQueries";
+import { NUVIO_FILE_NAME } from "@/lib/nuvioAccount";
 import { STREMIO_FILE_NAME } from "@/lib/stremioAccount";
+import NuvioImport from "./NuvioImport";
 import StremioImport from "./StremioImport";
 import HistoryImportGuide from "./HistoryImportGuide";
 
@@ -42,14 +44,19 @@ function rememberSkip(source: string, skipped: HistoryImportSection[]): void {
 
 const progressOf = (job: HistoryImportJob) => `${job.done.toLocaleString()} of ${job.total.toLocaleString()}`;
 
-const fromStremio = (fileName: string | null | undefined) => fileName === STREMIO_FILE_NAME;
+type AccountSource = "Stremio" | "Nuvio";
 
-const sourceName = (fileName: string | null | undefined) => (fromStremio(fileName) ? "Stremio" : fileName);
+const ACCOUNT_SOURCES = new Map<string, AccountSource>([[STREMIO_FILE_NAME, "Stremio"], [NUVIO_FILE_NAME, "Nuvio"]]);
+
+const accountOf = (fileName: string | null | undefined): AccountSource | null => (fileName ? ACCOUNT_SOURCES.get(fileName) ?? null : null);
+
+const sourceName = (fileName: string | null | undefined) => accountOf(fileName) ?? fileName;
 
 function stoppedText(job: HistoryImportJob): string {
   const how = job.status === "interrupted" ? "was interrupted" : "stopped";
   const error = job.error ? `: ${job.error}` : "";
-  if (fromStremio(job.fileName)) return `The import from Stremio ${how} after ${progressOf(job)} changes${error}. Import from Stremio again to finish it.`;
+  const account = accountOf(job.fileName);
+  if (account) return `The import from ${account} ${how} after ${progressOf(job)} changes${error}. Import from ${account} again to finish it.`;
   const file = job.fileName ? `The import of ${job.fileName}` : "The last import";
   return `${file} ${how} after ${progressOf(job)} changes${error}. Import the same file again to finish it.`;
 }
@@ -68,6 +75,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
   const [picks, setPicks] = useState<Record<string, number>>({});
   const [skipped, setSkipped] = useState<HistoryImportSection[]>([]);
   const [stremioOpen, setStremioOpen] = useState(false);
+  const [nuvioOpen, setNuvioOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const watching = useRef<string | null>(null);
   const reading = useRef<AbortController | null>(null);
@@ -191,9 +199,9 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
         <span className="min-w-0 flex-[1_1_16rem] [overflow-wrap:anywhere]">{running ? `Importing watch history${job.fileName ? ` from ${sourceName(job.fileName)}` : ""}: ${progressOf(job)}` : stoppedText(job)}</span>
         {!running && (
           <span className="ml-auto flex items-center gap-1">
-            {fromStremio(job.fileName) ? (
-              <Button size="sm" variant="ghost" className="glass h-7 gap-1 rounded-full px-3 text-xs" onClick={() => setStremioOpen(true)}>
-                <Tv className="h-3.5 w-3.5" /> Import from Stremio
+            {accountOf(job.fileName) ? (
+              <Button size="sm" variant="ghost" className="glass h-7 gap-1 rounded-full px-3 text-xs" onClick={() => (accountOf(job.fileName) === "Nuvio" ? setNuvioOpen(true) : setStremioOpen(true))}>
+                <Tv className="h-3.5 w-3.5" /> Import from {accountOf(job.fileName)}
               </Button>
             ) : (
               <Button size="sm" variant="ghost" className="glass h-7 gap-1 rounded-full px-3 text-xs" onClick={() => input.current?.click()}>
@@ -215,6 +223,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
       <DropdownMenuContent align="end" className="w-56" onCloseAutoFocus={(event) => event.preventDefault()}>
         <DropdownMenuItem onSelect={() => input.current?.click()}><FileUp className="size-4" /> From an export file</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setStremioOpen(true)}><Tv className="size-4" /> From a Stremio account</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => setNuvioOpen(true)}><Tv className="size-4" /> From a Nuvio account</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => setGuideOpen(true)}><BookOpen className="size-4" /> Format for other apps</DropdownMenuItem>
       </DropdownMenuContent>
@@ -227,6 +236,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
       {trigger}
       <HistoryImportGuide open={guideOpen} onOpenChange={setGuideOpen} />
       <StremioImport open={stremioOpen} onOpenChange={setStremioOpen} onLibrary={(library) => { setStremioOpen(false); pick(library); }} />
+      <NuvioImport open={nuvioOpen} onOpenChange={setNuvioOpen} onLibrary={(library) => { setNuvioOpen(false); pick(library); }} />
       <Dialog open={Boolean(file)} onOpenChange={(open) => { if (!open) close(); }}>
         <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
           <DialogHeader>
