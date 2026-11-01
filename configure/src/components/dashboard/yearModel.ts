@@ -108,6 +108,14 @@ export function inWords(n: number): string {
 
 export const capitalised = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
+/** The year's number one show, as the server ranked it. */
+export function topShowOf(model: YearModel): JellyfinYearTitle | null {
+  const byKey = new Map(model.data.titles.map((title) => [title.key, title]));
+  return model.data.topShows.map((key) => byKey.get(key)).find((title): title is JellyfinYearTitle => !!title) ?? null;
+}
+
+export const byWatchTime = (model: YearModel): JellyfinYearTitle[] => [...model.data.titles].sort((a, b) => b.watchMs - a.watchMs);
+
 export const finishedShows = (model: YearModel): number => model.data.titles.filter((title) => title.kind === "series" && title.progress && title.progress.aired > 0 && title.progress.seen >= title.progress.aired).length;
 
 export function tasteStats(model: YearModel): Array<{ value: number; label: string }> {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { YearTakeaway } from "./JellyfinYearShare";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinYear, type DashboardTab, type JellyfinYearReview } from "@/hooks/useDashboardQueries";
@@ -179,6 +180,7 @@ export default function JellyfinYear({ userUUID, profile, profileName, activeTab
             <chapter.Chapter model={model} number={i + 1} label={chapter.label} accent={chapter.accent} />
           </section>
         ))}
+        <YearTakeaway model={model} owner={profileName} />
       </div>
     </DashboardLinks>
   );

@@ -8386,6 +8386,30 @@ addon.get("/api/dashboard/jellyfin/:userUUID/plays", requireDashboardAdmin, asyn
   }
 });
 
+// Art the dashboard draws into images it exports, read here so the browser can use it: public image hosts only.
+addon.get("/api/dashboard/art", requireDashboardAdmin, async (req, res) => {
+  const url = typeof req.query.url === 'string' ? req.query.url : '';
+  if (!/^https?:\/\//i.test(url) || url.length > 2048) {
+    res.status(400).json({ error: 'An image URL is expected' });
+    return;
+  }
+  const { fetchImage, isNotModified, OversizeImage } = require('./lib/posterCache/upstream');
+  try {
+    const outcome = await fetchImage(url);
+    if (isNotModified(outcome)) {
+      res.status(502).json({ error: 'The image could not be read' });
+      return;
+    }
+    res.setHeader('Content-Type', outcome.contentType);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.send(outcome.body);
+  } catch (error) {
+    if (error instanceof OversizeImage) error.stream?.destroy?.();
+    // Always 502: a card asks for many paths at once, and a run of 4xx answers reads as probing to WAFs and ban lists.
+    res.status(502).json({ error: 'The image could not be read' });
+  }
+});
+
 addon.get("/api/dashboard/jellyfin/:userUUID/year", requireDashboardAdmin, async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;

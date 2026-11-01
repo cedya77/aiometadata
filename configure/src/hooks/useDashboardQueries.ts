@@ -1644,6 +1644,15 @@ export function useJellyfinSearch(query: string, options: DashboardQueryOptions 
   );
 }
 
+/** Reads art for an image the dashboard draws, through its own route, so a canvas may use it. */
+export function useDashboardArt(): (url: string) => Promise<Blob | null> {
+  const getHeaders = useApiHeaders();
+  return useCallback(async (url: string) => {
+    const res = await fetch(`/api/dashboard/art?url=${encodeURIComponent(url)}`, { headers: getHeaders() });
+    return res.ok ? res.blob() : null;
+  }, [getHeaders]);
+}
+
 export function useJellyfinConfiguration(userUUID: string | null, profile: string | null, rows: number | null, options: DashboardQueryOptions = {}) {
   const params = new URLSearchParams();
   if (profile !== null) params.set('profile', profile);
