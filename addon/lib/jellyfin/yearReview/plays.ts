@@ -3,6 +3,7 @@ import { mapWithConcurrency } from '../../../utils/concurrency';
 import { parseStremioId } from '../idsCodec';
 import { videoIdAliases } from '../aliases';
 import { titleIdentity } from '../canonicalIds';
+import { bulkMarkRule, bulkMarked } from '../bulkMarks';
 
 const database: any = require('../../database');
 
@@ -104,7 +105,7 @@ const spellingKind = (id: string): string => (id.startsWith('tt') ? 'tt' : id.sp
 // Live-action films have no aliases, so two ids recorded at one moment are paired here, but only when they
 // resolve to the same film: an import stamps a whole day with one moment.
 async function pairFilmSpellings(rows: Array<{ video_id: string; watched_at: number }>, union: (a: string, b: string) => void, config: any): Promise<void> {
-  const batchSize = envInt('JELLYFIN_YEAR_REVIEW_BATCH_PLAYS', 6, 2);
+  const batchSize = bulkMarkRule().size;
   const byInstant = new Map<number, Set<string>>();
   for (const row of rows) byInstant.set(row.watched_at, (byInstant.get(row.watched_at) ?? new Set()).add(row.video_id));
   const instants: string[][] = [];
@@ -188,14 +189,9 @@ export async function foldPlays(rows: Array<{ video_id: string; watched_at: numb
   }
 
   plays.sort((a, b) => a.at - b.at);
-  const batchSize = envInt('JELLYFIN_YEAR_REVIEW_BATCH_PLAYS', 6, 2);
-  const gapMs = envInt('JELLYFIN_YEAR_REVIEW_BULK_GAP_SECONDS', 60, 0) * 1000;
-  let start = 0;
-  for (let i = 1; i <= plays.length; i += 1) {
-    if (i < plays.length && plays[i].at - plays[i - 1].at <= gapMs) continue;
-    if (i - start >= batchSize) for (let j = start; j < i; j += 1) plays[j].batch = true;
-    start = i;
-  }
+  bulkMarked(plays.map((play) => play.at)).forEach((bulk, i) => {
+    plays[i].batch = bulk;
+  });
   return plays;
 }
 

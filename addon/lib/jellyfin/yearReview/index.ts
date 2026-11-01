@@ -2,6 +2,7 @@ import consola from 'consola';
 import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../../utils/envNumber';
+import { bulkMarkRule } from '../bulkMarks';
 import { asProfile } from '../dashboard';
 import { profileKey } from '../profiles';
 import { viewingTimeZone } from '../viewingHours';
@@ -54,7 +55,8 @@ async function fingerprintOf(userUUID: string, historyKey: string, year: number,
   const { from, to } = yearBounds(year, timeZone);
   // Show progress reads the watches before the year too, so a change to those makes the review stale as well.
   const [stats, before, meta] = await Promise.all([database.watchStatsBetween(userUUID, historyKey, from, to), database.watchStatsBetween(userUUID, historyKey, 0, from), metaContextDigest(userUUID)]);
-  const setup = [REVIEW_VERSION, timeZone, meta, envInt('JELLYFIN_YEAR_REVIEW_BATCH_PLAYS', 6, 2), envInt('JELLYFIN_YEAR_REVIEW_BULK_GAP_SECONDS', 60, 0), envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0)];
+  const bulk = bulkMarkRule();
+  const setup = [REVIEW_VERSION, timeZone, meta, bulk.size, bulk.gapMs / 1000, envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0)];
   const watches = [stats.count, stats.last, stats.sum, before.count, before.sum];
   return digest(setup) + digest(watches);
 }
