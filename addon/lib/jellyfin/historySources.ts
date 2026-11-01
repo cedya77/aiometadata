@@ -314,7 +314,7 @@ export function unmatchedList(): { miss: (name: string, reason: string) => void;
 }
 
 type Viewed = { spellings: string[]; at: number | null; asOf?: number | null };
-type Marked = { spellings: string[]; at: number | null; asOf?: number | null };
+type Marked = { spellings: string[]; at: number | null; asOf?: number | null; logsWatch?: boolean };
 type Resume = { positionMs: number; runtimeMs: number };
 type Resumed = Marked & Resume;
 type Rated = Marked & { rating: number; metaType: 'movie' | 'series' };
@@ -331,6 +331,8 @@ export type SectionRule<R> = {
   progress?: (row: R) => Resume | null;
   // The state's own date when it is not a play: it moves updatedAt but not lastPlayedAt.
   asOf?: (row: R) => number | null;
+  // Marks that also log a watch, as a mark in a Jellyfin app does: only for a title never played before.
+  logsWatch?: boolean;
 };
 
 export async function historyFromSections<R>(origin: string, profileName: string, sameViewingMs: number, find: (row: R) => Promise<Found | null>, rules: SectionRule<R>[], profileKey = ''): Promise<any> {
@@ -348,6 +350,7 @@ export async function historyFromSections<R>(origin: string, profileName: string
       if (rule.into === 'ratings') rows.ratings.push({ ...base, rating: rating!, metaType: found.kind });
       else if (rule.into === 'watchlist') rows.watchlist.push({ ...base, mediaType: found.mediaType ?? found.kind, metaType: found.kind });
       else if (rule.into === 'progress') rows.progress.push({ ...base, ...resume! });
+      else if (rule.into === 'marked') rows.marked.push(rule.logsWatch ? { ...base, logsWatch: true } : base);
       else rows[rule.into].push(base);
     }
   }
@@ -366,7 +369,7 @@ export function combineHistoryBodies(bodies: any[]): any {
   return out;
 }
 
-type HeldTitle = { spellings: string[]; dated: number[]; undated: number; marked: number | null; played: boolean; asOf: number; resume: (Resume & { at: number }) | null };
+type HeldTitle = { spellings: string[]; dated: number[]; undated: number; marked: number | null; firstMark: number | null; played: boolean; asOf: number; resume: (Resume & { at: number }) | null };
 
 function historyBody(
   origin: string,
@@ -377,7 +380,7 @@ function historyBody(
 ): any {
   const titles = new Map<string, HeldTitle>();
   const note = (spellings: string[], asOf: number | null | undefined) => {
-    const held = titles.get(spellings[0]) ?? { spellings, dated: [], undated: 0, marked: null, played: false, asOf: 0, resume: null };
+    const held = titles.get(spellings[0]) ?? { spellings, dated: [], undated: 0, marked: null, firstMark: null, played: false, asOf: 0, resume: null };
     if (asOf && asOf > held.asOf) held.asOf = asOf;
     titles.set(spellings[0], held);
     return held;
@@ -389,11 +392,12 @@ function historyBody(
     if (at) held.dated.push(at);
     else held.undated += 1;
   }
-  for (const { spellings, at, asOf } of rows.marked ?? []) {
+  for (const { spellings, at, asOf, logsWatch } of rows.marked ?? []) {
     if (!spellings.length) continue;
     const held = note(spellings, asOf);
     held.played = true;
     if (at && at > (held.marked ?? 0)) held.marked = at;
+    if (logsWatch && at && at < (held.firstMark ?? Infinity)) held.firstMark = at;
   }
   for (const { spellings, at, asOf, positionMs, runtimeMs } of rows.progress ?? []) {
     if (!spellings.length) continue;
@@ -402,7 +406,7 @@ function historyBody(
   }
   const playstate: any[] = [];
   const watches: any[] = [];
-  for (const [title, { spellings, dated, undated, marked, played, asOf, resume: paused }] of titles) {
+  for (const [title, { spellings, dated, undated, marked, firstMark, played, asOf, resume: paused }] of titles) {
     const viewings: number[] = [];
     for (const at of dated.sort((a, b) => a - b)) {
       const prior = viewings[viewings.length - 1];
@@ -417,6 +421,7 @@ function historyBody(
     const resume = paused && paused.at && finished > paused.at ? null : paused;
     const lastPlayed = Math.max(last ?? marked ?? 0, resume?.at ?? 0) || null;
     for (const at of viewings) for (const videoId of spellings) watches.push({ profile, videoId, title, watchedAt: isoAt(at), origin });
+    if (firstMark && !count) for (const videoId of spellings) watches.push({ profile, videoId, title, watchedAt: isoAt(firstMark), origin, kind: 'first' });
     for (const videoId of spellings) {
       playstate.push({
         profile, videoId, title, positionMs: resume?.positionMs ?? 0, runtimeMs: resume?.runtimeMs ?? 0, played, playCount: played ? Math.max(1, count) : 0,

@@ -1863,7 +1863,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     key: 'JELLYFIN_BULK_MARK_SIZE',
     envVar: 'JELLYFIN_BULK_MARK_SIZE',
     label: 'Bulk Mark Size',
-    description: 'How many plays in a row, each recorded within the bulk mark gap of the last, count as marked in bulk. Bulk marks are left out of every Year in Review figure.',
+    description: 'How many plays in a row, each recorded within the bulk mark gap of the last, count as marked in bulk. Bulk marks are left out of every Year in Review figure, and a history import brings them in as marks rather than viewings.',
     category: 'Features',
     type: 'number',
     default: 6,

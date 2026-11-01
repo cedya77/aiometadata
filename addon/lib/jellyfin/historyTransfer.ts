@@ -18,7 +18,8 @@ export const HISTORY_VERSION = 1;
 
 type State = { positionMs: number; runtimeMs: number; played: boolean; playCount: number; lastPlayedAt: number | null; updatedAt: number; origin: string | null };
 type PlaystateRow = State & { profile: string; videoId: string; title?: string };
-type WatchRow = { profile: string; videoId: string; watchedAt: number; origin: string | null; title?: string };
+// A first watch is a mark's: it is kept only for a title never played or watched before.
+type WatchRow = { profile: string; videoId: string; watchedAt: number; origin: string | null; title?: string; first?: boolean };
 type RatingRow = { profile: string; metaId: string; also?: string[]; rating: number; metaType: string | null; updatedAt: number };
 type WatchlistRow = { profile: string; metaId: string; also?: string[]; mediaType: string; metaType: string | null; listed: boolean; updatedAt: number };
 type DroppedRow = { profile: string; metaId: string; also?: string[]; updatedAt: number };
@@ -203,7 +204,7 @@ export function readHistoryFile(body: any): HistoryFile | string {
     const profile = profileOf(row?.profile);
     const videoId = idOf(row?.videoId);
     const watchedAt = epoch(row?.watchedAt);
-    if (profile !== null && videoId && watchedAt) out.watches.push({ profile, videoId, watchedAt, origin: tokenOf(row.origin), title: titleOf(row.title) });
+    if (profile !== null && videoId && watchedAt) out.watches.push({ profile, videoId, watchedAt, origin: tokenOf(row.origin), title: titleOf(row.title), ...(row.kind === 'first' ? { first: true } : {}) });
   }
   for (const row of list(body.ratings)) {
     const profile = profileOf(row?.profile);
@@ -338,21 +339,24 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     if (!viewings.has(key)) viewings.set(key, []);
     viewings.get(key)!.push(Number(row.watched_at));
   }
-  const moments = new Map<string, { profile: string; watchedAt: number; origin: string | null; videoIds: string[] }>();
+  const moments = new Map<string, { profile: string; watchedAt: number; origin: string | null; videoIds: string[]; first: boolean }>();
   for (const row of file.watches) {
     const profile = target(row.profile);
     if (profile === null) continue;
-    const key = `${keyOf(profile, row.title ?? row.videoId)}\u0000${row.watchedAt}`;
-    const moment = moments.get(key) ?? { profile, watchedAt: row.watchedAt, origin: row.origin, videoIds: [] };
+    const key = `${keyOf(profile, row.title ?? row.videoId)}\u0000${row.watchedAt}\u0000${row.first ? 'first' : ''}`;
+    const moment = moments.get(key) ?? { profile, watchedAt: row.watchedAt, origin: row.origin, videoIds: [], first: row.first === true };
     if (!moment.videoIds.includes(row.videoId)) moment.videoIds.push(row.videoId);
     moments.set(key, moment);
   }
   // A file's viewings are matched against the history held before it, not against one another: the source already
-  // decided which of its rows are separate viewings.
+  // decided which of its rows are separate viewings. First watches go last, so a viewing in the file comes before them.
   const added = new Map<string, number[]>();
-  for (const { profile, watchedAt, origin, videoIds } of moments.values()) {
-    const near = videoIds.some((videoId) => (viewings.get(keyOf(profile, videoId)) ?? []).some((at) => Math.abs(at - watchedAt) <= sameWatchMs));
-    if (near) {
+  const wasPlayed = (key: string) => heldStates.get(key)?.played === true || viewings.has(key);
+  for (const { profile, watchedAt, origin, videoIds, first } of [...moments.values()].sort((a, b) => Number(a.first) - Number(b.first))) {
+    const seen = first
+      ? videoIds.some((videoId) => wasPlayed(keyOf(profile, videoId)) || added.has(keyOf(profile, videoId)))
+      : videoIds.some((videoId) => (viewings.get(keyOf(profile, videoId)) ?? []).some((at) => Math.abs(at - watchedAt) <= sameWatchMs));
+    if (seen) {
       counts.watches.unchanged += 1;
       continue;
     }
@@ -361,8 +365,9 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
       added.set(key, [...(added.get(key) ?? []), watchedAt]);
     }
     counts.watches.added += 1;
+    const withinMs = first ? Number.MAX_SAFE_INTEGER : sameWatchMs;
     queue('watches', async () => {
-      for (const videoId of videoIds) if (await database.hasWatchNear(userUUID, profile, videoId, watchedAt, sameWatchMs, added.get(keyOf(profile, videoId)))) return;
+      for (const videoId of videoIds) if (await database.hasWatchNear(userUUID, profile, videoId, watchedAt, withinMs, added.get(keyOf(profile, videoId)))) return;
       for (const videoId of videoIds) await database.insertWatch(userUUID, profile, videoId, watchedAt, origin);
     });
   }

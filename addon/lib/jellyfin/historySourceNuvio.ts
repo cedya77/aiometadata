@@ -12,6 +12,7 @@ import {
   type HistorySource,
   type SectionRule,
 } from './historySources';
+import { bulkMarked } from './bulkMarks';
 import { episodeRefs, fallbackEpisodeId, isNuvioLibrary, placeEpisode, readNuvioLibrary, resumeOfProgress, USABLE_VIDEO, type EpisodeRef, type NuvioKind } from './nuvioLibrary';
 import { isAnimeId } from './stremioLibrary';
 
@@ -36,7 +37,7 @@ export const nuvioHistorySource: HistorySource = {
   id: 'nuvio',
   importName: 'Nuvio import',
 
-  about: 'Watched films and episodes, where you stopped, and the Nuvio library as the watchlist come over from each Nuvio profile. Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers now; what they lack shows in the Trackers section, to send or leave out.',
+  about: 'Watched films and episodes, where you stopped, and the Nuvio library as the watchlist come over from each Nuvio profile. Episodes marked watched together count as marked, and add a viewing only to what was never watched here. Nothing already here is lost: the newer state of each title wins, and a viewing already in the history is not added twice. Nothing is sent to the trackers now; what they lack shows in the Trackers section, to send or leave out.',
 
   sameViewingMs: () => envInt('JELLYFIN_HISTORY_IMPORT_NUVIO_SAME_WATCH_MINUTES', 180, 0) * 60 * 1000,
 
@@ -78,14 +79,18 @@ export const nuvioHistorySource: HistorySource = {
 
     const bodies: any[] = [];
     for (const profile of profiles) {
-      const rows = { viewings: [] as Row[], progress: [] as Row[], watchlist: [] as Row[] };
+      const rows = { viewings: [] as Row[], marked: [] as Row[], progress: [] as Row[], watchlist: [] as Row[] };
+      // Nuvio stamps a season or show marked watched with the moment of marking, so a run of them is a mark, not viewings.
+      const dated = profile.watched.filter((row) => row.watchedAt !== null);
+      const inBulk = bulkMarked(dated.map((row) => row.watchedAt!));
+      const bulk = new Set(dated.filter((_, i) => inBulk[i]));
       for (const row of profile.watched) {
         if (row.kind === 'series' && row.episode === null) {
           miss(row.title, NO_EPISODE);
           continue;
         }
         const spellings = row.kind === 'movie' ? await titleSpellings(row.contentId, 'movie') : await episodeSpellings(row.contentId, row.season, row.episode, null);
-        if (spellings.length) rows.viewings.push({ spellings, kind: row.kind, at: row.watchedAt });
+        if (spellings.length) rows[bulk.has(row) ? 'marked' : 'viewings'].push({ spellings, kind: row.kind, at: row.watchedAt });
         else miss(row.title, row.kind === 'movie' ? NOT_FOUND : NOT_PLACED);
       }
       for (const row of profile.progress) {
@@ -101,6 +106,7 @@ export const nuvioHistorySource: HistorySource = {
       }
       const rules: SectionRule<Row>[] = [
         { into: 'viewings', rows: rows.viewings, at: (row) => row.at },
+        { into: 'marked', rows: rows.marked, at: (row) => row.at, logsWatch: true },
         { into: 'progress', rows: rows.progress, at: (row) => row.at, progress: (row) => row.progress ?? null },
         { into: 'watchlist', rows: rows.watchlist, at: (row) => row.at },
       ];
