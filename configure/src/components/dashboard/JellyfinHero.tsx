@@ -5,10 +5,10 @@ import { type JellyfinConfiguration, type JellyfinProfileSummary, type JellyfinS
 import { Art, ShelfTitle } from "./JellyfinShared";
 import { when, clock, duration, dayKey, useNow, type Activity } from "./jellyfinUtils";
 
-function Avatar({ src, name, size }: { src: string | null; name: string; size: "sm" | "lg" }) {
+export function Avatar({ src, name, size }: { src: string | null; name: string; size: "sm" | "md" | "lg" }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
-  const box = size === "lg" ? "h-14 w-14 text-xl" : "h-5 w-5 text-[10px]";
+  const box = size === "lg" ? "h-14 w-14 text-xl" : size === "md" ? "h-7 w-7 text-xs" : "h-5 w-5 text-[10px]";
   if (src && !failed) return <img src={src} alt="" onError={() => setFailed(true)} className={`${box} shrink-0 rounded-full object-cover ring-2 ring-white/10`} />;
   return <span className={`${box} shrink-0 rounded-full bg-blue-500/20 text-blue-300 font-semibold flex items-center justify-center ring-2 ring-white/10`}>{(name.trim()[0] ?? "?").toUpperCase()}</span>;
 }
@@ -49,12 +49,14 @@ function NowPlaying({ s }: { s: JellyfinSessionRow }) {
     </div>
   );
 }
-export function Hero({ data, profile, onProfile, activity, controls, switching }: {
+export function Hero({ data, profile, onProfile, activity, back, actions, search, switching }: {
   data: JellyfinConfiguration;
   profile: string | null;
   onProfile: (key: string | null) => void;
   activity: Activity;
-  controls: React.ReactNode;
+  back: React.ReactNode;
+  actions: React.ReactNode;
+  search: React.ReactNode;
   switching: boolean;
 }) {
   const history = data.history === undefined ? data.profile : data.history;
@@ -82,11 +84,11 @@ export function Hero({ data, profile, onProfile, activity, controls, switching }
       )}
       <div className="absolute inset-0 bg-gradient-to-r from-background via-background/85 to-background/30" />
       <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
-      <div className="relative space-y-5 px-4 pt-4 pb-6 sm:px-6">
-        <div className="flex flex-wrap items-center justify-end gap-2">{controls}</div>
-        <div className="flex items-center gap-4">
+      <div className="relative space-y-5 px-4 pt-3 pb-6 sm:px-6 sm:pt-5">
+        <div className="flex items-center gap-3 sm:gap-4">
+          {back}
           <Avatar src={lead?.avatar ?? null} name={lead?.name ?? data.label} size="lg" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-2xl font-semibold leading-tight truncate">{profile === null ? data.label : lead?.name ?? data.label}</p>
             {switching ? (
               <p className="flex items-center gap-1.5 text-xs text-blue-300"><Loader2 className="h-3 w-3 animate-spin" /> Loading {profile === null ? "every profile" : lead?.name ?? "profile"}…</p>
@@ -98,9 +100,11 @@ export function Hero({ data, profile, onProfile, activity, controls, switching }
               </p>
             )}
           </div>
+          {actions}
         </div>
+        {/* On a phone the profiles move to the avatar tab of the tab bar. */}
         {chips && (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="hidden flex-wrap gap-1.5 md:flex">
             <button type="button" onClick={() => onProfile(null)} className={`h-7 rounded-full px-3 text-xs ring-1 transition-colors ${profile === null ? "bg-foreground text-background ring-transparent" : "glass ring-transparent hover:bg-black/50"}`}>All</button>
             {viewers.map((p) => (
               <button key={p.key} type="button" onClick={() => onProfile(p.key)} className={`h-7 inline-flex items-center gap-1.5 rounded-full pl-1 pr-3 text-xs ring-1 transition-colors ${profile === p.key ? "bg-foreground text-background ring-transparent" : "glass ring-transparent hover:bg-black/50"}`}>
@@ -116,6 +120,7 @@ export function Hero({ data, profile, onProfile, activity, controls, switching }
           <HeroStat label="In progress" value={sum((p) => p.inProgress).toLocaleString()} />
           <HeroStat label="Day streak" value={activity.streak} hint={activity.best > activity.streak ? `best ${activity.best} this year` : undefined} />
         </div>
+        <div className="max-w-2xl">{search}</div>
         {!switching && data.sessions.length > 0 && (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 max-w-3xl">
             {data.sessions.map((s, i) => <NowPlaying key={`${s.title}-${i}`} s={s} />)}

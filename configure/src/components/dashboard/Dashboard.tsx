@@ -690,6 +690,9 @@ export function Dashboard() {
       window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
     };
 
+    // An open Jellyfin configuration brings its own header and section bar, edge to edge.
+    if (activeMobileSection === 'jellyfin' && route.config) return <div className="w-full overflow-x-clip">{activePage?.component}</div>;
+
     return (
       <div className="w-full p-4 overflow-hidden">
         <AnimatePresence mode="wait" initial={false}>
@@ -888,7 +891,7 @@ export function Dashboard() {
             </TabsContent>
 
             {jellyfinEnabled && (
-              <TabsContent value="jellyfin" className="mt-0">
+              <TabsContent value="jellyfin" className={route.config ? "-mx-4 -my-6 sm:-mx-6 lg:-mx-8" : "mt-0"}>
                 <DashboardJellyfin activeTab={activeTab} />
               </TabsContent>
             )}

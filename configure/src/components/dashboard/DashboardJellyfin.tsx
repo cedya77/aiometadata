@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import JellyfinCalendar from "./JellyfinCalendar";
 import JellyfinLibrary from "./JellyfinLibrary";
@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Activity as ActivityIcon, Bookmark, CalendarDays, History, LayoutGrid, Loader2, Network, Search, Sparkles, TableProperties, Tv, Upload, X } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Activity as ActivityIcon, Bookmark, CalendarDays, ChevronLeft, History, LayoutGrid, Loader2, MoreHorizontal, Network, Search, Sparkles, TableProperties, Tv, Upload, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useJellyfinClearResume,
@@ -23,7 +24,7 @@ import {
   type JellyfinPlayRow,
   type JellyfinTitleRef,
 } from "@/hooks/useDashboardQueries";
-import { ActivityMap, Hero } from "./JellyfinHero";
+import { ActivityMap, Avatar, Hero } from "./JellyfinHero";
 import JellyfinSync from "./JellyfinSync";
 import { MoreFooter, PlayTable, PlayedByDay, ProgressCard, Row, type ProgressAction } from "./JellyfinPlays";
 import RemoteSheet, { type RemoteTarget } from "./JellyfinRemote";
@@ -60,7 +61,7 @@ function SectionBar({ section, onSection }: { section: JellyfinSection; onSectio
     }
   }, [lit]);
   return (
-    <nav aria-label="Sections" className="sticky top-[57px] z-20 border-t border-white/[0.06] bg-background/80 backdrop-blur-lg">
+    <nav aria-label="Sections" className="sticky top-[57px] z-20 hidden border-t border-white/[0.06] bg-background/80 backdrop-blur-lg md:block">
       <div ref={scroller} className="flex gap-1 overflow-x-auto px-4 py-2 [scrollbar-width:none] sm:px-6 [&::-webkit-scrollbar]:hidden">
         {SECTIONS.filter((entry) => !entry.under).map(({ key, label, icon: Icon }) => (
           <button
@@ -77,6 +78,51 @@ function SectionBar({ section, onSection }: { section: JellyfinSection; onSectio
     </nav>
   );
 }
+// On a phone the sections sit in a bar at the foot of the screen, as in an app; Trackers moves to the avatar's menu.
+// The main profile's key is empty, so the menu's profile values carry a prefix that All lacks.
+const ALL_PROFILES = "all";
+const TAB_BAR = SECTIONS.filter((entry) => !entry.under && entry.key !== "trackers");
+
+function TabBar({ section, onSection, account }: { section: JellyfinSection; onSection: (next: JellyfinSection) => void; account: ReactNode }) {
+  const lit = SECTIONS.find((entry) => entry.key === section)?.under ?? section;
+  // The open section keeps its label while the bar fits, and gives it up when even the closed-up icons leave no room.
+  const bar = useRef<HTMLElement>(null);
+  const [width, setWidth] = useState(() => window.innerWidth);
+  const [unlabelled, setUnlabelled] = useState<string | null>(null);
+  const fit = `${lit}|${width}`;
+  const labelled = unlabelled !== fit;
+  useEffect(() => {
+    const resize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+  useLayoutEffect(() => {
+    const nav = bar.current;
+    if (labelled && nav && nav.scrollWidth > nav.clientWidth) setUnlabelled(fit);
+  }, [fit, labelled]);
+  return (
+    <nav ref={bar} aria-label="Sections" className="fixed inset-x-3 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-40 flex items-center justify-around rounded-full border border-white/[0.12] bg-[#141312]/45 p-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl backdrop-saturate-150 md:hidden">
+      {TAB_BAR.map(({ key, label, icon: Icon }) => {
+        const active = key === lit;
+        // The open section widens into a labelled pill; the others are icons that close up on a narrow screen.
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onSection(key)}
+            aria-label={label}
+            aria-current={active ? "page" : undefined}
+            className={`flex h-11 items-center justify-center gap-2 rounded-full text-[13px] font-semibold transition-all duration-300 ease-out ${active ? `shrink-0 bg-white/[0.13] text-white ${labelled ? "px-4" : "w-11"}` : "w-11 min-w-8 text-white/[0.62] active:bg-white/10"}`}
+          >
+            <Icon className="size-[22px] shrink-0" strokeWidth={active ? 2.25 : 1.75} />
+            {active && labelled && <span>{label}</span>}
+          </button>
+        );
+      })}
+      {account}
+    </nav>
+  );
+}
 function ShelfSkeleton() {
   return (
     <section className="space-y-3 px-4 py-4 sm:px-6">
@@ -89,7 +135,7 @@ function ShelfSkeleton() {
 }
 function ConfigurationSkeleton() {
   return (
-    <div className="border-t border-white/[0.06]">
+    <div>
       <div className="space-y-5 px-4 pt-14 pb-6 sm:px-6">
         <div className="flex items-center gap-4">
           <Skeleton className="h-14 w-14 rounded-full" />
@@ -114,7 +160,8 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   const sectionsTop = useRef<HTMLDivElement>(null);
   const setSection = (next: JellyfinSection) => {
     navigateDashboard({ tab: "jellyfin", config: userUUID, profile, page: null, section: next });
-    const top = sectionsTop.current ? sectionsTop.current.getBoundingClientRect().top + window.scrollY - 57 : 0;
+    const stickyTop = window.matchMedia("(min-width: 768px)").matches ? 57 : 0;
+    const top = sectionsTop.current ? sectionsTop.current.getBoundingClientRect().top + window.scrollY - stickyTop : 0;
     if (window.scrollY > top) requestAnimationFrame(() => window.scrollTo({ top, behavior: "instant" }));
   };
   useEffect(() => remember(profileKey(userUUID), profile, null), [userUUID, profile]);
@@ -203,29 +250,94 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   const switching = isPlaceholderData && (data.userUUID !== userUUID || data.profile !== profile);
   const profileName = (profile === null ? data.profiles[0]?.name : (data.viewers ?? data.profiles).find((p) => p.key === profile)?.name) ?? data.label;
   const historyName = (history === null ? data.profiles[0]?.name : data.profiles.find((p) => p.key === history)?.name) ?? profileName;
-  const controls = (
+  const back = (
+    <Button size="icon" variant="ghost" className="-ml-2 size-10 shrink-0 rounded-full" onClick={onClose} aria-label="All configurations" title="All configurations">
+      <ChevronLeft className="size-5" />
+    </Button>
+  );
+  const viewers = data.viewers ?? data.profiles;
+  const lead = (profile === null ? data.profiles[0] : viewers.find((p) => p.key === profile)) ?? null;
+  const options = (sources: ReactNode) => (
     <>
-      <JellyfinSearch userUUID={userUUID} profile={profile} profileName={profileName} local={localTitles} activeTab={activeTab} />
-      {(section === "overview" || section === "history") && <div className="glass inline-flex rounded-full p-0.5">
-        <Button size="sm" variant={view === "cards" ? "secondary" : "ghost"} className="h-7 rounded-full px-2.5" onClick={() => setView("cards")} aria-label="Cards"><LayoutGrid className="h-3.5 w-3.5" /></Button>
-        <Button size="sm" variant={view === "table" ? "secondary" : "ghost"} className="h-7 rounded-full px-2.5" onClick={() => setView("table")} aria-label="Table"><TableProperties className="h-3.5 w-3.5" /></Button>
-      </div>}
-      <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" onClick={runExport} disabled={exporting}>
-        {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Export
-      </Button>
-      <JellyfinImport userUUID={userUUID} />
-      <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onClose} aria-label="Close"><X className="h-3.5 w-3.5" /></Button>
+      {(section === "overview" || section === "history") && (
+        <>
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Show plays as</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={view} onValueChange={(next) => setView(next as View)}>
+            <DropdownMenuRadioItem value="cards" className="gap-2"><LayoutGrid className="size-4" /> Cards</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="table" className="gap-2"><TableProperties className="size-4" /> Table</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+        </>
+      )}
+      <DropdownMenuItem disabled={exporting} onSelect={() => void runExport()}><Upload className="size-4" /> Export watch history</DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Import watch history</DropdownMenuLabel>
+      {sources}
     </>
   );
+  // The import keeps its choices and dialogs in one place, so its menu renders both the header button and the phone's avatar tab.
+  const menus = (
+    <JellyfinImport
+      userUUID={userUUID}
+      menu={(sources, importing) => {
+        const busy = exporting || importing;
+        return (
+          <>
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" className="glass hidden size-10 shrink-0 rounded-full md:inline-flex" aria-label="Options">
+                  {busy ? <Loader2 className="size-4 animate-spin" /> : <MoreHorizontal className="size-5" />}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60" onCloseAutoFocus={(event) => event.preventDefault()}>{options(sources)}</DropdownMenuContent>
+            </DropdownMenu>
+            <TabBar
+              section={section}
+              onSection={setSection}
+              account={(
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <button type="button" aria-label="Profile and options" className="flex size-11 min-w-8 shrink-0 items-center justify-center rounded-full active:bg-white/10">
+                      {busy || switching ? <Loader2 className="size-5 animate-spin text-white/[0.62]" /> : <Avatar src={lead?.avatar ?? null} name={lead?.name ?? data.label} size="md" />}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent sheet side="top" align="end" sideOffset={12} className="w-60" onCloseAutoFocus={(event) => event.preventDefault()}>
+                    <div className="flex items-center gap-3 px-4 pb-3 pt-1">
+                      <Avatar src={lead?.avatar ?? null} name={lead?.name ?? data.label} size="md" />
+                      <span className="truncate text-base text-muted-foreground">{profile === null ? data.label : lead?.name ?? data.label}</span>
+                    </div>
+                    <DropdownMenuSeparator />
+                    {viewers.length > 1 && (
+                      <>
+                        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Profile</DropdownMenuLabel>
+                        <DropdownMenuRadioGroup value={profile === null ? ALL_PROFILES : `:${profile}`} onValueChange={(next) => setProfile(next === ALL_PROFILES ? null : next.slice(1))}>
+                          <DropdownMenuRadioItem value={ALL_PROFILES} className="gap-2"><Users className="size-4" /> All</DropdownMenuRadioItem>
+                          {viewers.map((p) => <DropdownMenuRadioItem key={p.key} value={`:${p.key}`} className="gap-2"><Avatar src={p.avatar} name={p.name} size="sm" /> {p.name}</DropdownMenuRadioItem>)}
+                        </DropdownMenuRadioGroup>
+                        <DropdownMenuSeparator />
+                      </>
+                    )}
+                    <DropdownMenuItem onSelect={() => setSection("trackers")}><Network className="size-4" /> Trackers</DropdownMenuItem>
+                    {options(sources)}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            />
+          </>
+        );
+      }}
+    />
+  );
+  const search = <JellyfinSearch userUUID={userUUID} profile={profile} profileName={profileName} local={localTitles} activeTab={activeTab} />;
 
   const watched = shown.reduce((sum, p) => sum + p.movies + p.episodes, 0);
   const sentTo = data.sync.filter((row) => row.profiles.includes(historyName)).map((row) => row.service);
   return (
     <OpenTitleContext.Provider value={openTitle}>
-    <div className="border-t border-white/[0.06]">
+    <div className="pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-0">
       {remote && <RemoteSheet userUUID={userUUID} profile={remote.profile} profileName={remote.profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
       {route.stack.length > 0 && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} sentTo={sentTo} stack={route.stack} activeTab={activeTab} onOpen={openStack} />}
-      <Hero data={data} profile={profile} onProfile={setProfile} activity={activity} controls={controls} switching={switching} />
+      <Hero data={data} profile={profile} onProfile={setProfile} activity={activity} back={back} actions={menus} search={search} switching={switching} />
       <JellyfinImport userUUID={userUUID} notice />
       <div ref={sectionsTop} />
       <SectionBar section={section} onSection={setSection} />
@@ -321,6 +433,9 @@ export default function DashboardJellyfin({ activeTab }: { activeTab: DashboardT
     navigateDashboard({ tab: "jellyfin", config: null, profile: null, page: null });
   };
 
+  // An open configuration is the whole page; the server's figures and the lookup are one step back.
+  if (selected) return <Configuration key={selected} userUUID={selected} route={route} activeTab={activeTab} onClose={close} />;
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -373,9 +488,7 @@ export default function DashboardJellyfin({ activeTab }: { activeTab: DashboardT
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {selected
-            ? <Configuration key={selected} userUUID={selected} route={route} activeTab={activeTab} onClose={close} />
-            : <p className="text-xs text-muted-foreground px-4 py-3">Search for a configuration to see its playback.</p>}
+          <p className="text-xs text-muted-foreground px-4 py-3">Search for a configuration to see its playback.</p>
         </CardContent>
       </Card>
     </div>

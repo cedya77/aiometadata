@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, BookOpen, Check, ChevronDown, Download, FileUp, Film, Loader2, Tv } from "lucide-react";
@@ -61,7 +61,8 @@ function stoppedText(job: HistoryImportJob): string {
   return `${file} ${how} after ${progressOf(job)} changes${error}. Import the same file again to finish it.`;
 }
 
-export default function JellyfinImport({ userUUID, notice = false }: { userUUID: string; notice?: boolean }) {
+/** `menu` places the import choices in a menu of the caller's own, which this keeps mounted beside its dialogs. */
+export default function JellyfinImport({ userUUID, notice = false, menu }: { userUUID: string; notice?: boolean; menu?: (sources: ReactNode, running: boolean) => ReactNode }) {
   const input = useRef<HTMLInputElement>(null);
   const { send, dismiss } = useJellyfinHistoryImport();
   const { data: job } = useJellyfinHistoryImportJob(userUUID);
@@ -192,6 +193,16 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
   const total = preview ? SECTION_LABELS.filter(([key]) => !skipped.includes(key)).reduce((sum, [key]) => sum + preview.counts[key].added + preview.counts[key].updated, 0) : 0;
   const picker = <input ref={input} type="file" accept="application/json,application/zip,text/csv,.json,.zip,.csv" className="hidden" onChange={(event) => pick(event.target.files?.[0])} />;
 
+  const sources = (
+    <>
+      <DropdownMenuItem disabled={running} onSelect={() => input.current?.click()}><FileUp className="size-4" /> From an export file</DropdownMenuItem>
+      <DropdownMenuItem disabled={running} onSelect={() => setStremioOpen(true)}><Tv className="size-4" /> From a Stremio account</DropdownMenuItem>
+      <DropdownMenuItem disabled={running} onSelect={() => setNuvioOpen(true)}><Tv className="size-4" /> From a Nuvio account</DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => setGuideOpen(true)}><BookOpen className="size-4" /> Format for other apps</DropdownMenuItem>
+    </>
+  );
+
   const trigger = notice ? (
     job && job.status !== "done" && !(running && file) ? (
       <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-white/[0.06] px-4 py-2.5 text-xs sm:px-6 ${running ? "text-muted-foreground" : "bg-amber-500/[0.06] text-amber-200"}`}>
@@ -213,7 +224,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
         )}
       </div>
     ) : null
-  ) : (
+  ) : menu ? menu(sources, running) : (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button size="sm" variant="ghost" className="glass h-8 gap-1 rounded-full px-3" disabled={running} title="Import watch history">
@@ -221,11 +232,7 @@ export default function JellyfinImport({ userUUID, notice = false }: { userUUID:
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent sheet align="end" className="w-56" onCloseAutoFocus={(event) => event.preventDefault()}>
-        <DropdownMenuItem onSelect={() => input.current?.click()}><FileUp className="size-4" /> From an export file</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setStremioOpen(true)}><Tv className="size-4" /> From a Stremio account</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setNuvioOpen(true)}><Tv className="size-4" /> From a Nuvio account</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => setGuideOpen(true)}><BookOpen className="size-4" /> Format for other apps</DropdownMenuItem>
+        {sources}
       </DropdownMenuContent>
     </DropdownMenu>
   );
