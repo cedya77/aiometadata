@@ -7,6 +7,7 @@ import { openUpload, positive, type Ambiguous, type HistorySource, type Unmatche
 import { traktHistorySource } from './historySourceTrakt';
 import { letterboxdHistorySource } from './historySourceLetterboxd';
 import { stremioHistorySource } from './historySourceStremio';
+import { nuvioHistorySource } from './historySourceNuvio';
 import { listHistorySource } from './historySourceList';
 
 const logger = consola.withTag('Jellyfin');
@@ -572,7 +573,7 @@ const nativeHistorySource: HistorySource = {
   read: async (upload) => ({ body: upload.json, unmatched: [], unmatchedCount: 0 }),
 };
 
-const HISTORY_SOURCES: HistorySource[] = [listHistorySource, traktHistorySource, letterboxdHistorySource, stremioHistorySource, nativeHistorySource];
+const HISTORY_SOURCES: HistorySource[] = [listHistorySource, traktHistorySource, letterboxdHistorySource, stremioHistorySource, nuvioHistorySource, nativeHistorySource];
 
 export function importedOrigins(): Map<string, string> {
   return new Map(HISTORY_SOURCES.filter((source) => source.importName).map((source) => [source.id, source.importName!]));
