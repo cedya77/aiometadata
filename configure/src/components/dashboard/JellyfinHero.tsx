@@ -5,6 +5,7 @@ import { type JellyfinConfiguration, type JellyfinProfileSummary, type JellyfinS
 import { Art, ShelfTitle } from "./JellyfinShared";
 import { Logo } from "./TrackerParts";
 import { when, clock, duration, dayKey, useNow, useOpenTitle, titleRefOf, type Activity } from "./jellyfinUtils";
+import { useLiveAccent, useLiveArt } from "./liveAccent";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
@@ -18,7 +19,7 @@ export function Avatar({ src, name, size, ringed }: { src: string | null; name: 
 }
 function HeroStat({ label, value, hint, compact }: { label: string; value: string | number; hint?: string; compact?: boolean }) {
   return (
-    <div className="min-w-0">
+    <div className={cx("min-w-0", compact && "xl:border-l xl:border-white/[0.12] xl:px-7 xl:first:border-l-0 xl:first:pl-0")}>
       <p className={cx("font-semibold tabular-nums leading-none sm:text-3xl", compact ? "text-xl" : "text-2xl")}>{value}</p>
       <p className={cx("mt-1 uppercase tracking-wide text-muted-foreground sm:text-[11px]", compact ? "text-[10px]" : "text-[11px]")}>{label}</p>
       {hint && <p className={cx("text-[11px] text-muted-foreground/80 truncate", compact && "max-sm:hidden")}>{hint}</p>}
@@ -40,8 +41,9 @@ export function LiveAvatar({ session, src, name, size }: { session: JellyfinSess
 }
 function RingedAvatar({ s, src, name, size }: { s: JellyfinSessionRow; src: string | null; name: string; size: "md" | "lg" }) {
   const share = shareOf(s, useLivePosition(s));
+  const { style } = useLiveAccent(s);
   return (
-    <span style={{ background: `conic-gradient(${s.paused ? "rgb(255 255 255 / 0.55)" : "#60a5fa"} ${share}%, rgb(255 255 255 / 0.16) 0)` }} className={cx("inline-flex shrink-0 rounded-full", size === "lg" ? "p-[3px]" : "p-0.5")}>
+    <span style={{ ...style, background: `conic-gradient(${s.paused ? "var(--live-dim)" : "var(--live)"} ${share}%, rgb(255 255 255 / 0.16) 0)` }} className={cx("inline-flex shrink-0 rounded-full", size === "lg" ? "p-[3px]" : "p-0.5")}>
       <Avatar src={src} name={name} size={size} ringed />
     </span>
   );
@@ -50,8 +52,8 @@ function RingedAvatar({ s, src, name, size }: { s: JellyfinSessionRow; src: stri
 function LiveDot({ paused }: { paused: boolean }) {
   return (
     <span className="relative flex size-[7px] shrink-0">
-      {!paused && <span className="absolute inline-flex size-full animate-ping rounded-full bg-blue-400 opacity-75" />}
-      <span className={cx("relative inline-flex size-[7px] rounded-full", paused ? "bg-white/55" : "bg-blue-400")} />
+      {!paused && <span className="absolute inline-flex size-full animate-ping rounded-full bg-[var(--live)] opacity-75" />}
+      <span className={cx("relative inline-flex size-[7px] rounded-full", paused ? "bg-[var(--live-dim)]" : "bg-[var(--live)]")} />
     </span>
   );
 }
@@ -74,17 +76,17 @@ function SessionProgress({ s }: { s: JellyfinSessionRow }) {
   const remaining = duration(left);
   const ends = !s.paused && left > 0 ? `ends ${ENDS.format(Date.now() + left)}` : null;
   return (
-    <div className="max-w-md">
-      <div className="relative h-1.5 rounded-full bg-white/20">
+    <div className="max-w-md md:max-w-[600px]">
+      <div className="relative h-1.5 rounded-full bg-white/20 md:h-2.5">
         <div
-          className={cx("relative h-full rounded-full", s.paused ? "bg-white/70" : "bg-gradient-to-r from-blue-600 via-blue-400 to-sky-300 shadow-[0_0_14px_rgba(96,165,250,0.75)]")}
+          className={cx("relative h-full rounded-full", s.paused ? "bg-[var(--live-dim)]" : "bg-[linear-gradient(90deg,var(--live-deep),var(--live)_60%,var(--live-light))] shadow-[0_0_16px_var(--live-glow)]")}
           style={{ width: `${shareOf(s, positionMs)}%` }}
         >
-          <span className={cx("absolute right-0 top-1/2 size-3 -translate-y-1/2 translate-x-1/2 rounded-full ring-2", s.paused ? "bg-white/90 ring-white/25" : "bg-white ring-blue-400/60 shadow-[0_0_10px_rgba(125,211,252,0.9)]")} />
+          <span className={cx("absolute right-0 top-1/2 size-3 -translate-y-1/2 translate-x-1/2 rounded-full ring-2 md:size-4 md:ring-[3px]", s.paused ? "bg-white/90 ring-white/25" : "bg-white ring-[color:var(--live-edge)] shadow-[0_0_14px_var(--live-glow)]")} />
         </div>
       </div>
-      <div className="mt-2 flex justify-between gap-3 text-xs tabular-nums text-white/80">
-        <span>{clock(positionMs)}</span>
+      <div className="mt-2 flex justify-between gap-3 text-xs tabular-nums text-white/80 md:mt-2.5 md:text-[13px]">
+        <span>{clock(positionMs)}{s.runtimeMs > 0 && <span className="text-white/45"> / {clock(s.runtimeMs)}</span>}</span>
         <span className="truncate">{[remaining && `${remaining} left`, ends].filter(Boolean).join(" · ")}</span>
       </div>
     </div>
@@ -98,24 +100,35 @@ function LiveSession({ s, named }: { s: JellyfinSessionRow; named: boolean }) {
   useEffect(() => setLogoFailed(false), [s.logoUrl]);
   const who = s.viewer ? `${s.viewer}, into ${s.profile}'s history` : named ? s.profile : null;
   const facts = [...(s.episode ? [s.episode] : [s.year, ...s.genres]), who].filter(Boolean).join(" · ");
+  const place = s.number !== null
+    ? [s.season === 0 ? "Specials" : s.season !== null ? `Season ${s.season}` : null, `Episode ${s.number}`].filter(Boolean).join(" · ")
+    : [s.year, ...s.genres].filter(Boolean).join(" · ");
   const videoId = s.videoId;
   return (
     <div>
-      <div className="h-32 md:h-2" />
+      <div className="h-32 md:h-4" />
+      <div className="mb-6 hidden items-center gap-3 md:flex">
+        <span className="inline-flex items-center gap-2 rounded-full border border-[color:var(--live-edge)] bg-[var(--live-tint)] py-1.5 pl-2.5 pr-3 text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--live-light)]">
+          <LiveDot paused={s.paused} />{s.paused ? "Paused" : "Now playing"}
+        </span>
+        {who && <span className="truncate text-[13px] text-white/70">{who}</span>}
+      </div>
       {s.logoUrl && !logoFailed
-        ? <img src={sizedArt(s.logoUrl, 500) ?? s.logoUrl} alt={s.title} onError={() => setLogoFailed(true)} className="max-h-24 max-w-[236px] object-contain object-left drop-shadow-[0_4px_18px_rgba(0,0,0,0.6)] md:max-w-[300px]" />
-        : <p className="text-3xl font-bold leading-tight drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]">{s.title}</p>}
-      <p className="mt-2.5 truncate text-[13px] text-white/80">{facts}</p>
-      <div className="mt-4"><SessionProgress s={s} /></div>
-      <div className="mt-4 flex flex-wrap items-center gap-2.5">
+        ? <img src={sizedArt(s.logoUrl, 500) ?? s.logoUrl} alt={s.title} onError={() => setLogoFailed(true)} className="max-h-24 max-w-[236px] object-contain object-left drop-shadow-[0_4px_18px_rgba(0,0,0,0.6)] md:max-h-40 md:max-w-[480px]" />
+        : <p className="text-3xl font-bold leading-tight drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)] md:text-5xl">{s.title}</p>}
+      <p className="mt-2.5 truncate text-[13px] text-white/80 md:hidden">{facts}</p>
+      {place && <p className="mt-6 hidden truncate text-xs font-bold uppercase tracking-[0.14em] text-[var(--live-light)] md:block">{place}</p>}
+      {s.episodeTitle && <p className="mt-1 hidden max-w-[600px] text-[44px] font-extrabold leading-[1.05] tracking-tight md:line-clamp-2">{s.episodeTitle}</p>}
+      <div className="mt-4 md:mt-6"><SessionProgress s={s} /></div>
+      <div className="mt-4 flex flex-wrap items-center gap-2.5 md:mt-6 md:gap-3">
         {open && videoId && (
-          <button type="button" onClick={() => open(titleRefOf({ seriesId: s.seriesId, videoId }))} className="inline-flex h-10 items-center gap-2 rounded-full bg-white px-[18px] text-sm font-semibold text-black transition-colors hover:bg-white/85">
+          <button type="button" onClick={() => open(titleRefOf({ seriesId: s.seriesId, videoId }))} className="inline-flex h-10 items-center gap-2 rounded-full bg-white px-[18px] text-sm font-semibold text-black transition-colors hover:bg-white/85 md:h-12 md:px-6 md:text-[15px] md:font-bold">
             <PlayingBars paused={s.paused} />
             Details
           </button>
         )}
         {s.trackers.length > 0 && (
-          <span className="inline-flex h-10 items-center gap-2 rounded-full border border-white/[0.12] bg-white/10 px-3 backdrop-blur-md">
+          <span className="inline-flex h-10 items-center gap-2 rounded-full border border-white/[0.12] bg-white/10 px-3 backdrop-blur-md md:h-12 md:gap-2.5 md:bg-black/25 md:px-4">
             <span className="text-xs text-white/80">Scrobbling to</span>
             <span className="flex gap-1">
               {s.trackers.map((service) => <Logo key={service} service={service} size={22} />)}
@@ -155,6 +168,8 @@ function NowPlaying({ s }: { s: JellyfinSessionRow }) {
 
 // The art fades out at the top for the header and at the foot into the page, and stays clear across the middle.
 const LIVE_SHADE = "linear-gradient(180deg, hsl(var(--background) / 0.75) 0%, transparent 26%, transparent 50%, hsl(var(--background) / 0.85) 82%, hsl(var(--background)) 100%)";
+// On a wide screen the art sits on the right over the session's colour field, so only the top and the foot fade.
+const LIVE_SHADE_WIDE = "linear-gradient(180deg, hsl(var(--background) / 0.4) 0%, transparent 18%, transparent 55%, hsl(var(--background) / 0.85) 88%, hsl(var(--background)) 100%)";
 
 export function Hero({ data, profile, onProfile, activity, back, actions, search, switching }: {
   data: JellyfinConfiguration;
@@ -175,8 +190,11 @@ export function Hero({ data, profile, onProfile, activity, back, actions, search
   const lastActivity = shown.reduce<number | null>((at, p) => Math.max(at ?? 0, p.lastActivity ?? 0) || null, null);
   const lead = profile === null ? data.profiles[0] : viewer ?? shown[0];
   const live = switching ? undefined : data.sessions[0];
-  const backdrop = sizedArt(data.sessions[0]?.backdropUrl ?? data.inProgress[0]?.backdropUrl ?? data.recentlyPlayed[0]?.backdropUrl
-    ?? data.sessions[0]?.imageUrl ?? data.inProgress[0]?.imageUrl ?? data.recentlyPlayed[0]?.imageUrl, 1280);
+  const accent = useLiveAccent(live);
+  const [artBox, setArtBox] = useState<HTMLImageElement | null>(null);
+  const liveArt = useLiveArt(data.sessions[0], artBox);
+  const backdrop = liveArt.art ? liveArt.src : sizedArt(data.inProgress[0]?.backdropUrl ?? data.recentlyPlayed[0]?.backdropUrl
+    ?? data.inProgress[0]?.imageUrl ?? data.recentlyPlayed[0]?.imageUrl, 1280);
   const [loaded, setLoaded] = useState<string | null>(null);
   const chips = viewers.length > 1;
   // Someone other than the profile in view is named; the profile's own play reads as its own.
@@ -186,25 +204,28 @@ export function Hero({ data, profile, onProfile, activity, back, actions, search
     ? `${watcher} ${live.paused ? "paused" : "is watching"} ${live.title}`
     : live.paused ? `Paused on ${live.title}` : `Watching ${live.title} now`);
   return (
-    <div className="relative overflow-hidden">
-      {backdrop && (
+    <div className="relative overflow-hidden" style={live ? accent.style : undefined}>
+      {live && <div className={cx("absolute inset-0 hidden transition-opacity duration-700 md:block", accent.ready ? "opacity-100" : "opacity-0")} style={{ background: "var(--live-field)" }} />}
+      {(liveArt.art || backdrop) && (
         <img
-          key={backdrop}
-          src={backdrop}
+          ref={setArtBox}
+          key={backdrop ?? "measuring"}
+          src={backdrop ?? undefined}
           alt=""
           onLoad={() => setLoaded(backdrop)}
           className={cx(
             "absolute w-full object-cover transition-opacity duration-700",
-            live ? "inset-x-0 top-0 h-[28rem] object-[58%_20%] md:inset-y-0 md:h-full md:object-top" : "inset-0 h-full object-top",
-            loaded === backdrop && !switching ? (live ? "opacity-85" : "opacity-50") : "opacity-0",
+            live
+              ? "inset-x-0 top-0 h-[28rem] object-[58%_20%] md:inset-y-0 md:left-auto md:h-full md:w-[58%] xl:w-[70%] md:object-[55%_25%] md:[mask-image:linear-gradient(90deg,transparent,#000_38%)]"
+              : "inset-0 h-full object-top",
+            loaded === backdrop && !switching ? (live ? "opacity-85 md:opacity-100" : "opacity-50") : "opacity-0",
           )}
         />
       )}
       {live ? (
         <>
           <div className="absolute inset-x-0 top-0 h-[28rem] md:hidden" style={{ background: LIVE_SHADE }} />
-          <div className="absolute inset-0 hidden bg-gradient-to-r from-background/85 via-background/40 to-transparent md:block" />
-          <div className="absolute inset-0 hidden bg-gradient-to-t from-background via-transparent to-transparent md:block" />
+          <div className="absolute inset-0 hidden md:block" style={{ background: LIVE_SHADE_WIDE }} />
         </>
       ) : (
         <>
@@ -221,7 +242,7 @@ export function Hero({ data, profile, onProfile, activity, back, actions, search
             {switching ? (
               <p className="flex items-center gap-1.5 text-xs text-blue-300"><Loader2 className="h-3 w-3 animate-spin" /> Loading {profile === null ? "every profile" : lead?.name ?? "profile"}…</p>
             ) : live && liveLine ? (
-              <p className="flex items-center gap-[7px] text-[13px] text-blue-200"><LiveDot paused={live.paused} /><span className="truncate">{liveLine}</span></p>
+              <p className="flex items-center gap-[7px] text-[13px] text-[var(--live-light)] md:hidden"><LiveDot paused={live.paused} /><span className="truncate">{liveLine}</span></p>
             ) : (
               <p className="text-xs text-muted-foreground truncate">
                 <span className="font-mono">{data.userUUID.slice(0, 8)}</span>
@@ -245,13 +266,15 @@ export function Hero({ data, profile, onProfile, activity, back, actions, search
           </div>
         )}
         {live && <LiveSession s={live} named={several} />}
-        <div className={cx("grid gap-x-6 gap-y-4 sm:grid-cols-4 max-w-2xl", live ? "grid-cols-4 max-sm:gap-x-2 max-sm:pt-1" : "grid-cols-2")}>
-          <HeroStat compact={!!live} label="Movies" value={sum((p) => p.movies).toLocaleString()} />
-          <HeroStat compact={!!live} label="Episodes" value={sum((p) => p.episodes).toLocaleString()} />
-          <HeroStat compact={!!live} label="In progress" value={sum((p) => p.inProgress).toLocaleString()} />
-          <HeroStat compact={!!live} label="Day streak" value={activity.streak} hint={activity.best > activity.streak ? `best ${activity.best} this year` : undefined} />
+        <div className={cx("space-y-5", live && "xl:flex xl:items-center xl:justify-between xl:gap-10 xl:space-y-0 xl:pt-6")}>
+          <div className={cx("grid gap-x-6 gap-y-4 sm:grid-cols-4 max-w-2xl", live ? "grid-cols-4 max-sm:gap-x-2 max-sm:pt-1 xl:flex xl:gap-0 xl:max-w-none" : "grid-cols-2")}>
+            <HeroStat compact={!!live} label="Movies" value={sum((p) => p.movies).toLocaleString()} />
+            <HeroStat compact={!!live} label="Episodes" value={sum((p) => p.episodes).toLocaleString()} />
+            <HeroStat compact={!!live} label="In progress" value={sum((p) => p.inProgress).toLocaleString()} />
+            <HeroStat compact={!!live} label="Day streak" value={activity.streak} hint={activity.best > activity.streak ? `best ${activity.best} this year` : undefined} />
+          </div>
+          <div className={cx("max-w-2xl", live && "xl:w-[30rem] xl:shrink-0")}>{search}</div>
         </div>
-        <div className="max-w-2xl">{search}</div>
         {!switching && data.sessions.length > 1 && (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 max-w-3xl">
             {data.sessions.slice(1).map((s, i) => <NowPlaying key={`${s.title}-${i}`} s={s} />)}
