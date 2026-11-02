@@ -56,6 +56,9 @@ export interface SessionRow {
   logoUrl: string | null;
   title: string;
   episode: string | null;
+  season: number | null;
+  number: number | null;
+  episodeTitle: string | null;
   year: string | null;
   genres: string[];
   positionMs: number;
@@ -253,7 +256,7 @@ async function sessionRows(userUUID: string, config: any, names: Map<string, str
     const scoped = scopeConfigToProfile(config, userUUID, s.profile || null);
     const kind = named.seriesId || named.episode !== null ? 'series' : 'movie';
     const trackers = videoId && tellsTrackers(scoped, sourceOfApp(s.app)) ? scrobbling.filter((service) => shouldTrackServiceMediaType(scoped, service, kind)) : [];
-    return { profile: profileLabel(names, s.profile), profileKey: s.profile, viewer, videoId, seriesId: named.seriesId, imageUrl: named.imageUrl, backdropUrl: named.backdropUrl, logoUrl: named.logoUrl, title: named.title, episode: named.episode, year: named.year, genres: named.genres, positionMs: s.positionMs, runtimeMs: Number(held?.runtime_ms) || named.runtimeMs, paused: s.paused, at: s.at, trackers };
+    return { profile: profileLabel(names, s.profile), profileKey: s.profile, viewer, videoId, seriesId: named.seriesId, imageUrl: named.imageUrl, backdropUrl: named.backdropUrl, logoUrl: named.logoUrl, title: named.title, episode: named.episode, season: named.season, number: named.number, episodeTitle: named.episodeTitle, year: named.year, genres: named.genres, positionMs: s.positionMs, runtimeMs: Number(held?.runtime_ms) || named.runtimeMs, paused: s.paused, at: s.at, trackers };
   });
 }
 

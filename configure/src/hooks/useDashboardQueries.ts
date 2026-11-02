@@ -1513,6 +1513,9 @@ export interface JellyfinSessionRow {
   logoUrl: string | null;
   title: string;
   episode: string | null;
+  season: number | null;
+  number: number | null;
+  episodeTitle: string | null;
   year: string | null;
   genres: string[];
   positionMs: number;
