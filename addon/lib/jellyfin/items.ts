@@ -863,16 +863,34 @@ export async function pageChildren(
 }
 
 /** The same decision filterByIncludeTypes makes, taken on a meta. */
+/** The item types a request filters to, when it names any of the kinds a catalog holds. */
+function wantedTypes(includeItemTypes: string | undefined): Set<string> | null {
+  if (!includeItemTypes) return null;
+  const wanted = new Set(includeItemTypes.split(',').map((t) => t.trim()).filter(Boolean));
+  return wanted.has('Movie') || wanted.has('Series') || wanted.has('BoxSet') ? wanted : null;
+}
+
 export function includeTypesFilter(
   mediaType: string,
   includeItemTypes: string | undefined
 ): ((meta: any) => boolean) | undefined {
-  if (!includeItemTypes) return undefined;
-
-  const wanted = new Set(includeItemTypes.split(',').map((t) => t.trim()).filter(Boolean));
-  if (!wanted.size || (!wanted.has('Movie') && !wanted.has('Series') && !wanted.has('BoxSet'))) return undefined;
+  const wanted = wantedTypes(includeItemTypes);
+  if (!wanted) return undefined;
 
   return (meta: any) => wanted.has(itemTypeOf(meta, mediaType));
+}
+
+// A catalog built here holds only its declared type: films and TVDB collections in a movie one, shows in a
+// series one. An external addon's catalog is not held to its type, so it is filtered item by item.
+const CATALOG_SERVES: Record<string, string[]> = { movie: ['Movie', 'BoxSet'], series: ['Series'] };
+const EXTERNAL_CATALOG = /^(custom|stremthru)\./;
+
+/** Whether a catalog can hold none of the asked types, so a filtered read passes it by unread. */
+export function catalogCannotServe(catalog: { id: string; type: string }, includeItemTypes: string | undefined): boolean {
+  const serves = CATALOG_SERVES[catalog.type];
+  const wanted = wantedTypes(includeItemTypes);
+  if (!serves || !wanted || EXTERNAL_CATALOG.test(catalog.id)) return false;
+  return !serves.some((type) => wanted.has(type));
 }
 
 export function filterByIncludeTypes(items: any[], includeItemTypes: string | undefined): any[] {

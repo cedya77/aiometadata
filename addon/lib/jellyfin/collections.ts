@@ -3,7 +3,7 @@ import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId } from './ids';
 import { collectionFolder, EMPTY_USER_DATA } from './dto';
-import { fetchWindow, includeTypesFilter, isLandscapeCatalog, knownCatalogLength, metaToBaseItem, rememberImages, servedOrder, showLandscape, warmCatalogLengths } from './items';
+import { catalogCannotServe, fetchWindow, includeTypesFilter, isLandscapeCatalog, knownCatalogLength, metaToBaseItem, rememberImages, servedOrder, showLandscape, warmCatalogLengths } from './items';
 import { getCatalogs, requiresGenre, viewIdFor, viewTypeFor, type CatalogRef } from './views';
 import { viewerAccountOwner, viewerReadsExtensions } from './viewer';
 import { profileTags } from './profiles';
@@ -347,6 +347,11 @@ export async function boxSetMembers(
 
   while (sourceIndex < sources.length && collected.length < limit) {
     const { catalog } = sources[sourceIndex];
+    if (catalogCannotServe(catalog, includeItemTypes)) {
+      sourceIndex += 1;
+      from = 0;
+      continue;
+    }
     const extras = extrasOf(sources[sourceIndex]);
     const keep = includeTypesFilter(catalog.type, includeItemTypes);
     const landscape = isLandscapeCatalog(config, catalog);
