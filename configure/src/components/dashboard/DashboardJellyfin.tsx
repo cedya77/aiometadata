@@ -414,7 +414,8 @@ export default function DashboardJellyfin({ activeTab }: { activeTab: DashboardT
     return () => clearTimeout(timer);
   }, [typed]);
 
-  const overview = useJellyfinOverview({ activeTab });
+  // Its figures show only on the list of configurations, so it rests while one is open.
+  const overview = useJellyfinOverview({ activeTab, enabled: !selected });
   const search = useJellyfinSearch(query, { activeTab });
   const o = overview.data;
   const sync = o?.sync;
