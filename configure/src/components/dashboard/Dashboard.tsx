@@ -697,6 +697,7 @@ export function Dashboard() {
     };
 
     // An open Jellyfin configuration brings its own header and section bar, edge to edge.
+    // The null holds the desktop's Tabs slot, so React keeps the open configuration mounted across the switch.
     if (openConfig) return <div className="min-h-screen">{null}{openConfig}</div>;
 
     return (

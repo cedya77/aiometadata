@@ -34,7 +34,7 @@ export function isHls(url: string): boolean {
   return /\.m3u8(?:$|[?#])/i.test(url);
 }
 
-/** The title's trailers from the server, in its order: direct video links, then YouTube. */
+/** The title's trailers from the server, in its order, as YouTube videos or direct links; anything else is left out. */
 export function remoteTrailers(trailers: Trailer[] | undefined): RemoteTrailer[] {
   return (trailers ?? []).flatMap((trailer): RemoteTrailer[] => {
     const id = youtubeId(trailer.url);
