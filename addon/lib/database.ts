@@ -1443,7 +1443,8 @@ class Database {
     } else if (patch.watch && Number.isFinite(patch.watch.at) && patch.watch.at > 0) {
       logged = await this.logWatch(userUUID, profile, videoId, patch.watch, Boolean(existing?.played), origin);
     }
-    const playCount = (existing?.play_count ?? 0) + (becamePlayed || (logged && patch.watch?.kind === 'finish') ? 1 : 0);
+    // An unmark takes the plays back, keeping its count only to mark the title unwatched, so a watch after it is the first again.
+    const playCount = becamePlayed ? 1 : (existing?.play_count ?? 0) + (logged && patch.watch?.kind === 'finish' ? 1 : 0);
     const lastPlayedAt = patch.lastPlayedAt === undefined ? (existing?.last_played_at ?? null) : patch.lastPlayedAt;
 
     const query = this.type === 'sqlite'

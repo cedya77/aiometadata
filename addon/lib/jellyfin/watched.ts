@@ -4,6 +4,7 @@ import { createHash } from 'crypto';
 import { envInt } from '../../utils/envNumber';
 import { credentialFor, sourceFor } from './trackerSource';
 import { generationOf, videoIdFor } from './resume';
+import { playCountOf } from './dto';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -1750,7 +1751,7 @@ export async function applyWatchedState(
         item.UserData = {
           ...item.UserData,
           Played: played,
-          PlayCount: Math.max(played ? 1 : 0, Number(record?.play_count) || 0),
+          PlayCount: playCountOf(played, record?.play_count),
           PlaybackPositionTicks: Math.round((runtime * pause.progress) / 100),
           PlayedPercentage: pause.progress,
           LastPlayedDate: new Date(pause.updatedAt).toISOString(),
@@ -1761,7 +1762,7 @@ export async function applyWatchedState(
         item.UserData = {
           ...item.UserData,
           Played: true,
-          PlayCount: Math.max(1, Number(record.play_count) || 0),
+          PlayCount: playCountOf(true, record.play_count),
           PlaybackPositionTicks: 0,
           PlayedPercentage: 100,
           LastPlayedDate: new Date(trackerAt).toISOString(),
@@ -1775,7 +1776,7 @@ export async function applyWatchedState(
         item.UserData = {
           ...item.UserData,
           Played: Boolean(record.played),
-          PlayCount: Number(record.play_count) || 0,
+          PlayCount: playCountOf(Boolean(record.played), record.play_count),
           PlaybackPositionTicks: Math.round(position * 10000),
           PlayedPercentage: position > 0 && runtime > 0 ? (position / runtime) * 100 : record.played ? 100 : 0,
           ...(record.last_played_at ? { LastPlayedDate: new Date(Number(record.last_played_at)).toISOString() } : {}),

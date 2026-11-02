@@ -187,6 +187,11 @@ export function itemList(items: any[], total: number, startIndex: number): any {
   return { Items: items, TotalRecordCount: total, StartIndex: startIndex };
 }
 
+/** Plays of a title as a client is told them: none once it is unmarked, as Jellyfin resets them, and at least one while it is played. */
+export function playCountOf(played: boolean, stored: unknown): number {
+  return played ? Math.max(1, Number(stored) || 0) : 0;
+}
+
 const EMPTY_USER_DATA = {
   PlaybackPositionTicks: 0,
   PlayCount: 0,

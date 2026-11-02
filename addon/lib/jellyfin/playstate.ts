@@ -6,6 +6,7 @@ import { dashedGuid, decodeJellyfinId, encodeJellyfinId, normaliseJellyfinId, pa
 import { mapWithConcurrency } from '../../utils/concurrency';
 import { fetchMeta } from './items';
 import { upsertPlaystateEverywhere } from './aliases';
+import { playCountOf } from './dto';
 
 const logger = consola.withTag('JellyfinPlaystate');
 
@@ -403,7 +404,7 @@ async function announce(userUUID: string, config: any, profile: string, session:
     Key: itemId,
     ItemId: itemId,
     Played: played,
-    PlayCount: Math.max(played ? 1 : 0, Number(row?.play_count) || 0),
+    PlayCount: playCountOf(played, row?.play_count),
     PlaybackPositionTicks: positionMs * TICKS_PER_MS,
     PlayedPercentage: positionMs > 0 && runtimeMs > 0 ? Math.min(100, (positionMs / runtimeMs) * 100) : played ? 100 : 0,
     LastPlayedDate: row?.last_played_at ? new Date(Number(row.last_played_at)).toISOString() : null,
