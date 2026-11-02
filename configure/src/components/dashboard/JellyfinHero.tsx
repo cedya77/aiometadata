@@ -143,12 +143,13 @@ function LiveSession({ s, named }: { s: JellyfinSessionRow; named: boolean }) {
 function NowPlaying({ s }: { s: JellyfinSessionRow }) {
   const positionMs = useLivePosition(s);
   const pct = s.runtimeMs > 0 ? Math.max(1, shareOf(s, positionMs)) : null;
+  const { style } = useLiveAccent(s);
   return (
-    <div className="glass flex items-center gap-3 rounded-xl px-3 py-2">
+    <div style={style} className="glass flex items-center gap-3 rounded-xl px-3 py-2">
       <div className="w-20 shrink-0"><Art src={s.imageUrl} title={s.title} wide /></div>
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-xs leading-tight truncate">
-          <span className={`mr-1.5 inline-flex items-center gap-1 rounded px-1 py-px text-[10px] font-medium ${s.paused ? "bg-white/10 text-muted-foreground" : "bg-blue-500/20 text-blue-300"}`}>
+          <span className={`mr-1.5 inline-flex items-center gap-1 rounded px-1 py-px text-[10px] font-medium ${s.paused ? "bg-white/10 text-muted-foreground" : "bg-[var(--live-tint)] text-[var(--live-light)]"}`}>
             {s.paused ? <Pause className="h-2.5 w-2.5" /> : <Play className="h-2.5 w-2.5" />}{s.paused ? "Paused" : "Playing"}
           </span>
           <span className="font-medium">{s.title}</span>
@@ -156,7 +157,7 @@ function NowPlaying({ s }: { s: JellyfinSessionRow }) {
         </p>
         <div className="flex items-center gap-2">
           <div className="h-1 flex-1 rounded-full bg-white/10 overflow-hidden">
-            {pct !== null && <div className="h-full bg-gradient-to-r from-blue-600 to-blue-400" style={{ width: `${pct}%` }} />}
+            {pct !== null && <div className="h-full bg-[linear-gradient(90deg,var(--live-deep),var(--live))]" style={{ width: `${pct}%` }} />}
           </div>
           <span className="text-[10px] tabular-nums text-muted-foreground whitespace-nowrap">{clock(positionMs)}{s.runtimeMs > 0 ? ` / ${clock(s.runtimeMs)}` : ""}</span>
         </div>

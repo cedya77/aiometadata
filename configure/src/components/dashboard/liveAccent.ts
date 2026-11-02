@@ -107,9 +107,30 @@ function paletteOf({ hue, sat }: Tone): CSSProperties {
 }
 
 const known = new Map<string, Tone | null>();
+// Several parts of the page wear the same session's colours, so a sample under way is shared rather than repeated.
+const sampling = new Map<string, Promise<Tone | null>>();
 const sameOrigin = (src: string) => {
   try { return new URL(src, window.location.href).origin === window.location.origin; } catch { return false; }
 };
+
+function sampleTone(src: string): Promise<Tone | null> {
+  const pending = sampling.get(src);
+  if (pending) return pending;
+  const sample = new Promise<Tone | null>((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try { resolve(toneOf(img)); } catch { resolve(null); /* a canvas the browser will not read back */ }
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  }).then((tone) => {
+    known.set(src, tone);
+    sampling.delete(src);
+    return tone;
+  });
+  sampling.set(src, sample);
+  return sample;
+}
 
 /**
  * The palette for a live session, taken from its art. Only art this page serves itself can be read back,
@@ -122,18 +143,7 @@ export function useLiveAccent(s: JellyfinSessionRow | undefined): { style: CSSPr
   useEffect(() => {
     if (!readable || known.has(readable)) return;
     let current = true;
-    const img = new Image();
-    const settle = (tone: Tone | null) => {
-      known.set(readable, tone);
-      if (current) setFound({ src: readable, tone });
-    };
-    img.onload = () => {
-      let tone: Tone | null = null;
-      try { tone = toneOf(img); } catch { /* a canvas the browser will not read back */ }
-      settle(tone);
-    };
-    img.onerror = () => settle(null);
-    img.src = readable;
+    sampleTone(readable).then((tone) => { if (current) setFound({ src: readable, tone }); });
     return () => { current = false; };
   }, [readable]);
   const settled = !readable || known.has(readable) || found?.src === readable;
