@@ -12,6 +12,13 @@ export const GLASS_PILL = "inline-flex h-12 shrink-0 items-center gap-2 rounded-
 
 export type Anchor = { x: number; y: number };
 
+/** Where a floating box goes near a point: kept on screen, and above the point when there is no room below. */
+export function placeNear(at: Anchor, el: HTMLElement): Anchor {
+  const { width, height } = el.getBoundingClientRect();
+  return { x: Math.max(8, Math.min(at.x, window.innerWidth - width - 8)), y: at.y + height + 8 > window.innerHeight ? Math.max(8, at.y - height) : at.y };
+}
+
+
 const SHEET_WIDTH = 352;
 
 export function under(button: Element): Anchor {

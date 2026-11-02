@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Check, CheckSquare, Ellipsis, Film, Loader2, MoreHorizontal, PencilLine, Play, Repeat, Square, Star, Tv } from "lucide-react";
 import type { JellyfinTitle, JellyfinTitleAction, JellyfinTitleEpisode, JellyfinTitlePerson } from "@/hooks/useDashboardQueries";
 import { ActionMenu } from "./JellyfinShared";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CHIP, CREDIT_LIMIT, cx, episodeMenuItems, GLASS_ROUND, orderedSeasons, PHONE_ACTION, seasonLabel, sizedStill, titleFacts, under, untilAir, useCenteredTab, type Anchor, type SeasonItem } from "./titleHelpers";
+import { CHIP, CREDIT_LIMIT, cx, episodeMenuItems, GLASS_ROUND, orderedSeasons, PHONE_ACTION, placeNear, seasonLabel, sizedStill, titleFacts, under, untilAir, useCenteredTab, type Anchor, type SeasonItem } from "./titleHelpers";
 import CriticRatings from "./CriticRatings";
 import { hasCriticRatings } from "./criticRatingSources";
 import type { WatchDateAnchor } from "./JellyfinWatchDate";
@@ -85,13 +85,28 @@ export function DesktopTitleActions({ play, actions }: { play: React.ReactNode; 
         </button>
       )}
       {menu && <ActionMenu at={menu} onClose={closeMenu} items={more.map((action) => ({ icon: action.icon, label: action.label, onSelect: () => (action.panel ? setMenuPanel({ key: action.key, at: menu }) : action.run?.()) }))} />}
-      {held && menuPanel && (
-        <>
-          <button type="button" aria-label="Close" onClick={closeMenuPanel} className="fixed inset-0 z-[110] cursor-default" />
-          <div style={{ left: Math.min(menuPanel.at.x, window.innerWidth - 360), top: menuPanel.at.y }} className="fixed z-[111] w-[22rem] rounded-2xl bg-popover/95 p-1 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl animate-fade-in">{held.panel!(closeMenuPanel)}</div>
-        </>
-      )}
+      {held && menuPanel && <MenuPanel at={menuPanel.at} onClose={closeMenuPanel}>{held.panel!(closeMenuPanel)}</MenuPanel>}
     </div>
+  );
+}
+
+/** A panel opened from the More menu, placed where the menu was and closed by a click outside or Escape. */
+function MenuPanel({ at, onClose, children }: { at: Anchor; onClose: () => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState(at);
+  useLayoutEffect(() => {
+    if (ref.current) setPlace(placeNear(at, ref.current));
+  }, [at]);
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } };
+    document.addEventListener("keydown", key, true);
+    return () => document.removeEventListener("keydown", key, true);
+  }, [onClose]);
+  return (
+    <>
+      <button type="button" aria-label="Close" onClick={onClose} className="fixed inset-0 z-[110] cursor-default" />
+      <div ref={ref} style={{ left: place.x, top: place.y }} className="fixed z-[111] w-[22rem] rounded-2xl bg-popover/95 p-1 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl animate-fade-in">{children}</div>
+    </>
   );
 }
 

@@ -2,6 +2,7 @@ import React, { memo, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import { sheetProps } from "@/lib/phoneSheet";
 import { sizedArt } from "./art";
+import { placeNear } from "./titleHelpers";
 import { ChevronDown } from "lucide-react";
 import { duration } from "./jellyfinUtils";
 
@@ -98,10 +99,7 @@ export function ActionMenu({ at, items, header, onClose }: { at: { x: number; y:
   const ref = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState(at);
   useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    setPlace({ x: Math.max(8, Math.min(at.x, window.innerWidth - width - 8)), y: at.y + height + 8 > window.innerHeight ? Math.max(8, at.y - height) : at.y });
+    if (ref.current) setPlace(placeNear(at, ref.current));
   }, [at]);
   useEffect(() => {
     const away = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
