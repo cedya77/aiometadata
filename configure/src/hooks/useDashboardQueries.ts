@@ -2034,6 +2034,8 @@ export interface JellyfinTitle {
   posterUrl: string | null;
   backdropUrl: string | null;
   logoUrl: string | null;
+  /** Direct video links first, then YouTube, as the Jellyfin item lists them. */
+  trailers?: Array<{ name: string; url: string }>;
   ids: { imdb: string | null; tmdb: string | number | null; tvdb: string | number | null; mal?: string | null; kitsu?: string | null; anilist?: string | null; anidb?: string | null };
   onWatchlist: boolean;
   dropped: boolean;

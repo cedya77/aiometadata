@@ -1805,6 +1805,7 @@ export async function dashboardTitle(userUUID: string, profile: string | null, r
       posterUrl: meta.poster ?? null,
       backdropUrl: meta.background ?? null,
       logoUrl: meta.logo ?? null,
+      trailers: (Array.isArray(item.RemoteTrailers) ? item.RemoteTrailers : []).filter((trailer: any) => trailer?.Url).map((trailer: any) => ({ name: String(trailer.Name || 'Trailer'), url: String(trailer.Url) })),
       ids: await titleIds(meta, item.Type === 'Movie'),
       onWatchlist: item.UserData?.IsFavorite === true,
       dropped: item.UserData?.Likes === false,

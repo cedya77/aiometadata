@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { useQueryClient, type Query } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Bookmark, BookmarkCheck, CalendarPlus, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Clock, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, PencilLine, Play, Plus, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
+import { ArrowLeft, Bookmark, BookmarkCheck, CalendarPlus, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Clapperboard, Clock, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, PencilLine, Play, Plus, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinTitle, useJellyfinTitleAction, useJellyfinWatchDate, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitlePerson, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
@@ -15,6 +15,8 @@ import { useTrackers } from "./trackers";
 import { nameDashboardPage, type DashboardPage } from "@/lib/dashboardRoute";
 import { artPalette, inkGround, type ArtPalette } from "./artPalette";
 import { cx, code, heroArt, HERO_DESKTOP_SHARE, HERO_DESKTOP_UPSCALE, HERO_PHONE_SHARE, episodeMenuItems, GLASS_PILL, orderedSeasons, PHONE_PLAY_PILL, PLAY_PILL, playLabel, seasonLabel, sizedStill, SOLID_AT, under, useCenteredTab, usePhone, type Anchor, type SeasonItem } from "./titleHelpers";
+import { TrailerPlayer } from "./JellyfinTrailer";
+import { playableTrailer, remoteTrailers } from "./trailers";
 import { Credits, DesktopTitleActions, EpisodeListRow, FactsBlock, MoodLine, PhoneTitleActions, SeasonPills, StarPicker, TitleSkeleton, type TitleActionSpec } from "./JellyfinTitleParts";
 
 const SECTION_TITLE = "text-xl font-bold sm:text-3xl";
@@ -416,6 +418,8 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
   const [logoFailed, setLogoFailed] = useState(false);
   const [remote, setRemote] = useState<{ target: RemoteTarget; at: Anchor } | null>(null);
   const closeRemote = useCallback(() => setRemote(null), []);
+  const [watchingTrailer, setWatchingTrailer] = useState(false);
+  const closeTrailer = useCallback(() => setWatchingTrailer(false), []);
 
   const title = useMemo(() => {
     if (!data) return null;
@@ -566,6 +570,7 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
   const centred = (): WatchDateAnchor => ({ left: window.innerWidth / 2, right: window.innerWidth / 2, top: window.innerHeight / 3, bottom: window.innerHeight / 3 });
   const seasonCount = title?.seasons.filter((s) => s.season > 0).length ?? 0;
   const titleBusy = (...actions: JellyfinTitleAction[]) => Boolean(title && actions.some((action) => busy === title.id + action));
+  const trailer = playableTrailer(remoteTrailers(title?.trailers));
   const titleActions: TitleActionSpec[] = !title ? [] : [
     {
       key: "watchlist",
@@ -577,14 +582,21 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
       icon: phone ? (title.onWatchlist ? <BookmarkCheck strokeWidth={1.75} className="fill-white/15" /> : <Bookmark strokeWidth={1.75} />) : title.onWatchlist ? <Check className="size-[22px]" strokeWidth={2.5} /> : <Plus className="size-[22px]" />,
       run: () => void run(title.onWatchlist ? "unwatchlist" : "watchlist", [title.id], title.onWatchlist ? "Removed from the watchlist" : "Added to the watchlist"),
     },
+    ...(trailer ? [{
+      key: "trailer",
+      label: "Trailer",
+      detail: "Play the trailer",
+      placement: "row" as const,
+      icon: <Clapperboard strokeWidth={phone ? 1.75 : 2} className={cx(!phone && "size-5")} />,
+      run: () => setWatchingTrailer(true),
+    }] : []),
     {
       key: "rate",
-      label: title.rating !== null ? `${title.rating}/10` : "Rate",
-      detail: title.rating !== null ? `Rated ${title.rating}/10` : "Rate",
-      placement: "row",
+      label: title.rating !== null ? `Rated ${title.rating}/10` : "Rate",
+      placement: "more",
       active: title.rating !== null,
       busy: titleBusy("rate"),
-      icon: <Star strokeWidth={phone ? 1.75 : 2} className={cx(!phone && "size-5", title.rating !== null && "!text-amber-400")} fill={title.rating !== null ? "currentColor" : "none"} />,
+      icon: <Star className={cx("size-4", title.rating !== null && "!text-amber-400")} fill={title.rating !== null ? "currentColor" : "none"} />,
       panel: (close) => <StarPicker value={title.rating} onPick={(value) => { close(); void run("rate", [title.id], value === null ? "Rating cleared" : `Rated ${value}/10`, undefined, value); }} />,
     },
     {
@@ -772,6 +784,7 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
 
             {title && title.people.length > 0 && <CastRow people={title.people} onPerson={onPerson} />}
             {dateSheet && <WatchDateSheet target={dateSheet.target} anchor={dateSheet.anchor} sentTo={sentTo} onClose={closeDateSheet} onSave={async (to) => { const saved = await redate(dateSheet.target.itemId, dateSheet.target.from, to); if (saved) setDateSheet(null); return saved; }} />}
+            {watchingTrailer && title && trailer && <TrailerPlayer title={title.title} trailer={trailer} onClose={closeTrailer} />}
             {remote && <RemoteSheet userUUID={userUUID} profile={profile} profileName={profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
 
             {title && (
