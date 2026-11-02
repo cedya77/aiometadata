@@ -37,11 +37,46 @@ interface Stats {
   peakOutstanding: number;
 }
 
-const queue: WarmTarget[] = [];
+/** First in, first out, dropping what it has handed out in batches so taking from the front stays cheap. */
+class Lane {
+  private items: WarmTarget[] = [];
+  private head = 0;
+
+  get size(): number {
+    return this.items.length - this.head;
+  }
+
+  push(target: WarmTarget): void {
+    this.items.push(target);
+  }
+
+  take(): WarmTarget | undefined {
+    if (this.size === 0) return undefined;
+    const target = this.items[this.head];
+    this.head += 1;
+    if (this.head > 4096 && this.head * 2 >= this.items.length) {
+      this.items.splice(0, this.head);
+      this.head = 0;
+    }
+    return target;
+  }
+
+  clear(): void {
+    this.items.length = 0;
+    this.head = 0;
+  }
+}
+
+// Classes with many images to a title, such as a thumbnail for every episode, wait behind the rest in a lane of
+// their own: they never push a poster out of the queue, and stop well short of the budget so posters keep room.
+const BULK_CLASSES: ReadonlySet<ImageClass> = new Set(['thumbnail']);
+const FULL_AT = 0.98;
+const BULK_FULL_AT = 0.9;
+const main = new Lane();
+const bulk = new Lane();
 const pending = new Set<string>();
 /** Images already counted this run, so one poster in twenty catalogs counts once. */
 const counted = new Set<string>();
-let head = 0;
 
 let active = 0;
 let desired = 0;
@@ -205,14 +240,7 @@ function notePeak(): void {
 const LAG_INTERVAL_MS = 250;
 
 function depth(): number {
-  return queue.length - head;
-}
-
-function compact(): void {
-  if (head > 4096 && head * 2 >= queue.length) {
-    queue.splice(0, head);
-    head = 0;
-  }
+  return main.size + bulk.size;
 }
 
 function startLagProbe(): void {
@@ -288,7 +316,8 @@ export function offer(targets: WarmTarget[]): void {
 
   const max = getWarmQueueMax();
   const capacity = store.capacityUsed();
-  const full = capacity.max > 0 && capacity.ratio >= 0.98;
+  const full = capacity.max > 0 && capacity.ratio >= FULL_AT;
+  const bulkFull = capacity.max > 0 && capacity.ratio >= BULK_FULL_AT;
 
   if (full && !capacityWarned) {
     capacityWarned = true;
@@ -317,18 +346,20 @@ export function offer(targets: WarmTarget[]): void {
       if (firstSight) stats.skipped += 1;
       continue;
     }
-    if (full) {
+    const inBulk = BULK_CLASSES.has(target.imageClass);
+    if (inBulk ? bulkFull : full) {
       stats.atCapacity += 1;
       continue;
     }
-    if (depth() >= max) {
+    const lane = inBulk ? bulk : main;
+    if (lane.size >= max) {
       stats.dropped += 1;
       continue;
     }
 
     if (pending.has(key)) continue;
     pending.add(key);
-    queue.push(target);
+    lane.push(target);
     stats.queued += 1;
   }
 
@@ -375,9 +406,8 @@ function pump(): void {
   const limit = Math.min(Math.max(desired, getWarmConcurrencyMin()), max);
 
   while (active < limit && depth() > 0) {
-    const target = queue[head];
-    head += 1;
-    compact();
+    const target = main.take() ?? bulk.take();
+    if (!target) break;
     active += 1;
     draining = true;
     notePeak();
@@ -430,8 +460,8 @@ export function resetStats(): void {
 }
 
 export function reset(): void {
-  queue.length = 0;
-  head = 0;
+  main.clear();
+  bulk.clear();
   pending.clear();
   resetStats();
 }
