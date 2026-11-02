@@ -340,6 +340,7 @@ export async function handlePlaybackReport(
 function planReport(type: string, id: string, report: PlaybackReport, progress: number | null, config: any, watchedAt: number): OutboxJob[] {
   const { parseMediaId } = require('./subtitleHandler');
   const { shouldTrackServiceMediaType, normalizeWatchTrackingMediaType } = require('./watchTracking');
+  const { scrobblingTrackers } = require('./trackers');
   const parsedId = parseMediaId(id);
   const mediaType = parsedId ? normalizeWatchTrackingMediaType(type, parsedId.type) : null;
   if (!mediaType) return [];
@@ -354,7 +355,7 @@ function planReport(type: string, id: string, report: PlaybackReport, progress: 
   const clears = report.event === 'played' || report.event === 'unplayed' || (report.event === 'stop' && intent === 'watched');
 
   const jobs: OutboxJob[] = [];
-  for (const service of ['simkl', 'mdblist', 'publicmetadb'] as const) {
+  for (const service of scrobblingTrackers() as WatchTrackingService[]) {
     if (!shouldTrackServiceMediaType(config, service, mediaType)) continue;
     const scrobbles = service === 'publicmetadb'
       ? (report.event === 'stop' || report.event === 'pause') && (intent === 'partial' || intent === 'watched' || intent === 'paused')
