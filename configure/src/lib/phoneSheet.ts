@@ -33,10 +33,7 @@ const onMove = (event: TouchEvent) => {
   // Only from the top of its own list, and only downwards; otherwise the list scrolls.
   const scroller = (event.target as Element).closest<HTMLElement>("[data-radix-select-viewport]");
   const atTop = sheet.scrollTop <= 0 && (!scroller || scroller.scrollTop <= 0);
-  if (pulled === 0 && (down <= 0 || !atTop)) {
-    if (down > 0 && sheet.scrollTop <= 0) event.preventDefault();
-    return;
-  }
+  if (pulled === 0 && (down <= 0 || !atTop)) return;
   event.preventDefault();
   pulled = Math.max(0, down);
   sheet.style.transition = "none";
