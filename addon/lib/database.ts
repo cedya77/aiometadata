@@ -1336,6 +1336,13 @@ class Database {
     return (await this.allQuery(query, params)) || [];
   }
 
+  /** Episodes played between two times. */
+  async listPlayedBetween(userUUID: string, profile: string, from: number, to: number): Promise<Array<{ video_id: string; last_played_at: number }>> {
+    const p = this.type === 'sqlite' ? () => '?' : ((n = 0) => () => `$${++n}`)();
+    const query = `SELECT video_id, last_played_at FROM jellyfin_playstate WHERE user_uuid = ${p()} AND profile = ${p()} AND played = 1 AND last_played_at >= ${p()} AND last_played_at <= ${p()} AND video_id LIKE '%:%:%'`;
+    return (await this.allQuery(query, [userUUID, profile, from, to])) || [];
+  }
+
   async countPlayedSince(since: number): Promise<number> {
     const query = this.type === 'sqlite'
       ? 'SELECT COUNT(*) AS count FROM jellyfin_playstate WHERE last_played_at >= ? AND played = 1'

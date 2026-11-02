@@ -966,6 +966,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_NEXTUP_BATCH_SECONDS',
+    envVar: 'JELLYFIN_NEXTUP_BATCH_SECONDS',
+    label: 'Jellyfin Next Up Batch Window (seconds)',
+    description: 'Episodes of a show marked or imported within this long of its latest watch count as one batch, and Next Up goes on after the furthest of them. 0 goes on after the latest watch alone.',
+    category: 'Features',
+    type: 'number',
+    default: 600,
+    min: 0,
+  },
+  {
     key: 'JELLYFIN_NEXTUP_SEQUEL_DAYS',
     envVar: 'JELLYFIN_NEXTUP_SEQUEL_DAYS',
     label: 'Jellyfin Next Up Anime Sequel Window (days)',
