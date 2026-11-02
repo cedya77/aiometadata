@@ -675,6 +675,12 @@ export function Dashboard() {
     );
   }
 
+  // An open Jellyfin configuration sits in the same place for both layouts, so turning a phone across the
+  // breakpoint swaps only the chrome around it and keeps what is open in it, such as a playing trailer.
+  const openConfig = routedTab === 'jellyfin' && route.config
+    ? <div className="w-full overflow-x-clip"><DashboardJellyfin activeTab={activeTab} /></div>
+    : null;
+
   // Mobile layout with push/pop navigation
   if (isMobile) {
     const activePage = dashboardPages.find(p => p.value === activeMobileSection);
@@ -691,7 +697,7 @@ export function Dashboard() {
     };
 
     // An open Jellyfin configuration brings its own header and section bar, edge to edge.
-    if (activeMobileSection === 'jellyfin' && route.config) return <div className="w-full overflow-x-clip">{activePage?.component}</div>;
+    if (openConfig) return <div className="min-h-screen">{null}{openConfig}</div>;
 
     return (
       <div className="w-full p-4 overflow-hidden">
@@ -833,7 +839,7 @@ export function Dashboard() {
         </div>
 
         {/* Content area */}
-        <div className="px-4 sm:px-6 lg:px-8 py-6">
+        {!openConfig && <div className="px-4 sm:px-6 lg:px-8 py-6">
         <TabsContent value="overview" className="mt-0">
           <DashboardOverview
             data={dashboardData.overview}
@@ -890,8 +896,8 @@ export function Dashboard() {
               />
             </TabsContent>
 
-            {jellyfinEnabled && (
-              <TabsContent value="jellyfin" className={route.config ? "-mx-4 -my-6 sm:-mx-6 lg:-mx-8" : "mt-0"}>
+            {jellyfinEnabled && !openConfig && (
+              <TabsContent value="jellyfin" className="mt-0">
                 <DashboardJellyfin activeTab={activeTab} />
               </TabsContent>
             )}
@@ -912,8 +918,9 @@ export function Dashboard() {
             </TabsContent>
           </>
         )}
-        </div>
+        </div>}
       </Tabs>
+      {openConfig}
     </div>
   );
 }
