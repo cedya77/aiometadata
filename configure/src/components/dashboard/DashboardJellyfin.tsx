@@ -24,7 +24,7 @@ import {
   type JellyfinPlayRow,
   type JellyfinTitleRef,
 } from "@/hooks/useDashboardQueries";
-import { ActivityMap, Avatar, Hero } from "./JellyfinHero";
+import { ActivityMap, Avatar, Hero, LiveAvatar } from "./JellyfinHero";
 import JellyfinSync from "./JellyfinSync";
 import { MoreFooter, PlayTable, PlayedByDay, ProgressCard, Row, type ProgressAction } from "./JellyfinPlays";
 import RemoteSheet, { type RemoteTarget } from "./JellyfinRemote";
@@ -298,7 +298,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
                 <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <button type="button" aria-label="Profile and options" className="flex size-11 min-w-8 shrink-0 items-center justify-center rounded-full active:bg-white/10">
-                      {busy || switching ? <Loader2 className="size-5 animate-spin text-white/[0.62]" /> : <Avatar src={lead?.avatar ?? null} name={lead?.name ?? data.label} size="md" />}
+                      {busy || switching ? <Loader2 className="size-5 animate-spin text-white/[0.62]" /> : <LiveAvatar session={data.sessions[0]} src={lead?.avatar ?? null} name={lead?.name ?? data.label} size="md" />}
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent sheet side="top" align="end" sideOffset={12} className="w-60" onCloseAutoFocus={(event) => event.preventDefault()}>
