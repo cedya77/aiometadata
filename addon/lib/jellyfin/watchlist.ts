@@ -241,10 +241,10 @@ export async function setWatchlisted(userUUID: string, config: any, descriptor: 
 
 /**
  * A title watched here leaves this server's own watchlist, as it would a tracker's: a film once watched, a show
- * once any episode is. A tracker's watchlist is left to the tracker, which applies its own rule.
+ * once any episode is. That holds while the list is not picked too, so it is current whenever it is picked again.
+ * A tracker's watchlist is left to the tracker, which applies its own rule.
  */
 export function leaveWatchlistOnWatch(userUUID: string, config: any, descriptors: any[]): void {
-  if (!keepsServerWatchlist(config)) return;
   const titles = [...new Map(descriptors.filter((d) => d?.i && (d.k === 'movie' || d.k === 'episode')).map((d) => [`${d.k}:${d.i}`, d])).values()];
   if (!titles.length) return;
   (async () => {
