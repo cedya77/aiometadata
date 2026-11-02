@@ -554,6 +554,7 @@ async function settle(
     const { undropOnWatch } = require('./dropped');
     undropOnWatch(userUUID, config, [session.descriptor.i]);
   }
+  if (played === true) require('./watchlist').leaveWatchlistOnWatch(userUUID, config, [session.descriptor]);
 
   if (!tellsTrackers(config)) return;
 
@@ -665,6 +666,7 @@ async function markEach(req: any, body: any, event: 'played' | 'unplayed', upTo 
   if (played) {
     const { undropOnWatch } = require('./dropped');
     undropOnWatch(userUUID, config, sessions.filter((session) => session.descriptor.k === 'episode').map((session) => session.descriptor.i));
+    require('./watchlist').leaveWatchlistOnWatch(userUUID, config, sessions.map((session) => session.descriptor));
   }
   if (!tellsTrackers(config)) return;
   // A season or series goes to the trackers as one batch, not an event per episode.
