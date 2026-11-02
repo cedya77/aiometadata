@@ -3,7 +3,7 @@ import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId } from './ids';
 import { collectionFolder, EMPTY_USER_DATA } from './dto';
-import { catalogCannotServe, fetchWindow, includeTypesFilter, isLandscapeCatalog, knownCatalogLength, metaToBaseItem, rememberImages, servedOrder, showLandscape, warmCatalogLengths } from './items';
+import { catalogCannotServe, fetchWindow, includeTypesFilter, listFilterKey, isLandscapeCatalog, knownCatalogLength, metaToBaseItem, rememberImages, servedOrder, showLandscape, warmCatalogLengths } from './items';
 import { getCatalogs, requiresGenre, viewIdFor, viewTypeFor, type CatalogRef } from './views';
 import { viewerAccountOwner, viewerReadsExtensions } from './viewer';
 import { profileTags } from './profiles';
@@ -303,7 +303,8 @@ export async function boxSetMembers(
   startIndex: number,
   limit: number,
   includeItemTypes?: string,
-  genre?: string
+  genre?: string,
+  officialRatings?: string
 ): Promise<MembersPage> {
   const sources = visibleSources(await getCatalogs(userUUID, config), folder)
     .map((entry) => ({ ...entry, genre: genre ? genreFor(entry.source, entry.catalog, genre) : pinnedGenre(entry.source) }))
@@ -311,9 +312,10 @@ export async function boxSetMembers(
   const parentId = boxSetId(collection, folder);
   const tags = profileTags(config);
   const extrasOf = (entry: { genre: string | null }): Record<string, string> => (entry.genre ? { genre: entry.genre } : {});
+  const filterKey = listFilterKey(includeItemTypes, officialRatings);
 
   const cursorKey = JSON.stringify([
-    userUUID, collection.id, folder.id, includeItemTypes ?? '', genre ?? '', tags, viewerAccountOwner(),
+    userUUID, collection.id, folder.id, filterKey, genre ?? '', tags, viewerAccountOwner(),
     sources.map(({ catalog, genre: served }) => [catalog.type, catalog.id, served ?? '']),
   ]);
   const held = memberCursors.get(cursorKey);
@@ -334,7 +336,7 @@ export async function boxSetMembers(
     let passed = 0;
     while (sourceIndex < sources.length) {
       const { catalog } = sources[sourceIndex];
-      const known = knownCatalogLength(userUUID, catalog, extrasOf(sources[sourceIndex]), tags, includeItemTypes ?? '');
+      const known = knownCatalogLength(userUUID, catalog, extrasOf(sources[sourceIndex]), tags, filterKey);
       if (known === undefined || passed + known > startIndex) break;
       passed += known;
       sourceIndex += 1;
@@ -353,9 +355,9 @@ export async function boxSetMembers(
       continue;
     }
     const extras = extrasOf(sources[sourceIndex]);
-    const keep = includeTypesFilter(catalog.type, includeItemTypes);
+    const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings);
     const landscape = isLandscapeCatalog(config, catalog);
-    const page = await fetchWindow(userUUID, catalog, from, toSkip + limit - collected.length, extras, keep, tags, includeItemTypes ?? '')
+    const page = await fetchWindow(userUUID, catalog, from, toSkip + limit - collected.length, extras, keep, tags, filterKey)
       .catch(() => ({ items: [] as any[], hasMore: false }));
 
     const served: any[] = [];

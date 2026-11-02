@@ -870,14 +870,36 @@ function wantedTypes(includeItemTypes: string | undefined): Set<string> | null {
   return wanted.has('Movie') || wanted.has('Series') || wanted.has('BoxSet') ? wanted : null;
 }
 
+/** The ratings a request keeps, from Jellyfin's pipe-separated OfficialRatings; null keeps every title. */
+function wantedRatings(officialRatings: unknown): Set<string> | null {
+  const list = String(officialRatings ?? '').split(/[|,]/).map((rating) => rating.trim().toUpperCase()).filter(Boolean);
+  return list.length ? new Set(list) : null;
+}
+
+/** The rating a title is shown with, as its OfficialRating. */
+export function officialRatingOf(meta: any): string | null {
+  return ratingFields(meta).OfficialRating;
+}
+
+/** Keeps the titles of the asked types and, when asked, ratings; a title with no rating matches no rating. */
 export function includeTypesFilter(
   mediaType: string,
-  includeItemTypes: string | undefined
+  includeItemTypes: string | undefined,
+  officialRatings?: unknown
 ): ((meta: any) => boolean) | undefined {
   const wanted = wantedTypes(includeItemTypes);
-  if (!wanted) return undefined;
+  const ratings = wantedRatings(officialRatings);
+  if (!wanted && !ratings) return undefined;
 
-  return (meta: any) => wanted.has(itemTypeOf(meta, mediaType));
+  return (meta: any) =>
+    (!wanted || wanted.has(itemTypeOf(meta, mediaType)))
+    && (!ratings || ratings.has(String(officialRatingOf(meta) ?? '').toUpperCase()));
+}
+
+/** What a filtered list's lengths and cursors are held under: its types, and its ratings when it names any. */
+export function listFilterKey(includeItemTypes: unknown, officialRatings?: unknown): string {
+  const ratings = wantedRatings(officialRatings);
+  return `${includeItemTypes ? String(includeItemTypes) : ''}${ratings ? `|ratings:${[...ratings].sort().join('|')}` : ''}`;
 }
 
 // A catalog built here holds only its declared type: films and TVDB collections in a movie one, shows in a

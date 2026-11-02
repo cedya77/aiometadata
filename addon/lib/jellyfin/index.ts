@@ -31,7 +31,7 @@ import {
 import { buildViews, catalogView, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBoxSetCatalog, isBrowsable, requiresGenre, rowFor } from './views';
 import { decodeJellyfinId } from './ids';
 import { artTag, imageTag, isWideTag } from './imageTags';
-import { buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, includeTypesFilter, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
+import { buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
@@ -997,6 +997,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const startIndex = Math.max(0, qInt(req, 'StartIndex', 0));
     const limit = Math.min(Math.max(1, qInt(req, 'Limit', 100)), 500);
     const includeItemTypes = req.query.IncludeItemTypes ?? req.query.includeItemTypes;
+    const officialRatings = req.query.OfficialRatings ?? req.query.officialRatings;
     const parentId = req.query.ParentId ?? req.query.parentId;
     const filters = String(req.query.Filters ?? req.query.filters ?? '');
     const favouriteFlag = String(req.query.IsFavorite ?? req.query.isFavorite ?? '').toLowerCase() === 'true';
@@ -1323,7 +1324,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       let passed = 0;
       const tags = profileTags(config);
 
-      const typesKey = includeItemTypes ? String(includeItemTypes) : '';
+      const typesKey = listFilterKey(includeItemTypes, officialRatings);
       await warmCatalogLengths(userUUID, pool, extras, tags, typesKey);
       for (const catalog of pool) {
         if (collected.length >= limit) break;
@@ -1341,7 +1342,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           skip,
           limit - collected.length,
           extras,
-          includeTypesFilter(catalog.type, typesKey || undefined),
+          includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings),
           tags,
           typesKey
         ).catch(() => ({ items: [] as any[], hasMore: false }));
@@ -1450,7 +1451,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         const page = foldersOnly
           ? { items: [], hasMore: false }
           : room > 0
-          ? await boxSetMembers(userUUID, config, serverId, collection, folder, titlesFrom, room, includeItemTypes ? String(includeItemTypes) : undefined, extras.genre)
+          ? await boxSetMembers(userUUID, config, serverId, collection, folder, titlesFrom, room, includeItemTypes ? String(includeItemTypes) : undefined, extras.genre, officialRatings ? String(officialRatings) : undefined)
           : { items: [], hasMore: true };
         await applyWatchedState(page.items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
         const items = [...ahead, ...page.items];
@@ -1513,9 +1514,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       startIndex,
       pageLimit,
       extras,
-      includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined),
+      includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings),
       profileTags(config),
-      `${includeItemTypes ? String(includeItemTypes) : ''}${played.key}`,
+      `${listFilterKey(includeItemTypes, officialRatings)}${played.key}`,
       played.pick
     );
     const hasMore = window.hasMore;
@@ -2311,9 +2312,32 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     return { genres, pairs };
   };
 
+  // Jellyfin lists the ratings in view; reading a whole catalog for a menu would cost too much, so its first page stands in.
+  const ratingsInView = async (req: any): Promise<string[]> => {
+    const parentId = req.query.ParentId ?? req.query.parentId;
+    const config = parentId ? await loadConfig(req) : null;
+    if (!config) return [];
+    const userUUID = req.params.userUUID;
+    const descriptor = await decodeJellyfinId(String(parentId));
+    let ratings: Array<string | null> = [];
+    if (descriptor?.k === 'boxset') {
+      const collection = collectionById(config, descriptor.c);
+      const folder = collection ? folderById(collection, descriptor.f) : null;
+      if (!collection || !folder) return [];
+      const page = await boxSetMembers(userUUID, config, serverIdFor(userUUID), collection, folder, 0, 100);
+      ratings = page.items.map((item: any) => item.OfficialRating ?? null);
+    } else if (descriptor?.k === 'view') {
+      const catalog = await findCatalogByViewId(userUUID, config, descriptor.t, descriptor.c);
+      if (!catalog) return [];
+      const window = await fetchWindow(userUUID, catalog, 0, 100, {}, undefined, profileTags(config));
+      ratings = window.items.map(officialRatingOf);
+    }
+    return [...new Set(ratings.filter((rating): rating is string => Boolean(rating)))].sort();
+  };
+
   router.get('/Items/Filters', async (req: any, res: any) => {
-    const { genres, pairs } = await genrePairs(req);
-    res.json({ Genres: genres, Tags: [], OfficialRatings: [], Years: [], GenreItems: pairs });
+    const [{ genres, pairs }, ratings] = await Promise.all([genrePairs(req), ratingsInView(req).catch(() => [])]);
+    res.json({ Genres: genres, Tags: [], OfficialRatings: ratings, Years: [], GenreItems: pairs });
   });
 
   // Unlike the legacy route, genres here are { Name, Id } pairs.
