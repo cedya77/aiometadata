@@ -35,7 +35,10 @@ type DiscoverSource = 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal' | 'mdblist';
 type SimklDiscoverMediaType = 'movies' | 'shows' | 'anime';
 type SearchEntity = 'person' | 'company' | 'keyword' | 'network';
 type JoinMode = 'or' | 'and';
+/** A rolling window of whole days, up to today or from today. */
+type RollingDaysKey = `last_${number}_days` | `next_${number}_days`;
 type DatePresetKey =
+  | RollingDaysKey
   | 'today'
   | 'this_week'
   | 'this_month'
@@ -51,6 +54,7 @@ type DatePresetKey =
   | 'clear'
   | 'custom';
 type RelativeDatePresetKey =
+  | RollingDaysKey
   | 'today'
   | 'this_week'
   | 'this_month'
@@ -211,9 +215,14 @@ const JOIN_MODE_OPTIONS = [
 
 const DATE_PRESET_OPTIONS: Array<{ value: Exclude<DatePresetKey, 'custom'>; label: string }> = [
   { value: 'today', label: 'Today' },
+  { value: 'last_1_days', label: 'Last 1 Day' },
+  { value: 'last_7_days', label: 'Last 7 Days' },
+  { value: 'last_14_days', label: 'Last 14 Days' },
   { value: 'this_week', label: 'This Week' },
   { value: 'this_month', label: 'This Month' },
   { value: 'last_month', label: 'Last 30 Days' },
+  { value: 'last_90_days', label: 'Last 90 Days' },
+  { value: 'last_180_days', label: 'Last 180 Days' },
   { value: 'this_year', label: 'This Year' },
   { value: 'last_year', label: 'Last 12 Months' },
   { value: 'last_5_years', label: 'Last 5 Years' },
@@ -564,10 +573,29 @@ function formatLocalDateForInput(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+const ROLLING_DAYS_PATTERN = /^(last|next)_(\d{1,5})_days$/;
+const MAX_ROLLING_DAYS = 36500;
+
+function rollingDaysOf(preset: string): { direction: 'last' | 'next'; days: number } | null {
+  const match = ROLLING_DAYS_PATTERN.exec(preset);
+  if (!match) return null;
+  const days = Number(match[2]);
+  return days >= 1 && days <= MAX_ROLLING_DAYS ? { direction: match[1] as 'last' | 'next', days } : null;
+}
+
 function getDateRangeFromPreset(preset: Exclude<DatePresetKey, 'custom'>): { from: string; to: string } {
   const now = new Date();
   const to = formatLocalDateForInput(now);
   const fromDate = new Date(now);
+
+  const rolling = rollingDaysOf(preset);
+  if (rolling) {
+    const edge = new Date(now);
+    edge.setDate(edge.getDate() + (rolling.direction === 'last' ? -rolling.days : rolling.days));
+    return rolling.direction === 'last'
+      ? { from: formatLocalDateForInput(edge), to }
+      : { from: to, to: formatLocalDateForInput(edge) };
+  }
 
   switch (preset) {
     case 'today':
@@ -619,7 +647,75 @@ function getDateRangeFromPreset(preset: Exclude<DatePresetKey, 'custom'>): { fro
 }
 
 function isRelativeDatePreset(preset: DatePresetKey): preset is RelativeDatePresetKey {
-  return RELATIVE_DATE_PRESET_KEYS.includes(preset as RelativeDatePresetKey);
+  return RELATIVE_DATE_PRESET_KEYS.includes(preset as RelativeDatePresetKey) || rollingDaysOf(preset) !== null;
+}
+
+/** The preset buttons, and a rolling window of any number of days back or ahead. */
+function DatePresetPicker({ value, onPick }: { value: DatePresetKey; onPick: (preset: Exclude<DatePresetKey, 'custom'>) => void }) {
+  const current = rollingDaysOf(value);
+  const listed = DATE_PRESET_OPTIONS.some((option) => option.value === value);
+  const [direction, setDirection] = useState<'last' | 'next'>(current?.direction ?? 'last');
+  const [days, setDays] = useState<string>(current ? String(current.days) : '');
+  const heldDirection = current?.direction;
+  const heldDays = current?.days;
+  // A window picked or loaded elsewhere shows in the inputs.
+  useEffect(() => {
+    if (!heldDirection || !heldDays) return;
+    setDirection(heldDirection);
+    setDays(String(heldDays));
+  }, [heldDirection, heldDays]);
+  const count = Number(days);
+  const valid = Number.isInteger(count) && count >= 1 && count <= MAX_ROLLING_DAYS;
+  const customActive = Boolean(current) && !listed;
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {DATE_PRESET_OPTIONS.map(option => (
+          <Button
+            key={option.value}
+            type="button"
+            size="sm"
+            variant={value === option.value ? 'default' : 'outline'}
+            onClick={() => onPick(option.value)}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={direction} onValueChange={(next) => setDirection(next as 'last' | 'next')}>
+          <SelectTrigger className={`h-8 w-24 ${customActive ? 'border-primary' : ''}`} aria-label="Rolling window direction">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="last">Last</SelectItem>
+            <SelectItem value="next">Next</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={MAX_ROLLING_DAYS}
+          value={days}
+          placeholder="45"
+          onChange={(event) => setDays(event.target.value)}
+          className={`h-8 w-20 ${customActive ? 'border-primary' : ''}`}
+          aria-label="Number of days"
+        />
+        <span className="text-sm text-muted-foreground">days</span>
+        <Button
+          type="button"
+          size="sm"
+          variant={customActive ? 'default' : 'outline'}
+          disabled={!valid}
+          onClick={() => onPick(`${direction}_${count}_days` as RollingDaysKey)}
+        >
+          Use
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function buildTmdbDateToken(preset: RelativeDatePresetKey, bound: 'from' | 'to'): string {
@@ -5491,19 +5587,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                   <div className="space-y-3">
                     <div className="space-y-2">
                       <Label>Primary Release Presets</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {DATE_PRESET_OPTIONS.map(option => (
-                          <Button
-                            key={option.value}
-                            type="button"
-                            size="sm"
-                            variant={movieDatePreset === option.value ? 'default' : 'outline'}
-                            onClick={() => applyDatePreset('movie', option.value)}
-                          >
-                            {option.label}
-                          </Button>
-                        ))}
-                      </div>
+                      <DatePresetPicker value={movieDatePreset} onPick={(preset) => applyDatePreset('movie', preset)} />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -5536,19 +5620,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                   <div className="space-y-3">
                     <div className="space-y-2">
                       <Label>First Air Date Presets</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {DATE_PRESET_OPTIONS.map(option => (
-                          <Button
-                            key={option.value}
-                            type="button"
-                            size="sm"
-                            variant={seriesDatePreset === option.value ? 'default' : 'outline'}
-                            onClick={() => applyDatePreset('series', option.value)}
-                          >
-                            {option.label}
-                          </Button>
-                        ))}
-                      </div>
+                      <DatePresetPicker value={seriesDatePreset} onPick={(preset) => applyDatePreset('series', preset)} />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -5581,19 +5653,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                       <p className="text-xs text-muted-foreground">
                         Matches shows with an episode airing in the range, rather than shows that premiered in it.
                       </p>
-                      <div className="flex flex-wrap gap-2">
-                        {DATE_PRESET_OPTIONS.map(option => (
-                          <Button
-                            key={option.value}
-                            type="button"
-                            size="sm"
-                            variant={airDatePreset === option.value ? 'default' : 'outline'}
-                            onClick={() => applyDatePreset('airDate', option.value)}
-                          >
-                            {option.label}
-                          </Button>
-                        ))}
-                      </div>
+                      <DatePresetPicker value={airDatePreset} onPick={(preset) => applyDatePreset('airDate', preset)} />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">

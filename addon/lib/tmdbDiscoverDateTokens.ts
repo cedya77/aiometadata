@@ -11,6 +11,22 @@ const RELATIVE_DATE_PRESET_KEYS = new Set([
   'last_10_years'
 ]);
 
+// A rolling window of whole days: last_N_days runs from N days ago to today, next_N_days from today to N days ahead.
+const ROLLING_DAYS_PATTERN = /^(last|next)_(\d{1,5})_days$/;
+const MAX_ROLLING_DAYS = 36500;
+
+function rollingDays(preset: string): { direction: 'last' | 'next'; days: number } | null {
+  const match = ROLLING_DAYS_PATTERN.exec(preset);
+  if (!match) return null;
+  const days = Number(match[2]);
+  return days >= 1 && days <= MAX_ROLLING_DAYS ? { direction: match[1] as 'last' | 'next', days } : null;
+}
+
+/** A preset the server resolves against today: a named window or a rolling number of days. */
+function isRelativeDatePreset(preset: string): boolean {
+  return RELATIVE_DATE_PRESET_KEYS.has(preset) || rollingDays(preset) !== null;
+}
+
 const TMDB_DYNAMIC_DATE_FIELDS = new Set([
   'release_date.gte',
   'release_date.lte',
@@ -26,7 +42,7 @@ const TMDB_DYNAMIC_DATE_FIELDS = new Set([
 // Built from the preset set so a new preset cannot parse but resolve to nothing,
 // or be rejected here while every other layer accepts it.
 const DATE_TOKEN_PATTERN = new RegExp(
-  `^${TMDB_DISCOVER_DATE_TOKEN_PREFIX}:(${[...RELATIVE_DATE_PRESET_KEYS].join('|')}):(from|to)$`
+  `^${TMDB_DISCOVER_DATE_TOKEN_PREFIX}:(${[...RELATIVE_DATE_PRESET_KEYS].join('|')}|(?:last|next)_\\d{1,5}_days):(from|to)$`
 );
 
 interface DateToken {
@@ -49,7 +65,7 @@ function parseDateToken(value: any): DateToken | null {
 
   const tokenMatch = value.match(DATE_TOKEN_PATTERN);
 
-  if (!tokenMatch) return null;
+  if (!tokenMatch || !isRelativeDatePreset(tokenMatch[1])) return null;
 
   return {
     preset: tokenMatch[1],
@@ -121,6 +137,15 @@ function getDateRangeFromRelativePreset(preset: string, timezone: string, nowInp
   const toDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
   const fromDate = new Date(toDate.getTime());
 
+  const rolling = rollingDays(preset);
+  if (rolling) {
+    const edge = new Date(toDate.getTime());
+    edge.setUTCDate(edge.getUTCDate() + (rolling.direction === 'last' ? -rolling.days : rolling.days));
+    return rolling.direction === 'last'
+      ? { from: formatUtcDate(edge), to: formatUtcDate(toDate) }
+      : { from: formatUtcDate(toDate), to: formatUtcDate(edge) };
+  }
+
   switch (preset) {
     case 'today':
       break;
@@ -160,7 +185,7 @@ function resolveDynamicTmdbDiscoverParams(rawParams: any, options: ResolveOption
 
     const token = parseDateToken(value);
     if (!token) continue;
-    if (!RELATIVE_DATE_PRESET_KEYS.has(token.preset)) continue;
+    if (!isRelativeDatePreset(token.preset)) continue;
 
     const range = getDateRangeFromRelativePreset(token.preset, timezone, now);
     if (!range) continue;
@@ -174,6 +199,7 @@ function resolveDynamicTmdbDiscoverParams(rawParams: any, options: ResolveOption
 export {
   TMDB_DISCOVER_DATE_TOKEN_PREFIX,
   RELATIVE_DATE_PRESET_KEYS,
+  isRelativeDatePreset,
   TMDB_DYNAMIC_DATE_FIELDS,
   parseDateToken,
   getDateRangeFromRelativePreset,
@@ -182,6 +208,7 @@ export {
 module.exports = {
   TMDB_DISCOVER_DATE_TOKEN_PREFIX,
   RELATIVE_DATE_PRESET_KEYS,
+  isRelativeDatePreset,
   TMDB_DYNAMIC_DATE_FIELDS,
   parseDateToken,
   getDateRangeFromRelativePreset,

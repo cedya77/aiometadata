@@ -80,7 +80,7 @@ Static params:
 - with_origin_country: ISO 3166-1 code, or a pipe list for any of several: "KR|JP|CN|TW|HK|TH". "Asian horror" -> the main Asian film countries. "British or Irish" -> "GB|IE".
 - Countries and languages can only be included. For "not American" or "non-English", list the countries or languages the user most likely wants instead, and never list the excluded one.
 - include_adult: boolean
-- date_preset: a rolling window, one of today, this_week, this_month, last_month (last 30 days), this_year, last_year (last 12 months), last_5_years, last_10_years. Movies: release date. Series: premiere date.
+- date_preset: a rolling window, one of today, this_week, this_month, last_month (last 30 days), this_year, last_year (last 12 months), last_5_years, last_10_years, or last_N_days / next_N_days for any number of days up to today or from today, e.g. last_7_days, next_14_days. Movies: release date. Series: premiere date.
 - released_only: true hides titles that are not out yet (movies: out on digital, physical or TV; series: already premiered).
 - watch_region: country for resolve.watchProviders and resolve.excludeWatchProviders. Default {{REGION}}.
 - movies only:
