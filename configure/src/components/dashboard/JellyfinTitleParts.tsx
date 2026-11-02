@@ -47,7 +47,7 @@ export function PhoneTitleActions({ play, actions, name }: { play: React.ReactNo
       </div>
       {open === "more" && (
         <PhoneSheet title={name} onClose={close}>
-          {more.map((action) => <SheetRow key={action.key} icon={action.icon} label={action.label} detail={action.detail} disabled={action.busy} onClick={() => { close(); action.run?.(); }} />)}
+          {more.map((action) => <SheetRow key={action.key} icon={action.icon} label={action.label} detail={action.detail} disabled={action.busy} onClick={() => { if (action.panel) setOpen(action.key); else { close(); action.run?.(); } }} />)}
         </PhoneSheet>
       )}
       {panel && <PhoneSheet title={name} onClose={close}>{panel.panel!(close)}</PhoneSheet>}
@@ -58,10 +58,14 @@ export function PhoneTitleActions({ play, actions, name }: { play: React.ReactNo
 export function DesktopTitleActions({ play, actions }: { play: React.ReactNode; actions: TitleActionSpec[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const [menu, setMenu] = useState<Anchor | null>(null);
+  // A choice in the More menu that opens a panel, such as Rate, opens it where the menu was.
+  const [menuPanel, setMenuPanel] = useState<{ key: string; at: Anchor } | null>(null);
   const close = useCallback(() => setOpen(null), []);
   const closeMenu = useCallback(() => setMenu(null), []);
+  const closeMenuPanel = useCallback(() => setMenuPanel(null), []);
   const row = actions.filter((action) => action.placement === "row");
   const more = actions.filter((action) => action.placement === "more");
+  const held = menuPanel && more.find((action) => action.key === menuPanel.key && action.panel);
   return (
     <div className="flex flex-wrap items-center gap-3">
       {play}
@@ -80,7 +84,13 @@ export function DesktopTitleActions({ play, actions }: { play: React.ReactNode; 
           <Ellipsis className="size-[22px]" />
         </button>
       )}
-      {menu && <ActionMenu at={menu} onClose={closeMenu} items={more.map((action) => ({ icon: action.icon, label: action.label, onSelect: () => action.run?.() }))} />}
+      {menu && <ActionMenu at={menu} onClose={closeMenu} items={more.map((action) => ({ icon: action.icon, label: action.label, onSelect: () => (action.panel ? setMenuPanel({ key: action.key, at: menu }) : action.run?.()) }))} />}
+      {held && menuPanel && (
+        <>
+          <button type="button" aria-label="Close" onClick={closeMenuPanel} className="fixed inset-0 z-[110] cursor-default" />
+          <div style={{ left: Math.min(menuPanel.at.x, window.innerWidth - 360), top: menuPanel.at.y }} className="fixed z-[111] w-[22rem] rounded-2xl bg-popover/95 p-1 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl animate-fade-in">{held.panel!(closeMenuPanel)}</div>
+        </>
+      )}
     </div>
   );
 }
