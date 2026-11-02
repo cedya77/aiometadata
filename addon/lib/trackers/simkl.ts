@@ -179,6 +179,7 @@ export const simkl: Tracker = {
   ownList: (id) => /^simkl\.(watchlist\..+|upnext(\.anime)?)$/.test(id),
   resumeRank: 2,
   animeOnly: false,
+  scrobbles: true,
   rewatch: {
     separate: true,
     async kept(credential) {

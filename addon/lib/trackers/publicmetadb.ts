@@ -111,6 +111,7 @@ export const publicmetadb: Tracker = {
   },
   resumeRank: 3,
   animeOnly: false,
+  scrobbles: true,
   datedHistory: true,
   wholeRatings: false,
   marks: { from: ['watchlist', 'dropped'], to: MARK_KINDS },

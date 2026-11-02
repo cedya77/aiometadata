@@ -30,6 +30,12 @@ export const PLAY_SOURCES: Record<PlaySourceId, PlaySource> = {
   },
 };
 
+/** The source a live session came from, told apart by the client name a source without its own requests plays under. */
+export function sourceOfApp(app: { client: string } | null | undefined): PlaySourceId {
+  const found = (Object.entries(CLIENTS) as Array<[keyof typeof CLIENTS, PlaySource]>).find(([, source]) => source.client && source.client.name === app?.client);
+  return found ? found[0] : 'jellyfin';
+}
+
 /** Event resources the manifest declares; declaring one is what makes a front-end start delivering it. */
 export function scrobbleResources(config: any, anyoneTracks: boolean): string[] {
   return Object.values(PLAY_SOURCES).flatMap((source) => (source.scrobbles(config) && (anyoneTracks || !source.needsTracker) ? source.resources : []));

@@ -20,6 +20,8 @@ export interface Tracker {
   ownList: (id: string, catalog: { metadata?: any }) => boolean;
   resumeRank?: number;
   animeOnly: boolean;
+  /** Hears a play while it runs, as it starts, pauses or stops, not only once it is watched. */
+  scrobbles?: boolean;
   datedHistory: boolean;
   wholeRatings: boolean;
   marks: { from: Mark[]; to: Mark[] };

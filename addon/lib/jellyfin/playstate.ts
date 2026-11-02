@@ -474,7 +474,7 @@ async function writePlaystate(
 }
 
 // The table records every play; trackers hear these reports only when the switch for the play's source is on.
-function tellsTrackers(config: any, source: PlaySourceId = 'jellyfin'): boolean {
+export function tellsTrackers(config: any, source: PlaySourceId = 'jellyfin'): boolean {
   const { writesTrackers } = require('./profiles');
   return PLAY_SOURCES[source].scrobbles(config) && writesTrackers(config);
 }

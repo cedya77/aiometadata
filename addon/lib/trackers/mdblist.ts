@@ -123,6 +123,7 @@ export const mdblist: Tracker = {
   ownList: (id) => /^mdblist\.(watchlist(\.(movies|series))?|upnext|recommended\..+)$/.test(id),
   resumeRank: 1,
   animeOnly: false,
+  scrobbles: true,
   rewatch: { separate: false },
   datedHistory: true,
   wholeRatings: false,

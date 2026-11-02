@@ -1506,14 +1506,21 @@ export interface JellyfinSessionRow {
   profile: string;
   profileKey: string;
   viewer: string | null;
+  videoId: string | null;
+  seriesId: string | null;
   imageUrl: string | null;
   backdropUrl: string | null;
+  logoUrl: string | null;
   title: string;
   episode: string | null;
+  year: string | null;
+  genres: string[];
   positionMs: number;
   runtimeMs: number;
   paused: boolean;
   at: number;
+  /** The trackers this play reports to as it runs. */
+  trackers: string[];
 }
 
 export interface JellyfinPlayRow {

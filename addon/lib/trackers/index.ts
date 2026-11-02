@@ -18,6 +18,7 @@ export const trackerName = (id: string): string => trackerOf(id)?.name ?? id;
 export const isAnimeList = (id: string): boolean => trackerOf(id)?.animeOnly === true;
 export const resumeTrackers = (): AccountService[] => LIST.filter((tracker) => tracker.resumeRank).sort((a, b) => a.resumeRank! - b.resumeRank!).map((tracker) => tracker.id);
 export const isMatchable = (id: string): boolean => Boolean(trackerOf(id)?.match);
+export const scrobblingTrackers = (): AccountService[] => LIST.filter((tracker) => tracker.scrobbles).map((tracker) => tracker.id);
 
 export function copyBatch(id: string, what: Mark | 'watches' = 'watches'): number {
   const tracker = trackerOf(id);

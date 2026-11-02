@@ -2,7 +2,7 @@ import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { parseStremioId } from './idsCodec';
 import { decodeJellyfinId, stremioIdFor } from './ids';
-import { liveSessions, liveSessionsFor, type LiveSession } from './playstate';
+import { liveSessions, liveSessionsFor, tellsTrackers, type LiveSession } from './playstate';
 import { syncStatus } from './playstateSync';
 import { clientRequest, seenConfigurations } from './context';
 import { seriesIndex } from './episodeIndex';
@@ -12,7 +12,9 @@ import { itemIdForVideo } from './history';
 import { defaultUserName, listProfiles, profileKey, scopeConfigToProfile } from './profiles';
 import { isClassEnabled, POSTER_CACHE_ROUTE } from '../posterCache/config';
 import { CAPABLE, credentialFor } from './trackerSource';
-import { isMatchable, trackerName, trackerOf, type Mark } from '../trackers';
+import { isMatchable, scrobblingTrackers, trackerName, trackerOf, type Mark } from '../trackers';
+import { sourceOfApp } from '../playSources';
+import { shouldTrackServiceMediaType } from '../watchTracking';
 import { sourceKeyFor } from './trackerMirror';
 import { mapWithConcurrency } from '../../utils/concurrency';
 import redis from '../redisClient';
@@ -47,14 +49,21 @@ export interface SessionRow {
   profileKey: string;
   /** The profile signed in, when it plays into another profile's history. */
   viewer: string | null;
+  videoId: string | null;
+  seriesId: string | null;
   imageUrl: string | null;
   backdropUrl: string | null;
+  logoUrl: string | null;
   title: string;
   episode: string | null;
+  year: string | null;
+  genres: string[];
   positionMs: number;
   runtimeMs: number;
   paused: boolean;
   at: number;
+  /** The trackers this play reports to as it runs. */
+  trackers: string[];
 }
 
 const titles = new LRUCache<string, Named>({
@@ -70,6 +79,10 @@ interface Named {
   imageUrl: string | null;
   posterUrl: string | null;
   backdropUrl: string | null;
+  logoUrl: string | null;
+  /** A film's year and first genres; a series' episode says more. */
+  year: string | null;
+  genres: string[];
   seriesId: string | null;
   season: number | null;
   number: number | null;
@@ -98,7 +111,7 @@ async function describe(userUUID: string, videoId: string): Promise<Named> {
   if (held) return held;
 
   const parsed = parseStremioId(videoId);
-  let out: Named = { keys: [videoId], title: videoId, episode: null, imageUrl: null, posterUrl: null, backdropUrl: null, seriesId: null, season: null, number: null, episodeTitle: null, runtimeMs: 0 };
+  let out: Named = { keys: [videoId], title: videoId, episode: null, imageUrl: null, posterUrl: null, backdropUrl: null, logoUrl: null, year: null, genres: [], seriesId: null, season: null, number: null, episodeTitle: null, runtimeMs: 0 };
   try {
     if (parsed && parsed.episode !== null && parsed.episode !== undefined) {
       const index = (await seriesIndex(userUUID, parsed.base, { held: true }))
@@ -116,6 +129,9 @@ async function describe(userUUID: string, videoId: string): Promise<Named> {
         imageUrl: video?.thumbnail ?? index?.background ?? null,
         posterUrl: index?.poster ?? null,
         backdropUrl: index?.background ?? null,
+        logoUrl: index?.logo ?? null,
+        year: null,
+        genres: [],
         seriesId: index?.id ?? parsed.base,
         season: parsed.season ?? null,
         number: parsed.episode,
@@ -133,6 +149,9 @@ async function describe(userUUID: string, videoId: string): Promise<Named> {
         imageUrl: meta?.background ?? meta?.poster ?? null,
         posterUrl: meta?.poster ?? null,
         backdropUrl: meta?.background ?? null,
+        logoUrl: meta?.logo ?? null,
+        year: meta?.releaseInfo ? String(meta.releaseInfo) : meta?.year ? String(meta.year) : null,
+        genres: Array.isArray(meta?.genres) ? meta.genres.slice(0, 2).map(String) : [],
         seriesId: null,
         season: null,
         number: null,
@@ -222,15 +241,19 @@ async function playRows(userUUID: string, rows: any[], names: Map<string, string
   });
   return out;
 }
-async function sessionRows(userUUID: string, names: Map<string, string>): Promise<SessionRow[]> {
+async function sessionRows(userUUID: string, config: any, names: Map<string, string>): Promise<SessionRow[]> {
   const own = await liveSessionsFor(userUUID);
+  const scrobbling = scrobblingTrackers();
   return mapWithConcurrency(own, 2, async (s) => {
     const descriptor = await decodeJellyfinId(s.itemId);
     const videoId = descriptor ? stremioIdFor(descriptor) : null;
-    const named: Named = videoId ? await describe(userUUID, videoId) : { keys: [s.itemId], title: s.itemId, episode: null, imageUrl: null, posterUrl: null, backdropUrl: null, seriesId: null, season: null, number: null, episodeTitle: null, runtimeMs: 0 };
+    const named: Named = videoId ? await describe(userUUID, videoId) : { keys: [s.itemId], title: s.itemId, episode: null, imageUrl: null, posterUrl: null, backdropUrl: null, logoUrl: null, year: null, genres: [], seriesId: null, season: null, number: null, episodeTitle: null, runtimeMs: 0 };
     const viewer = s.viewer && s.viewer !== s.profile ? names.get(s.viewer) ?? s.viewer.slice(0, 8) : null;
     const held = videoId ? await database.getPlaystate(userUUID, videoId, s.profile).catch(() => null) : null;
-    return { profile: profileLabel(names, s.profile), profileKey: s.profile, viewer, imageUrl: named.imageUrl, backdropUrl: named.backdropUrl, title: named.title, episode: named.episode, positionMs: s.positionMs, runtimeMs: Number(held?.runtime_ms) || named.runtimeMs, paused: s.paused, at: s.at };
+    const scoped = scopeConfigToProfile(config, userUUID, s.profile || null);
+    const kind = named.seriesId || named.episode !== null ? 'series' : 'movie';
+    const trackers = videoId && tellsTrackers(scoped, sourceOfApp(s.app)) ? scrobbling.filter((service) => shouldTrackServiceMediaType(scoped, service, kind)) : [];
+    return { profile: profileLabel(names, s.profile), profileKey: s.profile, viewer, videoId, seriesId: named.seriesId, imageUrl: named.imageUrl, backdropUrl: named.backdropUrl, logoUrl: named.logoUrl, title: named.title, episode: named.episode, year: named.year, genres: named.genres, positionMs: s.positionMs, runtimeMs: Number(held?.runtime_ms) || named.runtimeMs, paused: s.paused, at: s.at, trackers };
   });
 }
 
@@ -1180,7 +1203,7 @@ export async function dashboardConfiguration(userUUID: string, profile: string |
     foldedPlays(userUUID, names, 'played', history, limit),
   ]);
   const shown = profiles.filter((p) => history === null || p.key === history);
-  const sessions = (await sessionRows(userUUID, names)).filter((s) => history === null || s.profileKey === history);
+  const sessions = (await sessionRows(userUUID, config, names)).filter((s) => history === null || s.profileKey === history);
   return {
     userUUID,
     label: defaultUserName(config, userUUID),
