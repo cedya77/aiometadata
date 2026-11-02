@@ -1559,7 +1559,8 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
   // the previous one's picks being served for the rest of the catalog TTL, which
   // reads as the setting having done nothing.
   if (idOnly.startsWith('recommendations.')) {
-    const { RECOMMENDATION_EPOCH, pickOrder, voteFloor }: any = require('../utils/recommendations/provider');
+    const { RECOMMENDATION_EPOCH, pickOrder, voteFloor, reasonLanguage }: any = require('../utils/recommendations/provider');
+    const language = reasonLanguage(config);
     catalogConfig.recommendations = {
       epoch: RECOMMENDATION_EPOCH,
       provider: config.recommendations?.provider || '',
@@ -1581,6 +1582,7 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
       // simply unset still has to notice when the default itself moves.
       order: pickOrder(config, idOnly),
       minVotes: voteFloor(config, idOnly),
+      ...(language ? { reasonLanguage: language } : {}),
     };
   }
 

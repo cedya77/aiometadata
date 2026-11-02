@@ -619,11 +619,17 @@ class ComprehensiveCatalogWarmer {
           const actualType = catalog.type;
           const catalogKey = `${catalogId}:${actualType}:${stableStringify(extraArgs || {})}`;
 
+          // A page built here still has its episodes, which the cached page drops, so their thumbnails warm from it.
+          let built = null;
+          const keep = (fullResult) => {
+            built = fullResult;
+            return this.projectCatalogResult(fullResult);
+          };
           const result = await cacheWrapCatalog(uuid, catalogKey, async () => {
           if (WARMER_MAL_CATALOGS.has(catalogId)) {
             const configWithUUID = { ...config, userUUID: uuid };
             const fullResult = await this.warmMALCatalog(catalogId, derivedPage, configWithUUID, extraArgs);
-            return this.projectCatalogResult(fullResult);
+            return keep(fullResult);
           } else if (catalogId === 'tmdb.trending') {
             // Special handling for tmdb.trending - call getTrending directly
             if (!uuid) {
@@ -632,7 +638,7 @@ class ComprehensiveCatalogWarmer {
             const configWithUUID = { ...config, userUUID: uuid };
             const { getTrending } = require('./getTrending');
             const fullResult = await getTrending(catalog.type, config.language, derivedPage, extraArgs.genre || null, configWithUUID, uuid, true);
-            return this.projectCatalogResult(fullResult);
+            return keep(fullResult);
           } else if (catalogId === 'tvmaze.schedule') {
             const configWithUUID = { ...config, userUUID: uuid };
             const fullResult = await getTvmazeScheduleCatalog({
@@ -647,7 +653,7 @@ class ComprehensiveCatalogWarmer {
               enableErrorCaching: false,
               maxRetries: 1,
             });
-            return this.projectCatalogResult(fullResult);
+            return keep(fullResult);
           } else {
             // Everything else goes through getCatalog
             if (!uuid) {
@@ -657,7 +663,7 @@ class ComprehensiveCatalogWarmer {
             const configWithUUID = { ...config, userUUID: uuid };
             const { getCatalog } = require('./getCatalog');
             const fullResult = await getCatalog(catalog.type, config.language, derivedPage, catalogId, extraArgs.genre || null, configWithUUID, uuid, true);
-            return this.projectCatalogResult(fullResult);
+            return keep(fullResult);
           }
           }, {
             enableErrorCaching: false,
@@ -672,7 +678,7 @@ class ComprehensiveCatalogWarmer {
           const rawMetaCount = result?.metas?.length || 0;
 
           if (rawMetaCount > 0) {
-            imageWarmQueue.offer(collectWarmupTargets(result.metas, config, catalog.type));
+            imageWarmQueue.offer(collectWarmupTargets(built?.metas ?? result.metas, config, catalog.type));
             await this.warmTrailers(result.metas, config, catalogId);
           }
 
@@ -711,7 +717,7 @@ class ComprehensiveCatalogWarmer {
         const rawMetaCount = result?.metas?.length || 0;
 
         if (rawMetaCount > 0) {
-          imageWarmQueue.offer(collectWarmupTargets(result.metas, config, catalog.type));
+          imageWarmQueue.offer(collectWarmupTargets(fullResult.metas, config, catalog.type));
           await this.warmTrailers(result.metas, config, catalogId);
         }
 

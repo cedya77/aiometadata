@@ -8,6 +8,7 @@ import { fetchMeta } from './items';
 import { upsertPlaystateEverywhere } from './aliases';
 import { PLAY_SOURCES, type PlaySourceId } from '../playSources';
 import type { Descriptor } from './idsCodec';
+import { playCountOf } from './dto';
 
 const logger = consola.withTag('JellyfinPlaystate');
 
@@ -407,7 +408,7 @@ async function announce(userUUID: string, config: any, profile: string, session:
     Key: itemId,
     ItemId: itemId,
     Played: played,
-    PlayCount: Math.max(played ? 1 : 0, Number(row?.play_count) || 0),
+    PlayCount: playCountOf(played, row?.play_count),
     PlaybackPositionTicks: positionMs * TICKS_PER_MS,
     PlayedPercentage: positionMs > 0 && runtimeMs > 0 ? Math.min(100, (positionMs / runtimeMs) * 100) : played ? 100 : 0,
     LastPlayedDate: row?.last_played_at ? new Date(Number(row.last_played_at)).toISOString() : null,
@@ -569,6 +570,7 @@ async function settle(
     const { undropOnWatch } = require('./dropped');
     undropOnWatch(userUUID, config, [session.descriptor.i]);
   }
+  if (played === true) require('./watchlist').leaveWatchlistOnWatch(userUUID, config, [session.descriptor]);
 
   if (!tells) return;
 
@@ -709,6 +711,7 @@ async function markItems(
   if (played) {
     const { undropOnWatch } = require('./dropped');
     undropOnWatch(userUUID, config, sessions.filter((session) => session.descriptor.k === 'episode').map((session) => session.descriptor.i));
+    require('./watchlist').leaveWatchlistOnWatch(userUUID, config, sessions.map((session) => session.descriptor));
   }
   if (!tells) return;
   // A season or series goes to the trackers as one batch, not an event per episode.

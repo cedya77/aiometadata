@@ -1,3 +1,4 @@
+import consola from 'consola';
 import { fetchMeta, metaToBaseItem } from './items';
 import { clientHasOwnWatchlist } from './context';
 import { profileKey, writesTrackers } from './profiles';
@@ -9,6 +10,7 @@ import { envInt } from '../../utils/envNumber';
 
 const database: any = require('../database');
 const idMapper: any = require('../id-mapper');
+const logger = consola.withTag('Jellyfin');
 
 interface HeldWatchlist {
   rows: WatchlistEntry[];
@@ -235,6 +237,40 @@ export async function setWatchlisted(userUUID: string, config: any, descriptor: 
     })));
   }
   return true;
+}
+
+/**
+ * A title watched here leaves this server's own watchlist, as it would a tracker's: a film once watched, a show
+ * once any episode is. A tracker's watchlist is left to the tracker, which applies its own rule.
+ */
+export function leaveWatchlistOnWatch(userUUID: string, config: any, descriptors: any[]): void {
+  if (!keepsServerWatchlist(config)) return;
+  const titles = [...new Map(descriptors.filter((d) => d?.i && (d.k === 'movie' || d.k === 'episode')).map((d) => [`${d.k}:${d.i}`, d])).values()];
+  if (!titles.length) return;
+  (async () => {
+    const profile = profileKey(config);
+    const listed: any[] = (await database.listWatchlist(userUUID, profile)).filter((row: any) => Number(row.listed));
+    if (!listed.length) return;
+    const isFilm = (row: any) => row.media_type === 'movie' || row.meta_type === 'movie';
+    let removed = 0;
+    for (const title of titles) {
+      const film = title.k === 'movie';
+      const rows = listed.filter((row) => isFilm(row) === film && Number(row.listed));
+      if (!rows.length) continue;
+      const target = await identityOf(String(title.i), film ? 'movie' : mediaTypeOf(title.t), config);
+      for (const row of rows) {
+        const same = String(row.meta_id) === String(title.i) || sameTitle(await identityOf(String(row.meta_id), mediaTypeOf(row.media_type), config), target);
+        if (!same) continue;
+        await database.setWatchlisted(userUUID, profile, String(row.meta_id), row.media_type, false, isFilm(row) ? 'movie' : 'series');
+        row.listed = 0;
+        removed++;
+      }
+    }
+    if (removed) {
+      invalidateWatchlist(userUUID);
+      invalidateDatedShelves(userUUID);
+    }
+  })().catch((error: any) => logger.debug(`Leaving the watchlist on a watch failed: ${error?.message || error}`));
 }
 
 /** Copies the services' watchlists into this server's own, keeping each title's date added there. */
