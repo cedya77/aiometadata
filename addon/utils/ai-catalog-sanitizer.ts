@@ -16,7 +16,7 @@ import {
 } from './ai-catalog-schema';
 import {
   TMDB_DISCOVER_DATE_TOKEN_PREFIX,
-  RELATIVE_DATE_PRESET_KEYS,
+  isRelativeDatePreset,
   TMDB_DYNAMIC_DATE_FIELDS,
   parseDateToken,
 } from '../lib/tmdbDiscoverDateTokens';
@@ -804,7 +804,7 @@ function applyTmdbDatePresets(catalog: AICatalogOutput, diagnostics: string[]): 
   for (const [presetKey, fieldPrefix] of presetFields) {
     const preset = typeof params[presetKey] === 'string' ? params[presetKey].trim().toLowerCase() : '';
     if (!preset) continue;
-    if (!RELATIVE_DATE_PRESET_KEYS.has(preset)) {
+    if (!isRelativeDatePreset(preset)) {
       diagnostics.push(`Removed unknown TMDB ${presetKey} for "${catalog.name}": ${preset}`);
       continue;
     }
@@ -816,7 +816,7 @@ function applyTmdbDatePresets(catalog: AICatalogOutput, diagnostics: string[]): 
 
   for (const field of TMDB_DYNAMIC_DATE_FIELDS) {
     const value = typeof params[field] === 'string' ? params[field].trim().toLowerCase() : '';
-    if (RELATIVE_DATE_PRESET_KEYS.has(value)) {
+    if (isRelativeDatePreset(value)) {
       params[field] = tmdbDateToken(value, field.endsWith('.gte') ? 'from' : 'to');
     }
   }

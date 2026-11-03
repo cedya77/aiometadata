@@ -871,16 +871,56 @@ export async function pageChildren(
 }
 
 /** The same decision filterByIncludeTypes makes, taken on a meta. */
+/** The item types a request filters to, when it names any of the kinds a catalog holds. */
+function wantedTypes(includeItemTypes: string | undefined): Set<string> | null {
+  if (!includeItemTypes) return null;
+  const wanted = new Set(includeItemTypes.split(',').map((t) => t.trim()).filter(Boolean));
+  return wanted.has('Movie') || wanted.has('Series') || wanted.has('BoxSet') ? wanted : null;
+}
+
+/** The ratings a request keeps, from Jellyfin's pipe-separated OfficialRatings; null keeps every title. */
+function wantedRatings(officialRatings: unknown): Set<string> | null {
+  const list = String(officialRatings ?? '').split(/[|,]/).map((rating) => rating.trim().toUpperCase()).filter(Boolean);
+  return list.length ? new Set(list) : null;
+}
+
+/** The rating a title is shown with, as its OfficialRating. */
+export function officialRatingOf(meta: any): string | null {
+  return ratingFields(meta).OfficialRating;
+}
+
+/** Keeps the titles of the asked types and, when asked, ratings; a title with no rating matches no rating. */
 export function includeTypesFilter(
   mediaType: string,
-  includeItemTypes: string | undefined
+  includeItemTypes: string | undefined,
+  officialRatings?: unknown
 ): ((meta: any) => boolean) | undefined {
-  if (!includeItemTypes) return undefined;
+  const wanted = wantedTypes(includeItemTypes);
+  const ratings = wantedRatings(officialRatings);
+  if (!wanted && !ratings) return undefined;
 
-  const wanted = new Set(includeItemTypes.split(',').map((t) => t.trim()).filter(Boolean));
-  if (!wanted.size || (!wanted.has('Movie') && !wanted.has('Series') && !wanted.has('BoxSet'))) return undefined;
+  return (meta: any) =>
+    (!wanted || wanted.has(itemTypeOf(meta, mediaType)))
+    && (!ratings || ratings.has(String(officialRatingOf(meta) ?? '').toUpperCase()));
+}
 
-  return (meta: any) => wanted.has(itemTypeOf(meta, mediaType));
+/** What a filtered list's lengths and cursors are held under: its types, and its ratings when it names any. */
+export function listFilterKey(includeItemTypes: unknown, officialRatings?: unknown): string {
+  const ratings = wantedRatings(officialRatings);
+  return `${includeItemTypes ? String(includeItemTypes) : ''}${ratings ? `|ratings:${[...ratings].sort().join('|')}` : ''}`;
+}
+
+// A catalog built here holds only its declared type: films and TVDB collections in a movie one, shows in a
+// series one. An external addon's catalog is not held to its type, so it is filtered item by item.
+const CATALOG_SERVES: Record<string, string[]> = { movie: ['Movie', 'BoxSet'], series: ['Series'] };
+const EXTERNAL_CATALOG = /^(custom|stremthru)\./;
+
+/** Whether a catalog can hold none of the asked types, so a filtered read passes it by unread. */
+export function catalogCannotServe(catalog: { id: string; type: string }, includeItemTypes: string | undefined): boolean {
+  const serves = CATALOG_SERVES[catalog.type];
+  const wanted = wantedTypes(includeItemTypes);
+  if (!serves || !wanted || EXTERNAL_CATALOG.test(catalog.id)) return false;
+  return !serves.some((type) => wanted.has(type));
 }
 
 export function filterByIncludeTypes(items: any[], includeItemTypes: string | undefined): any[] {
