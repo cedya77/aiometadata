@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { missingRequiredKeys, type KeyStatus } from "@/lib/configStatus";
 import { navigateToSettingsSection } from "@/lib/settingsRoute";
 import { householdIssue } from "@/lib/cardAccounts";
+import { withoutWatchTrackingDefaults } from "@/lib/watchTracking";
 
 const LazyInstallDialog = lazy(() =>
   import("@/components/InstallDialog").then((module) => ({ default: module.InstallDialog }))
@@ -79,7 +80,7 @@ const SELF_PERSISTING_KEYS = [
 function fingerprintConfig(config: AppConfig): string {
   // Connecting, disconnecting and syncing all persist as they go, so counting what they
   // touch would report unsaved work for changes already on disk. Save owns the rest.
-  const { apiKeys, managers: _managers, managerAccounts: _managerAccounts, ...rest } = config as any;
+  const { apiKeys, managers: _managers, managerAccounts: _managerAccounts, ...rest } = withoutWatchTrackingDefaults(config) as any;
   const trimmedApiKeys = Object.fromEntries(
     Object.entries(apiKeys ?? {}).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
   );

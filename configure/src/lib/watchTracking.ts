@@ -109,6 +109,37 @@ export function declaresStremioEvents(config: AppConfig): boolean {
   return scrobblesStremio(config);
 }
 
+/** What a missing key already means, so setting one back to it is no change. */
+const WATCH_TRACKING_DEFAULTS = {
+  playbackReporting: false,
+  jellyfinScrobbling: true,
+  stremioScrobbling: false,
+  stremioLibraryWatchlist: false,
+} as const;
+
+/** The config less watch tracking values that only restate their default, for telling whether anything changed. */
+export function withoutWatchTrackingDefaults(config: AppConfig): AppConfig {
+  const out: Record<string, unknown> = { ...config };
+  for (const [key, value] of Object.entries(WATCH_TRACKING_DEFAULTS)) {
+    if (out[key] === value) delete out[key];
+  }
+  // The sources only count while a title counts once finished.
+  if (config.playbackReporting !== true) {
+    delete out.jellyfinScrobbling;
+    delete out.stremioScrobbling;
+    delete out.stremioLibraryWatchlist;
+  }
+  // Retaken whenever the events are declared again, so turning them off and on restamps it.
+  delete out.stremioScrobblingSince;
+  const left = Object.entries(config.watchTracking ?? {}).flatMap(([service, types]) => {
+    const off = Object.fromEntries(Object.entries(types ?? {}).filter(([, on]) => on === false));
+    return Object.keys(off).length ? [[service, off]] : [];
+  });
+  if (left.length) out.watchTracking = Object.fromEntries(left);
+  else delete out.watchTracking;
+  return out as unknown as AppConfig;
+}
+
 export function withStremioEventsSince<T extends AppConfig>(prev: T, next: T): T {
   return !declaresStremioEvents(prev) && declaresStremioEvents(next) ? { ...next, stremioScrobblingSince: Date.now() } : next;
 }
