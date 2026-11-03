@@ -153,7 +153,7 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
     const tried = await triedBefore(userUUID, from, to, 'watches', retry);
     const left = entries.filter((item) => {
       const as = sent(item);
-      return !held.has(nativeKey(as.kind, as.native!.tmdb, as.native!.season, as.native!.episode)) && ![...item.ids, ...as.ids].some((id) => present.has(id) || waiting.has(id));
+      return !(as.native && held.has(nativeKey(as.kind, as.native.tmdb, as.native.season, as.native.episode))) &&![...item.ids, ...as.ids].some((id) => present.has(id) || waiting.has(id));
     });
     const plan: CopyPlan = {
       items: left.filter((item) => !tried.has(copyKey(item))),

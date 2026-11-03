@@ -146,15 +146,14 @@ export async function filmFor(userUUID: string | undefined, service: string, ids
 
 /**
  * A watch of a film-matched episode as the film it is sent as there; anything else as it is. An item carrying
- * native ids, or asked to, gets the film's TMDB id, and is left as it is when the film has none.
+ * native ids, or asked to, gets the film's TMDB id; when the film has none it goes by the film's ids alone.
  */
 export async function asFilmOn<T extends { ids: string[]; kind: 'movie' | 'episode'; metaId: string; season: number | null; episode: number | null; native?: { tmdb: number; imdb: string | null; season: number | null; episode: number | null } }>(userUUID: string | undefined, service: string, item: T, needsNative = false): Promise<T> {
   if (item.kind !== 'episode') return item;
   const found = await filmFor(userUUID, service, item.ids);
   if (!found) return item;
   const tmdb = Number(found.match.target.ids.tmdb);
-  const native = needsNative || Boolean(item.native);
-  if (native && !(tmdb > 0)) return item;
+  const native = (needsNative || Boolean(item.native)) && tmdb > 0;
   const imdb = typeof found.match.target.ids.imdb === 'string' ? found.match.target.ids.imdb : null;
   return {
     ...item,
@@ -163,7 +162,7 @@ export async function asFilmOn<T extends { ids: string[]; kind: 'movie' | 'episo
     metaId: found.film,
     season: null,
     episode: null,
-    ...(native ? { native: { tmdb, imdb, season: null, episode: null } } : {}),
+    native: native ? { tmdb, imdb, season: null, episode: null } : undefined,
   };
 }
 
@@ -299,6 +298,8 @@ export async function unsentAmong(userUUID: string | undefined, service: string,
   const index = await indexFor(userUUID, service);
   if (!index.byBase.size) return out;
   for (const id of ids) {
+    // An episode sent as a film is sent, whatever the show's match says of it.
+    if (index.byBase.get(id)?.kind === 'episode') continue;
     const parsed = parseStremioId(id);
     const match = parsed ? index.byBase.get(parsed.base) : null;
     if (!parsed || !match || parsed.episode === null || parsed.episode === undefined) continue;

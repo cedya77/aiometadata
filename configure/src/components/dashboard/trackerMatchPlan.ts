@@ -129,13 +129,16 @@ export function planSeason(season: number, episodes: OurEpisode[], theirs: Their
 // A special is matched where a title says so or by hand; a guess by number could send it somewhere it never went before.
 const SPECIAL_MATCHES: ReadonlySet<Status> = new Set(["same", "part", "close", "chosen", "none"]);
 
-/** Specials planned as a season, then every guess left as it is, and those sent as a film marked so. */
-export function planSpecials(plan: SeasonPlan, chosen: Record<string, Ref | null>, films: Record<string, string>): SeasonPlan {
+/**
+ * Specials planned as a season, then every guess left as it is, and those sent as a film marked so. A title match
+ * on an episode a season here already sends is a guess too, or the special would take that episode from it.
+ */
+export function planSpecials(plan: SeasonPlan, chosen: Record<string, Ref | null>, films: Record<string, string>, taken: ReadonlySet<string> = new Set()): SeasonPlan {
   return {
     ...plan,
     rows: plan.rows.map((row) => {
       if (row.key in films) return { ...row, target: null, status: "film" as const, part: 0 };
-      if (row.key in chosen || SPECIAL_MATCHES.has(row.status)) return row;
+      if (row.key in chosen || (SPECIAL_MATCHES.has(row.status) && !(row.target && taken.has(sentKey(row.target))))) return row;
       return { ...row, target: null, status: "kept" as const, part: 0 };
     }),
   };

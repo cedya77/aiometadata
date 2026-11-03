@@ -167,7 +167,8 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
     const now = Date.now();
     const out = [...ours.entries()].map(([season, episodes]) =>
       planSeason(season, episodes, view.theirs, view.numbers, prefer[season] ?? (shownOrder === "tmdb" ? links[String(season)]?.season : undefined), chosen, heldBy[shownOrder], now));
-    if (specials.length) out.push(planSpecials(planSeason(0, specials, view.theirs, view.numbers, prefer[0], chosen, heldBy[shownOrder], now), chosen, subject.films ?? {}));
+    const taken = new Set(out.flatMap((p) => p.rows.flatMap((row) => (row.target ? [sentKey(row.target)] : []))));
+    if (specials.length) out.push(planSpecials(planSeason(0, specials, view.theirs, view.numbers, prefer[0], chosen, heldBy[shownOrder], now), chosen, subject.films ?? {}, taken));
     return out;
   }, [series, view, ours, specials, prefer, chosen, links, heldBy, shownOrder, subject.films]);
 

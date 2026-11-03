@@ -8,7 +8,8 @@ import { useConfig } from '@/contexts/ConfigContext';
 import type { WatchTrackingService } from '@/contexts/config';
 import { useStremioLinkStatus } from '@/hooks/useStremioLinkStatus';
 import { CARD_SERVICES } from '@/lib/cardAccounts';
-import { parseRoute } from '@/lib/settingsRoute';
+import { hashFor, parseRoute } from '@/lib/settingsRoute';
+import { useSave } from '@/contexts/SaveContext';
 import { cn } from '@/lib/utils';
 import {
   openServiceConnect,
@@ -111,12 +112,26 @@ export function WatchTrackingSettings() {
     window.addEventListener('hashchange', follow);
     return () => window.removeEventListener('hashchange', follow);
   }, []);
+  // A save held up by the people set up here opens the list, where the reason is shown.
+  const { saveBlockedBy } = useSave();
+  useEffect(() => {
+    if (saveBlockedBy) setPeopleOpen(true);
+  }, [saveBlockedBy]);
+  const togglePeople = () => {
+    // Closing drops the people anchor, so following a link to it again opens the list.
+    if (peopleOpen && parseRoute(window.location.hash).anchor === 'household-users') {
+      window.history.replaceState(null, '', hashFor('watch-tracking'));
+    }
+    setPeopleOpen(!peopleOpen);
+  };
 
   // Any install that has reported counts; the newest report is the one shown.
   const links = Object.values(linkStatus ?? {});
   const states = links.map((link) => stremioLinkState(config.stremioScrobblingSince, link));
   const lastReport = Math.max(0, ...links.map((link) => (link.eventAt && link.eventAt >= (config.stremioScrobblingSince ?? 0) ? link.eventAt : 0)));
-  const addonStatus = !linkStatus || states.includes('ok')
+  const addonStatus = !linkStatus
+    ? null
+    : states.includes('ok')
     ? <Reporting tone="ok" text="Reports playback" detail={lastReport ? `Last report ${ago(lastReport)}` : undefined} />
     : states.includes('waiting')
       ? <Reporting tone="wait" text="Installed, waiting for its first report" />
@@ -126,14 +141,12 @@ export function WatchTrackingSettings() {
   const unconnected = WATCH_TRACKING_SERVICES.filter((service) => !connected.includes(service));
 
   // Both read as off while a title counts when opened. Turning one on moves step 2 to finished with only that
-  // one on; turning the last one off moves it back, leaving the switch as it was for the next time.
+  // one on. Turning the last one off leaves step 2 at finished, so nothing is recorded rather than every title opened.
   const setSource = (source: 'jellyfinScrobbling' | 'stremioScrobbling', on: boolean) => {
     setConfig((prev) => {
       if (prev.playbackReporting !== true) {
         return on ? withStremioEventsSince(prev, { ...prev, playbackReporting: true, jellyfinScrobbling: false, stremioScrobbling: false, [source]: true }) : prev;
       }
-      const otherOn = source === 'jellyfinScrobbling' ? scrobblesStremio(prev) : scrobblesJellyfin(prev);
-      if (!on && !otherOn) return { ...prev, playbackReporting: false };
       return withStremioEventsSince(prev, { ...prev, [source]: on });
     });
   };
@@ -278,6 +291,7 @@ export function WatchTrackingSettings() {
                 <span key={service}>
                   {index ? ', ' : ''}
                   <button
+                    id={`${service}-watch-tracking`}
                     type="button"
                     title={WATCH_TRACKING_SERVICE_DEFINITIONS[service].connectHint}
                     onClick={() => openServiceConnect(service)}
@@ -302,7 +316,7 @@ export function WatchTrackingSettings() {
             <p className="text-sm font-medium">{people.length === 1 ? 'Just you' : `${people.length} people`}</p>
             <p className="text-sm text-muted-foreground">{people.length === 1 ? 'Add the people who watch here, each with their own services' : 'Each one can send to their own services'}</p>
           </div>
-          <Button type="button" variant="outline" size="sm" aria-expanded={peopleOpen} onClick={() => setPeopleOpen((open) => !open)}>
+          <Button type="button" variant="outline" size="sm" aria-expanded={peopleOpen} onClick={togglePeople}>
             {peopleOpen ? 'Done' : 'Manage people'}
           </Button>
         </div>

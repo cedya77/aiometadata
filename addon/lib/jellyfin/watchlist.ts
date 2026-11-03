@@ -252,6 +252,8 @@ export function leaveWatchlistOnWatch(userUUID: string, config: any, descriptors
     const listed: any[] = (await database.listWatchlist(userUUID, profile)).filter((row: any) => Number(row.listed));
     if (!listed.length) return;
     const isFilm = (row: any) => row.media_type === 'movie' || row.meta_type === 'movie';
+    // While the list is not picked, the row keeps its date, or a fresh removal would hide the title on the trackers' lists.
+    const keepsServer = keepsServerWatchlist(config);
     let removed = 0;
     for (const title of titles) {
       const film = title.k === 'movie';
@@ -261,7 +263,7 @@ export function leaveWatchlistOnWatch(userUUID: string, config: any, descriptors
       for (const row of rows) {
         const same = String(row.meta_id) === String(title.i) || sameTitle(await identityOf(String(row.meta_id), mediaTypeOf(row.media_type), config), target);
         if (!same) continue;
-        await database.setWatchlisted(userUUID, profile, String(row.meta_id), row.media_type, false, isFilm(row) ? 'movie' : 'series');
+        await database.setWatchlisted(userUUID, profile, String(row.meta_id), row.media_type, false, isFilm(row) ? 'movie' : 'series', keepsServer ? undefined : Number(row.updated_at) || 0);
         row.listed = 0;
         removed++;
       }
