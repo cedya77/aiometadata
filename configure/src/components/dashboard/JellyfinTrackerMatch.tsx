@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinSyncActions, useJellyfinTitle, type DashboardTab, type JellyfinMatchCandidate, type JellyfinMatchDetail, type JellyfinMatchSeason, type JellyfinTrackerMatch } from "@/hooks/useDashboardQueries";
 import { Eyebrow } from "./TrackerParts";
 import { useTrackers } from "./trackers";
-import { GUESSED, LOOK, episodeLabel, heldIn, keyOf, norm, planSeason, seasonLink, seasonName, sentKey, strayEpisodes, wordsOf, type OurEpisode, type Ref, type Row, type SeasonPlan, type Status, type TheirEpisode } from "./trackerMatchPlan";
+import { GUESSED, LOOK, episodeLabel, heldIn, keyOf, norm, planSeason, planSpecials, seasonLink, seasonName, sentKey, strayEpisodes, wordsOf, type OurEpisode, type Ref, type Row, type SeasonPlan, type Status, type TheirEpisode } from "./trackerMatchPlan";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
@@ -28,6 +28,8 @@ export interface MatchSubject {
   seasons: number[];
   existing?: JellyfinTrackerMatch | null;
   episodes?: MatchEpisode[];
+  /** Episodes of this show sent as a film by a match of their own, by "season:episode", with the film's title. */
+  films?: Record<string, string>;
 }
 
 // A film is sent by its IMDb or TMDB id, so a film with neither can't be the target.
@@ -67,6 +69,8 @@ const MARK: Record<Status, { label: string; tone: string }> = {
   missing: { label: "!", tone: "bg-amber-400/15 text-amber-300" },
   none: { label: "×", tone: "bg-white/5 text-muted-foreground" },
   later: { label: "…", tone: "bg-white/5 text-muted-foreground" },
+  kept: { label: "=", tone: "bg-white/5 text-muted-foreground" },
+  film: { label: "▶", tone: "bg-white/10 text-foreground/80" },
 };
 
 export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, laneKey, service, subject, onClose, onSaved }: {
@@ -117,6 +121,11 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
     for (const list of out.values()) list.sort((a, b) => a.number - b.number);
     return new Map([...out.entries()].sort((a, b) => a[0] - b[0]));
   }, [title, subject.seasons]);
+  // Specials get a tab of their own after the seasons, and only what is matched there is saved.
+  const specials = useMemo(() => (title?.episodes ?? [])
+    .filter((episode) => episode.season === 0 && episode.number !== null)
+    .map((episode): OurEpisode => ({ number: episode.number!, name: episode.name, airsAt: episode.airsAt }))
+    .sort((a, b) => a.number - b.number), [title]);
 
   const views = useMemo(() => ({
     tmdb: viewOf(detail?.seasons ?? []),
@@ -156,9 +165,11 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
   const plans = useMemo(() => {
     if (!series || !view.seasons.length) return [] as SeasonPlan[];
     const now = Date.now();
-    return [...ours.entries()].map(([season, episodes]) =>
+    const out = [...ours.entries()].map(([season, episodes]) =>
       planSeason(season, episodes, view.theirs, view.numbers, prefer[season] ?? (shownOrder === "tmdb" ? links[String(season)]?.season : undefined), chosen, heldBy[shownOrder], now));
-  }, [series, view, ours, prefer, chosen, links, heldBy, shownOrder]);
+    if (specials.length) out.push(planSpecials(planSeason(0, specials, view.theirs, view.numbers, prefer[0], chosen, heldBy[shownOrder], now), chosen, subject.films ?? {}));
+    return out;
+  }, [series, view, ours, specials, prefer, chosen, links, heldBy, shownOrder, subject.films]);
 
   const plan = plans.find((p) => p.season === shown) ?? plans[0] ?? null;
   const strays = useMemo(() => strayEpisodes(plans, theirs, Date.now()), [plans, theirs]);
@@ -293,10 +304,11 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
       const episodes: Record<string, Ref | null> = {};
       for (const p of plans) {
         for (const row of p.rows) {
-          if (row.status === "later") continue;
+          if (row.status === "later" || row.status === "kept" || row.status === "film") continue;
           episodes[row.key] = row.target ? { ...row.target.sends } : null;
         }
-        seasons[String(p.season)] = seasonLink(p, theirs);
+        // Specials carry only the choices made for them, so the rest are sent as they were.
+        if (p.season > 0) seasons[String(p.season)] = seasonLink(p, theirs);
       }
       const { sent } = await actions.matchSave(userUUID, {
         key: laneKey,
@@ -326,6 +338,8 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
     look: counts(plan).look,
     none: plan.rows.filter((r) => r.status === "none").length,
     later: plan.rows.filter((r) => r.status === "later").length,
+    kept: plan.rows.filter((r) => r.status === "kept").length,
+    films: plan.rows.filter((r) => r.status === "film").length,
   } : null;
   const visible = plan ? plan.rows.filter((r) => !onlyLook || LOOK.has(r.status) || r.key === openRow) : [];
   const chosenEpisode = subject.episodes?.find((e) => e.video === filmEpisode) ?? null;
@@ -449,7 +463,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                           aria-pressed={p === plan}
                           className={cx("flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium ring-1 ring-inset transition-colors", p === plan ? "bg-blue-500/15 text-foreground ring-blue-400/50" : "bg-white/[0.04] text-foreground/80 ring-white/10 hover:bg-white/[0.08]")}
                         >
-                          Season {p.season}
+                          {seasonName(p.season)}
                           {look
                             ? <span className="rounded-full bg-amber-400/15 px-1.5 text-[11px] text-amber-300">{look} to check</span>
                             : <span className="text-[11px] text-muted-foreground">{p.rows.length === theirTotal || !p.rows.length ? p.rows.length || theirTotal : `${p.rows.length} → ${theirTotal}`}</span>}
@@ -461,8 +475,8 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
 
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="font-semibold">Season {plan.season} here</span>
-                    <span className="text-muted-foreground">is {name}'s</span>
+                    <span className="font-semibold">{seasonName(plan.season)} here</span>
+                    <span className="text-muted-foreground">{plan.season === 0 ? "are looked for in" : "is"} {name}'s</span>
                     <select
                       value={plan.theirs}
                       onChange={(event) => linkSeason(plan.season, Number(event.target.value))}
@@ -485,6 +499,8 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                     {tally.look > 0 && <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-400" />{tally.look} to check</span>}
                     {tally.none > 0 && <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-white/30" />{tally.none} not sent</span>}
                     {tally.later > 0 && <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-white/20" />{tally.later} not aired yet</span>}
+                    {tally.kept > 0 && <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-white/20" />{tally.kept} sent as {tally.kept === 1 ? "it is" : "they are"}</span>}
+                    {tally.films > 0 && <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-white/40" />{tally.films} sent as a film</span>}
                   </div>
                 )}
 
@@ -513,6 +529,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                             <button
                               type="button"
                               onClick={() => openPicker(row)}
+                              disabled={row.status === "film"}
                               aria-expanded={open}
                               aria-label={`${name} episode for E${row.ours.number}`}
                               className={cx("flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1 text-left text-[13px] ring-1 ring-inset transition-colors", look ? "ring-amber-300/50" : "ring-white/[0.08] hover:ring-white/20", open && "bg-white/[0.06]")}
@@ -525,7 +542,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                                       {sent && <span className="-mt-1 block text-[11px] tabular-nums text-muted-foreground">sent as TMDB {sent}</span>}
                                     </span>
                                   </>
-                                : <span className={cx("truncate", row.status === "missing" ? "text-amber-200" : "text-muted-foreground")}>{row.status === "none" ? "Not sent" : row.status === "later" ? "Follows the season once it airs" : "Pick an episode"}</span>}
+                                : <span className={cx("truncate", row.status === "missing" ? "text-amber-200" : "text-muted-foreground")}>{row.status === "none" ? "Not sent" : row.status === "later" ? "Follows the season once it airs" : row.status === "kept" ? `Sent as it is, as special ${row.ours.number}` : row.status === "film" ? `Sent as the film ${subject.films?.[row.key] ?? ""}` : "Pick an episode"}</span>}
                               <ChevronDown className="ml-auto size-3.5 shrink-0 text-muted-foreground" />
                             </button>
                             <span className="hidden w-20 shrink-0 sm:block">
@@ -587,6 +604,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                     Nothing here points at {stray.slice(0, 4).map((t) => `E${t.number}${t.title ? ` ${t.title}` : ""}`).join(", ")}{stray.length > 4 ? ` and ${stray.length - 4} more` : ""} in {name}'s {plan.theirs === 0 ? "specials" : `season ${plan.theirs}`}, so {stray.length === 1 ? "it isn't" : "they aren't"} marked from here.
                   </p>
                 )}
+                {plan.season === 0 && <p className="text-xs leading-relaxed text-muted-foreground">Specials are matched by title or by hand. One left as it is is sent to {name} as it is numbered here, as before. One sent as a film keeps its own match.</p>}
                 <p className="text-xs leading-relaxed text-muted-foreground">Episodes are matched by title. When {name} has one episode for two parts here, part 1 sends it and part 2 sends nothing.{shownOrder === "tvdb" ? ` In TVDB order, each episode is still sent as the TMDB episode ${name} links it to.` : ""}</p>
               </div>
             )

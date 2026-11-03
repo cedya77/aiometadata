@@ -405,9 +405,9 @@ function matchSummary(match: JellyfinTrackerMatch): string {
     const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
     const [target, shift] = top ? top.split(":").map(Number) : [link?.season ?? season, link?.offset ?? 0];
     const odd = own.filter((e) => !e.theirs || e.theirs.season !== target || e.theirs.episode - e.episode !== shift);
-    const prefix = single ? "" : `season ${season} `;
+    const prefix = single ? "" : season === 0 ? "specials " : `season ${season} `;
     const moved = target !== season || shift !== 0;
-    if (moved) pieces.push(`${single ? "" : `season ${season} as `}${target === 0 ? "specials" : `season ${target}`}${shift > 0 ? ` from episode ${shift + 1}` : ""}`);
+    if (moved) pieces.push(`${single ? "" : season === 0 ? "specials as " : `season ${season} as `}${target === 0 ? "specials" : `season ${target}`}${shift > 0 ? ` from episode ${shift + 1}` : ""}`);
     if (!odd.length) {
       if (!moved) unchanged += 1;
       continue;
@@ -479,6 +479,10 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
   const [showMatches, setShowMatches] = useState(false);
   const matches = matchData?.matches ?? [];
   const filmEpisodeOf = (match: JellyfinTrackerMatch) => ({ video: match.bases[0], season: match.episode?.season ?? null, episode: match.episode?.episode ?? null });
+  // A show's episodes that a match of their own sends as a film, so its whole-show match leaves them be.
+  const filmsOf = (showId: string | null | undefined): Record<string, string> => Object.fromEntries(matches
+    .filter((m) => m.kind === "episode" && m.episode && showId && m.open?.id === showId)
+    .map((m) => [`${m.episode!.season}:${m.episode!.episode}`, m.target.title]));
   const matchItem = (item: JellyfinDriftItem) => {
     // An episode already sent as a film opens on that match; a show offers its episodes for one.
     const episodes = item.kind === "movie" ? [] : item.views.filter((v) => v.video).map((v) => ({ video: v.video!, season: v.season, episode: v.episode }));
@@ -488,11 +492,11 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
       return;
     }
     const existing = matches.find((m) => m.kind !== "episode" && m.bases.some((base) => item.bases?.includes(base))) ?? null;
-    setMatching({ item: item.id, bases: item.bases ?? [], kind: item.kind === "movie" ? "movie" : "series", title: item.title, open: item.open, seasons: item.seasons ?? [], existing, episodes });
+    setMatching({ item: item.id, bases: item.bases ?? [], kind: item.kind === "movie" ? "movie" : "series", title: item.title, open: item.open, seasons: item.seasons ?? [], existing, episodes, films: filmsOf(item.open?.id) });
   };
   const editMatch = (match: JellyfinTrackerMatch) => setMatching(match.kind === "episode"
     ? { item: null, bases: match.bases, kind: "episode", title: match.title, open: match.open, seasons: [], existing: match, episodes: [filmEpisodeOf(match)] }
-    : { item: null, bases: match.bases, kind: match.kind, title: match.title, open: match.open, seasons: Object.keys(match.seasons).map(Number), existing: match });
+    : { item: null, bases: match.bases, kind: match.kind, title: match.title, open: match.open, seasons: Object.keys(match.seasons).map(Number), existing: match, films: filmsOf(match.open?.id) });
   const removeMatch = async (match: JellyfinTrackerMatch) => {
     try {
       await actions.matchRemove(userUUID, lane.key, match.group);

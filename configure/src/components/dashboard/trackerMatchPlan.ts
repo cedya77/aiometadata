@@ -1,7 +1,8 @@
 export type Ref = { season: number; episode: number };
 export type OurEpisode = { number: number; name: string | null; airsAt: number | null };
 export type TheirEpisode = { season: number; number: number; title: string | null; airedAt: number | null; sends: Ref; norm: string; words: Set<string> };
-export type Status = "same" | "part" | "close" | "shift" | "number" | "missing" | "none" | "later" | "chosen";
+// "kept" is a special sent as it is numbered here, with no choice saved; "film" one sent as a film by its own match.
+export type Status = "same" | "part" | "close" | "shift" | "number" | "missing" | "none" | "later" | "chosen" | "kept" | "film";
 export type Row = { key: string; ours: OurEpisode; target: TheirEpisode | null; status: Status; part: number };
 export type SeasonPlan = { season: number; theirs: number; rows: Row[] };
 
@@ -123,6 +124,21 @@ export function planSeason(season: number, episodes: OurEpisode[], theirs: Their
     });
   }
   return { season, theirs: linked, rows };
+}
+
+// A special is matched where a title says so or by hand; a guess by number could send it somewhere it never went before.
+const SPECIAL_MATCHES: ReadonlySet<Status> = new Set(["same", "part", "close", "chosen", "none"]);
+
+/** Specials planned as a season, then every guess left as it is, and those sent as a film marked so. */
+export function planSpecials(plan: SeasonPlan, chosen: Record<string, Ref | null>, films: Record<string, string>): SeasonPlan {
+  return {
+    ...plan,
+    rows: plan.rows.map((row) => {
+      if (row.key in films) return { ...row, target: null, status: "film" as const, part: 0 };
+      if (row.key in chosen || SPECIAL_MATCHES.has(row.status)) return row;
+      return { ...row, target: null, status: "kept" as const, part: 0 };
+    }),
+  };
 }
 
 export function strayEpisodes(plans: SeasonPlan[], theirs: TheirEpisode[], now: number): Map<number, TheirEpisode[]> {
