@@ -76,7 +76,7 @@ export function UserAccounts({ user, catalogs, onChange, onAddCatalogs, onRemove
   const missing = selected && selectedAccount?.connected ? missingWatchlistSlots(catalogs, selected, config.displayTypeOverrides) : [];
 
   return (
-    <div className="space-y-2.5 border-t pt-3">
+    <div className="space-y-2.5">
       <div className="flex items-center gap-1.5">
         <Label className="text-xs font-medium">Accounts</Label>
         <TooltipProvider>

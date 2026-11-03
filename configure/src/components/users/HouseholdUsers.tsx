@@ -5,7 +5,6 @@ import { useConfig } from '@/contexts/ConfigContext';
 import { useSave } from '@/contexts/SaveContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -22,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { TagChip } from '@/components/TagChip';
 import { MAX_TAG_NAME_LENGTH, type CatalogConfig, type JellyfinUser, type SkipProvider, type SkipSource, type TagDef } from '@/contexts/config';
 import { UserAccounts } from '@/components/jellyfin/UserAccounts';
-import { CARD_SERVICES, connectedServices, handoffNameClash, isHolder, pinInvalid, showsAlsoKnownAs, trackerOptionsFor, userBadge, watchlistOptionsFor, type UserBadge } from '@/lib/cardAccounts';
+import { CARD_SERVICES, connectedServices, handoffNameClash, isHolder, pinInvalid, showsAlsoKnownAs, trackerOptionsFor, watchlistOptionsFor } from '@/lib/cardAccounts';
 import { disconnectCardAccount } from '@/lib/integrationCredentials';
 import { useJellyfinServer } from '@/hooks/useJellyfinServer';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -31,13 +30,16 @@ import { scrobblesStremio, WATCH_TRACKING_SERVICE_DEFINITIONS, WATCH_TRACKING_SE
 
 const IMAGE_URL = /^https?:\/\//i;
 
-function Avatar({ src, onClick, title, small }: { src?: string; onClick?: () => void; title?: string; small?: boolean }) {
-  const size = small ? 'h-7 w-7' : 'h-10 w-10';
+const AVATAR_SIZES = { sm: 'h-8 w-8 text-xs', md: 'h-10 w-10 text-sm', lg: 'h-14 w-14 text-xl' } as const;
+
+function Avatar({ src, name, size = 'md', onClick, title }: { src?: string; name?: string; size?: keyof typeof AVATAR_SIZES; onClick?: () => void; title?: string }) {
+  const box = AVATAR_SIZES[size];
+  const initial = name?.trim()[0]?.toUpperCase();
   const face = src && IMAGE_URL.test(src)
-    ? <img src={src} alt="" className={cn(size, 'rounded-full object-cover bg-muted')} />
+    ? <img src={src} alt="" className={cn(box, 'rounded-full object-cover bg-muted')} />
     : (
-      <div className={cn(size, 'flex items-center justify-center rounded-full bg-muted text-muted-foreground')}>
-        <User className={small ? 'h-4 w-4' : 'h-5 w-5'} />
+      <div className={cn(box, 'flex items-center justify-center rounded-full bg-muted font-semibold text-muted-foreground')}>
+        {initial ?? <User className="h-1/2 w-1/2" />}
       </div>
     );
   if (!onClick) return <div className="shrink-0">{face}</div>;
@@ -113,40 +115,51 @@ function PinField({ name, pin, main, onChange }: { name: string; pin?: string; m
   );
 }
 
-interface UserRowProps {
+type PersonTab = 'profile' | 'tracking' | 'catalogs' | 'playback';
+
+interface Person {
+  key: string;
   name: string;
   avatar?: string;
   main?: boolean;
-  user?: JellyfinUser;
-  allTags: TagDef[];
+  user: JellyfinUser;
   catalogCount: number;
   trackerOptions: Array<{ value: string; label: string; animeOnly?: boolean }>;
   watchlistOptions: WatchlistOption[];
+  watchedPoint?: WatchedPoint;
+  /** The tracking accounts this person writes to. */
+  accounts: string[];
+  onChange: (patch: Partial<JellyfinUser>) => void;
+  onRemove?: () => void;
+  onForget?: () => void;
+  /** Their own accounts, for someone else. */
+  accountsEditor?: ReactNode;
+}
+
+interface PersonDetailProps {
+  person: Person;
+  allTags: TagDef[];
   hasPmdb: boolean;
   /** The main user's choice, which a user left on "Same as you" follows. */
   mainSkipSource: SkipSource;
   showHandoff?: boolean;
   /** Shows the Jellyfin-only settings, on an instance that runs the Jellyfin server. */
   jellyfin?: boolean;
-  watchedPoint?: WatchedPoint;
-  open: boolean;
-  onToggle: () => void;
-  /** The tracking accounts this user writes to, named on the closed card. */
-  accounts: string[];
-  /** Stremio SDK scrobbling is on, so the user has an install link in Configuration. */
+  /** Stremio SDK scrobbling is on, so each person has an install link in Configuration. */
   stremioOn: boolean;
-  onChange: (patch: Partial<JellyfinUser>) => void;
-  onRemove?: () => void;
-  onForget?: () => void;
-  children?: ReactNode;
+  tab: PersonTab;
+  onTab: (tab: PersonTab) => void;
 }
 
-const BADGE_STYLES: Record<UserBadge, string> = {
-  'You': 'border-primary/40 bg-primary/15 text-primary',
-  'Same person': 'border-sky-500/40 text-sky-400',
-  'Own accounts': 'border-emerald-500/40 text-emerald-400',
-  'Someone else': 'border-muted-foreground/30 text-muted-foreground',
-};
+/** One line under a name: who this is, where their watches go and what they see. */
+function personSummary(person: Person): string {
+  const user = person.user;
+  const who = person.main ? 'You' : user.trackers === true ? 'You, on fewer catalogs' : 'Someone else';
+  const parts = [who];
+  if (person.accounts.length && user.trackers !== true) parts.push(person.accounts.join(', '));
+  if (user.tags.length) parts.push(`${person.catalogCount} catalog${person.catalogCount === 1 ? '' : 's'}`);
+  return parts.join(' · ');
+}
 
 interface WatchedPoint {
   value: number | null | undefined;
@@ -229,253 +242,261 @@ function SettingRow({ label, description, control, children }: { label: string; 
 }
 
 /** The longer notes under a setting, kept apart from the control. */
-function SettingNotes({ children }: { children: ReactNode }) {
-  return <div className="space-y-1 rounded-md bg-muted/30 px-3 py-2">{children}</div>;
-}
-
-function CardSection({ title, children }: { title: string; children: ReactNode }) {
+function WhoChoice({ selected, title, hint, disabled, onSelect }: { selected: boolean; title: string; hint: string; disabled?: boolean; onSelect: () => void }) {
   return (
-    <div className="space-y-2 border-t pt-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
-      {children}
-    </div>
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      disabled={disabled}
+      onClick={onSelect}
+      className={cn(
+        'flex flex-1 items-start gap-3 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+        selected ? 'border-foreground/70 bg-accent/40' : 'hover:bg-accent/30',
+      )}
+    >
+      <span className={cn('mt-0.5 h-4 w-4 shrink-0 rounded-full border', selected ? 'border-[5px] border-foreground' : 'border-muted-foreground/50')} aria-hidden="true" />
+      <span className="space-y-0.5">
+        <span className="block text-sm font-medium">{title}</span>
+        <span className="block text-xs text-muted-foreground">{hint}</span>
+      </span>
+    </button>
   );
 }
 
-function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptions, watchlistOptions, hasPmdb, mainSkipSource, showHandoff, jellyfin, watchedPoint, open, onToggle, accounts, stremioOn, onChange, onRemove, onForget, children }: UserRowProps) {
-  const chosen = user?.tags ?? [];
+function PersonDetail({ person, allTags, hasPmdb, mainSkipSource, showHandoff, jellyfin, stremioOn, tab, onTab }: PersonDetailProps) {
+  const { name, avatar, main, user, catalogCount, trackerOptions, watchlistOptions, watchedPoint, onChange, onRemove, onForget, accountsEditor } = person;
+  const chosen = user.tags ?? [];
   const toggleTag = (tag: string) =>
     onChange({ tags: chosen.includes(tag) ? chosen.filter((t) => t !== tag) : [...chosen, tag] });
   const caps = allTags
     .filter((t) => chosen.includes(t.name) && t.ageRating && t.ageRating !== 'None')
     .map((t) => t.ageRating as string);
-  const samePerson = main || user?.trackers === true;
+  const samePerson = main || user.trackers === true;
   const holder = !main && isHolder(user);
   const [pictureOpen, setPictureOpen] = useState(false);
-  // Open from the start when something there needs attention: a bad PIN, or no addon to play from.
-  const [jellyfinOpen, setJellyfinOpen] = useState(() => pinInvalid(user?.pin) || Boolean(main && !user?.streamUrl));
-
-  const scope = `${catalogCount} catalog${catalogCount === 1 ? '' : 's'}`;
-  const capNote = caps.length ? <span className="rounded-full border border-amber-500/40 px-1.5 text-[11px] text-amber-400">{caps.join(', ')} and lower</span> : null;
 
   // A holder that has lost the service its pick named (e.g. disconnected it) falls back to Automatic.
-  const rawTrackerSource = user?.trackerSource;
+  const rawTrackerSource = user.trackerSource;
   const trackerKnown = rawTrackerSource === 'auto' || rawTrackerSource === 'off' || trackerOptions.some((opt) => opt.value === rawTrackerSource);
   const trackerValue = holder && rawTrackerSource && !trackerKnown ? 'auto' : rawTrackerSource ?? (main || holder ? 'auto' : 'inherit');
-  const trackerCaption = trackerValue === 'inherit' ? 'Same as you: follows your own card.' : resumeSourceCaption(trackerValue, trackerOptions);
 
-  const badge = userBadge(user, Boolean(main));
   const canForget = Boolean(onForget) && (main || !samePerson);
   const hasMenu = canForget || Boolean(onRemove);
-  const openInstallLink = () => navigateToSettingsSection('configuration', `install-link-${user?.id || 'main'}`);
+  const openInstallLink = () => navigateToSettingsSection('configuration', `install-link-${user.id || 'main'}`);
+  const tabs: Array<[PersonTab, string]> = [['profile', 'Profile'], ['tracking', 'Tracking'], ['catalogs', 'Catalogs'], ...(jellyfin ? [['playback', 'Playback'] as [PersonTab, string]] : [])];
+  const shown = tabs.some(([id]) => id === tab) ? tab : 'profile';
 
   return (
-    <div id={`user-card-${user?.id || 'main'}`} className={cn('scroll-mt-16 rounded-lg border', open ? 'space-y-3 p-4' : 'px-3 py-2')}>
-      <div className="flex items-center gap-2">
-        <button type="button" onClick={onToggle} aria-expanded={open} className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-left">
-          <Avatar src={avatar} small />
-          <span className="truncate text-sm font-medium">{name || 'Unnamed user'}</span>
-          <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-medium', BADGE_STYLES[badge])}>{badge}</span>
-          {accounts.length ? <span className="text-[11px] text-muted-foreground">{accounts.join(' · ')}</span> : null}
-          <span className="text-[11px] text-muted-foreground">{chosen.length ? scope : 'All catalogs'}</span>
-        </button>
-        {stremioOn ? (
-          <Button variant="ghost" size="sm" className="hidden h-7 gap-1 text-xs sm:inline-flex" onClick={openInstallLink}>
-            Install link <ArrowRight className="h-3 w-3" />
-          </Button>
-        ) : null}
-        {hasMenu || stremioOn ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className={cn('h-7 w-7 p-0 text-muted-foreground', !hasMenu && 'sm:hidden')} aria-label={`More for ${name}`}>
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {stremioOn ? <DropdownMenuItem className="sm:hidden" onSelect={openInstallLink}>Install link</DropdownMenuItem> : null}
-              {stremioOn && hasMenu ? <DropdownMenuSeparator className="sm:hidden" /> : null}
-              {canForget ? <DropdownMenuItem onSelect={() => onForget?.()}>Forget imported history</DropdownMenuItem> : null}
-              {canForget && onRemove ? <DropdownMenuSeparator /> : null}
-              {onRemove ? <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => onRemove()}>Remove {name || 'this user'}</DropdownMenuItem> : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground" aria-label={open ? `Close ${name}` : `Open ${name}`} onClick={onToggle}>
-          {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </Button>
+    <div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 pt-5 sm:px-6">
+        <Avatar src={avatar} name={name} size="lg" onClick={() => setPictureOpen((v) => !v)} title={`Picture of ${name}`} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-lg font-semibold">{name || 'Unnamed user'}</p>
+          <p className="truncate text-sm text-muted-foreground">{personSummary(person)}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {stremioOn ? (
+            <Button variant="outline" size="sm" className="gap-1" onClick={openInstallLink}>
+              Install link <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
+          {hasMenu ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 w-9 p-0 text-muted-foreground" aria-label={`More for ${name}`}>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canForget ? <DropdownMenuItem onSelect={() => onForget?.()}>Forget imported history</DropdownMenuItem> : null}
+                {canForget && onRemove ? <DropdownMenuSeparator /> : null}
+                {onRemove ? <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => onRemove()}>Remove {name || 'this user'}</DropdownMenuItem> : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+        </div>
       </div>
-      {open ? (
-      <>
-      <div className="flex items-start gap-3 border-t pt-3">
-        <Avatar src={avatar} onClick={() => setPictureOpen((v) => !v)} title={`Picture of ${name}`} />
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              value={name}
-              maxLength={MAX_TAG_NAME_LENGTH}
-              className="h-8 min-w-[10rem] flex-1 text-sm"
-              aria-label={main ? 'Name of the main user' : `Name of ${name}`}
-              onChange={(e) => onChange({ name: e.target.value })}
+      {pictureOpen || (avatar && !IMAGE_URL.test(avatar)) ? (
+        <div className="px-4 pt-3 sm:px-6">
+          <Input
+            value={avatar ?? ''}
+            placeholder="Picture address (https://...)"
+            className="h-8 font-mono text-xs"
+            aria-label={`Picture of ${name}`}
+            autoFocus={pictureOpen}
+            onChange={(e) => onChange({ avatar: e.target.value || undefined })}
+          />
+        </div>
+      ) : null}
+
+      <div role="tablist" aria-label={`Settings of ${name}`} className="mt-4 flex gap-6 overflow-x-auto border-b px-4 sm:px-6">
+        {tabs.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={shown === id}
+            onClick={() => onTab(id)}
+            className={cn(
+              '-mb-px whitespace-nowrap border-b-2 py-2.5 text-sm font-medium transition-colors',
+              shown === id ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div role="tabpanel" className="divide-y px-4 py-2 sm:px-6">
+        {shown === 'profile' ? (
+          <>
+            <SettingRow
+              label="Name"
+              control={
+                <Input
+                  value={name}
+                  maxLength={MAX_TAG_NAME_LENGTH}
+                  className="h-8 text-sm"
+                  aria-label={main ? 'Name of the main user' : `Name of ${name}`}
+                  onChange={(e) => onChange({ name: e.target.value })}
+                />
+              }
             />
             {main ? (
-              <span className="rounded-full border border-primary/40 bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary">You</span>
+              <SettingRow label="Who is this" description="You: your history and your trackers." />
             ) : (
-              <label className="flex items-center gap-1.5 text-xs" title={holder ? 'Disconnect this user’s accounts first: a user with accounts of their own is someone else.' : 'On: this is you on fewer catalogs, sharing your Continue Watching, watched marks and trackers. Off: someone else, with their own.'}>
-                <Switch checked={samePerson} disabled={holder} onCheckedChange={(next) => onChange({ trackers: next || undefined })} aria-label={`${name} is the same person as you`} />
-                Same person as you
-              </label>
-            )}
-          </div>
-          {pictureOpen || (avatar && !IMAGE_URL.test(avatar)) ? (
-            <Input
-              value={avatar ?? ''}
-              placeholder="Picture address (https://...)"
-              className="h-8 font-mono text-xs"
-              aria-label={`Picture of ${name}`}
-              autoFocus={pictureOpen}
-              onChange={(e) => onChange({ avatar: e.target.value || undefined })}
-            />
-          ) : (
-            <Note>{main ? 'Your history and trackers.' : samePerson ? 'You on fewer catalogs: shares your history and writes your trackers; the picks below can differ.' : holder ? 'Someone else, on the accounts connected below.' : 'Someone else with their own history; nothing reaches your trackers.'} Click the picture to change it.</Note>
-          )}
-        </div>
-      </div>
-
-      <CardSection title="Tracking">
-        <div className="divide-y">
-          <SettingRow
-            label={main ? 'Your trackers' : holder ? 'Their trackers' : 'Trackers this user reads'}
-            description="Where Continue Watching, Next Up and the watched ticks come from."
-            control={
-              <Select value={trackerValue} onValueChange={(v) => onChange({ trackerSource: v === 'inherit' ? undefined : (v as JellyfinUser['trackerSource']) })}>
-                <SelectTrigger className="h-8 text-xs" aria-label={`Trackers of ${name}`}><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {!main && !holder && <SelectItem value="inherit">Same as you</SelectItem>}
-                  <SelectItem value="auto">Automatic</SelectItem>
-                  {trackerOptions.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
-                  <SelectItem value="off">This server only</SelectItem>
-                </SelectContent>
-              </Select>
-            }
-          >
-            <SettingNotes>
-              <Note>{trackerCaption}</Note>
-              {canForget && (
-                <Note>What is read is also imported here and stays if you change this. Clear it with Forget imported history in the … menu.</Note>
-              )}
-              {main && (
-                <Note>Plays through this server always win over a tracker's view. Only services that store positions are listed, so not AniList or MyAnimeList.</Note>
-              )}
-              {main && trackerOptions.length === 0 && (
-                <Note>No connected service stores positions, so only plays here are shown. Fine for a single client.</Note>
-              )}
-            </SettingNotes>
-          </SettingRow>
-          {watchlistOptions.length > 0 && (
-            <SettingRow label="Watchlist" description="The shelves a heart in a client reads from and writes to.">
-              <WatchlistPicker value={user?.watchlistServices} options={watchlistOptions} onChange={(next) => onChange({ watchlistServices: next })} inheritLabel={main || holder ? 'Every connected shelf' : 'Same as you'} />
-              <SettingNotes>
-                <Note>A heart in a client writes to the picked shelves that take that title. MDBList and Trakt file anime under movies and series; Simkl, AniList and MyAnimeList keep an anime shelf.</Note>
-              </SettingNotes>
-            </SettingRow>
-          )}
-          {watchedPoint ? (
-            <SettingRow
-              label="Watched at"
-              description="Played this far, a title counts as watched; stopping earlier keeps it in Continue Watching. Simkl gets the same point. Saves on its own."
-              control={<WatchedPointPicker name={name} point={watchedPoint} />}
-            />
-          ) : null}
-          {showHandoff ? (
-            <SettingRow label="Also known as" description="Names AIOStreams and other apps use for this person, comma separated.">
-              <HandoffNamesInput names={user?.handoffNames} onChange={(handoffNames) => onChange({ handoffNames })} />
-            </SettingRow>
-          ) : null}
-        </div>
-        {children ? <div className="border-t pt-3">{children}</div> : null}
-      </CardSection>
-
-      {allTags.length > 0 ? (
-        <CardSection title="Catalogs">
-          <SettingRow
-            label="Tags"
-            description="This user sees the catalogs carrying any of the picked tags, under their rating limit. None picked shows every catalog. Tags are made in Catalogs."
-          >
-          <div className="flex flex-wrap items-center gap-1.5">
-            {allTags.map((t) => (
-              <TagChip
-                key={t.name}
-                name={t.name}
-                color={t.color}
-                suffix={t.ageRating && t.ageRating !== 'None' ? <span title={`Content rating ${t.ageRating} and lower`}>{t.ageRating}</span> : undefined}
-                onClick={() => toggleTag(t.name)}
-                pressed={chosen.includes(t.name)}
-                dimmed={chosen.length > 0 && !chosen.includes(t.name)}
-              />
-            ))}
-            <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span>{chosen.length === 0 ? 'No tag picked: every catalog' : scope}</span>
-              {capNote}
-            </span>
-          </div>
-          </SettingRow>
-        </CardSection>
-      ) : null}
-
-      {jellyfin ? (
-        <div className="border-t pt-3">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
-            aria-expanded={jellyfinOpen}
-            onClick={() => setJellyfinOpen((v) => !v)}
-          >
-            <span className="flex items-center gap-1.5">
-              <img src="/jellyfin_icon.svg" alt="" aria-hidden="true" className="h-3.5 w-3.5 object-contain" />
-              Jellyfin
-            </span>
-            {jellyfinOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </button>
-          {jellyfinOpen ? (
-            <div className="mt-2 divide-y">
-              <SettingRow
-                label="Stream addon"
-                description={main
-                  ? "The addon titles play from on Jellyfin, such as your AIOStreams. Without one, titles browse but won't play. Also in the Jellyfin settings under Configuration."
-                  : 'An addon this user plays from instead of yours. Empty follows yours.'}
-                control={
-                  <Input
-                    id={main ? 'jellyfin-main-stream-url' : undefined}
-                    className="h-8 font-mono text-xs"
-                    placeholder={main ? 'https://your-aiostreams/stremio/<config>/manifest.json' : 'Same as you'}
-                    aria-label={`Stream addon of ${name}`}
-                    value={user?.streamUrl ?? ''}
-                    onChange={(e) => onChange({ streamUrl: e.target.value.trim() ? e.target.value : undefined })}
+              <SettingRow label="Who is this">
+                <div role="radiogroup" aria-label={`Who ${name} is`} className="flex flex-col gap-2 sm:flex-row">
+                  <WhoChoice
+                    selected={samePerson}
+                    title="Me, on fewer catalogs"
+                    hint="Shares your history and your trackers"
+                    disabled={holder}
+                    onSelect={() => onChange({ trackers: true })}
                   />
-                }
-              >
-                {main && !user?.streamUrl ? <p className="text-[11px] text-amber-400">No stream addon set, so Jellyfin clients can browse but not play.</p> : null}
+                  <WhoChoice
+                    selected={!samePerson}
+                    title="Someone else"
+                    hint="Their own history, and their own trackers if they connect any"
+                    onSelect={() => onChange({ trackers: undefined })}
+                  />
+                </div>
+                {holder ? <Note>Disconnect their trackers first to make this you.</Note> : null}
               </SettingRow>
+            )}
+            {jellyfin ? (
               <SettingRow
                 label="PIN"
-                description={main ? 'Asked whenever another user switches to you.' : 'Asked whenever someone switches to this user.'}
-                control={<PinField name={name} pin={user?.pin} main={main} onChange={(pin) => onChange({ pin })} />}
+                description={main ? 'Asked when someone switches to you.' : `Asked when someone switches to ${name || 'this user'}.`}
+                control={<PinField name={name} pin={user.pin} main={main} onChange={(pin) => onChange({ pin })} />}
               />
-              <SettingRow label="Skip intro and credits" description="Where the skip markers a client shows come from, asked in this order.">
-                <SkipSourcePicker
-                  value={user?.skipSource ?? (main ? 'auto' : undefined)}
-                  inherited={mainSkipSource}
-                  main={main}
-                  hasPmdb={hasPmdb}
-                  onChange={(skipSource) => onChange({ skipSource })}
-                />
+            ) : null}
+            {showHandoff ? (
+              <SettingRow label="Also known as" description="Names AIOStreams and other apps use for this person.">
+                <HandoffNamesInput names={user.handoffNames} onChange={(handoffNames) => onChange({ handoffNames })} />
               </SettingRow>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      </>
-      ) : null}
+            ) : null}
+          </>
+        ) : null}
+
+        {shown === 'tracking' ? (
+          <>
+            {main ? (
+              <SettingRow label="Trackers" description="Yours are the services in step 3 above." />
+            ) : samePerson ? (
+              <SettingRow label="Trackers" description="Shares yours." />
+            ) : accountsEditor ? (
+              <div className="py-3">{accountsEditor}</div>
+            ) : null}
+            <SettingRow
+              label="Continue Watching from"
+              description={resumeSourceCaption(trackerValue, trackerOptions)}
+              control={
+                <Select value={trackerValue} onValueChange={(v) => onChange({ trackerSource: v === 'inherit' ? undefined : (v as JellyfinUser['trackerSource']) })}>
+                  <SelectTrigger className="h-8 text-xs" aria-label={`Continue Watching of ${name}`}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {!main && !holder && <SelectItem value="inherit">Same as you</SelectItem>}
+                    <SelectItem value="auto">Automatic</SelectItem>
+                    {trackerOptions.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+                    <SelectItem value="off">This server only</SelectItem>
+                  </SelectContent>
+                </Select>
+              }
+            />
+            {watchlistOptions.length > 0 ? (
+              <SettingRow label="Watchlist" description="Where a heart in an app goes.">
+                <WatchlistPicker value={user.watchlistServices} options={watchlistOptions} onChange={(next) => onChange({ watchlistServices: next })} inheritLabel={main || holder ? 'Every connected shelf' : 'Same as you'} />
+              </SettingRow>
+            ) : null}
+            {watchedPoint ? (
+              <SettingRow
+                label="Counts as watched at"
+                description="Stopping earlier keeps it in Continue Watching. Saves on its own."
+                control={<WatchedPointPicker name={name} point={watchedPoint} />}
+              />
+            ) : null}
+          </>
+        ) : null}
+
+        {shown === 'catalogs' ? (
+          allTags.length > 0 ? (
+            <SettingRow label="Catalogs" description="The tags this person sees. None picked shows every catalog.">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {allTags.map((t) => (
+                  <TagChip
+                    key={t.name}
+                    name={t.name}
+                    color={t.color}
+                    suffix={t.ageRating && t.ageRating !== 'None' ? <span title={`Content rating ${t.ageRating} and lower`}>{t.ageRating}</span> : undefined}
+                    onClick={() => toggleTag(t.name)}
+                    pressed={chosen.includes(t.name)}
+                    dimmed={chosen.length > 0 && !chosen.includes(t.name)}
+                  />
+                ))}
+              </div>
+              <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                {chosen.length === 0 ? 'Every catalog' : `${catalogCount} catalog${catalogCount === 1 ? '' : 's'}`}
+                {caps.length ? <span className="rounded-full border border-amber-500/40 px-1.5 text-[11px] text-amber-400">{caps.join(', ')} and lower</span> : null}
+              </p>
+            </SettingRow>
+          ) : (
+            <SettingRow label="Catalogs" description="Everyone sees every catalog. Give catalogs tags to show people different ones.">
+              <Button variant="outline" size="sm" onClick={() => navigateToSettingsSection('catalogs')}>Open Catalogs</Button>
+            </SettingRow>
+          )
+        ) : null}
+
+        {shown === 'playback' ? (
+          <>
+            <SettingRow
+              label="Stream addon"
+              description={main ? "Where titles play from on Jellyfin, such as your AIOStreams. Without one they browse but won't play." : 'An addon this person plays from instead of yours.'}
+              control={
+                <Input
+                  id={main ? 'jellyfin-main-stream-url' : undefined}
+                  className="h-8 font-mono text-xs"
+                  placeholder={main ? 'https://your-aiostreams/stremio/<config>/manifest.json' : 'Same as you'}
+                  aria-label={`Stream addon of ${name}`}
+                  value={user.streamUrl ?? ''}
+                  onChange={(e) => onChange({ streamUrl: e.target.value.trim() ? e.target.value : undefined })}
+                />
+              }
+            >
+              {main && !user.streamUrl ? <p className="text-[11px] text-amber-400">No stream addon set, so Jellyfin apps can browse but not play.</p> : null}
+            </SettingRow>
+            <SettingRow label="Skip intro and credits" description="Where skip markers come from, asked in this order.">
+              <SkipSourcePicker
+                value={user.skipSource ?? (main ? 'auto' : undefined)}
+                inherited={mainSkipSource}
+                main={main}
+                hasPmdb={hasPmdb}
+                onChange={(skipSource) => onChange({ skipSource })}
+              />
+            </SettingRow>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -543,20 +564,15 @@ function WatchlistPicker({ value, options, onChange, inheritLabel }: { value?: s
 }
 
 function resumeSourceCaption(value: string, options: Array<{ value: string; label: string; animeOnly?: boolean }>): string {
-  if (value === 'off') {
-    return 'This server only: Continue Watching, Next Up and the ticks come from plays here. Trackers are still told about plays but never read.';
-  }
+  if (value === 'inherit') return 'Follows yours.';
+  if (value === 'off') return 'Only plays here. Trackers are told about plays but never read.';
   if (value === 'auto') {
     const names = options.filter((o) => !o.animeOnly).map((o) => o.label);
-    const list = names.length ? names.join(' and ') : 'a connected tracker';
-    return `Automatic: Continue Watching merges paused titles from ${list}, newest first. Ticks, Next Up and Upcoming come from the first connected of MDBList, Simkl, PublicMetaDB. AniList and MyAnimeList are read only when picked.`;
+    return names.length ? `Paused titles from ${names.join(' and ')}, merged with plays here.` : 'Plays here, until a tracker that keeps positions is connected.';
   }
   const option = options.find((o) => o.value === value);
-  if (option?.animeOnly) {
-    return `${option.label} only: ticks, Next Up and Upcoming come from your ${option.label} anime list plus plays here. It covers anime only and keeps no positions, so Continue Watching is what you pause here. It counts episodes rather than tracking each, so unwatching an earlier episode shows only here.`;
-  }
-  const name = option?.label ?? 'that tracker';
-  return `${name} only: Continue Watching, ticks, Next Up and Upcoming come from ${name} plus plays here. Pick it when trackers disagree.`;
+  if (option?.animeOnly) return `The ${option.label} anime list plus plays here. It keeps no positions.`;
+  return `${option?.label ?? 'That tracker'} plus plays here. Pick one when trackers disagree.`;
 }
 
 const SKIP_PROVIDERS: Array<{ value: SkipProvider; label: string; note: string }> = [
@@ -680,15 +696,9 @@ export function HouseholdUsers() {
     return candidates.filter((c) => c.ready);
   }, [config.apiKeys, config.mdblistWatchTracking, config.simklWatchTracking, config.publicmetadbWatchTracking, config.anilistWatchTracking, config.malWatchTracking]);
 
-  // One card open at a time keeps the list short; a lone user is open from the start.
-  const [openCard, setOpenCard] = useState<string | null>(() => ((config.jellyfinUsers ?? []).length === 0 ? 'main' : null));
-  const [scrollTo, setScrollTo] = useState<string | null>(null);
-  useEffect(() => {
-    if (!scrollTo) return;
-    document.getElementById(`user-card-${scrollTo}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    setScrollTo(null);
-  }, [scrollTo]);
-  const toggleCard = (key: string) => setOpenCard((current) => (current === key ? null : key));
+  const [selected, setSelected] = useState('main');
+  const [tab, setTab] = useState<PersonTab>('profile');
+  const [adding, setAdding] = useState(false);
 
   const stremioOn = scrobblesStremio(config);
   const mainAccounts = WATCH_TRACKING_SERVICES
@@ -790,8 +800,9 @@ export function HouseholdUsers() {
     const id = newUserId();
     setConfig(prev => ({ ...prev, jellyfinUsers: [...(prev.jellyfinUsers ?? []), { id, name: clean, tags: [] }] }));
     setNewUserName('');
-    setOpenCard(id);
-    setScrollTo(id);
+    setAdding(false);
+    setSelected(id);
+    setTab('profile');
   };
 
   const [forgetFor, setForgetFor] = useState<{ profile: string | null; name: string } | null>(null);
@@ -819,6 +830,63 @@ export function HouseholdUsers() {
     }
   };
 
+  const mainPerson: Person = {
+    key: 'main',
+    name: mainName,
+    avatar: config.jellyfinUserAvatar,
+    main: true,
+    user: {
+      id: '',
+      name: mainName,
+      tags: config.jellyfinUserTags ?? [],
+      trackerSource: config.jellyfinResumeSource ?? 'auto',
+      skipSource: config.jellyfinSkipSource ?? 'auto',
+      watchlistServices: config.jellyfinWatchlistServices,
+      handoffNames: config.jellyfinUserHandoffNames,
+      pin: config.jellyfinUserPin,
+      streamUrl: config.jellyfinStreamUrl,
+    },
+    catalogCount: catalogCountFor(config.jellyfinUserTags ?? []),
+    trackerOptions: resumeSourceOptions,
+    watchlistOptions,
+    watchedPoint: watchedPointFor('', mainName),
+    accounts: mainAccounts,
+    onForget: canForget ? () => setForgetFor({ profile: null, name: mainName }) : undefined,
+    onChange: (patch) => setConfig(prev => ({
+      ...prev,
+      ...('name' in patch ? { jellyfinUserName: patch.name } : {}),
+      ...('avatar' in patch ? { jellyfinUserAvatar: patch.avatar } : {}),
+      ...('tags' in patch ? { jellyfinUserTags: patch.tags?.length ? patch.tags : undefined } : {}),
+      ...('trackerSource' in patch ? { jellyfinResumeSource: patch.trackerSource as typeof prev.jellyfinResumeSource } : {}),
+      ...('skipSource' in patch ? { jellyfinSkipSource: patch.skipSource === 'auto' ? undefined : patch.skipSource } : {}),
+      ...('watchlistServices' in patch ? { jellyfinWatchlistServices: patch.watchlistServices } : {}),
+      ...('handoffNames' in patch ? { jellyfinUserHandoffNames: patch.handoffNames } : {}),
+      ...('pin' in patch ? { jellyfinUserPin: patch.pin } : {}),
+      ...('streamUrl' in patch ? { jellyfinStreamUrl: patch.streamUrl } : {}),
+    })),
+  };
+  const people: Person[] = [mainPerson, ...users.map((user): Person => {
+    const holder = isHolder(user);
+    return {
+      key: user.id,
+      name: user.name,
+      avatar: user.avatar,
+      user,
+      catalogCount: catalogCountFor(user.tags),
+      trackerOptions: holder ? trackerOptionsFor(user) : resumeSourceOptions,
+      watchlistOptions: holder ? watchlistOptionsFor(user) : watchlistOptions,
+      watchedPoint: watchedPointFor(user.id, user.name),
+      accounts: holder ? connectedServices(user).map((service) => CARD_SERVICES[service].label) : [],
+      onChange: (patch) => updateUser(user.id, patch),
+      onRemove: () => { void removeUser(user); },
+      onForget: canForget ? () => setForgetFor({ profile: user.id, name: user.name }) : undefined,
+      accountsEditor: user.trackers !== true
+        ? <UserAccounts user={user} catalogs={config.catalogs ?? []} onChange={(next) => updateUser(user.id, next)} onAddCatalogs={addCatalogs} onRemoveCatalogs={removeCatalogs} />
+        : undefined,
+    };
+  })];
+  const current = people.find((p) => p.key === selected) ?? mainPerson;
+
   return (
     <div className="space-y-3">
       <AlertDialog open={!!forgetFor} onOpenChange={(next) => !next && !forgetting && setForgetFor(null)}>
@@ -841,94 +909,72 @@ export function HouseholdUsers() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <div className="flex items-center gap-2">
-        <Input
-          value={newUserName}
-          maxLength={MAX_TAG_NAME_LENGTH}
-          placeholder="New user name"
-          className="h-8 text-sm"
-          aria-label="New user name"
-          onChange={(e) => setNewUserName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') addUser(); }}
-        />
-        <Button size="sm" className="shrink-0 whitespace-nowrap" onClick={addUser} disabled={!newUserName.trim()}>
-          <Plus className="mr-1 h-4 w-4" /> Add user
-        </Button>
-      </div>
       {nameClash ? <p className="text-xs text-destructive">"{nameClash}" is used by two users. Each name, including Also known as names and user ids, must belong to one user.</p> : null}
-      <UserRow
-        main
-        name={mainName}
-        avatar={config.jellyfinUserAvatar}
-        user={{
-          id: '',
-          name: mainName,
-          tags: config.jellyfinUserTags ?? [],
-          trackerSource: config.jellyfinResumeSource ?? 'auto',
-          skipSource: config.jellyfinSkipSource ?? 'auto',
-          watchlistServices: config.jellyfinWatchlistServices,
-          handoffNames: config.jellyfinUserHandoffNames,
-          pin: config.jellyfinUserPin,
-          streamUrl: config.jellyfinStreamUrl,
-        }}
-        allTags={tags}
-        catalogCount={catalogCountFor(config.jellyfinUserTags ?? [])}
-        trackerOptions={resumeSourceOptions}
-        watchlistOptions={watchlistOptions}
-        hasPmdb={Boolean(config.apiKeys?.publicmetadb)}
-        mainSkipSource={config.jellyfinSkipSource ?? 'auto'}
-        showHandoff={showHandoff}
-        jellyfin={jellyfin.enabled}
-        watchedPoint={watchedPointFor('', mainName)}
-        open={openCard === 'main'}
-        onToggle={() => toggleCard('main')}
-        accounts={mainAccounts}
-        stremioOn={stremioOn}
-        onForget={canForget ? () => setForgetFor({ profile: null, name: mainName }) : undefined}
-        onChange={(patch) => setConfig(prev => ({
-          ...prev,
-          ...('name' in patch ? { jellyfinUserName: patch.name } : {}),
-          ...('avatar' in patch ? { jellyfinUserAvatar: patch.avatar } : {}),
-          ...('tags' in patch ? { jellyfinUserTags: patch.tags?.length ? patch.tags : undefined } : {}),
-          ...('trackerSource' in patch ? { jellyfinResumeSource: patch.trackerSource as typeof prev.jellyfinResumeSource } : {}),
-          ...('skipSource' in patch ? { jellyfinSkipSource: patch.skipSource === 'auto' ? undefined : patch.skipSource } : {}),
-          ...('watchlistServices' in patch ? { jellyfinWatchlistServices: patch.watchlistServices } : {}),
-          ...('handoffNames' in patch ? { jellyfinUserHandoffNames: patch.handoffNames } : {}),
-          ...('pin' in patch ? { jellyfinUserPin: patch.pin } : {}),
-          ...('streamUrl' in patch ? { jellyfinStreamUrl: patch.streamUrl } : {}),
-        }))}
-      />
-      {users.map((user) => {
-        const holder = isHolder(user);
-        return (
-          <UserRow
-            key={user.id}
-            name={user.name}
-            avatar={user.avatar}
-            user={user}
+      <div className="overflow-hidden rounded-lg border bg-card md:flex">
+        <nav aria-label="People" className="flex gap-1 overflow-x-auto border-b p-2 md:w-64 md:shrink-0 md:flex-col md:overflow-visible md:border-b-0 md:border-r">
+          {people.map((person) => (
+            <button
+              key={person.key}
+              type="button"
+              aria-current={person.key === current.key}
+              onClick={() => setSelected(person.key)}
+              className={cn(
+                'flex shrink-0 items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors md:w-full',
+                person.key === current.key ? 'bg-accent' : 'hover:bg-accent/50',
+              )}
+            >
+              <Avatar src={person.avatar} name={person.name} size="sm" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{person.name || 'Unnamed user'}</span>
+                <span className="hidden truncate text-xs text-muted-foreground md:block">{personSummary(person)}</span>
+              </span>
+            </button>
+          ))}
+          <div className="flex shrink-0 items-center md:mt-1 md:border-t md:pt-2">
+            {adding ? (
+              <div className="flex items-center gap-1.5 md:w-full">
+                <Input
+                  value={newUserName}
+                  maxLength={MAX_TAG_NAME_LENGTH}
+                  placeholder="Name"
+                  className="h-8 w-36 text-sm md:w-auto md:flex-1"
+                  aria-label="New person's name"
+                  autoFocus
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') addUser();
+                    if (e.key === 'Escape') { setAdding(false); setNewUserName(''); }
+                  }}
+                />
+                <Button size="sm" className="h-8 shrink-0" onClick={addUser} disabled={!newUserName.trim()}>Add</Button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAdding(true)}
+                className="flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground md:w-full"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-dashed border-muted-foreground/50" aria-hidden="true"><Plus className="h-4 w-4" /></span>
+                Add person
+              </button>
+            )}
+          </div>
+        </nav>
+        <section className="min-w-0 flex-1 pb-2">
+          <PersonDetail
+            key={current.key}
+            person={current}
             allTags={tags}
-            catalogCount={catalogCountFor(user.tags)}
-            trackerOptions={holder ? trackerOptionsFor(user) : resumeSourceOptions}
-            watchlistOptions={holder ? watchlistOptionsFor(user) : watchlistOptions}
             hasPmdb={Boolean(config.apiKeys?.publicmetadb)}
             mainSkipSource={config.jellyfinSkipSource ?? 'auto'}
             showHandoff={showHandoff}
             jellyfin={jellyfin.enabled}
-            watchedPoint={watchedPointFor(user.id, user.name)}
-            open={openCard === user.id}
-            onToggle={() => toggleCard(user.id)}
-            accounts={holder ? connectedServices(user).map((service) => CARD_SERVICES[service].label) : []}
             stremioOn={stremioOn}
-            onChange={(patch) => updateUser(user.id, patch)}
-            onRemove={() => { void removeUser(user); }}
-            onForget={canForget ? () => setForgetFor({ profile: user.id, name: user.name }) : undefined}
-          >
-            {user.trackers !== true ? (
-              <UserAccounts user={user} catalogs={config.catalogs ?? []} onChange={(next) => updateUser(user.id, next)} onAddCatalogs={addCatalogs} onRemoveCatalogs={removeCatalogs} />
-            ) : null}
-          </UserRow>
-        );
-      })}
+            tab={tab}
+            onTab={setTab}
+          />
+        </section>
+      </div>
     </div>
   );
 }

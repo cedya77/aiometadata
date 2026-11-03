@@ -83,7 +83,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   {
     id: 'watch-tracking.jellyfinStreamUrl', section: 'watch-tracking', anchor: 'household-users',
     label: 'Jellyfin Stream Addon',
-    description: 'The addon Jellyfin clients play titles from, such as AIOStreams. On your user card, under Jellyfin.',
+    description: 'The addon Jellyfin clients play titles from, such as AIOStreams. Under Manage people, on the Playback tab.',
     keywords: ['jellyfin', 'stream', 'addon', 'playback', 'aiostreams', 'play'],
   },
   {
