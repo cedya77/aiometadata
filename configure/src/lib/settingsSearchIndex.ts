@@ -76,8 +76,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   },
   {
     id: 'watch-tracking.users', section: 'watch-tracking', anchor: 'household-users',
-    label: 'Users',
-    description: 'Everyone watching: their trackers, watchlists, catalogs, Stremio profile and Jellyfin sign-in.',
+    label: 'People',
+    description: 'Everyone watching: their trackers, watchlists, catalogs, addon profile and Jellyfin sign-in.',
     keywords: ['users', 'profiles', 'family', 'household', 'pin', 'viewer', 'also known as'],
   },
   {
@@ -88,14 +88,14 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   },
   {
     id: 'watch-tracking.stremioScrobbling', section: 'watch-tracking', anchor: 'stremio-scrobbling',
-    label: 'Stremio SDK Scrobbling',
-    description: 'Record plays, pauses and watched marks Stremio sends to the addon.',
+    label: 'Addon Apps',
+    description: 'Record plays, pauses and watched marks that addon apps report.',
     keywords: ['scrobble', 'stremio', 'playback', 'watched', 'library', 'watchlist'],
   },
   {
     id: 'watch-tracking.jellyfinScrobbling', section: 'watch-tracking', anchor: 'jellyfin-scrobbling',
-    label: 'Jellyfin Scrobbling',
-    description: 'Record plays reported by this addon\'s Jellyfin server and AIOStreams\' Jellyfin server.',
+    label: 'Jellyfin Apps',
+    description: 'Record plays reported by apps on this addon\'s Jellyfin server and AIOStreams\' Jellyfin server.',
     keywords: ['scrobble', 'jellyfin', 'playback', 'aiostreams'],
   },
   {

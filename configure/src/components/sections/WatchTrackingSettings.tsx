@@ -1,275 +1,313 @@
-import { useState } from 'react';
-import { CheckCircle2, CircleDashed, Settings2 } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Puzzle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Callout } from '@/components/settings/Callout';
-import { WatchTrackingOptionsDialog } from '@/components/WatchTrackingOptionsDialog';
 import { HouseholdUsers } from '@/components/users/HouseholdUsers';
 import { useConfig } from '@/contexts/ConfigContext';
 import type { WatchTrackingService } from '@/contexts/config';
-import { navigateToSettingsSection } from '@/lib/settingsRoute';
+import { useStremioLinkStatus } from '@/hooks/useStremioLinkStatus';
+import { CARD_SERVICES } from '@/lib/cardAccounts';
+import { parseRoute } from '@/lib/settingsRoute';
 import { cn } from '@/lib/utils';
 import {
-  anyServiceConnected,
   openServiceConnect,
   isWatchTrackingMediaTypeSelected,
   scrobblesJellyfin,
   scrobblesStremio,
+  stremioLinkState,
   WATCH_TRACKING_SERVICE_DEFINITIONS,
   WATCH_TRACKING_SERVICES,
   withStremioEventsSince,
+  type WatchTrackingMediaType,
 } from '@/lib/watchTracking';
 
-const MODE_KINDS = {
-  legacy: { label: 'Legacy', style: 'border-amber-500/40 text-amber-400' },
-  scrobble: { label: 'Scrobble', style: 'border-emerald-500/40 text-emerald-400' },
-} as const;
+const IMAGE_URL = /^https?:\/\//i;
 
-function ModeTile({ selected, title, kind, badge, text, onSelect }: { selected: boolean; title: string; kind: keyof typeof MODE_KINDS; badge: string; text: string; onSelect: () => void }) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      onClick={onSelect}
-      className={cn(
-        'flex flex-1 flex-col gap-1 rounded-lg border p-3 text-left transition-colors',
-        selected ? 'border-primary bg-primary/10' : 'hover:bg-accent/50',
-      )}
-    >
-      <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
-        <span className={cn('h-3.5 w-3.5 shrink-0 rounded-full border-2', selected ? 'border-primary bg-primary' : 'border-muted-foreground/50')} aria-hidden="true" />
-        {title}
-        <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', MODE_KINDS[kind].style)}>{MODE_KINDS[kind].label}</span>
-        <Badge variant="secondary" className="text-[10px]">{badge}</Badge>
-      </span>
-      <span className="pl-5 text-xs text-muted-foreground">{text}</span>
-    </button>
-  );
+function ago(at: number): string {
+  const minutes = Math.floor((Date.now() - at) / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
-function SwitchRow({ id, label, hint, checked, onChange, nested }: { id: string; label: string; hint: string; checked: boolean; onChange: (on: boolean) => void; nested?: boolean }) {
+function Step({ n, last, title, hint, children }: { n: number; last?: boolean; title: string; hint: string; children: ReactNode }) {
   return (
-    <div className={cn('flex items-center justify-between gap-4 py-3 pr-4', nested ? 'bg-muted/20 pl-10' : 'pl-4')}>
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <Label htmlFor={id} className="font-medium">{label}</Label>
-        <p className="text-xs text-muted-foreground">{hint}</p>
+    <div className="flex gap-4 sm:gap-5">
+      <div className="flex w-7 shrink-0 flex-col items-center" aria-hidden="true">
+        <div className="flex h-7 w-7 items-center justify-center rounded-full border border-muted-foreground/30 bg-card text-[13px] font-semibold">{n}</div>
+        {last ? null : <div className="my-1.5 w-px flex-1 bg-border" />}
       </div>
-      <Switch id={id} checked={checked} onCheckedChange={onChange} className="shrink-0" />
+      <section className={cn('min-w-0 flex-1 space-y-3.5', last ? '' : 'pb-9')}>
+        <div className="space-y-0.5 pt-0.5">
+          <h3 className="text-[15px] font-semibold">{title}</h3>
+          <p className="text-sm text-muted-foreground">{hint}</p>
+        </div>
+        {children}
+      </section>
     </div>
   );
 }
 
+function Reporting({ tone, text, detail }: { tone: 'ok' | 'wait'; text: string; detail?: string }) {
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      <span className={cn('h-1.5 w-1.5 rounded-full', tone === 'ok' ? 'bg-emerald-400' : 'bg-amber-400')} aria-hidden="true" />
+      <span className="text-foreground/80">{text}</span>
+      {detail ? <><span className="text-muted-foreground/50" aria-hidden="true">·</span><span className="text-muted-foreground">{detail}</span></> : null}
+    </p>
+  );
+}
+
+function SourceCard({ id, icon, title, hint, checked, onChange, children }: {
+  id: string;
+  icon: ReactNode;
+  title: string;
+  hint: string;
+  checked: boolean;
+  onChange: (on: boolean) => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="space-y-3.5 rounded-lg border bg-card p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/40" aria-hidden="true">{icon}</div>
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <Label htmlFor={id} className="font-medium">{title}</Label>
+          <p className="text-sm text-muted-foreground">{hint}</p>
+        </div>
+        <Switch id={id} checked={checked} onCheckedChange={onChange} className="shrink-0" />
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Face({ name, avatar, first }: { name: string; avatar?: string; first: boolean }) {
+  const ring = cn('h-8 w-8 rounded-full border-2 border-background', !first && '-ml-2');
+  if (avatar && IMAGE_URL.test(avatar)) return <img src={avatar} alt="" className={cn(ring, 'bg-muted object-cover')} />;
+  return (
+    <div className={cn(ring, 'flex items-center justify-center bg-muted text-xs font-semibold text-muted-foreground')}>
+      {(name.trim()[0] || '?').toUpperCase()}
+    </div>
+  );
+}
+
+const SHOWN_FACES = 4;
+
 export function WatchTrackingSettings() {
   const { config, setConfig } = useConfig();
-  const [watchTrackingService, setWatchTrackingService] = useState<WatchTrackingService | null>(null);
-  const [connectPrompt, setConnectPrompt] = useState<WatchTrackingService | null>(null);
+  const finished = config.playbackReporting === true;
   const stremioOn = scrobblesStremio(config);
   const jellyfinOn = scrobblesJellyfin(config);
+  const linkStatus = useStremioLinkStatus(stremioOn);
 
-  const setMaster = (service: WatchTrackingService, on: boolean) => {
-    const { masterKey, hasCredential } = WATCH_TRACKING_SERVICE_DEFINITIONS[service];
-    setConfig(prev => ({ ...prev, [masterKey]: on }));
-    if (on && !hasCredential(config)) setConnectPrompt(service);
+  const [peopleOpen, setPeopleOpen] = useState(() => parseRoute(window.location.hash).anchor === 'household-users');
+  useEffect(() => {
+    const follow = () => { if (parseRoute(window.location.hash).anchor === 'household-users') setPeopleOpen(true); };
+    window.addEventListener('hashchange', follow);
+    return () => window.removeEventListener('hashchange', follow);
+  }, []);
+
+  // Any install that has reported counts; the newest report is the one shown.
+  const links = Object.values(linkStatus ?? {});
+  const states = links.map((link) => stremioLinkState(config.stremioScrobblingSince, link));
+  const lastReport = Math.max(0, ...links.map((link) => (link.eventAt && link.eventAt >= (config.stremioScrobblingSince ?? 0) ? link.eventAt : 0)));
+  const addonStatus = !linkStatus || states.includes('ok')
+    ? <Reporting tone="ok" text="Reports playback" detail={lastReport ? `Last report ${ago(lastReport)}` : undefined} />
+    : states.includes('waiting')
+      ? <Reporting tone="wait" text="Installed, waiting for its first report" />
+      : <Reporting tone="wait" text="Install the addon again so it can report playback" />;
+
+  const connected = WATCH_TRACKING_SERVICES.filter((service) => WATCH_TRACKING_SERVICE_DEFINITIONS[service].hasCredential(config));
+  const unconnected = WATCH_TRACKING_SERVICES.filter((service) => !connected.includes(service));
+
+  // Both read as off while a title counts when opened. Turning one on moves step 2 to finished with only that
+  // one on; turning the last one off moves it back, leaving the switch as it was for the next time.
+  const setSource = (source: 'jellyfinScrobbling' | 'stremioScrobbling', on: boolean) => {
+    setConfig((prev) => {
+      if (prev.playbackReporting !== true) {
+        return on ? withStremioEventsSince(prev, { ...prev, playbackReporting: true, jellyfinScrobbling: false, stremioScrobbling: false, [source]: true }) : prev;
+      }
+      const otherOn = source === 'jellyfinScrobbling' ? scrobblesStremio(prev) : scrobblesJellyfin(prev);
+      if (!on && !otherOn) return { ...prev, playbackReporting: false };
+      return withStremioEventsSince(prev, { ...prev, [source]: on });
+    });
   };
 
+  const setMediaType = (service: WatchTrackingService, mediaType: WatchTrackingMediaType, on: boolean) => {
+    setConfig((prev) => ({
+      ...prev,
+      watchTracking: { ...prev.watchTracking, [service]: { ...prev.watchTracking?.[service], [mediaType]: on } },
+    }));
+  };
+
+  const mainName = config.jellyfinUserName || config.addonName || 'You';
+  const people = [{ name: mainName, avatar: config.jellyfinUserAvatar }, ...(config.jellyfinUsers ?? []).map((u) => ({ name: u.name || 'Unnamed user', avatar: u.avatar }))];
+
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-8 animate-fade-in">
       <div>
         <h2 className="text-2xl font-semibold">Watch Tracking</h2>
-        <p className="text-muted-foreground mt-1">Choose how plays are recorded, which services hear about them, and who is watching.</p>
+        <p className="text-muted-foreground mt-1">Follow a watch from your app to your trackers.</p>
       </div>
 
-      {!anyServiceConnected(config) ? (
-        <Callout variant="warn">
-          No tracking service is connected, so plays are kept only on this server. Connect Simkl, AniList or MyAnimeList in{' '}
-          <button type="button" className="font-medium underline underline-offset-2" onClick={() => navigateToSettingsSection('catalogs')}>Catalogs</button>
-          , or MDBList or PublicMetaDB in{' '}
-          <button type="button" className="font-medium underline underline-offset-2" onClick={() => navigateToSettingsSection('integrations')}>Integrations</button>.
-        </Callout>
-      ) : null}
-
-      <Card id="wt-recording">
-        <CardHeader>
-          <CardTitle>Recording</CardTitle>
-          <CardDescription>When a play counts, for every service and every user.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div id="playback-detection" role="radiogroup" aria-label="When to record" className="flex flex-col gap-2 md:flex-row">
-            <ModeTile
-              selected={!config.playbackReporting}
-              title="When a title is opened"
-              kind="legacy"
-              badge="Any client"
-              text="Works everywhere, but anything opened counts as watched, even if stopped a minute in."
-              onSelect={() => setConfig(prev => ({ ...prev, playbackReporting: false }))}
-            />
-            <ModeTile
-              selected={config.playbackReporting === true}
-              title="When playback starts and stops"
-              kind="scrobble"
-              badge="Stremio, Jellyfin"
-              text="Something abandoned after a few minutes is kept as a resume point rather than marked watched."
-              onSelect={() => setConfig(prev => withStremioEventsSince(prev, { ...prev, playbackReporting: true }))}
-            />
-          </div>
-          {config.playbackReporting ? (
-            <div className="divide-y overflow-hidden rounded-lg border">
-              <SwitchRow
-                id="stremio-scrobbling"
-                label="Stremio SDK"
-                hint="Plays, pauses and watched marks sent by Stremio. Each user installs their own link from Configuration."
-                checked={stremioOn}
-                onChange={(on) => setConfig(prev => withStremioEventsSince(prev, { ...prev, stremioScrobbling: on }))}
-              />
+      <div>
+        <Step n={1} title="You watch on" hint="These apps report playback as you watch: when you start, pause, stop and finish.">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <SourceCard
+              id="jellyfin-scrobbling"
+              icon={<img src="/jellyfin_icon.svg" alt="" className="h-5 w-5 object-contain" />}
+              title="Jellyfin apps"
+              hint="Apps signed in to the Jellyfin server here or in AIOStreams"
+              checked={jellyfinOn}
+              onChange={(on) => setSource('jellyfinScrobbling', on)}
+            >
+              {jellyfinOn ? <Reporting tone="ok" text="Reports playback" /> : null}
+            </SourceCard>
+            <SourceCard
+              id="stremio-scrobbling"
+              icon={<Puzzle className="h-4 w-4 text-muted-foreground" />}
+              title="Addon apps"
+              hint="Apps that report playback through the addon"
+              checked={stremioOn}
+              onChange={(on) => setSource('stremioScrobbling', on)}
+            >
+              <div className="flex items-center gap-3 rounded-md border bg-background px-3 py-2">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Works with</span>
+                <img src="/stremio_icon.png" alt="Stremio" title="Stremio" className="h-[22px] w-[22px] object-contain" />
+              </div>
               {stremioOn ? (
-                <SwitchRow
-                  nested
-                  id="stremio-library-watchlist"
-                  label="Sync Stremio library with watchlists"
-                  hint="Adding or removing a title in your Stremio library does the same on your watchlists."
-                  checked={config.stremioLibraryWatchlist === true}
-                  onChange={(on) => setConfig(prev => ({ ...prev, stremioLibraryWatchlist: on }))}
-                />
+                <>
+                  {addonStatus}
+                  <div className="flex items-center gap-3 border-t pt-3">
+                    <Label htmlFor="stremio-library-watchlist" className="flex-1 text-sm font-normal text-foreground/80">Keep the app's library in step with your watchlists</Label>
+                    <Switch
+                      id="stremio-library-watchlist"
+                      checked={config.stremioLibraryWatchlist === true}
+                      onCheckedChange={(on) => setConfig((prev) => ({ ...prev, stremioLibraryWatchlist: on }))}
+                    />
+                  </div>
+                </>
               ) : null}
-              <SwitchRow
-                id="jellyfin-scrobbling"
-                label="Jellyfin"
-                hint="Plays on this addon's or AIOStreams' Jellyfin server. A favourite goes to your watchlist; disliking a show marks it dropped."
-                checked={jellyfinOn}
-                onChange={(on) => setConfig(prev => ({ ...prev, jellyfinScrobbling: on }))}
-              />
-              <p className={cn('bg-muted/20 px-4 py-2.5 text-xs', !stremioOn && !jellyfinOn ? 'text-amber-400' : 'text-muted-foreground')}>
-                {!stremioOn && !jellyfinOn ? 'Both are off, so nothing will be recorded.' : 'A client that reports neither way records nothing.'}
-              </p>
+            </SourceCard>
+          </div>
+          <p className={cn('text-sm', finished && !stremioOn && !jellyfinOn ? 'text-amber-400' : 'text-muted-foreground')}>
+            {!finished
+              ? "Turn one on to count a title once it's finished."
+              : !stremioOn && !jellyfinOn
+                ? 'Both are off, so nothing will be recorded.'
+                : "Using an app that isn't listed? Step 2 can count a title as watched as soon as it's opened."}
+          </p>
+        </Step>
+
+        <Step n={2} title="It counts as watched" hint="For apps that don't report playback, pick when it's opened.">
+          <div id="playback-detection" role="radiogroup" aria-label="When a title counts as watched" className="flex gap-1 rounded-lg border bg-card p-1 sm:inline-flex">
+            {([
+              [false, "When it's opened"],
+              [true, "When it's finished"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={label}
+                type="button"
+                role="radio"
+                aria-checked={finished === value}
+                onClick={() => setConfig((prev) => (value ? withStremioEventsSince(prev, { ...prev, playbackReporting: true }) : { ...prev, playbackReporting: false }))}
+                className={cn(
+                  'flex-1 whitespace-nowrap rounded-md px-2 py-2 text-sm font-medium transition-colors sm:flex-none sm:px-4',
+                  finished === value ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Step>
+
+        <Step n={3} last title="And it's sent to" hint={connected.length ? 'Tap a type to leave it out.' : 'Connect a service to send your watches somewhere.'}>
+          {connected.length ? (
+            <div id="wt-services" className="divide-y overflow-hidden rounded-lg border bg-card">
+              {connected.map((service) => {
+                const definition = WATCH_TRACKING_SERVICE_DEFINITIONS[service];
+                const on = config[definition.masterKey] === true;
+                const switchId = `${service}-watch-tracking`;
+                return (
+                  <div key={service} className="flex flex-wrap items-center gap-x-3.5 gap-y-2 px-4 py-3">
+                    <img src={CARD_SERVICES[service].icon} alt="" aria-hidden="true" className="h-7 w-7 shrink-0 rounded-md object-contain" />
+                    <Label htmlFor={switchId} className={cn('min-w-[7rem] flex-1 font-medium', !on && 'text-muted-foreground')}>{definition.label}</Label>
+                    {on ? (
+                      <div className="order-last flex w-full gap-1.5 pl-[2.625rem] sm:order-none sm:w-auto sm:pl-0">
+                        {(['movie', 'series'] as const).map((mediaType) => {
+                          const picked = isWatchTrackingMediaTypeSelected(config, service, mediaType);
+                          return (
+                            <button
+                              key={mediaType}
+                              type="button"
+                              aria-pressed={picked}
+                              onClick={() => setMediaType(service, mediaType, !picked)}
+                              className={cn(
+                                'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                                picked ? 'border-muted-foreground/30 bg-accent text-foreground' : 'border-dashed text-muted-foreground hover:text-foreground',
+                              )}
+                            >
+                              {mediaType === 'movie' ? definition.movieLabel : definition.seriesLabel}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <span className="order-last w-full pl-[2.625rem] text-sm text-muted-foreground sm:order-none sm:w-auto sm:pl-0">Off</span>
+                    )}
+                    <Switch
+                      id={switchId}
+                      checked={on}
+                      onCheckedChange={(next) => setConfig((prev) => ({ ...prev, [definition.masterKey]: next }))}
+                    />
+                  </div>
+                );
+              })}
             </div>
           ) : null}
-        </CardContent>
-      </Card>
+          {unconnected.length ? (
+            <p className="text-sm text-muted-foreground">
+              Not connected:{' '}
+              {unconnected.map((service, index) => (
+                <span key={service}>
+                  {index ? ', ' : ''}
+                  <button
+                    type="button"
+                    title={WATCH_TRACKING_SERVICE_DEFINITIONS[service].connectHint}
+                    onClick={() => openServiceConnect(service)}
+                    className="font-medium text-foreground/80 underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    {WATCH_TRACKING_SERVICE_DEFINITIONS[service].label}
+                  </button>
+                </span>
+              ))}
+              .
+            </p>
+          ) : null}
+        </Step>
+      </div>
 
-      <Card id="wt-services">
-        <CardHeader>
-          <CardTitle>Services</CardTitle>
-          <CardDescription>Where your plays are recorded. A user with accounts of their own uses those instead.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
-            {WATCH_TRACKING_SERVICES.map((service) => {
-              const definition = WATCH_TRACKING_SERVICE_DEFINITIONS[service];
-              const connected = definition.hasCredential(config);
-              const switchId = `${service}-watch-tracking`;
-              return (
-                <div key={service} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg p-3 transition-colors hover:bg-accent/50">
-                  <div className="min-w-[12rem] flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Label htmlFor={switchId} className="font-medium">{definition.label}</Label>
-                      {connected ? (
-                        <span className="flex items-center gap-1 text-[11px] text-emerald-400"><CheckCircle2 className="h-3 w-3" /> Connected</span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-                          title={definition.connectHint}
-                          onClick={() => openServiceConnect(service)}
-                        >
-                          <CircleDashed className="h-3 w-3" /> Not connected · <span className="underline underline-offset-2">Connect</span>
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {(['movie', 'series'] as const).map((mediaType) => {
-                        const on = isWatchTrackingMediaTypeSelected(config, service, mediaType);
-                        return (
-                          <span key={mediaType} className={cn('rounded-full border px-1.5 text-[11px]', on ? 'text-foreground' : 'text-muted-foreground line-through opacity-60')}>
-                            {mediaType === 'movie' ? definition.movieLabel : definition.seriesLabel}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9"
-                      aria-label={`Configure ${definition.label} watch tracking types`}
-                      title="Configure media types"
-                      onClick={() => setWatchTrackingService(service)}
-                    >
-                      <Settings2 className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                    <Switch id={switchId} checked={config[definition.masterKey] === true} onCheckedChange={(on) => setMaster(service, on)} />
-                  </div>
-                </div>
-              );
-            })}
+      <div id="household-users" className="space-y-4 border-t pt-6">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <div className="flex" aria-hidden="true">
+            {people.slice(0, SHOWN_FACES).map((person, index) => <Face key={index} name={person.name} avatar={person.avatar} first={index === 0} />)}
           </div>
-        </CardContent>
-      </Card>
-
-      <WatchTrackingOptionsDialog
-        service={watchTrackingService}
-        open={watchTrackingService !== null}
-        onOpenChange={(open) => {
-          if (!open) setWatchTrackingService(null);
-        }}
-      />
-
-      <AlertDialog open={connectPrompt !== null} onOpenChange={(open) => { if (!open) setConnectPrompt(null); }}>
-        <AlertDialogContent>
-          {connectPrompt && (
-            <>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  Connect {WATCH_TRACKING_SERVICE_DEFINITIONS[connectPrompt].label} to start tracking
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {WATCH_TRACKING_SERVICE_DEFINITIONS[connectPrompt].connectHint} The setting is on and will
-                  start working as soon as the account is connected.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Later</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    const service = connectPrompt;
-                    setConnectPrompt(null);
-                    openServiceConnect(service);
-                  }}
-                >
-                  Take me there
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </>
-          )}
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <Card id="household-users">
-        <CardHeader>
-          <CardTitle>Users</CardTitle>
-          <CardDescription>
-            Everyone watching, your card first. Each user gets a Stremio install link in Configuration and appears on the Jellyfin sign-in screen. Someone else keeps their own history; a user that is you shares yours.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <HouseholdUsers />
-        </CardContent>
-      </Card>
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <p className="text-sm font-medium">{people.length === 1 ? 'Just you' : `${people.length} people`}</p>
+            <p className="text-sm text-muted-foreground">{people.length === 1 ? 'Add the people who watch here, each with their own services' : 'Each one can send to their own services'}</p>
+          </div>
+          <Button type="button" variant="outline" size="sm" aria-expanded={peopleOpen} onClick={() => setPeopleOpen((open) => !open)}>
+            {peopleOpen ? 'Done' : 'Manage people'}
+          </Button>
+        </div>
+        {peopleOpen ? <HouseholdUsers /> : null}
+      </div>
     </div>
   );
 }
