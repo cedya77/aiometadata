@@ -135,18 +135,26 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
     const target = await indexedSnapshot(to.service, to.credential, to.scoped);
     const { shouldTrackServiceMediaType } = require('../watchTracking');
     const recent = (await nativeEntries(from.service, from.credential, from.scoped)).filter((item) => !since || (item.at ?? 0) >= since);
+    // An episode the target has as a film is looked for, and later written, as that film; the plan keeps the episode.
+    const { asFilmOn } = require('./trackerMatch');
+    const sentAs = new Map<CopyItem, CopyItem>();
+    for (const item of recent) sentAs.set(item, await asFilmOn(userUUID, to.service, item, true));
+    const sent = (item: CopyItem) => sentAs.get(item) ?? item;
     // The target's own tracking settings hold here as on the general path.
-    const entries = recent.filter((item) => shouldTrackServiceMediaType(to.scoped, to.service, item.kind === 'movie' ? 'movie' : 'series'));
+    const entries = recent.filter((item) => shouldTrackServiceMediaType(to.scoped, to.service, sent(item).kind === 'movie' ? 'movie' : 'series'));
     const held = await nativeHeld(to.service, to.credential);
     const present = new Set<string>();
-    const all = [...new Set(entries.flatMap((item) => item.ids))];
+    const all = [...new Set(entries.flatMap((item) => [...item.ids, ...sent(item).ids]))];
     for (let at = 0; at < all.length; at += 2000) {
       for (const id of (await watchedAmong(target, all.slice(at, at + 2000))).keys()) present.add(id);
     }
     const { pendingWatches } = require('../trackerOutbox');
     const waiting = new Set<string>((await pendingWatches(to.service, to.credential).catch(() => [])).filter((p: any) => p.played).map((p: any) => String(p.videoId)));
     const tried = await triedBefore(userUUID, from, to, 'watches', retry);
-    const left = entries.filter((item) => !held.has(nativeKey(item.kind, item.native!.tmdb, item.native!.season, item.native!.episode)) && !item.ids.some((id) => present.has(id) || waiting.has(id)));
+    const left = entries.filter((item) => {
+      const as = sent(item);
+      return !held.has(nativeKey(as.kind, as.native!.tmdb, as.native!.season, as.native!.episode)) && ![...item.ids, ...as.ids].some((id) => present.has(id) || waiting.has(id));
+    });
     const plan: CopyPlan = {
       items: left.filter((item) => !tried.has(copyKey(item))),
       excluded: recent.length - entries.length,
@@ -175,12 +183,17 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
   }
   const { pendingWatches } = require('../trackerOutbox');
   const waiting = new Set<string>((await pendingWatches(to.service, to.credential).catch(() => [])).filter((p: any) => p.played).map((p: any) => String(p.videoId)));
+  // An episode the target has as a film is looked for, and later written, as that film; the plan keeps the episode.
+  const { asFilmOn } = require('./trackerMatch');
+  const sentAs = new Map<Viewing, Viewing>();
+  for (const v of viewings) sentAs.set(v, await asFilmOn(userUUID, to.service, v));
+  const sent = (v: Viewing) => sentAs.get(v) ?? v;
   const present = new Set<string>();
-  const all = [...new Set(viewings.flatMap((v) => v.ids))];
+  const all = [...new Set(viewings.flatMap((v) => [...v.ids, ...sent(v).ids]))];
   for (let at = 0; at < all.length; at += 2000) {
     for (const id of (await watchedAmong(target, all.slice(at, at + 2000))).keys()) present.add(id);
   }
-  let missing = viewings.filter((v) => !v.ids.some((id) => present.has(id) || waiting.has(id)));
+  let missing = viewings.filter((v) => ![...v.ids, ...sent(v).ids].some((id) => present.has(id) || waiting.has(id)));
   const blocked = { noId: 0, refused: 0 };
   if (!isAnimeList(to.service)) {
     const { mapWithConcurrency } = require('../../utils/concurrency');
@@ -188,12 +201,12 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
     const held = tmdbNumbered(to.service) ? await nativeHeld(to.service, to.credential) : spelled ? await spelled.read(to.credential) : null;
     const keysOf = spelled ? spelled.keys : targetKeys;
     const ownTmdb = spelled && tmdbNumbered(from.service) ? await tmdbAliases(from.service, from.credential) : null;
-    const heldAsSpelled = (v: Viewing) => Boolean(spelled) && held !== null && v.ids.some((id) => held.has(id) || held.has(ownTmdb?.get(id) ?? ''));
+    const heldAsSpelled = (v: Viewing) => Boolean(spelled) && held !== null && sent(v).ids.some((id) => held.has(id) || held.has(ownTmdb?.get(id) ?? ''));
     const tried = await triedBefore(userUUID, from, to, 'watches', retry);
     const asItem = (v: Viewing): CopyItem => ({ ids: v.ids, kind: v.kind, metaId: v.metaId, season: v.season, episode: v.episode, at: v.at > 0 ? v.at : null });
     const unsent: Set<string> = await require('./trackerMatch').unsentAmong(userUUID, to.service, [...new Set(missing.flatMap((v) => v.ids))]).catch(() => new Set<string>());
     if (unsent.size) missing = missing.filter((v) => !v.ids.some((id) => unsent.has(id)));
-    const targets: Array<CopyTarget | null> = await mapWithConcurrency(missing, envInt('JELLYFIN_COPY_PLAN_CONCURRENCY', 8, 1), (v: Viewing) => copyTarget(to.service, asItem(v), to.scoped).catch(() => null));
+    const targets: Array<CopyTarget | null> = await mapWithConcurrency(missing, envInt('JELLYFIN_COPY_PLAN_CONCURRENCY', 8, 1), (v: Viewing) => copyTarget(to.service, asItem(sent(v)), to.scoped).catch(() => null));
     missing = missing.filter((v, index) => {
       const target = targets[index];
       if (heldAsSpelled(v)) return false;
@@ -201,7 +214,7 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
         blocked.noId += 1;
         return false;
       }
-      if (held && keysOf(target, v.kind).some((key) => held.has(key))) return false;
+      if (held && keysOf(target, sent(v).kind).some((key) => held.has(key))) return false;
       if (tried.has(copyKey(v))) {
         blocked.refused += 1;
         return false;
@@ -366,8 +379,11 @@ async function step(id: number): Promise<void> {
     if (what !== 'watches') outcome = await writeMarks(what, items, { service: job.to_service, credential, scoped: config }, job.user_uuid);
     else {
       await bringHome(job.user_uuid, job, items, config, stored);
+      // Written as the target has them: an episode matched to a film there goes as the film, in its place in the batch.
+      const { asFilmOn } = require('./trackerMatch');
+      const sending: CopyItem[] = await Promise.all(items.map((item: CopyItem) => asFilmOn(job.user_uuid, job.to_service, item)));
       const batch = trackerOf(job.to_service)?.writeWatches;
-      outcome = batch ? await batch.write(items, credential, config) : await writeOneByOne(job.to_service, items, credential, config, job.user_uuid);
+      outcome = batch ? await batch.write(sending, credential, config) : await writeOneByOne(job.to_service, sending, credential, config, job.user_uuid);
     }
     strikes.delete(id);
   } catch (error: any) {

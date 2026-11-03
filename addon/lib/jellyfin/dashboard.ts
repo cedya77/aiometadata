@@ -716,6 +716,7 @@ async function driftItems(userUUID: string, source: SyncSource, outcomes: Map<st
     const bases = [...new Set(list.flatMap((v: any) => v.ids.map((video: string) => parseStremioId(video)?.base ?? video)))] as string[];
     const matchable = isMatchable(source.service);
     const matched = matchable ? (await Promise.all(bases.map((base) => matchFor(userUUID, source.service, base).catch(() => null)))).find(Boolean) ?? null : null;
+    const film = matchable && list[0].kind === 'episode' ? await require('./trackerMatch').filmFor(userUUID, source.service, list.flatMap((v: any) => v.ids)).catch(() => null) : null;
     return {
       id,
       kind: list[0].kind,
@@ -724,7 +725,7 @@ async function driftItems(userUUID: string, source: SyncSource, outcomes: Map<st
       ...(matchable ? {
         seasons: [...new Set(list.map((v: any) => v.season).filter((season: any) => Number.isFinite(season)))].sort((a: any, b: any) => a - b),
         unmatched: list.flatMap((v: any) => v.ids).map((video: string) => outcomes.get(video)).find(Boolean) ?? null,
-        matchedTo: matched ? matched.target.title : null,
+        matchedTo: matched ? matched.target.title : film ? film.match.target.title : null,
       } : {}),
       title: named && named.title !== spelling ? named.title : null,
       open: list[0].kind === 'movie'
@@ -851,11 +852,17 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
     ? (await Promise.all(shows.map((base) => matchFor(userUUID, source.service, base).catch(() => null)))).find(Boolean) ?? null
     : null;
   const aliases: string[] = await videoIdAliases(video).catch(() => []);
+  // An episode matched to a film there is sent, and looked for, as that film.
+  const film = isMatchable(source.service) && parsed.episode !== null && parsed.episode !== undefined
+    ? await require('./trackerMatch').filmFor(userUUID, source.service, [video, ...aliases]).catch(() => null)
+    : null;
 
   let sendsAs: any = null;
   let sendError: string | null = null;
   const animeEntry = trackerOf(source.service)?.animeEntry;
-  if (side === 'behind' && animeEntry) {
+  if (side === 'behind' && film) {
+    sendsAs = { ids: { ...film.match.target.ids }, season: null, episode: null, film: true };
+  } else if (side === 'behind' && animeEntry) {
     const { parseMediaId } = require('../subtitleHandler');
     const media = parseMediaId(video);
     try {
@@ -885,7 +892,10 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
   const theirShows: string[] = match ? require('./trackerMatch').matchBases(match) : [];
   let holds: any = null;
   if (snapshot?.source) {
-    if (parsed.episode === null || parsed.episode === undefined) {
+    if (film) {
+      const held = await watchedAmong(snapshot, film.spellings);
+      holds = { kind: 'movie', watchedAt: held.size ? Math.max(...held.values()) || null : null, found: held.size > 0 };
+    } else if (parsed.episode === null || parsed.episode === undefined) {
       const held = await watchedAmong(snapshot, [...shows, ...theirShows]);
       holds = { kind: 'movie', watchedAt: held.size ? Math.max(...held.values()) || null : null, found: held.size > 0 };
     } else {
@@ -930,7 +940,9 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
     aliases: aliases.filter((alias) => alias !== video).slice(0, 6),
     sendsAs,
     sendError,
-    match: match ? { title: match.target.title, year: match.target.year, seasons: match.seasons } : null,
+    match: film
+      ? { title: film.match.target.title, year: film.match.target.year, seasons: {}, film: true }
+      : match ? { title: match.target.title, year: match.target.year, seasons: match.seasons } : null,
     holds,
     attempts,
   };
@@ -993,9 +1005,40 @@ export async function dashboardMatches(userUUID: string, key: string): Promise<a
   return listMatches(userUUID, source.service);
 }
 
+/** One episode here matched to a film on the tracker: saved under every spelling of the episode. */
+async function saveFilmMatch(userUUID: string, key: string, source: SyncSource, body: any, target: any): Promise<{ match: any; sent: number } | null> {
+  const { parseStremioId } = require('./idsCodec');
+  const { videoIdAliases } = require('./aliases');
+  const { saveMatch, filmSpelling } = require('./trackerMatch');
+  const video = typeof body?.video === 'string' ? body.video : '';
+  const parsed = parseStremioId(video);
+  if (!parsed || parsed.episode === null || parsed.episode === undefined) return null;
+  const film = { ids: target.ids, title: target.title, year: target.year, posterUrl: target.posterUrl, kind: 'movie' };
+  if (!filmSpelling(film)) return null;
+  const spellings = [video, ...((await videoIdAliases(video).catch(() => [])) as string[])];
+  const bases = [...new Set(spellings.filter((id) => {
+    const spelled = parseStremioId(id);
+    return spelled && spelled.episode !== null && spelled.episode !== undefined;
+  }))].slice(0, 20);
+  const match = await saveMatch(userUUID, source.service, {
+    bases,
+    kind: 'episode',
+    title: typeof body?.title === 'string' ? body.title.slice(0, 200) : null,
+    open: typeof body?.open?.id === 'string' && body.open.id.length <= 100 ? { id: body.open.id, type: 'series' } : null,
+    target: film,
+    seasons: {},
+    episode: { season: parsed.season ?? 1, episode: parsed.episode },
+  });
+  forgetDrift(userUUID);
+  const item = typeof body?.item === 'string' ? body.item : null;
+  const sent = item ? (await dashboardDriftAction(userUUID, key, 'push', [item]).catch(() => 0)) ?? 0 : 0;
+  return { match, sent };
+}
+
 export async function dashboardMatchSave(userUUID: string, key: string, body: any): Promise<{ match: any; sent: number } | null> {
   const source = await matchSource(userUUID, key);
   const target = cleanCandidate(body?.target);
+  if (source && target && body?.kind === 'episode') return saveFilmMatch(userUUID, key, source, body, target);
   const { parseStremioId } = require('./idsCodec');
   const bases = (Array.isArray(body?.bases) ? body.bases : [])
     .filter((base: unknown) => typeof base === 'string' && parseStremioId(base)?.base === base)

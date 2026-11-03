@@ -160,19 +160,43 @@ export async function handleBulkPlaybackReport(
   const scope = body?.scope === 'season' ? 'season' : 'series';
   const item = String(body?.metaId || id);
   const jobs: OutboxJob[] = [];
+  // An episode a tracker has as a film goes on its own, delivered as that film, so its retries never repeat the rest.
+  const { filmFor } = require('./jellyfin/trackerMatch');
+  const { parseMediaId: parseVideo } = require('./subtitleHandler');
+  const apart = async (service: WatchTrackingService): Promise<{ films: string[]; rest: string[] }> => {
+    const films: string[] = [];
+    const rest: string[] = [];
+    for (const video of videos) ((await filmFor(userUUID, service, [video], true)) ? films : rest).push(video);
+    return { films, rest };
+  };
+  const filmJobs = (service: WatchTrackingService, films: string[]): OutboxJob[] => films.map((video) => {
+    const parsed = parseVideo(video);
+    const report: PlaybackReport = {
+      id: null, event, at: null, metaId: body?.metaId ?? null, videoId: video,
+      positionMs: null, durationMs: null, played: event === 'played',
+      season: parsed?.season ?? null, episode: parsed?.episode ?? null, ids: body?.ids ?? {},
+    };
+    return { service, op: method === 'removeFromHistory' ? 'unwatch' : 'credit', item, coalesce: `history:${video}`, payload: { type, id: video, report, progress: null } };
+  });
   for (const service of ['simkl', 'mdblist'] as const) {
-    if (shouldTrackServiceMediaType(config, service, 'series')) jobs.push({ service, op: 'episodes', item, payload: { videos, method, scope } });
+    if (!shouldTrackServiceMediaType(config, service, 'series')) continue;
+    const { films, rest } = await apart(service);
+    if (rest.length) jobs.push({ service, op: 'episodes', item, payload: { videos: rest, method, scope } });
+    jobs.push(...filmJobs(service, films));
   }
   // PublicMetaDB clears a season in one call but records a watch one episode at a time,
   // each a play of its own, so an episode it already lists is not played again.
   if (shouldTrackServiceMediaType(config, 'publicmetadb', 'series')) {
-    if (method === 'removeFromHistory') jobs.push({ service: 'publicmetadb', op: 'episodes', item, payload: { videos, method, scope } });
-    else {
-      const listed = await pmdbListed(config, videos);
-      for (const video of videos) {
+    const { films, rest } = await apart('publicmetadb');
+    if (method === 'removeFromHistory') {
+      if (rest.length) jobs.push({ service: 'publicmetadb', op: 'episodes', item, payload: { videos: rest, method, scope } });
+    } else {
+      const listed = await pmdbListed(config, rest);
+      for (const video of rest) {
         if (!listed.has(video)) jobs.push({ service: 'publicmetadb', op: 'episodes', item, coalesce: `history:${video}`, payload: { videos: [video], method, scope } });
       }
     }
+    jobs.push(...filmJobs('publicmetadb', films));
   }
   // A count-based list only needs the furthest episode watched, or the span unwatched.
   const ordered = [...videos].sort((a, b) => episodeOrder(a) - episodeOrder(b));
@@ -382,7 +406,20 @@ function planReport(type: string, id: string, report: PlaybackReport, progress: 
 
 type ReportPayload = { type: string; id: string; report: PlaybackReport; progress: number | null; through?: string; watchedAt?: number };
 
-export async function deliverScrobble(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {
+/**
+ * An episode matched to a film on this tracker goes there as the film. Every write is remapped here, as it is
+ * delivered, so a job made anywhere sends it alike, and what was asked keeps the episode's own id.
+ */
+async function onTracker<P extends { type: string; id: string }>(service: WatchTrackingService, p: P, config: any): Promise<P> {
+  const { parseStremioId } = require('./jellyfin/idsCodec');
+  const parsed = typeof p?.id === 'string' ? parseStremioId(p.id) : null;
+  if (!parsed || parsed.episode === null || parsed.episode === undefined) return p;
+  const film = await require('./jellyfin/trackerMatch').filmFor(config?.userUUID, service, [p.id], true);
+  return film ? { ...p, type: 'movie', id: film.film } : p;
+}
+
+export async function deliverScrobble(service: WatchTrackingService, sent: ReportPayload, config: any): Promise<void> {
+  const p = await onTracker(service, sent, config);
   if (service === 'simkl') await scrobbleSimkl(p.type, p.id, p.report, p.progress, config, p.watchedAt);
   else if (service === 'mdblist') await scrobbleMdblist(p.type, p.id, p.report, p.progress, config);
   else if (service === 'publicmetadb') await reportPublicMetaDB(p.type, p.id, p.report, config);
@@ -396,22 +433,24 @@ function trackedMediaId(p: Pick<ReportPayload, 'type' | 'id'>): any | null {
   return parsedId;
 }
 
-export async function deliverCredit(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {
-  const parsedId = trackedMediaId(p);
+export async function deliverCredit(service: WatchTrackingService, sent: ReportPayload, config: any): Promise<void> {
+  const parsedId = trackedMediaId(await onTracker(service, sent, config));
   if (parsedId) await require('./subtitleHandler').creditHistory(parsedId, config, service);
 }
 
-export async function deliverUnwatch(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {
-  const parsedId = trackedMediaId(p);
+export async function deliverUnwatch(service: WatchTrackingService, sent: ReportPayload, config: any): Promise<void> {
+  const parsedId = trackedMediaId(await onTracker(service, sent, config));
   if (parsedId) await require('./subtitleHandler').unwatch(parsedId, config, service);
 }
 
-export async function deliverWatchDate(service: WatchTrackingService, p: { type: string; id: string; from: number; to: number; latest?: number | null; apart?: boolean }, config: any): Promise<void> {
+export async function deliverWatchDate(service: WatchTrackingService, sent: { type: string; id: string; from: number; to: number; latest?: number | null; apart?: boolean }, config: any): Promise<void> {
+  const p = await onTracker(service, sent, config);
   const parsedId = trackedMediaId(p);
   if (parsedId) await require('./subtitleHandler').redateHistory(parsedId, config, service, p);
 }
 
-export async function deliverCatchUp(service: WatchTrackingService, p: { type: string; id: string; at: number }, config: any, userUUID: string): Promise<void> {
+export async function deliverCatchUp(service: WatchTrackingService, sent: { type: string; id: string; at: number }, config: any, userUUID: string): Promise<void> {
+  const p = await onTracker(service, sent, config);
   if (service === 'anilist' || service === 'mal') {
     const report: PlaybackReport = { id: null, event: 'played', at: p.at, metaId: null, videoId: p.id, positionMs: null, durationMs: null, played: true, season: null, episode: null, ids: {} };
     await advanceAnimeLists(p.type, p.id, report, config, userUUID, service);
@@ -429,7 +468,10 @@ export async function deliverCatchUps(service: WatchTrackingService, p: { items?
   const credential = batch ? config.apiKeys?.[ACCOUNT_SERVICES[service].key] : null;
   if (!items.length || !credential) return;
   const { noteTrackerCall } = require('../utils/trackerCalls');
-  const outcome = await batch.write(items, credential, config, p.rewatch === true);
+  const { asFilmOn } = require('./jellyfin/trackerMatch');
+  // Rewritten in place, so a lost index still names the item asked for.
+  const sending = await Promise.all(items.map((item: any) => (item && Array.isArray(item.ids) ? asFilmOn(config?.userUUID, service, item) : item)));
+  const outcome = await batch.write(sending, credential, config, p.rewatch === true);
   const name = trackerName(service);
   const url = batch.url;
   if (outcome.wait) {
@@ -460,7 +502,8 @@ export async function deliverCatchUps(service: WatchTrackingService, p: { items?
   });
 }
 
-export async function deliverClearResume(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {
+export async function deliverClearResume(service: WatchTrackingService, sent: ReportPayload, config: any): Promise<void> {
+  const p = await onTracker(service, sent, config);
   const { parseMediaId, clearResumePoint } = require('./subtitleHandler');
   const parsedId = parseMediaId(p.id);
   if (parsedId) await clearResumePoint(parsedId, config, service);

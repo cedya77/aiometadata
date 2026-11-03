@@ -23,21 +23,25 @@ export interface MatchTarget {
   kind: string;
 }
 
+// An 'episode' match sends one episode here as a film there: its bases are that episode's spellings, its target the film.
 export interface TrackerMatch {
   group: string;
   bases: string[];
-  kind: 'movie' | 'series';
+  kind: 'movie' | 'series' | 'episode';
   title: string | null;
   open: { id: string; type: 'movie' | 'series' } | null;
   target: MatchTarget;
   seasons: Record<string, SeasonLink>;
   episodes?: Record<string, EpisodeRef | null>;
+  /** For an episode sent as a film: the episode here, as its show numbers it. */
+  episode?: EpisodeRef;
   updatedAt: number;
 }
 
 interface Index {
   byBase: Map<string, TrackerMatch>;
   byTheirs: Map<string, TrackerMatch[]>;
+  films: number;
 }
 
 const indexes = new LRUCache<string, Index>({ max: 500, ttl: 10 * 60 * 1000 });
@@ -59,7 +63,7 @@ export function matchBases(match: TrackerMatch): string[] {
 
 async function noteSpellings(service: string, match: TrackerMatch): Promise<void> {
   const spellings = trackerOf(service)?.match?.spellings;
-  const out = spellings ? await spellings(match.target?.ids ?? {}, match.kind) : [];
+  const out = spellings ? await spellings(match.target?.ids ?? {}, match.kind === 'series' ? 'series' : 'movie') : [];
   if (out.length) spelledToo.set(match, out);
 }
 
@@ -68,7 +72,7 @@ async function indexFor(userUUID: string, service: string): Promise<Index> {
   const held = indexes.get(key);
   if (held) return held;
   const epoch = epochs.get(key) ?? 0;
-  const index: Index = { byBase: new Map(), byTheirs: new Map() };
+  const index: Index = { byBase: new Map(), byTheirs: new Map(), films: 0 };
   const groups = new Map<string, TrackerMatch>();
   const rows = await database.listTrackerMatches(userUUID, service, true).catch((error: any) => {
     noteUnreadable('tracker matches');
@@ -83,6 +87,7 @@ async function indexFor(userUUID: string, service: string): Promise<Index> {
         continue;
       }
       groups.set(String(row.match_group), match);
+      if (match.kind === 'episode') index.films += 1;
       await noteSpellings(service, match);
       for (const base of matchBases(match)) index.byTheirs.set(base, [...(index.byTheirs.get(base) ?? []), match]);
     }
@@ -108,6 +113,58 @@ export async function matchFor(userUUID: string | undefined, service: string, ba
   if (!userUUID || !matchable(service)) return null;
   const match = (await indexFor(userUUID, service)).byBase.get(base) ?? null;
   return match && (!kind || match.kind === kind) ? match : null;
+}
+
+/** A film is sent by its IMDb id, or by its TMDB id when it has none. */
+export function filmSpelling(target: MatchTarget): string | null {
+  if (typeof target.ids.imdb === 'string' && /^tt\d+$/.test(target.ids.imdb)) return target.ids.imdb;
+  return Number(target.ids.tmdb) > 0 ? `tmdb:${Number(target.ids.tmdb)}` : null;
+}
+
+export interface FilmMatch {
+  match: TrackerMatch;
+  /** The film's id as it is sent. */
+  film: string;
+  /** Every id the film goes by there. */
+  spellings: string[];
+}
+
+/** The film an episode is sent as on this tracker, when one of these spellings of it is matched to one. */
+export async function filmFor(userUUID: string | undefined, service: string, ids: string[], withAliases = false): Promise<FilmMatch | null> {
+  if (!userUUID || !matchable(service) || !ids.length) return null;
+  const index = await indexFor(userUUID, service);
+  if (!index.films) return null;
+  const spellings = withAliases ? [...new Set([...ids, ...(await Promise.all(ids.map((id) => videoIdAliases(id).catch(() => [] as string[])))).flat()])] : ids;
+  for (const id of spellings) {
+    const match = index.byBase.get(id);
+    if (match?.kind !== 'episode') continue;
+    const film = filmSpelling(match.target);
+    if (film) return { match, film, spellings: [film, ...matchBases(match).filter((base) => base !== film)] };
+  }
+  return null;
+}
+
+/**
+ * A watch of a film-matched episode as the film it is sent as there; anything else as it is. An item carrying
+ * native ids, or asked to, gets the film's TMDB id, and is left as it is when the film has none.
+ */
+export async function asFilmOn<T extends { ids: string[]; kind: 'movie' | 'episode'; metaId: string; season: number | null; episode: number | null; native?: { tmdb: number; imdb: string | null; season: number | null; episode: number | null } }>(userUUID: string | undefined, service: string, item: T, needsNative = false): Promise<T> {
+  if (item.kind !== 'episode') return item;
+  const found = await filmFor(userUUID, service, item.ids);
+  if (!found) return item;
+  const tmdb = Number(found.match.target.ids.tmdb);
+  const native = needsNative || Boolean(item.native);
+  if (native && !(tmdb > 0)) return item;
+  const imdb = typeof found.match.target.ids.imdb === 'string' ? found.match.target.ids.imdb : null;
+  return {
+    ...item,
+    ids: found.spellings,
+    kind: 'movie',
+    metaId: found.film,
+    season: null,
+    episode: null,
+    ...(native ? { native: { tmdb, imdb, season: null, episode: null } } : {}),
+  };
 }
 
 export async function saveMatch(userUUID: string, service: string, match: Omit<TrackerMatch, 'group' | 'updatedAt'>): Promise<TrackerMatch> {
@@ -221,6 +278,11 @@ async function ourSpelled(match: TrackerMatch, ours: EpisodeRef): Promise<string
 }
 
 export async function matchedTarget(userUUID: string | undefined, service: string, base: string, season?: number, episode?: number): Promise<{ ids: Record<string, string | number>; season?: number; episode?: number; unsent?: true } | null> {
+  // An episode sent as a film there is never also sent as an episode.
+  if (episode !== undefined && episode !== null) {
+    const film = await filmFor(userUUID, service, [spelled(base, season ?? 1, episode)], true);
+    if (film) return { ids: { ...film.match.target.ids }, unsent: true };
+  }
   const match = await matchFor(userUUID, service, base);
   if (!match) return null;
   if (match.kind === 'movie' || episode === undefined || episode === null) return { ids: { ...match.target.ids } };
@@ -252,6 +314,11 @@ export async function theirSpellings(userUUID: string, service: string, ids: str
   const index = await indexFor(userUUID, service);
   if (!index.byBase.size) return out;
   for (const id of ids) {
+    const film = index.byBase.get(id);
+    if (film?.kind === 'episode') {
+      out.set(id, matchBases(film));
+      continue;
+    }
     const parsed = parseStremioId(id);
     const match = parsed ? index.byBase.get(parsed.base) : null;
     if (!parsed || !match) continue;
@@ -277,9 +344,10 @@ export async function ourSpellings(userUUID: string, service: string, id: string
   const out: string[] = [];
   for (const match of matches) {
     if (parsed.episode === null || parsed.episode === undefined) {
-      if (match.kind === 'movie') out.push(...match.bases);
+      if (match.kind === 'movie' || match.kind === 'episode') out.push(...match.bases);
       continue;
     }
+    if (match.kind === 'episode') continue;
     for (const ours of ourEpisodes(match, parsed.season ?? 1, parsed.episode)) out.push(...(await ourSpelled(match, ours)));
   }
   return out;
