@@ -8,19 +8,30 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinSyncActions, useJellyfinTitle, type DashboardTab, type JellyfinMatchCandidate, type JellyfinMatchDetail, type JellyfinMatchSeason, type JellyfinTrackerMatch } from "@/hooks/useDashboardQueries";
 import { Eyebrow } from "./TrackerParts";
 import { useTrackers } from "./trackers";
-import { GUESSED, LOOK, heldIn, keyOf, norm, planSeason, seasonLink, seasonName, sentKey, strayEpisodes, wordsOf, type OurEpisode, type Ref, type Row, type SeasonPlan, type Status, type TheirEpisode } from "./trackerMatchPlan";
+import { GUESSED, LOOK, episodeLabel, heldIn, keyOf, norm, planSeason, seasonLink, seasonName, sentKey, strayEpisodes, wordsOf, type OurEpisode, type Ref, type Row, type SeasonPlan, type Status, type TheirEpisode } from "./trackerMatchPlan";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
+export interface MatchEpisode {
+  video: string;
+  season: number | null;
+  episode: number | null;
+}
+
+/** "episode" opens on one episode matched to a film; a show can also offer its own episodes for that. */
 export interface MatchSubject {
   item: string | null;
   bases: string[];
-  kind: "movie" | "series";
+  kind: "movie" | "series" | "episode";
   title: string | null;
   open: { id: string; type: "movie" | "series" } | null;
   seasons: number[];
   existing?: JellyfinTrackerMatch | null;
+  episodes?: MatchEpisode[];
 }
+
+// A film is sent by its IMDb or TMDB id, so a film with neither can't be the target.
+const sendableFilm = (ids: Record<string, string | number>) => Boolean(ids.imdb || ids.tmdb);
 
 export function Poster({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -71,6 +82,9 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
   const name = useTrackers().name(service);
   const actions = useJellyfinSyncActions();
   const queryClient = useQueryClient();
+  const filmable = subject.kind === "episode" || (subject.kind === "series" && (subject.episodes?.length ?? 0) > 0);
+  const [asFilm, setAsFilm] = useState(subject.kind === "episode");
+  const [filmEpisode, setFilmEpisode] = useState<string>(subject.episodes?.[0]?.video ?? "");
   const [query, setQuery] = useState(subject.title ?? "");
   const [results, setResults] = useState<JellyfinMatchCandidate[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -87,7 +101,8 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
   const [pickerSeason, setPickerSeason] = useState<number | null>(null);
   const [moveRest, setMoveRest] = useState(true);
   const [saving, setSaving] = useState(false);
-  const series = subject.kind === "series";
+  const series = subject.kind === "series" && !asFilm;
+  const searchKind: "movie" | "series" = asFilm || subject.kind === "movie" ? "movie" : "series";
   const { data: title, isLoading: titleLoading, isFetching: titleFetching, refetch: readTitle } = useJellyfinTitle(userUUID, profile, series ? subject.open : null, { activeTab });
   const pickedRef = useRef<HTMLButtonElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -153,7 +168,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
     missing: p.rows.filter((r) => r.status === "missing").length,
   });
   const missingTotal = plans.reduce((sum, p) => sum + counts(p).missing, 0);
-  const ready = Boolean(picked && detail && !reading && (!series || title) && missingTotal === 0);
+  const ready = Boolean(picked && detail && !reading && (!series || title) && missingTotal === 0 && (!asFilm || (filmEpisode && sendableFilm(detail.ids))));
 
   useEffect(() => {
     const text = query.trim();
@@ -161,13 +176,24 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
     let stale = false;
     const timer = window.setTimeout(() => {
       setSearching(true);
-      actions.matchSearch(userUUID, laneKey, text, subject.kind)
+      actions.matchSearch(userUUID, laneKey, text, searchKind)
         .then((found) => { if (!stale) setResults(found); })
         .catch((error) => { if (!stale) { setResults([]); toast.error(error instanceof Error ? error.message : `Could not search ${name}`); } })
         .finally(() => { if (!stale) setSearching(false); });
     }, 350);
     return () => { stale = true; window.clearTimeout(timer); };
-  }, [query, changing, userUUID, laneKey, subject.kind, actions, name]);
+  }, [query, changing, userUUID, laneKey, searchKind, actions, name]);
+
+  // A show and a film are different targets, so switching starts the search again.
+  const switchMode = (film: boolean) => {
+    if (film === asFilm) return;
+    setAsFilm(film);
+    setPicked(film === (subject.kind === "episode") ? subject.existing?.target ?? null : null);
+    setChanging(film === (subject.kind === "episode") ? !subject.existing : true);
+    setResults(null);
+    setDetail(null);
+    setQuery(subject.title ?? "");
+  };
 
   useEffect(() => {
     if (!picked) return;
@@ -238,6 +264,30 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
   const save = async () => {
     if (!picked || !detail) return;
     setSaving(true);
+    if (asFilm) {
+      try {
+        const { sent } = await actions.matchSave(userUUID, {
+          key: laneKey,
+          item: subject.item,
+          bases: [],
+          kind: "episode",
+          title: subject.title,
+          open: subject.open,
+          target: { ...picked, ids: detail.ids },
+          seasons: {},
+          video: filmEpisode,
+        });
+        toast.success(`${episodeLabel(chosenEpisode ?? { season: null, episode: null })} is sent to ${name} as ${picked.title}`, { description: sent ? `Sending ${sent} ${sent === 1 ? "watch" : "watches"} again` : `Nothing left to send to ${name}` });
+        void queryClient.invalidateQueries({ queryKey: ["dashboard", "jellyfin", "sync"] });
+        onSaved();
+        onClose();
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not save the match");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     try {
       const seasons: Record<string, { season: number; offset: number }> = {};
       const episodes: Record<string, Ref | null> = {};
@@ -278,6 +328,7 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
     later: plan.rows.filter((r) => r.status === "later").length,
   } : null;
   const visible = plan ? plan.rows.filter((r) => !onlyLook || LOOK.has(r.status) || r.key === openRow) : [];
+  const chosenEpisode = subject.episodes?.find((e) => e.video === filmEpisode) ?? null;
   const theirCount = (season: number) => view.seasons.find((s) => s.number === season)?.episodes.length ?? 0;
 
   return (
@@ -286,11 +337,36 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
         <DialogHeader>
           <DialogTitle>Match on {name}</DialogTitle>
           <DialogDescription>
-            {subject.title ? <span className="font-medium text-foreground">{subject.title}</span> : "This title"}: pick what {name} files it under{series ? ", then check each episode lands on the right one" : ""}. Everything sent to {name} for it then uses that.
+            {asFilm
+              ? <>{subject.title ? <span className="font-medium text-foreground">{subject.title}</span> : "This show"}: pick the film {name} files {chosenEpisode ? episodeLabel(chosenEpisode).toLowerCase() : "this episode"} under. Its watch is then sent to {name} as that film, and the rest of the show as it is.</>
+              : <>{subject.title ? <span className="font-medium text-foreground">{subject.title}</span> : "This title"}: pick what {name} files it under{series ? ", then check each episode lands on the right one" : ""}. Everything sent to {name} for it then uses that.</>}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5">
+          {filmable && (
+            <div className="space-y-2">
+              {subject.kind === "series" && (
+                <div className="flex gap-1 rounded-full bg-white/[0.05] p-0.5" role="group" aria-label="What to match">
+                  <button type="button" aria-pressed={!asFilm} onClick={() => switchMode(false)} className={cx("h-8 flex-1 rounded-full px-3 text-xs", !asFilm ? "bg-white/10 font-medium text-foreground" : "text-muted-foreground")}>The whole show</button>
+                  <button type="button" aria-pressed={asFilm} onClick={() => switchMode(true)} className={cx("h-8 flex-1 rounded-full px-3 text-xs", asFilm ? "bg-white/10 font-medium text-foreground" : "text-muted-foreground")}>One episode as a film</button>
+                </div>
+              )}
+              {asFilm && (subject.episodes?.length ?? 0) > 1 && (
+                <select
+                  value={filmEpisode}
+                  onChange={(event) => setFilmEpisode(event.target.value)}
+                  aria-label="Episode to match to a film"
+                  className="h-9 w-full rounded-lg border border-white/[0.12] bg-background px-2 text-sm"
+                >
+                  {subject.episodes!.map((e) => <option key={e.video} value={e.video}>{episodeLabel(e)}</option>)}
+                </select>
+              )}
+              {asFilm && (subject.episodes?.length ?? 0) === 1 && chosenEpisode && (
+                <p className="text-xs text-muted-foreground">{episodeLabel(chosenEpisode)} here</p>
+              )}
+            </div>
+          )}
           {picked && !changing ? (
             <div className="flex items-center gap-3 rounded-xl bg-blue-500/10 p-1.5 ring-1 ring-inset ring-blue-400/30">
               <Poster src={picked.posterUrl} />
@@ -514,6 +590,12 @@ export default function JellyfinTrackerMatch({ userUUID, profile, activeTab, lan
                 <p className="text-xs leading-relaxed text-muted-foreground">Episodes are matched by title. When {name} has one episode for two parts here, part 1 sends it and part 2 sends nothing.{shownOrder === "tvdb" ? ` In TVDB order, each episode is still sent as the TMDB episode ${name} links it to.` : ""}</p>
               </div>
             )
+          )}
+
+          {asFilm && picked && detail && !reading && !sendableFilm(detail.ids) && (
+            <p className="rounded-xl bg-amber-400/[0.08] px-3.5 py-2.5 text-xs leading-relaxed text-amber-100 ring-1 ring-inset ring-amber-300/20">
+              {name} gives no IMDb or TMDB id for {picked.title}, so a watch can't be sent as it. Pick another listing.
+            </p>
           )}
 
           {missingTotal > 0 && (

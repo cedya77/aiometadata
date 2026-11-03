@@ -169,3 +169,7 @@ export function seasonLink(plan: SeasonPlan, theirs: TheirEpisode[]): { season: 
   const anchor = rows.length ? inSeason[inSeason.length - 1] : inSeason[0];
   return { season, offset: anchor.sends.episode - anchor.number };
 }
+
+/** An episode as a match names it: a special by its number, an anime entry's episode by its own. */
+export const episodeLabel = (episode: { season: number | null; episode: number | null }): string =>
+  episode.season === 0 ? `Special ${episode.episode ?? "?"}` : episode.season === null ? `Episode ${episode.episode ?? "?"}` : `S${episode.season}E${episode.episode ?? "?"}`;

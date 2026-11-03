@@ -110,12 +110,13 @@ function Detail({ userUUID, laneKey, service, side: shown, item, activeTab, open
 
           {side === "behind" && (
             <Section title={`Sent to ${name} as`}>
-              {data.match && <p className="flex items-center gap-1.5 text-xs text-blue-200"><Link2 className="size-3.5" /> Matched by hand to {data.match.title}{data.match.year ? ` (${data.match.year})` : ""}</p>}
+              {data.match && <p className="flex items-center gap-1.5 text-xs text-blue-200"><Link2 className="size-3.5" /> Matched by hand to {data.match.title}{data.match.year ? ` (${data.match.year})` : ""}{data.match.film ? ", as a film" : ""}</p>}
               {data.sendsAs ? (
                 <div className="flex flex-wrap items-center gap-1">
                   {Object.entries(data.sendsAs.ids).map(([kind, value]) => <Chip key={kind} label={ID_LABELS[kind] ?? kind} text={String(value)} />)}
                   {data.sendsAs.season !== null && data.sendsAs.episode !== null && <span className="pl-1 text-[11px] text-muted-foreground">as S{data.sendsAs.season}E{data.sendsAs.episode}</span>}
                   {data.sendsAs.season === null && data.sendsAs.episode !== null && <span className="pl-1 text-[11px] text-muted-foreground">as episode {data.sendsAs.episode}</span>}
+                  {data.sendsAs.film && <span className="pl-1 text-[11px] text-muted-foreground">as a film</span>}
                 </div>
               ) : (
                 <p className="text-xs text-amber-200/90">{data.sendError ?? `Nothing ${name} can take`}</p>

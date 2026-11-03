@@ -9,6 +9,7 @@ import { Eyebrow, Logo, Still, Toggle } from "./TrackerParts";
 import { useTrackers, type Trackers } from "./trackers";
 import JellyfinCopy from "./JellyfinCopy";
 import TrackerMatchDialog, { Poster, type MatchSubject } from "./JellyfinTrackerMatch";
+import { episodeLabel } from "./trackerMatchPlan";
 import DriftInfo from "./JellyfinDriftInfo";
 import { Ambient } from "./JellyfinShared";
 import { useNow, useOpenTitle, useRemembered, when } from "./jellyfinUtils";
@@ -390,6 +391,7 @@ function seasonWord(season: number, plural: boolean): string {
 }
 
 function matchSummary(match: JellyfinTrackerMatch): string {
+  if (match.kind === "episode") return `for ${match.episode ? episodeLabel(match.episode).toLowerCase() : "one episode"} here, as a film`;
   const episodes = Object.entries(match.episodes ?? {}).map(([ours, theirs]) => ({ season: Number(ours.split(":")[0]), episode: Number(ours.split(":")[1]), theirs }));
   const ours = [...new Set([...Object.keys(match.seasons).map(Number), ...episodes.map((e) => e.season)])].sort((a, b) => a - b);
   const single = ours.length === 1;
@@ -476,11 +478,21 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
   const [matching, setMatching] = useState<MatchSubject | null>(null);
   const [showMatches, setShowMatches] = useState(false);
   const matches = matchData?.matches ?? [];
+  const filmEpisodeOf = (match: JellyfinTrackerMatch) => ({ video: match.bases[0], season: match.episode?.season ?? null, episode: match.episode?.episode ?? null });
   const matchItem = (item: JellyfinDriftItem) => {
-    const existing = matches.find((m) => m.bases.some((base) => item.bases?.includes(base))) ?? null;
-    setMatching({ item: item.id, bases: item.bases ?? [], kind: item.kind === "movie" ? "movie" : "series", title: item.title, open: item.open, seasons: item.seasons ?? [], existing });
+    // An episode already sent as a film opens on that match; a show offers its episodes for one.
+    const episodes = item.kind === "movie" ? [] : item.views.filter((v) => v.video).map((v) => ({ video: v.video!, season: v.season, episode: v.episode }));
+    const film = matches.find((m) => m.kind === "episode" && episodes.some((e) => m.bases.includes(e.video))) ?? null;
+    if (film) {
+      setMatching({ item: item.id, bases: film.bases, kind: "episode", title: item.title ?? film.title, open: item.open, seasons: [], existing: film, episodes: [filmEpisodeOf(film)] });
+      return;
+    }
+    const existing = matches.find((m) => m.kind !== "episode" && m.bases.some((base) => item.bases?.includes(base))) ?? null;
+    setMatching({ item: item.id, bases: item.bases ?? [], kind: item.kind === "movie" ? "movie" : "series", title: item.title, open: item.open, seasons: item.seasons ?? [], existing, episodes });
   };
-  const editMatch = (match: JellyfinTrackerMatch) => setMatching({ item: null, bases: match.bases, kind: match.kind, title: match.title, open: match.open, seasons: Object.keys(match.seasons).map(Number), existing: match });
+  const editMatch = (match: JellyfinTrackerMatch) => setMatching(match.kind === "episode"
+    ? { item: null, bases: match.bases, kind: "episode", title: match.title, open: match.open, seasons: [], existing: match, episodes: [filmEpisodeOf(match)] }
+    : { item: null, bases: match.bases, kind: match.kind, title: match.title, open: match.open, seasons: Object.keys(match.seasons).map(Number), existing: match });
   const removeMatch = async (match: JellyfinTrackerMatch) => {
     try {
       await actions.matchRemove(userUUID, lane.key, match.group);

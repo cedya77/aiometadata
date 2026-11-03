@@ -2335,15 +2335,17 @@ export interface JellyfinMatchDetail {
   tvdbDefault?: boolean;
 }
 
+/** An 'episode' match sends one episode here as a film there: its bases are the episode's spellings, its target the film. */
 export interface JellyfinTrackerMatch {
   group: string;
   bases: string[];
-  kind: 'movie' | 'series';
+  kind: 'movie' | 'series' | 'episode';
   title: string | null;
   open: { id: string; type: 'movie' | 'series' } | null;
   target: JellyfinMatchCandidate;
   seasons: Record<string, { season: number; offset: number }>;
   episodes?: Record<string, { season: number; episode: number } | null>;
+  episode?: { season: number; episode: number };
   updatedAt: number;
 }
 
@@ -2352,9 +2354,9 @@ export interface JellyfinDriftDetail {
   side: 'behind' | 'ahead';
   video: string;
   aliases: string[];
-  sendsAs: { ids: Record<string, string | number>; season: number | null; episode: number | null } | null;
+  sendsAs: { ids: Record<string, string | number>; season: number | null; episode: number | null; film?: boolean } | null;
   sendError: string | null;
-  match: { title: string; year: number | null; seasons: Record<string, { season: number; offset: number }> } | null;
+  match: { title: string; year: number | null; seasons: Record<string, { season: number; offset: number }>; film?: boolean } | null;
   holds: { kind: 'movie'; found: boolean; watchedAt: number | null } | { kind: 'series'; found: boolean; watched: number; total: number; at: number | null; season?: number; numbers?: number[]; upTo?: number } | null;
   attempts: Array<{ at: number; kind: 'sent' | 'failed' | 'dropped'; video: string; verb: string | null; reason: string | null }>;
 }
@@ -2514,7 +2516,7 @@ function syncActions(getHeaders: () => Record<string, string>) {
       return Array.isArray(data?.results) ? data.results : [];
     },
     matchDetail: (userUUID: string, key: string, candidate: JellyfinMatchCandidate) => post<JellyfinMatchDetail>(userUUID, 'match/detail', { key, candidate }),
-    matchSave: (userUUID: string, body: { key: string; item: string | null; bases: string[]; kind: 'movie' | 'series'; title: string | null; open: { id: string; type: 'movie' | 'series' } | null; target: JellyfinMatchCandidate; seasons: Record<string, { season: number; offset: number }>; episodes?: Record<string, { season: number; episode: number } | null> }) => post<{ match: JellyfinTrackerMatch; sent: number }>(userUUID, 'match', body),
+    matchSave: (userUUID: string, body: { key: string; item: string | null; bases: string[]; kind: 'movie' | 'series' | 'episode'; title: string | null; open: { id: string; type: 'movie' | 'series' } | null; target: JellyfinMatchCandidate; seasons: Record<string, { season: number; offset: number }>; episodes?: Record<string, { season: number; episode: number } | null>; video?: string }) => post<{ match: JellyfinTrackerMatch; sent: number }>(userUUID, 'match', body),
     matchRemove: (userUUID: string, key: string, group: string) => post<{ ok: boolean }>(userUUID, 'match/remove', { key, group }),
   };
 }
