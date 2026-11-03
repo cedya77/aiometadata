@@ -47,16 +47,17 @@ function laneState(lane: JellyfinSyncLane, now: number, trackers: Trackers, drif
     return { tone: "waiting", short: `${lane.pending} waiting`, line: `${lane.pending} waiting, sending ${soon}` };
   }
   if (!lane.imported) return { tone: "idle", short: "Not read yet", line: "Not read yet" };
-  if (drift?.error) return { tone: "failing", short: "Can't compare", line: `Couldn't compare ${trackers.name(lane.service)} with your history` };
+  if (drift?.error) return { tone: "failing", short: "Can't compare", line: `Couldn't compare ${trackers.name(lane.service)} with the watches made here` };
   const missing = watchesIn(drift?.behind);
-  if (missing) return { tone: "drift", short: `${missing} missing`, line: `Missing ${watches(missing)} from your history` };
+  if (missing) return { tone: "drift", short: `${missing} missing`, line: `Missing ${watches(missing)} made here` };
   const brought = importedIn(drift?.imported);
   if (brought) return { tone: "drift", short: `${brought.toLocaleString()} imported`, line: `Missing ${watches(brought)} you imported` };
   const extra = watchesIn(drift?.ahead);
   if (extra) return { tone: "ahead", short: `${extra} only there`, line: `Has ${watches(extra)} your history doesn't` };
   const again = drift?.rewatchNote ? 0 : watchesIn(drift?.rewatched);
-  if (again) return { tone: "drift", short: `${again} ${again === 1 ? "rewatch" : "rewatches"} missing`, line: `Missing ${again === 1 ? "a rewatch" : `${again} rewatches`} from your history` };
-  return { tone: "ok", short: "In step", line: drift ? "In step with your history" : "Nothing waiting to send" };
+  if (again) return { tone: "drift", short: `${again} ${again === 1 ? "rewatch" : "rewatches"} missing`, line: `Missing ${again === 1 ? "a rewatch" : `${again} rewatches`} made here` };
+  // Only watches made or imported here are compared; ones a tracker brought in are the copy view's to match.
+  return { tone: "ok", short: "In step", line: drift ? "Has everything you watched or imported here" : "Nothing waiting to send" };
 }
 
 const DOT: Record<Tone, string> = {
