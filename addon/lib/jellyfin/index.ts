@@ -35,7 +35,7 @@ import { buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetc
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
-import { memoNextUp, resumeSnapshot, resumeUserData } from './resume';
+import { heldNextUp, memoNextUp, resumeSnapshot, resumeUserData } from './resume';
 import { animeSequels } from './sequels';
 import { isAnimeTitle, showIdentity } from './canonicalIds';
 import { keepsAnimeOnly, sourceFor } from './trackerSource';
@@ -2991,8 +2991,25 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     // Built once per shelf shape; every page is cut from it.
     const q = (name: string) => String(req.query[name] ?? req.query[name.charAt(0).toLowerCase() + name.slice(1)] ?? '');
     const digest = (await watchedSnapshot(userUUID, config)).fingerprint;
-    const shelfKey = `${userUUID}:${profileKey(config)}:${sourceFor(config) ?? ''}:${q('EnableResumable')}:${q('EnableRewatching')}:${q('SeriesId') || q('ParentId')}`;
-    const memoKey = `${userUUID}:${profileKey(config)}:${digest}:${q('EnableResumable')}:${q('EnableRewatching')}:${q('SeriesId') || q('ParentId')}`;
+    const shape = nextUpShape(req.query);
+    const series = q('SeriesId') || q('ParentId');
+    const shelfKey = `${userUUID}:${profileKey(config)}:${sourceFor(config) ?? ''}:${shape}:${series}`;
+    const memoKey = nextUpKey(userUUID, config, digest, shape, series);
+
+    // A series page takes its row from the whole list when that is already built.
+    if (series) {
+      const wanted = await decodeJellyfinId(series);
+      const showId = wanted?.k === 'series' ? wanted.i : null;
+      const held = showId ? heldNextUp(nextUpKey(userUUID, config, digest, shape, '')) : undefined;
+      const own = held?.filter((item) => nextUpRowIds.get(item) === showId) ?? [];
+      if (own.length) {
+        const page = own.slice(startIndex, startIndex + limit);
+        res.json(itemList(page, own.length, startIndex));
+        warmSeriesMetas(req, userUUID, page);
+        return;
+      }
+    }
+
     let firstPending: number | null = null;
     const notePending = (at: number) => {
       if (firstPending === null || at < firstPending) firstPending = at;
@@ -3008,6 +3025,18 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
   nextUpTracer = (userUUID, config, trace) => buildNextUp({ query: {} }, userUUID, config, undefined, trace);
 
+  const nextUpFlag = (query: any, name: string, fallback: boolean): boolean => {
+    const raw = query[name] ?? query[name.charAt(0).toLowerCase() + name.slice(1)];
+    return raw === undefined ? fallback : String(raw).toLowerCase() === 'true';
+  };
+  // Keyed by what the flags mean, so an omitted flag and its default share one build.
+  const nextUpShape = (query: any): string =>
+    `${nextUpFlag(query, 'EnableResumable', true)}:${nextUpFlag(query, 'EnableRewatching', false)}`;
+  const nextUpKey = (userUUID: string, config: any, digest: string, shape: string, series: string): string =>
+    `${userUUID}:${profileKey(config)}:${digest}:${shape}:${series}`;
+  // The candidate row's show id behind each built item, which a series page matches on.
+  const nextUpRowIds = new WeakMap<object, string>();
+
   const buildNextUp = async (req: any, userUUID: string, config: any, notePending: (at: number) => void = () => {}, trace?: NextUpTrace): Promise<any[]> => {
     const t0 = Date.now();
     const lap = { snapshot: 0, resumable: 0, own: 0, meta: 0, episodes: 0, state: 0 };
@@ -3017,12 +3046,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     // The client's recency cutoff is deliberately not applied: the tracker's own
     // view of what is in progress is the one people expect to see.
-    const flag = (name: string, fallback: boolean): boolean => {
-      const raw = req.query[name] ?? req.query[name.charAt(0).toLowerCase() + name.slice(1)];
-      return raw === undefined ? fallback : String(raw).toLowerCase() === 'true';
-    };
-    const includeResumable = flag('EnableResumable', true);
-    const includeRewatching = flag('EnableRewatching', false);
+    const includeResumable = nextUpFlag(req.query, 'EnableResumable', true);
+    const includeRewatching = nextUpFlag(req.query, 'EnableRewatching', false);
 
     let resumable: Set<string> | null = null;
     const t1 = Date.now();
@@ -3255,7 +3280,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return false;
       })
       .sort((a, b) => availableAt[b.index] - availableAt[a.index] || rankOf(a.row) - rankOf(b.row))
-      .map(({ item }) => item);
+      .map(({ item, row }) => {
+        nextUpRowIds.set(item, row.metaId);
+        return item;
+      });
     logger.info(`Next Up built for ${userUUID}: ${found.length} of ${rows.length} candidates (${own.length} own, ${snapshot.nextUp.length} tracker), ${skipped} skipped, in ${Date.now() - t0}ms (snapshot ${lap.snapshot}, resumable ${lap.resumable}, own rows ${lap.own}, meta ${lap.meta}, episodes ${lap.episodes}, state ${lap.state}, summed over ${shelfConcurrency()} lanes)`);
     return found;
   };
@@ -3533,7 +3561,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         };
         const items = await memoNextUp(
           userUUID,
-          `${userUUID}:${profile}:${snapshot.fingerprint}:::`,
+          nextUpKey(userUUID, config, snapshot.fingerprint, nextUpShape({}), ''),
           () => buildNextUp({ query: {} }, userUUID, config, notePending),
           () => firstPending
         );
