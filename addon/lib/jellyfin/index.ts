@@ -2459,10 +2459,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       res.status(404).end();
       return;
     }
-    const maxWidth = qInt(req, 'MaxWidth', 0) || qInt(req, 'FillWidth', 0) || qInt(req, 'Width', 0);
-    url = sourceSized(url, kind, maxWidth, clientListed(req, 'JELLYFIN_RASTER_LOGO_CLIENTS'));
     const descriptor = await decodeJellyfinId(String(req.params.itemId));
     const collectionArt = descriptor?.k === 'collection' || descriptor?.k === 'boxset';
+    const widePrimary = collectionArt || descriptor?.k === 'episode' || (Boolean(images?.thumb) && images?.primary === images?.thumb);
+    const maxWidth = requestedWidth(req, kind === 'primary' && widePrimary ? 'wide' : kind);
+    url = sourceSized(url, kind, maxWidth, clientListed(req, 'JELLYFIN_RASTER_LOGO_CLIENTS'));
 
     const relaying = relaysImages(req);
     const cached = throughPosterCache(url, collectionArt ? 'collection' : descriptor?.k === 'episode' && kind === 'primary' ? 'thumb' : kind);
@@ -2500,6 +2501,18 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.set('Cache-Control', 'public, max-age=86400');
     res.redirect(302, url);
   });
+
+  // Width per unit of height by kind; 'wide' is a primary that may be landscape. Logos vary too much to guess.
+  const ART_ASPECT: Record<string, number> = { primary: 2 / 3, backdrop: 16 / 9, thumb: 16 / 9, wide: 16 / 9 };
+
+  /** The width a client asked for, or one worked out from the height when it sized by height alone. */
+  const requestedWidth = (req: any, shape: string): number => {
+    const width = qInt(req, 'MaxWidth', 0) || qInt(req, 'FillWidth', 0) || qInt(req, 'Width', 0);
+    const aspect = ART_ASPECT[shape];
+    if (width > 0 || !aspect) return width;
+    const height = qInt(req, 'MaxHeight', 0) || qInt(req, 'FillHeight', 0) || qInt(req, 'Height', 0);
+    return height > 0 ? Math.ceil(height * aspect) : width;
+  };
 
   const TMDB_ORIGINAL = 'https://image.tmdb.org/t/p/original/';
   const TMDB_WIDTHS: Record<string, number[]> = {
