@@ -31,7 +31,7 @@ import {
 import { buildViews, catalogView, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBoxSetCatalog, isBrowsable, requiresGenre, rowFor } from './views';
 import { decodeJellyfinId } from './ids';
 import { artTag, imageTag, isWideTag } from './imageTags';
-import { buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
+import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
@@ -1312,13 +1312,19 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return;
       }
 
-      const pool = (await getCatalogs(userUUID, config)).filter((catalog: any) => isBrowsable(catalog) && !requiresGenre(catalog)).filter((catalog: any) => {
+      let pool = (await getCatalogs(userUUID, config)).filter((catalog: any) => isBrowsable(catalog) && !requiresGenre(catalog)).filter((catalog: any) => {
         if (!wanted || !wanted.size) return true;
         const kind = collectionTypeFor(catalog.type);
         if (kind === 'movies') return wanted.has('Movie');
         if (kind === 'tvshows') return wanted.has('Series');
         return true;
       });
+
+      // Tags and sorting apply to the titles this walk gathers; no extra catalogs are read for them.
+      const tagged = wantedTags(req.query.Tags ?? req.query.tags);
+      const animeShelf = tagged?.size === 1 && tagged.has(ANIME_TAG) ? pool.filter((catalog: any) => isAnimeCatalogType(catalog.type)) : [];
+      if (animeShelf.length) pool = animeShelf;
+      const animeItems = new WeakSet<object>();
 
       const collected: any[] = [];
       let passed = 0;
@@ -1350,16 +1356,20 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         const viewId = encodeJellyfinId({ k: 'view', t: catalog.type, c: catalog.id });
         for (const meta of servedOrder(page.items, page)) {
           if (!meta?.id || collected.length >= limit) continue;
-          collected.push(metaToBaseItem(meta, catalog.type, serverId, viewId));
+          const item = metaToBaseItem(meta, catalog.type, serverId, viewId);
+          if (tagged && (isAnimeCatalogType(catalog.type) || isAnimeTitle(String(meta.id), item.Type === 'Movie' ? 'movie' : 'series'))) animeItems.add(item);
+          collected.push(item);
         }
 
         if (page.hasMore) break;
         passed += knownCatalogLength(userUUID, catalog, extras, tags, typesKey) ?? skip + page.items.length;
       }
 
-      const across = filterByIncludeTypes(
-        collected,
-        includeItemTypes ? String(includeItemTypes) : undefined
+      const across = sortItems(
+        filterByIncludeTypes(collected, includeItemTypes ? String(includeItemTypes) : undefined)
+          .filter((item: any) => !tagged || hasWantedTag(item, tagged, animeItems.has(item))),
+        req.query.SortBy ?? req.query.sortBy,
+        req.query.SortOrder ?? req.query.sortOrder
       );
       await applyWatchedState(across, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
 
