@@ -17,3 +17,19 @@ export function bulkMarked(times: number[], { size, gapMs } = bulkMarkRule()): b
   }
   return out;
 }
+
+/** The times among these marks that fall in a bulk mark, counting a mark once however many ids spell it. */
+export function bulkTimes(marks: Array<{ at: number; key: string }>, rule = bulkMarkRule()): Set<number> {
+  const seen = new Set<string>();
+  const times: number[] = [];
+  for (const { at, key } of marks) {
+    if (!(at > 0) || seen.has(`${at}|${key}`)) continue;
+    seen.add(`${at}|${key}`);
+    times.push(at);
+  }
+  const out = new Set<number>();
+  bulkMarked(times, rule).forEach((bulk, i) => {
+    if (bulk) out.add(times[i]);
+  });
+  return out;
+}

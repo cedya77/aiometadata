@@ -5,6 +5,7 @@ import { envInt } from '../../utils/envNumber';
 import { credentialFor, sourceFor } from './trackerSource';
 import { generationOf, videoIdFor } from './resume';
 import { playCountOf } from './dto';
+import { bulkTimes } from './bulkMarks';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -47,6 +48,7 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
       for (const row of group) groupOf.set(String(row.video_id), group);
     }
     const byShow = new Map<string, any[]>();
+    let bulk = new Set<number>();
     if (batchMs > 0) {
       // A batch can run on past this page, so the rest of the window below its last time is read once for every show.
       const rest = records.length === batch && last ? await database.listPlayedBetween(userUUID, profile, Number(last.last_played_at) - batchMs, Number(last.last_played_at)).catch(() => []) : [];
@@ -56,6 +58,10 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
         if (held) held.push(row);
         else byShow.set(key, [row]);
       };
+      bulk = bulkTimes([...carry, ...records, ...rest].map((row) => {
+        const spelled = regularEpisode(String(row.video_id));
+        return { at: Number(row.last_played_at), key: spelled ? `${spelled.season ?? 0}:${spelled.episode}` : String(row.video_id) };
+      }));
       for (const row of [...carry, ...records, ...rest]) {
         const id = String(row.video_id);
         const episodeAt = id.lastIndexOf(':');
@@ -90,6 +96,7 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
         leadParsed = spelled;
       }
       const at = Number(r.last_played_at) || 0;
+      let watchedAt = at || Number(r.updated_at) || 0;
       if (batchMs > 0 && at > 0) {
         const together = (byShow.get(leadParsed.base) ?? [])
           .filter((row) => Number(row.last_played_at) >= at - batchMs && Number(row.last_played_at) <= at)
@@ -100,6 +107,18 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
           lead = { ...lead, video_id: videoId };
           leadParsed = spelled;
         }
+        // A bulk mark never takes a show back behind an episode this server saw played before it, as when a tracker
+        // returns old marks dated the day they were sent.
+        if (bulk.has(at)) {
+          const own = await database.listOwnPlayedBefore(userUUID, profile, leadParsed.base, at - batchMs).catch(() => []);
+          for (const row of own) {
+            const spelled = regularEpisode(String(row.video_id));
+            if (!spelled || spelled.base !== leadParsed.base || !isAfter(spelled, leadParsed)) continue;
+            lead = { ...lead, video_id: String(row.video_id) };
+            leadParsed = spelled;
+            watchedAt = Number(row.last_played_at);
+          }
+        }
       }
       rows.push({
         metaId: leadParsed.base,
@@ -107,7 +126,7 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
         season: leadParsed.season ?? null,
         episode: leadParsed.episode,
         mediaType: leadParsed.idType === 'kitsu' || leadParsed.idType === 'mal' || leadParsed.idType === 'anilist' ? 'anime' : 'series',
-        lastWatchedAt: Number(r.last_played_at) || Number(r.updated_at) || 0,
+        lastWatchedAt: watchedAt,
       });
     }
     if (records.length < batch) break;

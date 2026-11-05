@@ -1602,6 +1602,17 @@ class Database {
     return row?.video_id ? { videoId: String(row.video_id), at: Number(row.last_played_at) } : null;
   }
 
+  /** Episodes of one show this server saw played before a time, leaving out history a sync copied from a tracker. */
+  async listOwnPlayedBefore(userUUID: string, profile: string, base: string, before: number): Promise<Array<{ video_id: string; last_played_at: number }>> {
+    const p = this.type === 'sqlite' ? () => '?' : ((n = 0) => () => `$${++n}`)();
+    const query = `SELECT video_id, last_played_at FROM jellyfin_playstate WHERE user_uuid = ${p()} AND profile = ${p()}
+      AND (origin = 'server' OR ((origin IS NULL OR origin = 'play') AND ABS(updated_at - last_played_at) < 2000))
+      AND played = 1 AND last_played_at IS NOT NULL AND video_id >= ${p()} AND video_id < ${p()}`;
+    // A key range on the id, with the time checked here, so the lookup reads only this show's rows.
+    const rows: Array<{ video_id: string; last_played_at: number }> = (await this.allQuery(query, [userUUID, profile, `${base}:`, `${base};`])) || [];
+    return rows.filter((row) => Number(row.last_played_at) < before);
+  }
+
   async listRecentlyPlayed(
     userUUID: string,
     since: number,
