@@ -5,6 +5,8 @@ import { filmsHeldElsewhere, getPlaystatesAcross, upsertPlaystateEverywhere } fr
 import { profileKey, scopeConfigToProfile } from './profiles';
 import { accountOwner } from '../accounts';
 import { runAsAccountOwner } from './viewer';
+import { bulkTimes } from './bulkMarks';
+import { parseStremioId } from './ids';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -68,12 +70,21 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
   const known = await getPlaystatesAcross(userUUID, finished, profile);
   for (const [videoId, row] of await filmsHeldElsewhere(userUUID, finished.filter((id: string) => !known.has(id)), profile)) known.set(videoId, row);
   const logged = await database.watchedVideoIds(userUUID, profile);
+  // A tracker dates a mark sent to it without one by when it came, so a bulk of them is no viewing date.
+  const bulk = bulkTimes(finished.map((videoId: string) => {
+    const spelled = parseStremioId(videoId);
+    return { at: watched.at.get(videoId) ?? 0, key: spelled && spelled.episode !== null && spelled.episode !== undefined ? `${spelled.season ?? 0}:${spelled.episode}` : videoId };
+  }));
   for (const videoId of finished) {
     const row = known.get(videoId);
     const heldAs = row && String(row.video_id) !== videoId ? [String(row.video_id)] : [];
     const trackerAt = watched.at.get(videoId);
     // An import written without a date takes the tracker's once it has one.
     if (row && row.played && !row.last_played_at && !Number(row.position_ms) && trackerAt) {
+      if (bulk.has(trackerAt)) {
+        skipped += 1;
+        continue;
+      }
       await upsertPlaystateEverywhere(userUUID, videoId, { lastPlayedAt: trackerAt, origin, watch: { at: trackerAt, kind: 'dated' } }, profile, heldAs);
       added += 1;
       continue;
