@@ -7,6 +7,7 @@ import { catalogCannotServe, fetchWindow, includeTypesFilter, listFilterKey, isL
 import { getCatalogs, requiresGenre, viewIdFor, viewTypeFor, type CatalogRef } from './views';
 import { viewerAccountOwner, viewerReadsExtensions } from './viewer';
 import { profileTags } from './profiles';
+import { carriesAnyTag } from '../../utils/untagged';
 import { findFolder, subFolders, type CollectionDraft, type FolderDraft, type SourceDraft } from '../collectionBuilder/types';
 
 // A builder collection is a library of box sets; a folder is one box set whose sources are its members.
@@ -27,7 +28,7 @@ export function entryVisible(entry: any, config: any): boolean {
   if (!wanted.length) return true;
   const held = new Set(profileTags(config).map((t) => t.toLowerCase()));
   if (!held.size) return true;
-  return wanted.some((t: string) => held.has(String(t).toLowerCase()));
+  return carriesAnyTag(wanted, held);
 }
 
 export function builderCollections(config: any): CollectionDraft[] {

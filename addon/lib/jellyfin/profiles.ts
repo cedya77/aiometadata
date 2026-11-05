@@ -4,6 +4,7 @@ import { normaliseJellyfinId } from './idsCodec';
 import { isPinHash } from './pins';
 import { ACCOUNT_SERVICES, ACCOUNT_SERVICE_LIST, AccountService, accountOwner, credentialOf, trackerConfig, withAccountOwner } from '../accounts';
 import { viewingWindowOf, type ViewingWindow } from './viewingHours';
+import { UNTAGGED_TAG } from '../../utils/untagged';
 import { withTagExclusions } from '../../utils/tagExclusions';
 
 /** The main user is the configuration itself, under the id it always had. */
@@ -54,7 +55,7 @@ export function profileUserId(userUUID: string, id: string | null): string {
 
 /** Only tags the configuration still has; a renamed or deleted one drops out. */
 function knownTags(config: any, wanted: unknown): string[] {
-  const registry = new Map<string, string>();
+  const registry = new Map<string, string>([[UNTAGGED_TAG.toLowerCase(), UNTAGGED_TAG]]);
   for (const tag of Array.isArray(config?.tags) ? config.tags : []) {
     if (typeof tag?.name === 'string' && tag.name.trim()) registry.set(tag.name.trim().toLowerCase(), tag.name.trim());
   }

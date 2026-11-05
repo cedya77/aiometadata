@@ -228,6 +228,10 @@ function WatchedPointPicker({ name, point }: { name: string; point: WatchedPoint
   );
 }
 
+/** Built in, not stored: a user holding it sees every catalog that carries no tag. */
+const UNTAGGED_TAG = 'Untagged';
+const UNTAGGED_DEF: TagDef = { name: UNTAGGED_TAG, color: "slate" };
+
 function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptions, watchlistOptions, hasPmdb, mainSkipSource, showHandoff, watchedPoint, onChange, onRemove, onForget, children }: UserRowProps) {
   const chosen = user?.tags ?? [];
   const toggleTag = (tag: string) =>
@@ -306,10 +310,10 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptio
           )}
         </div>
       </div>
-      {expanded && allTags.length > 0 ? (
+      {expanded ? (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs text-muted-foreground">Tags:</span>
-          {allTags.map((t) => (
+          {[...allTags, UNTAGGED_DEF].map((t) => (
             <TagChip
               key={t.name}
               name={t.name}
@@ -592,7 +596,8 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
 
   const catalogCountFor = (chosen: string[]) => {
     const wanted = new Set(chosen.map((t) => t.toLowerCase()));
-    return (config.catalogs ?? []).filter((c) => c.enabled && (c.tags ?? []).some((t) => wanted.has(t.toLowerCase()))).length;
+    const untagged = wanted.has(UNTAGGED_TAG.toLowerCase());
+    return (config.catalogs ?? []).filter((c) => c.enabled && ((c.tags ?? []).length === 0 ? untagged : (c.tags ?? []).some((t) => wanted.has(t.toLowerCase())))).length;
   };
 
   const [watchedPoints, setWatchedPoints] = useState<{ serverDefault: number; byProfile: Record<string, number | null> } | null>(null);

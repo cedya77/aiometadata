@@ -13,6 +13,7 @@ import { watchStatePullTtl } from "./watchState";
 import { collectionCatalogs, collectionsServed, COLLECTION_CATALOG_PREFIX, COLLECTION_META_PREFIX } from "./collectionBuilder/aiostreamsCollections";
 import { configCatalogFor, placeCollections } from "./collectionBuilder/homeOrder";
 import { similarCatalogs } from "./similarCatalog";
+import { carriesAnyTag, UNTAGGED_TAG } from "../utils/untagged";
 import { holderCards, rowOwner, servesCatalog, withAccountOwner } from "./accounts";
 import { hasNamedViewers } from "./jellyfin/profiles";
 const jikan: any = require('./mal');
@@ -837,7 +838,7 @@ async function createSimklCatalog(userCatalog: any, showPrefix: boolean = false,
 
 /** Every tag a config knows about, lowercase name to the casing it is stored under. */
 function knownTagNames(config: any): Map<string, string> {
-  const known = new Map<string, string>();
+  const known = new Map<string, string>([[UNTAGGED_TAG.toLowerCase(), UNTAGGED_TAG]]);
   const add = (value: any) => {
     const name = typeof value === 'string' ? value : value?.name;
     if (name) known.set(String(name).toLowerCase(), String(name));
@@ -929,7 +930,7 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
   const tagSet = new Set(tags.map((t: string) => t.toLowerCase()));
   const jikanEnabled = jikan.isJikanEnabled();
   const enabledCatalogs = userCatalogs.filter((c: any) =>
-    c.enabled && servesCatalog(opts.viewer ?? config, c) && (jikanEnabled || !jikan.isJikanCatalogId(c.id)) && (tagSet.size === 0 || rowOwner(c) || (Array.isArray(c.tags) && c.tags.some((t: any) => tagSet.has(String(t).toLowerCase()))))
+    c.enabled && servesCatalog(opts.viewer ?? config, c) && (jikanEnabled || !jikan.isJikanCatalogId(c.id)) && (tagSet.size === 0 || rowOwner(c) || carriesAnyTag(c.tags, tagSet))
   );
 
   // Absorbed merge sources must be built (even if disabled) so their genres feed the parent.
@@ -1652,8 +1653,7 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
     const searchIsTagged = Object.values(searchTags).some((list) => Array.isArray(list) && list.length > 0);
     const searchCarriesTag = (searchId: string): boolean => {
       if (tagSet.size === 0 || !searchIsTagged) return true;
-      const own = Array.isArray(searchTags[searchId]) ? searchTags[searchId] : [];
-      return own.some((t) => tagSet.has(String(t).toLowerCase()));
+      return carriesAnyTag(searchTags[searchId], tagSet);
     };
 
     searchCatalogConfigs
