@@ -350,6 +350,11 @@ export function knownCatalogLength(userUUID: string, catalog: CatalogRef, extras
   return catalogLengths.get(lengthKeyFor(userUUID, catalog, extras, tags, keepKey));
 }
 
+/** How many titles one page of the catalog holds, once a window has read one. */
+export function knownPageLength(userUUID: string, catalog: CatalogRef, extras: Record<string, string> = {}, tags: string[] = []): number | undefined {
+  return pageLengths.get(lengthKeyFor(userUUID, catalog, extras, tags));
+}
+
 const walkConcurrency = (): number => envInt('JELLYFIN_CATALOG_WALK_CONCURRENCY', 4, 1);
 const lengthTtl = (): number => envInt('JELLYFIN_CATALOG_LENGTH_TTL', 3600, 60);
 const catalogLengthRedisKey = (key: string): string => `jf:len:v3:catalog:${key}`;

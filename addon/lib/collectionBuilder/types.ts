@@ -1,3 +1,5 @@
+import type { MergeMode } from './mergeModes';
+
 export type TileShape = 'POSTER' | 'LANDSCAPE' | 'SQUARE';
 export type CollectionViewMode = 'TABBED_GRID' | 'ROWS' | 'FOLLOW_LAYOUT';
 
@@ -34,6 +36,9 @@ export interface FolderDraft {
   titleLogoUrl?: string;
   sources: SourceDraft[];
   folders?: FolderDraft[];
+  /** How a Jellyfin client is served several sources; clients that read the list combine it themselves. */
+  mergeMode?: MergeMode;
+  randomizePerPage?: boolean;
 }
 
 export interface CollectionDraft {
