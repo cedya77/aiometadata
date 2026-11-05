@@ -848,6 +848,22 @@ export function isCachedFresh(imageClass: ImageClass, key: string): boolean {
   return Date.now() <= getEntryExpiryFrom(key, entry.storedAt, entry.inferredMs);
 }
 
+/** Bytes eviction will not take ahead of the rest: pinned entries and those used since `since`. */
+export function bytesHeldSince(since: number): number {
+  let bytes = 0;
+  for (const entry of index.values()) {
+    if (entry.lastAccess >= since || isPinned(entry.imageClass, entry.hash)) bytes += entry.size;
+  }
+  return bytes;
+}
+
+/** Counts an entry as used now, so eviction takes the ones nobody has wanted first. */
+export function markWanted(imageClass: ImageClass, key: string): void {
+  const hash = hashKey(key);
+  const entry = index.get(indexKey(imageClass, hash));
+  if (entry) touch(imageClass, hash, entryPath(imageClass, hash), entry.size);
+}
+
 export function capacityUsed(): { bytes: number; max: number; ratio: number } {
   const bytes = totalBytes();
   const max = getMaxBytes();
@@ -1137,6 +1153,9 @@ export function stats(): Record<string, any> {
   };
 }
 
+/** Eviction trims the cache to this share of its budget. */
+export const EVICT_TO = 0.9;
+
 function scheduleEviction(): void {
   if (evicting) return;
   if (totalBytes() <= getMaxBytes()) return;
@@ -1200,7 +1219,7 @@ async function evict(): Promise<void> {
   const maxBytes = getMaxBytes();
   if (totalBytes() <= maxBytes) return;
 
-  const target = Math.floor(maxBytes * 0.9);
+  const target = Math.floor(maxBytes * EVICT_TO);
   const candidates = [...index.values()]
     .filter((entry) => !isPinned(entry.imageClass, entry.hash))
     .sort((a, b) => a.lastAccess - b.lastAccess);
