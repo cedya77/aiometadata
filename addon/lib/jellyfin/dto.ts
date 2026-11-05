@@ -28,6 +28,7 @@ const EXTENSIONS = {
   ranked: 1,
   watchlistFavorites: 1,
   fillers: 1,
+  playlists: 1,
 } as const;
 
 export function extensionInfo(origin: string): any {

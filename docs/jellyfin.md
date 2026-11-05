@@ -214,6 +214,10 @@ The watchlist is the client's favourites. Marking a title favourite adds it to t
 
 **Watchlist catalogs follow the user.** A catalog that means "this account's own list" (MDBList's watchlist, up next and recommendations; Simkl's watchlists and up next; MyAnimeList's lists and suggestions; AniList's own status lists, such as Planning; PublicMetaDB's up next and watchlist) is read from the signed-in user's account when they have one, so one **Watchlist** library shows each user their own list. A user with accounts of their own does not see such catalogs for services they have not connected. Lists picked by id, your AniList custom lists, trending and discover catalogs are the same for everyone, and so are catalogs of accounts a user cannot connect, such as Trakt or TMDB, which show your lists to whoever's tags include them. When a user connects a service whose watchlist is not among the catalogs, their card offers to add it; a catalog added that way is shown only to users holding that service's account, and, while you hold it yourself, to you and to users without accounts, who read yours. A user's PublicMetaDB watchlist is read through your PublicMetaDB watchlist catalog, so they have that shelf only while it is among your catalogs.
 
+## Playlists
+
+Clients keep playlists with Jellyfin's standard `/Playlists` API, and each user or profile has their own. Adding a show adds its aired episodes season by season, leaving out specials unless you add that season itself. Adding a collection folder adds its films and its shows' episodes in the folder's order, as far as the playlist holds. A title is in a playlist once. Once a user has a playlist, a **Playlists** folder appears beside the libraries, pictured by each playlist's first title. Playlists are not shared between users.
+
 ## AIOMetadata inside AIOStreams' Jellyfin server
 
 AIOStreams has a Jellyfin server of its own. In that setup the client signs in to AIOStreams, not to this addon, and AIOMetadata is one of the addons installed in it, supplying the catalogs and title pages. Nothing in this guide's sign-in, users or shelves sections applies then; AIOStreams builds those. What AIOMetadata still does is the tracking, through two resources it declares in its manifest once **When to record** in the **Watch Tracking** tab is set to **When playback starts and stops**, with **Jellyfin** on:
@@ -320,6 +324,9 @@ All of these are in the dashboard under **Server**, or as environment variables,
 | `JELLYFIN_WATCHLIST_MEMO_TTL` | `60` | How long the merged watchlist counts as fresh after a read, on top of the watchlist catalogs' cache. |
 | `JELLYFIN_WATCHLIST_HELD_TTL` | `21600` | How long a watchlist past its memo still answers item favourite flags while it is read again. |
 | `JELLYFIN_WATCHLIST_MEMORY_MB` | `32` | Memory held for tracker watchlists across all configurations. |
+| `JELLYFIN_PLAYLISTS_MAX` | `200` | Playlists each user or profile can make. |
+| `JELLYFIN_PLAYLIST_ITEMS_MAX` | `1000` | Titles one playlist holds; a show or season added counts each episode. |
+| `JELLYFIN_PLAYLIST_BUILD_CONCURRENCY` | `6` | Titles of a playlist page, or playlists in the list, built at once. |
 | `WATCH_STATE_PULL_TTL` | `300` | How long a front end reading watch state from the addon may reuse an answer. |
 | `WATCH_STATE_PULL_ITEMS` | `100` | In-progress titles a watch state read returns. |
 

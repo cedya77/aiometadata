@@ -57,6 +57,7 @@ import { oneIdAsked, withCriticRatings } from './criticRatings';
 import { ImageQueueFull, SIZED_WIDTH, imageQueueFull, inImageSlot, shrinkToWidth, widthStep } from '../posterCache/resize';
 import { IMAGE_CSP } from '../posterCache/proxyResponse';
 import { registerStubs } from './stubs';
+import { answerPlaylistListing, hasPlaylists, playlistAsItem, playlistConcurrency, playlistImages, playlistsFolder, registerPlaylistRoutes, type PlaylistRouteDeps } from './playlists';
 import { noteWantsPeople } from './viewer';
 import { decodeCursor, exportRow, findUser, historyPage, historyUsers, isEpisodeVideo, itemIdForVideo, userByKey, videoIdsOf } from './history';
 import { forgetUserSettings, liveSessionsFor, recordPlayed, recordPlayedUpTo, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData, sessionTouchDue, touchSessions, type LiveSession } from './playstate';
@@ -975,6 +976,12 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   });
   router.get('/Users/:userId', meHandler);
 
+  /** The libraries and, as in Jellyfin once the user has a playlist, their folder. */
+  const userViews = async (req: any, userUUID: string, serverId: string, config: any): Promise<any[]> => {
+    const [views, playlists] = await Promise.all([buildViews(userUUID, serverId, config), hasPlaylists(req, config)]);
+    return playlists ? [...views, playlistsFolder(serverId, null)] : views;
+  };
+
   const viewsHandler = async (req: any, res: any) => {
     const userUUID = req.params.userUUID;
     const config = await loadConfig(req);
@@ -982,7 +989,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       res.json(itemList([], 0, 0));
       return;
     }
-    const views = await buildViews(userUUID, serverIdFor(userUUID), config);
+    const views = await userViews(req, userUUID, serverIdFor(userUUID), config);
     res.json(itemList(views, views.length, 0));
   };
   router.get(['/Users/:userId/Views', '/UserViews'], viewsHandler);
@@ -1049,6 +1056,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
 
     const serverId = serverIdFor(userUUID);
+
+    if (await answerPlaylistListing(req, res, playlistDeps, config)) return;
 
     // The watchlist, newest first, is every client's favourites; older clients ask for it by likes.
     const ownWatchlist = clientHasOwnWatchlist();
@@ -1223,20 +1232,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const idsRaw = req.query.Ids ?? req.query.ids;
     if (idsRaw) {
       const ids = String(idsRaw).split(',').map((id) => id.trim()).filter(Boolean);
-      const items: any[] = [];
-      for (const id of ids) {
-        const captured: any[] = [];
-        // query and params are prototype getters, so a spread would lose them.
-        const forged = Object.create(req, {
-          params: { value: { ...req.params, itemId: id, listed: true, lookup: ids.length === 1 }, enumerable: true },
-          query: { value: req.query, enumerable: true },
-        });
-        await singleItemHandler(
-          forged,
-          { json: (body: any) => captured.push(body), status: () => ({ json: () => undefined, end: () => undefined }) }
-        );
-        if (captured[0]?.Id) items.push(captured[0]);
-      }
+      const items = await itemsForIds(req, ids, ids.length === 1, 1);
       res.json(itemList(items, items.length, 0));
       return;
     }
@@ -1334,7 +1330,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         .toLowerCase() === 'true';
 
       if (!recursive) {
-        const views = await buildViews(userUUID, serverId, config);
+        const views = await userViews(req, userUUID, serverId, config);
         res.json(itemList(views.slice(startIndex, startIndex + limit), views.length, startIndex));
         return;
       }
@@ -2425,6 +2421,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     const descriptor = await decodeJellyfinId(itemId);
     if (!descriptor) return undefined;
+    if (descriptor.k === 'playlist') return playlistImages(req, playlistDeps, descriptor);
     if (descriptor.k === 'movie' || descriptor.k === 'series' || descriptor.k === 'season') {
       const stremioType = descriptor.k === 'movie' ? 'movie' : 'series';
       const meta = await fetchMeta(userUUID, stremioType, descriptor.i);
@@ -3911,6 +3908,28 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     });
   });
 
+  /** Items by id as a listing shows them, in the order asked; one that does not build is left out. */
+  async function itemsForIds(req: any, ids: string[], lookup: boolean, concurrency: number): Promise<any[]> {
+    const built = await mapWithConcurrency(ids, concurrency, async (id: string) => {
+      const captured: any[] = [];
+      // query and params are prototype getters, so a spread would lose them.
+      const forged = Object.create(req, {
+        params: { value: { ...req.params, itemId: id, listed: true, lookup }, enumerable: true },
+        query: { value: req.query, enumerable: true },
+      });
+      await singleItemHandler(
+        forged,
+        { json: (body: any) => captured.push(body), status: () => ({ json: () => undefined, end: () => undefined }) }
+      );
+      return captured[0]?.Id ? captured[0] : null;
+    });
+    return built.filter(Boolean);
+  }
+
+  const playlistDeps: PlaylistRouteDeps = {
+    buildItems: (req, ids) => itemsForIds(req, ids, false, playlistConcurrency()),
+  };
+
   async function singleItemHandler(req: any, res: any): Promise<void> {
     if (!req.params.listed) noteWantsPeople(true);
     const userUUID = req.params.userUUID;
@@ -3926,6 +3945,13 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         query: { value: req.query, enumerable: true },
       });
       await singleItemHandler(forged, res);
+      return;
+    }
+
+    if (descriptor.k === 'playlist' || descriptor.k === 'playlists') {
+      const item = await playlistAsItem(req, playlistDeps, descriptor);
+      if (item) res.json(item);
+      else res.status(404).json({ Message: 'Item not found' });
       return;
     }
 
@@ -4066,6 +4092,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     res.status(404).json({ Message: 'Item not found' });
   }
+  // Ahead of the stubs, which answer /Playlists with an empty list.
+  registerPlaylistRoutes(router, playlistDeps);
   // Ahead of the item route, which would take /Items/Suggestions for an item id.
   registerStubs(router);
   router.get(['/Items/:itemId', '/Users/:userId/Items/:itemId'], singleItemHandler);
