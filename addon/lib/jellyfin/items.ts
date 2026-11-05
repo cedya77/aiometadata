@@ -870,6 +870,77 @@ export async function pageChildren(
   return { page, total: kept.length };
 }
 
+/** A Jellyfin list parameter, sent separated or repeated. */
+function listParam(value: unknown, separator: RegExp): string[] {
+  return (Array.isArray(value) ? value : [value])
+    .filter((entry) => entry !== undefined && entry !== null)
+    .flatMap((entry) => String(entry).split(separator))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+const timeOf = (value: unknown): number | null => {
+  const at = Date.parse(String(value ?? ''));
+  return Number.isFinite(at) ? at : null;
+};
+
+const SORT_VALUES: Record<string, (item: any) => number | string | null> = {
+  communityrating: (item) => (typeof item?.CommunityRating === 'number' ? item.CommunityRating : null),
+  premieredate: (item) => timeOf(item?.PremiereDate),
+  productionyear: (item) => (typeof item?.ProductionYear === 'number' ? item.ProductionYear : null),
+  datecreated: (item) => timeOf(item?.DateCreated),
+  sortname: (item) => item?.SortName ?? item?.Name ?? null,
+};
+
+// A missing value sorts lowest, so it comes last when descending.
+function compareSortValues(a: number | string | null, b: number | string | null): number {
+  if (a === null || b === null) return a === b ? 0 : a === null ? -1 : 1;
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+/** Orders a list by SortBy and SortOrder; a key without its own order takes the first, and unknown keys change nothing. */
+export function sortItems(items: any[], sortBy: unknown, sortOrder: unknown): any[] {
+  const orders = listParam(sortOrder, /,/).map((order) => (order.toLowerCase() === 'descending' ? -1 : 1));
+  const plan: { value: (item: any) => number | string | null; sign: number }[] = [];
+  for (const [index, key] of listParam(sortBy, /,/).entries()) {
+    const sign = orders[index] ?? orders[0] ?? 1;
+    if (key.toLowerCase() === 'random') {
+      const draw = new Map(items.map((item) => [item, Math.random()]));
+      plan.push({ value: (item) => draw.get(item) ?? null, sign });
+      continue;
+    }
+    const value = SORT_VALUES[key.toLowerCase()];
+    if (value) plan.push({ value, sign });
+  }
+  if (!plan.length) return items;
+  return [...items].sort((a, b) => {
+    for (const { value, sign } of plan) {
+      const order = compareSortValues(value(a), value(b));
+      if (order) return order * sign;
+    }
+    return 0;
+  });
+}
+
+/** The tags a request filters on, lowercased; null when it names none. */
+export function wantedTags(value: unknown): Set<string> | null {
+  const tags = listParam(value, /[|,]/).map((tag) => tag.toLowerCase());
+  return tags.length ? new Set(tags) : null;
+}
+
+export const ANIME_TAG = 'anime';
+
+/** Whether an item carries one of the tags; anime is also known from where a title is listed. */
+export function hasWantedTag(item: any, tags: Set<string>, anime: boolean): boolean {
+  if (anime && tags.has(ANIME_TAG)) return true;
+  return (Array.isArray(item?.Tags) ? item.Tags : []).some((tag: unknown) => tags.has(String(tag).toLowerCase()));
+}
+
+export function isAnimeCatalogType(type: unknown): boolean {
+  return type === 'anime' || String(type ?? '').startsWith('anime.');
+}
+
 /** The same decision filterByIncludeTypes makes, taken on a meta. */
 /** The item types a request filters to, when it names any of the kinds a catalog holds. */
 function wantedTypes(includeItemTypes: string | undefined): Set<string> | null {

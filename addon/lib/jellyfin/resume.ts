@@ -653,6 +653,11 @@ export interface NextUpDeadline {
   shelfKey: string;
 }
 
+/** A Next Up list already held under this key, without building one. */
+export function heldNextUp(key: string): any[] | undefined {
+  return nextUpPages.get(key);
+}
+
 /** One Next Up list per shelf shape, shared by concurrent asks and kept briefly; a play drops it. */
 export async function memoNextUp(
   userUUID: string,

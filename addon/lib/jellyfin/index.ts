@@ -33,11 +33,11 @@ import { buildViews, catalogView, collectionTypeFor, findCatalogByViewId, getCat
 import { decodeJellyfinId } from './ids';
 import { liveDevices, rememberTokenDevice, saveCapabilities, sendToDevice } from './socket';
 import { artTag, imageTag, isWideTag } from './imageTags';
-import { buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
+import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
-import { memoNextUp, resumeSnapshot, resumeUserData } from './resume';
+import { heldNextUp, memoNextUp, resumeSnapshot, resumeUserData } from './resume';
 import { animeSequels } from './sequels';
 import { listSeasonFingerprints, saveSeasonFingerprint } from './fingerprints';
 import { isAnimeTitle, showIdentity } from './canonicalIds';
@@ -1352,13 +1352,19 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return;
       }
 
-      const pool = (await getCatalogs(userUUID, config)).filter((catalog: any) => isBrowsable(catalog) && !requiresGenre(catalog)).filter((catalog: any) => {
+      let pool = (await getCatalogs(userUUID, config)).filter((catalog: any) => isBrowsable(catalog) && !requiresGenre(catalog)).filter((catalog: any) => {
         if (!wanted || !wanted.size) return true;
         const kind = collectionTypeFor(catalog.type);
         if (kind === 'movies') return wanted.has('Movie');
         if (kind === 'tvshows') return wanted.has('Series');
         return true;
       });
+
+      // Tags and sorting apply to the titles this walk gathers; no extra catalogs are read for them.
+      const tagged = wantedTags(req.query.Tags ?? req.query.tags);
+      const animeShelf = tagged?.size === 1 && tagged.has(ANIME_TAG) ? pool.filter((catalog: any) => isAnimeCatalogType(catalog.type)) : [];
+      if (animeShelf.length) pool = animeShelf;
+      const animeItems = new WeakSet<object>();
 
       const collected: any[] = [];
       let passed = 0;
@@ -1390,16 +1396,20 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         const viewId = encodeJellyfinId({ k: 'view', t: catalog.type, c: catalog.id });
         for (const meta of servedOrder(page.items, page)) {
           if (!meta?.id || collected.length >= limit) continue;
-          collected.push(metaToBaseItem(meta, catalog.type, serverId, viewId));
+          const item = metaToBaseItem(meta, catalog.type, serverId, viewId);
+          if (tagged && (isAnimeCatalogType(catalog.type) || isAnimeTitle(String(meta.id), item.Type === 'Movie' ? 'movie' : 'series'))) animeItems.add(item);
+          collected.push(item);
         }
 
         if (page.hasMore) break;
         passed += knownCatalogLength(userUUID, catalog, extras, tags, typesKey) ?? skip + page.items.length;
       }
 
-      const across = filterByIncludeTypes(
-        collected,
-        includeItemTypes ? String(includeItemTypes) : undefined
+      const across = sortItems(
+        filterByIncludeTypes(collected, includeItemTypes ? String(includeItemTypes) : undefined)
+          .filter((item: any) => !tagged || hasWantedTag(item, tagged, animeItems.has(item))),
+        req.query.SortBy ?? req.query.sortBy,
+        req.query.SortOrder ?? req.query.sortOrder
       );
       await applyWatchedState(across, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
 
@@ -2500,10 +2510,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       res.status(404).end();
       return;
     }
-    const maxWidth = qInt(req, 'MaxWidth', 0) || qInt(req, 'FillWidth', 0) || qInt(req, 'Width', 0);
-    url = sourceSized(url, kind, maxWidth, clientListed(req, 'JELLYFIN_RASTER_LOGO_CLIENTS'));
     const descriptor = await decodeJellyfinId(String(req.params.itemId));
     const collectionArt = descriptor?.k === 'collection' || descriptor?.k === 'boxset';
+    const widePrimary = collectionArt || descriptor?.k === 'episode' || (Boolean(images?.thumb) && images?.primary === images?.thumb);
+    const maxWidth = requestedWidth(req, kind === 'primary' && widePrimary ? 'wide' : kind);
+    url = sourceSized(url, kind, maxWidth, clientListed(req, 'JELLYFIN_RASTER_LOGO_CLIENTS'));
 
     const relaying = relaysImages(req);
     const cached = throughPosterCache(url, collectionArt ? 'collection' : descriptor?.k === 'episode' && kind === 'primary' ? 'thumb' : kind);
@@ -2541,6 +2552,18 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.set('Cache-Control', 'public, max-age=86400');
     res.redirect(302, url);
   });
+
+  // Width per unit of height by kind; 'wide' is a primary that may be landscape. Logos vary too much to guess.
+  const ART_ASPECT: Record<string, number> = { primary: 2 / 3, backdrop: 16 / 9, thumb: 16 / 9, wide: 16 / 9 };
+
+  /** The width a client asked for, or one worked out from the height when it sized by height alone. */
+  const requestedWidth = (req: any, shape: string): number => {
+    const width = qInt(req, 'MaxWidth', 0) || qInt(req, 'FillWidth', 0) || qInt(req, 'Width', 0);
+    const aspect = ART_ASPECT[shape];
+    if (width > 0 || !aspect) return width;
+    const height = qInt(req, 'MaxHeight', 0) || qInt(req, 'FillHeight', 0) || qInt(req, 'Height', 0);
+    return height > 0 ? Math.ceil(height * aspect) : width;
+  };
 
   const TMDB_ORIGINAL = 'https://image.tmdb.org/t/p/original/';
   const TMDB_WIDTHS: Record<string, number[]> = {
@@ -3019,8 +3042,25 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     // Built once per shelf shape; every page is cut from it.
     const q = (name: string) => String(req.query[name] ?? req.query[name.charAt(0).toLowerCase() + name.slice(1)] ?? '');
     const digest = (await watchedSnapshot(userUUID, config)).fingerprint;
-    const shelfKey = `${userUUID}:${profileKey(config)}:${sourceFor(config) ?? ''}:${q('EnableResumable')}:${q('EnableRewatching')}:${q('SeriesId') || q('ParentId')}`;
-    const memoKey = `${userUUID}:${profileKey(config)}:${digest}:${q('EnableResumable')}:${q('EnableRewatching')}:${q('SeriesId') || q('ParentId')}`;
+    const shape = nextUpShape(req.query);
+    const series = q('SeriesId') || q('ParentId');
+    const shelfKey = `${userUUID}:${profileKey(config)}:${sourceFor(config) ?? ''}:${shape}:${series}`;
+    const memoKey = nextUpKey(userUUID, config, digest, shape, series);
+
+    // A series page takes its row from the whole list when that is already built.
+    if (series) {
+      const wanted = await decodeJellyfinId(series);
+      const showId = wanted?.k === 'series' ? wanted.i : null;
+      const held = showId ? heldNextUp(nextUpKey(userUUID, config, digest, shape, '')) : undefined;
+      const own = held?.filter((item) => nextUpRowIds.get(item) === showId) ?? [];
+      if (own.length) {
+        const page = own.slice(startIndex, startIndex + limit);
+        res.json(itemList(page, own.length, startIndex));
+        warmSeriesMetas(req, userUUID, page);
+        return;
+      }
+    }
+
     let firstPending: number | null = null;
     const notePending = (at: number) => {
       if (firstPending === null || at < firstPending) firstPending = at;
@@ -3036,6 +3076,18 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
   nextUpTracer = (userUUID, config, trace) => buildNextUp({ query: {} }, userUUID, config, undefined, trace);
 
+  const nextUpFlag = (query: any, name: string, fallback: boolean): boolean => {
+    const raw = query[name] ?? query[name.charAt(0).toLowerCase() + name.slice(1)];
+    return raw === undefined ? fallback : String(raw).toLowerCase() === 'true';
+  };
+  // Keyed by what the flags mean, so an omitted flag and its default share one build.
+  const nextUpShape = (query: any): string =>
+    `${nextUpFlag(query, 'EnableResumable', true)}:${nextUpFlag(query, 'EnableRewatching', false)}`;
+  const nextUpKey = (userUUID: string, config: any, digest: string, shape: string, series: string): string =>
+    `${userUUID}:${profileKey(config)}:${digest}:${shape}:${series}`;
+  // The candidate row's show id behind each built item, which a series page matches on.
+  const nextUpRowIds = new WeakMap<object, string>();
+
   const buildNextUp = async (req: any, userUUID: string, config: any, notePending: (at: number) => void = () => {}, trace?: NextUpTrace): Promise<any[]> => {
     const t0 = Date.now();
     const lap = { snapshot: 0, resumable: 0, own: 0, meta: 0, episodes: 0, state: 0 };
@@ -3045,12 +3097,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     // The client's recency cutoff is deliberately not applied: the tracker's own
     // view of what is in progress is the one people expect to see.
-    const flag = (name: string, fallback: boolean): boolean => {
-      const raw = req.query[name] ?? req.query[name.charAt(0).toLowerCase() + name.slice(1)];
-      return raw === undefined ? fallback : String(raw).toLowerCase() === 'true';
-    };
-    const includeResumable = flag('EnableResumable', true);
-    const includeRewatching = flag('EnableRewatching', false);
+    const includeResumable = nextUpFlag(req.query, 'EnableResumable', true);
+    const includeRewatching = nextUpFlag(req.query, 'EnableRewatching', false);
 
     let resumable: Set<string> | null = null;
     const t1 = Date.now();
@@ -3283,7 +3331,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return false;
       })
       .sort((a, b) => availableAt[b.index] - availableAt[a.index] || rankOf(a.row) - rankOf(b.row))
-      .map(({ item }) => item);
+      .map(({ item, row }) => {
+        nextUpRowIds.set(item, row.metaId);
+        return item;
+      });
     logger.info(`Next Up built for ${userUUID}: ${found.length} of ${rows.length} candidates (${own.length} own, ${snapshot.nextUp.length} tracker), ${skipped} skipped, in ${Date.now() - t0}ms (snapshot ${lap.snapshot}, resumable ${lap.resumable}, own rows ${lap.own}, meta ${lap.meta}, episodes ${lap.episodes}, state ${lap.state}, summed over ${shelfConcurrency()} lanes)`);
     return found;
   };
@@ -3601,7 +3652,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         };
         const items = await memoNextUp(
           userUUID,
-          `${userUUID}:${profile}:${snapshot.fingerprint}:::`,
+          nextUpKey(userUUID, config, snapshot.fingerprint, nextUpShape({}), ''),
           () => buildNextUp({ query: {} }, userUUID, config, notePending),
           () => firstPending
         );
