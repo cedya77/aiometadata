@@ -9,6 +9,8 @@ import { letterboxdHistorySource } from './historySourceLetterboxd';
 import { stremioHistorySource } from './historySourceStremio';
 import { nuvioHistorySource } from './historySourceNuvio';
 import { listHistorySource } from './historySourceList';
+import { bulkTimes } from './bulkMarks';
+import { parseStremioId } from './ids';
 
 const logger = consola.withTag('Jellyfin');
 const database: any = require('../database');
@@ -314,7 +316,28 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     (held.played || !state.played) && held.lastPlayedAt && state.lastPlayedAt && Math.abs(held.lastPlayedAt - state.lastPlayedAt) <= sameStateMs
       ? { ...state, lastPlayedAt: held.lastPlayedAt, updatedAt: Math.min(state.updatedAt, held.updatedAt) }
       : state;
-  const mergedInto = (held: State, state: State) => mergeState(held, sameViewing(held, state));
+  // A date a bulk mark wrote is when the marks were made, not a viewing, so a real date beats it either way round.
+  // A held date from a play or mark made here stays.
+  const markKey = (videoId: string) => {
+    const spelled = parseStremioId(videoId);
+    return spelled && spelled.episode !== null && spelled.episode !== undefined ? `${spelled.season ?? 0}:${spelled.episode}` : videoId;
+  };
+  const heldBulk = bulkTimes(playstate.map((row: any) => ({ at: Number(row.last_played_at) || 0, key: markKey(String(row.video_id)) })));
+  const incomingBulk = bulkTimes(file.playstate.map((row) => ({ at: Number(row.lastPlayedAt) || 0, key: markKey(row.videoId) })));
+  const realDateOf = (held: State, state: State): number | null => {
+    if (!held.lastPlayedAt || !state.lastPlayedAt) return null;
+    const heldBulky = heldBulk.has(held.lastPlayedAt) && !LOCAL_ORIGINS.has(String(held.origin));
+    const incomingBulky = incomingBulk.has(state.lastPlayedAt);
+    if (heldBulky && !incomingBulky) return state.lastPlayedAt;
+    if (incomingBulky && !heldBulky) return held.lastPlayedAt;
+    return null;
+  };
+  const mergedInto = (held: State, state: State) => {
+    const viewing = sameViewing(held, state);
+    const merged = mergeState(held, viewing);
+    const real = realDateOf(held, viewing);
+    return real === null ? merged : { ...merged, lastPlayedAt: real };
+  };
   for (const spellings of titles.values()) {
     const held = spellings.filter((spelling) => heldStates.has(spelling.key));
     const due = held.length ? held.filter((spelling) => !sameState(mergedInto(heldStates.get(spelling.key)!, spelling.state), heldStates.get(spelling.key)!)) : spellings;
