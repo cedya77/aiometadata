@@ -360,6 +360,8 @@ function reconcileMergedReferences(catalogs: CatalogConfig[]): CatalogConfig[] {
 
 import { sourceBadgeStyles, sourceBadgeLabels } from '@/lib/sourceBadges';
 import { supportsMdblistScoreFilters } from '@/utils/catalogUtils';
+import { MERGE_MODES, MERGED_CATALOG_MODE, type MergeMode } from '@shared/mergeModes';
+import { MergeModePicker } from '@/components/MergeModePicker';
 
 
 
@@ -2791,11 +2793,11 @@ const MergedCatalogCard = ({
   const [newName, setNewName] = useState(catalog.name);
   const [newType, setNewType] = useState(catalog.displayType || catalog.type);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsMergeMode, setSettingsMergeMode] = useState<'interleaved' | 'sequential' | 'alternating'>(catalog.metadata?.mergeMode || 'interleaved');
+  const [settingsMergeMode, setSettingsMergeMode] = useState<MergeMode>(catalog.metadata?.mergeMode || MERGED_CATALOG_MODE);
   const [settingsPosterShape, setSettingsPosterShape] = useState<'inherit' | 'poster' | 'landscape'>(catalog.metadata?.posterShape || 'inherit');
   const sourcesShape = mergedSourcesShape(catalog, allCatalogs);
   const openSettings = () => {
-    setSettingsMergeMode(catalog.metadata?.mergeMode || 'interleaved');
+    setSettingsMergeMode(catalog.metadata?.mergeMode || MERGED_CATALOG_MODE);
     setSettingsPosterShape(catalog.metadata?.posterShape || 'inherit');
     setShowSettings(true);
   };
@@ -3003,7 +3005,7 @@ const MergedCatalogCard = ({
               </div>
               <CatalogTagRow catalog={catalog} mode="chips" className="mt-1.5" />
               <p className="mt-1.5 text-xs text-muted-foreground">
-                {sources.length} sources · {catalog.metadata?.mergeMode || 'interleaved'}
+                {sources.length} sources · {catalog.metadata?.mergeMode || MERGED_CATALOG_MODE}
                 {' · '}
                 <button
                   type="button"
@@ -3153,14 +3155,14 @@ const MergedCatalogCard = ({
           <div className="space-y-4 pt-2">
             <div>
               <Label>Merge Mode</Label>
-              <Select value={settingsMergeMode} onValueChange={(v: 'interleaved' | 'sequential' | 'alternating') => setSettingsMergeMode(v)}>
+              <Select value={settingsMergeMode} onValueChange={(v: MergeMode) => setSettingsMergeMode(v)}>
                 <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="interleaved">Interleaved (A1 B1 A2 B2)</SelectItem>
-                  <SelectItem value="sequential">Sequential (all A, then all B)</SelectItem>
-                  <SelectItem value="alternating">Alternating (page 1 = A, page 2 = B)</SelectItem>
+                  {MERGE_MODES.map(mode => (
+                    <SelectItem key={mode.id} value={mode.id}>{mode.label} ({mode.example})</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -5294,7 +5296,7 @@ function CatalogsSettingsContent({
   const [mergeName, setMergeName] = useState('');
   const [mergeShowInHome, setMergeShowInHome] = useState(true);
   const [mergeDisplayType, setMergeDisplayType] = useState('');
-  const [mergeMode, setMergeMode] = useState<'interleaved' | 'sequential' | 'alternating'>('interleaved');
+  const [mergeMode, setMergeMode] = useState<MergeMode>(MERGED_CATALOG_MODE);
 
   const openMergeDialog = () => {
     if (selectedCatalogs.some(c => c.source === 'merged')) {
@@ -6107,45 +6109,8 @@ function CatalogsSettingsContent({
               />
             </div>
             <div className="space-y-2">
-              <Label>Merge Mode</Label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setMergeMode('interleaved')}
-                  className={`flex-1 rounded-md border p-2.5 text-left transition-colors ${
-                    mergeMode === 'interleaved'
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border hover:border-primary/50'
-                  }`}
-                >
-                  <p className="text-sm font-medium">Interleaved</p>
-                  <p className="text-xs text-muted-foreground">Mix items from all sources (A B A B)</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMergeMode('sequential')}
-                  className={`flex-1 rounded-md border p-2.5 text-left transition-colors ${
-                    mergeMode === 'sequential'
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border hover:border-primary/50'
-                  }`}
-                >
-                  <p className="text-sm font-medium">Sequential</p>
-                  <p className="text-xs text-muted-foreground">Show all of source A, then B, etc.</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMergeMode('alternating')}
-                  className={`flex-1 rounded-md border p-2.5 text-left transition-colors ${
-                    mergeMode === 'alternating'
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border hover:border-primary/50'
-                  }`}
-                >
-                  <p className="text-sm font-medium">Alternating</p>
-                  <p className="text-xs text-muted-foreground">Page 1 = A, page 2 = B, cycle</p>
-                </button>
-              </div>
+              <Label id="merge-mode-label">Merge Mode</Label>
+              <MergeModePicker value={mergeMode} onChange={setMergeMode} labelledBy="merge-mode-label" />
             </div>
             <div className="text-xs text-muted-foreground">
               Type preview: <code className="font-mono">{
