@@ -2600,7 +2600,7 @@ export function useJellyfinPlays(userUUID: string | null, profile: string | null
   );
 }
 
-export type HistoryImportSection = 'playstate' | 'watches' | 'ratings' | 'watchlist' | 'dropped' | 'matches';
+export type HistoryImportSection = 'playstate' | 'watches' | 'ratings' | 'watchlist' | 'dropped' | 'matches' | 'playlists';
 
 export interface HistoryImportPreview {
   source: string;

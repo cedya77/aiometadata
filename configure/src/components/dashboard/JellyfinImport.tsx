@@ -19,6 +19,7 @@ const SECTION_LABELS: Array<[HistoryImportSection, string]> = [
   ["watchlist", "Watchlist"],
   ["dropped", "Dropped shows"],
   ["matches", "Tracker matches"],
+  ["playlists", "Playlists"],
 ];
 
 const SKIP = "__skip__";

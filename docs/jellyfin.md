@@ -218,6 +218,8 @@ The watchlist is the client's favourites. Marking a title favourite adds it to t
 
 Clients keep playlists with Jellyfin's standard `/Playlists` API, and each user or profile has their own. Adding a show adds its aired episodes season by season, leaving out specials unless you add that season itself. Adding a collection folder adds its films and its shows' episodes in the folder's order, as far as the playlist holds. A title is in a playlist once. Once a user has a playlist, a **Playlists** folder appears beside the libraries, pictured by each playlist's first title. Playlists are not shared between users.
 
+The watch history export carries playlists, and an import puts each one in the user its profile is mapped to. A playlist of the same name there gains the titles it lacks, in order; any other is made.
+
 ## AIOMetadata inside AIOStreams' Jellyfin server
 
 AIOStreams has a Jellyfin server of its own. In that setup the client signs in to AIOStreams, not to this addon, and AIOMetadata is one of the addons installed in it, supplying the catalogs and title pages. Nothing in this guide's sign-in, users or shelves sections applies then; AIOStreams builds those. What AIOMetadata still does is the tracking, through two resources it declares in its manifest once **When to record** in the **Watch Tracking** tab is set to **When playback starts and stops**, with **Jellyfin** on:

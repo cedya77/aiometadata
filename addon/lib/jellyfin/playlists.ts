@@ -444,3 +444,80 @@ export function registerPlaylistRoutes(router: any, deps: PlaylistRouteDeps): vo
   router.delete('/Items/:itemId', (req: any, res: any, next: any) => removePlaylists(req, res, next, [String(req.params.itemId)]));
   router.delete('/Items', (req: any, res: any, next: any) => removePlaylists(req, res, next, idsOf(req, 'Ids')));
 }
+
+/** An entry as a history file carries it: the title itself, so the file reads back on any server. */
+export interface PlaylistTitle {
+  kind: 'movie' | 'episode';
+  type: string;
+  id: string;
+  season?: number | null;
+  episode?: number;
+}
+
+export interface PlaylistExport {
+  profile: string;
+  name: string;
+  items: PlaylistTitle[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export async function playlistsForExport(userUUID: string): Promise<PlaylistExport[]> {
+  const rows: any[] = await database.listAllPlaylists(userUUID);
+  return mapWithConcurrency(rows, playlistConcurrency(), async (row: any) => {
+    const playlist = fromRow(row);
+    const items: PlaylistTitle[] = [];
+    for (const id of playlist.items) {
+      const d = await decodeJellyfinId(id).catch(() => null);
+      if (d?.k === 'movie') items.push({ kind: 'movie', type: d.t, id: d.i });
+      else if (d?.k === 'episode') items.push({ kind: 'episode', type: d.t, id: d.i, season: d.s, episode: d.e });
+    }
+    return { profile: String(row.profile ?? ''), name: playlist.name, items, createdAt: playlist.createdAt, updatedAt: playlist.updatedAt };
+  });
+}
+
+export function playlistTitleId(title: PlaylistTitle): string {
+  return title.kind === 'movie'
+    ? encodeJellyfinId({ k: 'movie', t: title.type, i: title.id })
+    : encodeJellyfinId({ k: 'episode', t: title.type, i: title.id, s: title.season ?? null, e: Number(title.episode) });
+}
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** What importing a playlist does to the ones held: a name already there takes the titles it lacks, else it is made. */
+export function importOutcome(held: Array<Pick<Playlist, 'name' | 'items'>>, incoming: { name: string; items: string[] }): { kind: 'added' | 'updated' | 'unchanged' | 'full'; adds: string[] } {
+  const into = held.find((playlist) => sameName(playlist.name, incoming.name));
+  const room = itemsPerPlaylist() - (into?.items.length ?? 0);
+  const adds = withoutRepeats(incoming.items, into?.items ?? []).slice(0, Math.max(0, room));
+  if (into) return { kind: adds.length ? 'updated' : 'unchanged', adds };
+  if (held.length >= playlistsPerUser()) return { kind: 'full', adds: [] };
+  return { kind: 'added', adds };
+}
+
+export async function heldPlaylists(userUUID: string): Promise<Map<string, Playlist[]>> {
+  const out = new Map<string, Playlist[]>();
+  for (const row of await database.listAllPlaylists(userUUID)) {
+    const profile = String(row.profile ?? '');
+    out.set(profile, [...(out.get(profile) ?? []), fromRow(row)]);
+  }
+  return out;
+}
+
+/** Writes one imported playlist, deciding again against what is held by then. */
+export async function importPlaylist(userUUID: string, profile: string, incoming: { name: string; items: string[]; createdAt: number }): Promise<void> {
+  const owner = { userUUID, profile };
+  await inTurn(owner, async () => {
+    const held = await listPlaylists(owner);
+    const { kind, adds } = importOutcome(held, incoming);
+    if (kind === 'updated') {
+      const into = held.find((playlist) => sameName(playlist.name, incoming.name))!;
+      await database.savePlaylist(userUUID, profile, { ...into, items: [...into.items, ...adds], updatedAt: Date.now() });
+    } else if (kind === 'added') {
+      const now = Date.now();
+      const playlist: Playlist = { id: randomBytes(8).toString('hex'), name: incoming.name.trim().slice(0, NAME_LENGTH), items: adds, createdAt: incoming.createdAt || now, updatedAt: now };
+      await database.savePlaylist(userUUID, profile, playlist);
+      playlistItemId(playlist);
+      await flushPendingJellyfinIds();
+    }
+  });
+}

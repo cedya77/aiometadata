@@ -11,6 +11,7 @@ import { nuvioHistorySource } from './historySourceNuvio';
 import { listHistorySource } from './historySourceList';
 import { bulkTimes } from './bulkMarks';
 import { parseStremioId } from './ids';
+import { heldPlaylists, importOutcome, importPlaylist, playlistsForExport, playlistTitleId, type PlaylistTitle } from './playlists';
 
 const logger = consola.withTag('Jellyfin');
 const database: any = require('../database');
@@ -26,6 +27,7 @@ type RatingRow = { profile: string; metaId: string; also?: string[]; rating: num
 type WatchlistRow = { profile: string; metaId: string; also?: string[]; mediaType: string; metaType: string | null; listed: boolean; updatedAt: number };
 type DroppedRow = { profile: string; metaId: string; also?: string[]; updatedAt: number };
 type MatchRow = { service: string; base: string; group: string; data: string };
+type PlaylistRow = { profile: string; name: string; items: PlaylistTitle[]; createdAt: number; updatedAt: number };
 
 export type HistoryFile = {
   profiles: Array<{ key: string; name: string }>;
@@ -35,12 +37,13 @@ export type HistoryFile = {
   watchlist: WatchlistRow[];
   dropped: DroppedRow[];
   matches: MatchRow[];
+  playlists: PlaylistRow[];
 };
 
-type Section = 'playstate' | 'watches' | 'ratings' | 'watchlist' | 'dropped' | 'matches';
+type Section = 'playstate' | 'watches' | 'ratings' | 'watchlist' | 'dropped' | 'matches' | 'playlists';
 type Counts = Record<Section, { added: number; updated: number; unchanged: number }>;
 
-const SECTIONS: Section[] = ['playstate', 'watches', 'ratings', 'watchlist', 'dropped', 'matches'];
+const SECTIONS: Section[] = ['playstate', 'watches', 'ratings', 'watchlist', 'dropped', 'matches', 'playlists'];
 const MEDIA_TYPES = new Set(['movie', 'series', 'anime']);
 const META_TYPES = new Set(['movie', 'series']);
 const MAX_ID = 256;
@@ -50,6 +53,8 @@ const MAX_MATCH_DATA = 65536;
 const MAX_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_PLAYS = 10000;
 const MAX_SPELLINGS = 16;
+const MAX_PLAYLIST_TITLES = 10000;
+const MEDIA_TYPE = /^[a-z][a-z.]{0,19}$/;
 const TOKEN = /^[A-Za-z0-9_-]{1,32}$/;
 const PRINTABLE = /^[^\u0000-\u001f\u007f]*$/;
 
@@ -88,13 +93,14 @@ export function historyProfiles(config: any, userUUID: string): Array<{ key: str
 }
 
 export async function buildHistoryExport(userUUID: string, config: any): Promise<any> {
-  const [playstate, watches, ratings, watchlist, dropped, matches] = await Promise.all([
+  const [playstate, watches, ratings, watchlist, dropped, matches, playlists] = await Promise.all([
     database.listPlaystateFor(userUUID),
     database.listWatchesForConfiguration(userUUID),
     database.listRatingsForConfiguration(userUUID),
     database.listWatchlistForConfiguration(userUUID),
     database.listDroppedForConfiguration(userUUID),
     database.listTrackerMatchesForConfiguration(userUUID),
+    playlistsForExport(userUUID),
   ]);
   return {
     format: HISTORY_FORMAT,
@@ -147,6 +153,7 @@ export async function buildHistoryExport(userUUID: string, config: any): Promise
       }
       return { service: String(row.service), base: String(row.base), group: String(row.match_group), data };
     }),
+    playlists: playlists.map((playlist) => ({ ...playlist, createdAt: iso(playlist.createdAt), updatedAt: iso(playlist.updatedAt) })),
   };
 }
 
@@ -158,7 +165,7 @@ export function readHistoryFile(body: any): HistoryFile | string {
     const at = typeof value === 'number' ? value : typeof value === 'string' ? Date.parse(value) : NaN;
     return Number.isFinite(at) && at > 0 && at <= latest ? Math.round(at) : null;
   };
-  const out: HistoryFile = { profiles: [], playstate: [], watches: [], ratings: [], watchlist: [], dropped: [], matches: [] };
+  const out: HistoryFile = { profiles: [], playstate: [], watches: [], ratings: [], watchlist: [], dropped: [], matches: [], playlists: [] };
 
   let rows: any[];
   let originOf: (row: any) => string | null;
@@ -237,6 +244,23 @@ export function readHistoryFile(body: any): HistoryFile | string {
     const group = idOf(row?.group);
     const data = row?.data && typeof row.data === 'object' && !Array.isArray(row.data) ? JSON.stringify(row.data) : null;
     if (service && base && group && data && data.length <= MAX_MATCH_DATA) out.matches.push({ service, base, group, data });
+  }
+  // Only this server's own exports hold playlists.
+  for (const row of body.format === HISTORY_FORMAT ? list(body.playlists) : []) {
+    const profile = profileOf(row?.profile);
+    const name = typeof row?.name === 'string' && PRINTABLE.test(row.name) ? row.name.trim().slice(0, MAX_NAME) : '';
+    const updatedAt = epoch(row?.updatedAt);
+    if (profile === null || !name || !updatedAt) continue;
+    const items = list(row.items).slice(0, MAX_PLAYLIST_TITLES).flatMap((item: any): PlaylistTitle[] => {
+      const id = idOf(item?.id);
+      const type = typeof item?.type === 'string' && MEDIA_TYPE.test(item.type) ? item.type : null;
+      if (!id || !type) return [];
+      if (item.kind === 'movie') return [{ kind: 'movie', type, id }];
+      const season = item.season === null || item.season === undefined ? null : Number.isInteger(item.season) && item.season >= 0 ? item.season : undefined;
+      if (item.kind !== 'episode' || season === undefined || !Number.isInteger(item.episode) || item.episode < 0) return [];
+      return [{ kind: 'episode', type, id, season, episode: item.episode }];
+    });
+    out.playlists.push({ profile, name, items, createdAt: epoch(row.createdAt) ?? updatedAt, updatedAt });
   }
   return out;
 }
@@ -490,6 +514,26 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
       await database.saveTrackerMatch(userUUID, service, group, bases, data);
       require('./trackerMatch').forgetMatches(userUUID, service);
     });
+  }
+
+  // A playlist joins the one of its name in the user it maps to, or is made; each one planned counts for the next.
+  const playlistsHeld = file.playlists.length ? await heldPlaylists(userUUID) : new Map();
+  for (const row of file.playlists) {
+    const profile = target(row.profile);
+    if (profile === null) continue;
+    const items = row.items.map(playlistTitleId);
+    const held = playlistsHeld.get(profile) ?? [];
+    const outcome = importOutcome(held, { name: row.name, items });
+    // One past the playlist limit is left out, which writes nothing.
+    counts.playlists[outcome.kind === 'full' ? 'unchanged' : outcome.kind] += 1;
+    if (outcome.kind === 'unchanged' || outcome.kind === 'full') continue;
+    if (outcome.kind === 'updated') {
+      const into = held.find((playlist: any) => playlist.name.trim().toLowerCase() === row.name.trim().toLowerCase());
+      into.items = [...into.items, ...outcome.adds];
+    } else {
+      playlistsHeld.set(profile, [...held, { name: row.name, items: outcome.adds }]);
+    }
+    queue('playlists', () => importPlaylist(userUUID, profile, { name: row.name, items, createdAt: row.createdAt }));
   }
 
   return { counts, writes };

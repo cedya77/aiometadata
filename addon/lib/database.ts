@@ -2943,6 +2943,13 @@ class Database {
     return this.allPrimaryQuery(query, [userUUID, profile]);
   }
 
+  async listAllPlaylists(userUUID: string): Promise<any[]> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT profile, id, name, items, created_at, updated_at FROM jellyfin_playlists WHERE user_uuid = ? ORDER BY created_at'
+      : 'SELECT profile, id, name, items, created_at, updated_at FROM jellyfin_playlists WHERE user_uuid = $1 ORDER BY created_at';
+    return this.allPrimaryQuery(query, [userUUID]);
+  }
+
   async getPlaylist(userUUID: string, profile: string, id: string): Promise<any | null> {
     const query = this.type === 'sqlite'
       ? 'SELECT id, name, items, created_at, updated_at FROM jellyfin_playlists WHERE user_uuid = ? AND profile = ? AND id = ?'
