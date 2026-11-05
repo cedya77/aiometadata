@@ -5,6 +5,9 @@ export type TagColorKey =
   | 'pink' | 'emerald' | 'orange' | 'indigo' | 'rose' | 'slate';
 
 export const MAX_TAG_NAME_LENGTH = 32;
+/** Built into Jellyfin users' tag lists, so a stored tag cannot take the name. */
+export const UNTAGGED_TAG = 'Untagged';
+export const isReservedTagName = (name: string) => name.trim().toLowerCase() === UNTAGGED_TAG.toLowerCase();
 
 export interface TagDef {
   name: string;

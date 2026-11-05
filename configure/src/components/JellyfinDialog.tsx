@@ -21,7 +21,7 @@ import { ChevronDown, ChevronUp, Copy, Loader2, Pencil, Plus, Save, User, X } fr
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { TagChip } from "@/components/TagChip";
-import { MAX_TAG_NAME_LENGTH, type CatalogConfig, type JellyfinUser, type SkipProvider, type SkipSource, type TagDef } from "@/contexts/config";
+import { MAX_TAG_NAME_LENGTH, UNTAGGED_TAG, type CatalogConfig, type JellyfinUser, type SkipProvider, type SkipSource, type TagDef } from "@/contexts/config";
 import { UserAccounts } from "@/components/jellyfin/UserAccounts";
 import { CARD_SERVICES, connectedServices, handoffNameClash, isHolder, trackerOptionsFor, watchlistOptionsFor } from "@/lib/cardAccounts";
 import { disconnectCardAccount } from "@/lib/integrationCredentials";
@@ -229,7 +229,6 @@ function WatchedPointPicker({ name, point }: { name: string; point: WatchedPoint
 }
 
 /** Built in, not stored: a user holding it sees every catalog that carries no tag. */
-const UNTAGGED_TAG = 'Untagged';
 const UNTAGGED_DEF: TagDef = { name: UNTAGGED_TAG, color: "slate" };
 
 function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptions, watchlistOptions, hasPmdb, mainSkipSource, showHandoff, watchedPoint, onChange, onRemove, onForget, children }: UserRowProps) {

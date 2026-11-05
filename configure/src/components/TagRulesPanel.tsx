@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { AGE_RATING_ORDER } from '@/lib/ageRatings';
 import { TAG_COLORS, TAG_COLOR_KEYS } from '@/lib/tagColors';
 import { HOUR_PRESETS, QUICK_HIDE_KEYWORDS, hiddenSummary, inWindow, nowMinute, samePreset, stepTime, type TagRules, type ViewingHours } from '@/lib/tagRules';
-import { MAX_TAG_NAME_LENGTH, type TagColorKey, type TagDef } from '@/contexts/config';
+import { MAX_TAG_NAME_LENGTH, isReservedTagName, type TagColorKey, type TagDef } from '@/contexts/config';
 
 const RATINGS = ['None', ...AGE_RATING_ORDER];
 const SEGMENTS = Array.from({ length: 48 }, (_, i) => i);
@@ -247,7 +247,7 @@ export function TagRulesPanel({ tag, timezone, profiles, onRename, onRecolor, on
   useEffect(() => setDraft(tag.name), [tag.name]);
   const commitName = () => {
     const next = draft.trim();
-    if (next && next.length <= MAX_TAG_NAME_LENGTH && next !== tag.name) onRename(next);
+    if (next && next.length <= MAX_TAG_NAME_LENGTH && next !== tag.name && !isReservedTagName(next)) onRename(next);
     else setDraft(tag.name);
   };
   const toggle = (section: Section) => setOpen((current) => (current === section ? null : section));

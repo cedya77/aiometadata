@@ -15,7 +15,7 @@ import { useConfig } from '@/contexts/ConfigContext';
 import { useCatalogTags } from '@/hooks/useCatalogTags';
 import { TAG_COLORS, TAG_COLOR_KEYS, nextTagColor } from '@/lib/tagColors';
 import { TagChip } from '@/components/TagChip';
-import { MAX_TAG_NAME_LENGTH, type TagColorKey } from '@/contexts/config';
+import { MAX_TAG_NAME_LENGTH, UNTAGGED_TAG, isReservedTagName, type TagColorKey } from '@/contexts/config';
 import { TagLimitPicker, type TagLimit } from '@/components/TagLimitPicker';
 
 interface TagEditorDialogProps {
@@ -58,9 +58,11 @@ export function TagEditorDialog({ open, onOpenChange, targetKeys, title }: TagEd
     return clean ? tags.find(t => t.name.toLowerCase() === clean) : undefined;
   }, [newName, tags]);
 
+  const reserved = isReservedTagName(newName);
+
   const handleCreate = () => {
     const clean = newName.trim();
-    if (!clean || clean.length > MAX_TAG_NAME_LENGTH) return;
+    if (!clean || clean.length > MAX_TAG_NAME_LENGTH || isReservedTagName(clean)) return;
     addTagToCatalogs(targetKeys, clean, resolvedNewColor, newLimit);
     setNewName('');
     setNewColor(null);
@@ -155,11 +157,15 @@ export function TagEditorDialog({ open, onOpenChange, targetKeys, title }: TagEd
               maxLength={MAX_TAG_NAME_LENGTH}
               className="h-9"
             />
-            <Button size="sm" onClick={handleCreate} disabled={!newName.trim() || newName.trim().length > MAX_TAG_NAME_LENGTH} className="shrink-0 sm:w-auto">
+            <Button size="sm" onClick={handleCreate} disabled={!newName.trim() || newName.trim().length > MAX_TAG_NAME_LENGTH || reserved} className="shrink-0 sm:w-auto">
               <Plus className="mr-1 h-4 w-4" /> {duplicateTag ? 'Apply' : 'Add'}
             </Button>
           </div>
-          {duplicateTag ? (
+          {reserved ? (
+            <p className="text-xs text-amber-500">
+              "{UNTAGGED_TAG}" is a built-in tag for users and cannot be created. Pick another name.
+            </p>
+          ) : duplicateTag ? (
             <p className="text-xs text-amber-500">
               A tag named "{duplicateTag.name}" already exists. Adding will apply it to the selection.
             </p>
