@@ -17,7 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ChevronDown, ChevronUp, Copy, Loader2, Plus, Save, User, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, Loader2, Pencil, Plus, Save, User, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { TagChip } from "@/components/TagChip";
@@ -238,6 +238,7 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptio
   const samePerson = main || user?.trackers === true;
   const holder = !main && isHolder(user);
   const [pictureOpen, setPictureOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const scope = `${catalogCount} catalog${catalogCount === 1 ? '' : 's'}`;
   const capNote = caps.length ? <span className="rounded-full border border-amber-500/40 px-1.5 text-[11px] text-amber-400">{caps.join(', ')} and lower</span> : null;
@@ -251,7 +252,7 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptio
   return (
     <div className="space-y-2 rounded-md border p-3">
       <div className="flex items-start gap-3">
-        <Avatar src={avatar} onClick={() => setPictureOpen((v) => !v)} title={`Picture of ${name}`} />
+        <Avatar src={avatar} onClick={() => { if (expanded) setPictureOpen((v) => !v); else setExpanded(true); }} title={`Picture of ${name}`} />
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <Input
@@ -269,13 +270,27 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptio
                 Same person as you
               </label>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn('h-8 w-8 p-0', expanded ? 'text-primary' : 'text-muted-foreground')}
+              aria-label={expanded ? `Collapse ${name}` : `Edit ${name}`}
+              aria-expanded={expanded}
+              onClick={() => setExpanded((v) => !v)}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
             {onRemove ? (
               <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground" aria-label={`Remove ${name}`} onClick={onRemove}>
                 <X className="h-4 w-4" />
               </Button>
             ) : null}
           </div>
-          {pictureOpen || (avatar && !IMAGE_URL.test(avatar)) ? (
+          {!expanded ? (
+            <p className="text-[11px] text-muted-foreground">
+              {chosen.length === 0 ? 'No tag picked: every catalog' : scope} {capNote}
+            </p>
+          ) : pictureOpen || (avatar && !IMAGE_URL.test(avatar)) ? (
             <Input
               value={avatar ?? ''}
               placeholder="Picture address (https://...)"
@@ -291,7 +306,7 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptio
           )}
         </div>
       </div>
-      {allTags.length > 0 ? (
+      {expanded && allTags.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs text-muted-foreground">Tags:</span>
           {allTags.map((t) => (
@@ -311,7 +326,7 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptio
           </span>
         </div>
       ) : null}
-      <div className="grid gap-4 border-t pt-3 md:grid-cols-3">
+      {expanded ? <div className="grid gap-4 border-t pt-3 md:grid-cols-3">
         <div className="space-y-1.5">
           <Label className="text-xs font-medium">{main ? 'Your trackers' : holder ? 'Their trackers' : 'Trackers this user reads'}</Label>
           <Select value={trackerValue} onValueChange={(v) => onChange({ trackerSource: v === 'inherit' ? undefined : (v as JellyfinUser['trackerSource']) })}>
@@ -380,9 +395,9 @@ function UserRow({ name, avatar, main, user, allTags, catalogCount, trackerOptio
           />
         </div>
         {watchedPoint ? <WatchedPointPicker name={name} point={watchedPoint} /> : null}
-      </div>
-      {showHandoff ? <HandoffNamesInput names={user?.handoffNames} onChange={(handoffNames) => onChange({ handoffNames })} /> : null}
-      {children}
+      </div> : null}
+      {expanded && showHandoff ? <HandoffNamesInput names={user?.handoffNames} onChange={(handoffNames) => onChange({ handoffNames })} /> : null}
+      {expanded ? children : null}
     </div>
   );
 }
@@ -539,6 +554,8 @@ interface JellyfinDialogProps {
 export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogProps) {
   const { config, setConfig, auth } = useConfig();
   const { requestSave, isSaving, isDirty, canSave } = useSave();
+  const [playbackOpen, setPlaybackOpen] = useState(true);
+  const [usersOpen, setUsersOpen] = useState(true);
   const [resolveMode, setResolveMode] = useState<string>('user');
   const [upcomingMode, setUpcomingMode] = useState<string>('user');
   const [baseUrl, setBaseUrl] = useState<string>(window.location.origin);
@@ -810,7 +827,18 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
             </p>
           </div>
 
-          <div className="grid gap-6 border-t pt-4 md:grid-cols-3">
+          <div className="border-t pt-4">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between text-sm font-medium"
+              aria-expanded={playbackOpen}
+              onClick={() => setPlaybackOpen((v) => !v)}
+            >
+              Sign-in and playback
+              {playbackOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+          </div>
+          {playbackOpen ? <div className="grid gap-6 md:grid-cols-3">
             <div className="space-y-6">
               <div className="space-y-1.5">
                 <Label htmlFor="jellyfin-quick-connect" className="text-sm font-medium">Quick Connect</Label>
@@ -1001,9 +1029,18 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
                 </Select>
               </div>
             </div>
-          </div>
+          </div> : null}
           <div className="space-y-2 border-t pt-4">
-            <Label className="text-sm font-medium">Users</Label>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between text-sm font-medium"
+              aria-expanded={usersOpen}
+              onClick={() => setUsersOpen((v) => !v)}
+            >
+              Users
+              {usersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+            {usersOpen ? <>
             <p className="text-xs text-muted-foreground">
               Users appear on the client's sign-in screen. A user is made of the tags you pick for it: it sees the catalogs carrying any of them, under their rating limit. Someone else gets their own watch history and Continue Watching; a user that is you shares yours. Tags themselves are made in Catalogs.
             </p>
@@ -1083,6 +1120,7 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
                 <Plus className="mr-1 h-4 w-4" /> Add user
               </Button>
             </div>
+            </> : null}
           </div>
         </div>
 
