@@ -227,6 +227,8 @@ export const simkl: Tracker = {
       const found = (await Promise.all(types.map((type) => fetchSimklSearchItems(type, query, 10, 1, access).catch(() => [])))).flat();
       return found
         .filter((item: any) => item?.ids?.simkl_id ?? item?.ids?.simkl)
+        // A film search keeps only anime films, not anime series.
+        .filter((item: any) => kind !== 'movie' || item.endpoint_type !== 'anime' || !item.anime_type || item.anime_type === 'movie')
         .map((item: any): MatchCandidate => ({
           ids: { simkl: Number(item.ids.simkl_id ?? item.ids.simkl), ...(item.ids.tmdb ? { tmdb: Number(item.ids.tmdb) } : {}) },
           title: String(item.title_en || item.title || ''),

@@ -725,7 +725,8 @@ async function driftItems(userUUID: string, source: SyncSource, outcomes: Map<st
       ...(matchable ? {
         seasons: [...new Set(list.map((v: any) => v.season).filter((season: any) => Number.isFinite(season)))].sort((a: any, b: any) => a - b),
         unmatched: list.flatMap((v: any) => v.ids).map((video: string) => outcomes.get(video)).find(Boolean) ?? null,
-        matchedTo: matched ? matched.target.title : film ? film.match.target.title : null,
+        // The film names the row only when the row is that one episode.
+        matchedTo: matched ? matched.target.title : film && list.every((v: any) => v.ids.some((video: string) => film.match.bases.includes(video))) ? film.match.target.title : null,
       } : {}),
       title: named && named.title !== spelling ? named.title : null,
       open: list[0].kind === 'movie'
@@ -1012,7 +1013,7 @@ async function saveFilmMatch(userUUID: string, key: string, source: SyncSource, 
   const { saveMatch, filmSpelling } = require('./trackerMatch');
   const video = typeof body?.video === 'string' ? body.video : '';
   const parsed = parseStremioId(video);
-  if (!parsed || parsed.episode === null || parsed.episode === undefined) return null;
+  if (!parsed || parsed.episode === null || parsed.episode === undefined || target.kind === 'tv') return null;
   const film = { ids: target.ids, title: target.title, year: target.year, posterUrl: target.posterUrl, kind: 'movie' };
   if (!filmSpelling(film)) return null;
   const spellings = [video, ...((await videoIdAliases(video).catch(() => [])) as string[])];

@@ -2380,8 +2380,15 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     } else if (descriptor?.k === 'view') {
       const catalog = await findCatalogByViewId(userUUID, config, descriptor.t, descriptor.c);
       if (!catalog) return [];
-      const window = await fetchWindow(userUUID, catalog, 0, 100, {}, undefined, profileTags(config));
-      ratings = window.items.map(officialRatingOf);
+      // The page the browse itself opens on, with the genre it reads a catalog under.
+      const tags = profileTags(config);
+      const extras: Record<string, string> = {};
+      if (await needsDefaultGenre(userUUID, catalog, tags)) {
+        const genreExtra = (catalog.extra ?? []).find((e: any) => e?.name === 'genre' && e?.default);
+        if (genreExtra) extras.genre = String(genreExtra.default);
+      }
+      if (!extras.genre && requiresGenre(catalog)) return [];
+      ratings = ((await fetchCatalogPage(userUUID, catalog.type, catalog.id, extras, tags)) ?? []).map(officialRatingOf);
     }
     return [...new Set(ratings.filter((rating): rating is string => Boolean(rating)))].sort();
   };

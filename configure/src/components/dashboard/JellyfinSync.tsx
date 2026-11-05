@@ -485,9 +485,9 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
     .filter((m) => m.kind === "episode" && m.episode && showId && m.open?.id === showId)
     .map((m) => [`${m.episode!.season}:${m.episode!.episode}`, m.target.title]));
   const matchItem = (item: JellyfinDriftItem) => {
-    // An episode already sent as a film opens on that match; a show offers its episodes for one.
-    const episodes = item.kind === "movie" ? [] : item.views.filter((v) => v.video).map((v) => ({ video: v.video!, season: v.season, episode: v.episode }));
-    const film = matches.find((m) => m.kind === "episode" && episodes.some((e) => m.bases.includes(e.video))) ?? null;
+    // A row of one episode already sent as a film opens on that match; a show offers its episodes for one.
+    const episodes = item.kind === "movie" ? [] : [...new Map(item.views.filter((v) => v.video).map((v) => [v.video!, { video: v.video!, season: v.season, episode: v.episode }])).values()];
+    const film = matches.find((m) => m.kind === "episode" && episodes.length > 0 && episodes.every((e) => m.bases.includes(e.video))) ?? null;
     if (film) {
       setMatching({ item: item.id, bases: film.bases, kind: "episode", title: item.title ?? film.title, open: item.open, seasons: [], existing: film, episodes: [filmEpisodeOf(film)] });
       return;
