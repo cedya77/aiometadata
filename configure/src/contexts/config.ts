@@ -1,4 +1,5 @@
 import type { BuilderEntry, CatalogRowOptions } from '@shared/types';
+import type { MergeMode } from '@shared/mergeModes';
 
 export type TagColorKey =
   | 'blue' | 'green' | 'red' | 'violet' | 'amber' | 'cyan'
@@ -158,7 +159,7 @@ export interface CatalogConfig {
       originalEnabled: boolean;
       originalShowInHome: boolean;
     }>;
-    mergeMode?: 'interleaved' | 'sequential' | 'alternating';
+    mergeMode?: MergeMode;
     // MovieLens-specific metadata
     sortBy?: string;
     sortDirection?: string;
