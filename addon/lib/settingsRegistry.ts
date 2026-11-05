@@ -989,7 +989,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     key: 'JELLYFIN_WATCHLIST_MEMO_TTL',
     envVar: 'JELLYFIN_WATCHLIST_MEMO_TTL',
     label: 'Jellyfin Watchlist Memo (seconds)',
-    description: 'How long the trackers\' watchlists, read for the favourites row and every item\'s favourite flag, are held in memory after a read. A favourite set through the server clears it at once; one added in the tracker\'s own app shows up once the watchlist catalog\'s cache and then this have lapsed.',
+    description: 'How long the trackers\' watchlists, read for the favourites row and every item\'s favourite flag, are held in memory after a read. Past it the favourites row waits for a new read, while an item\'s flag is answered from the held copy as it is read again, so a slow tracker never holds up a title. A favourite set through the server shows at once; one added in the tracker\'s own app shows up once the watchlist catalog\'s cache and then this have lapsed.',
     category: 'Features',
     type: 'number',
     default: 60,
