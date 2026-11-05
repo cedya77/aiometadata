@@ -72,6 +72,21 @@ class Lane {
 const BULK_CLASSES: ReadonlySet<ImageClass> = new Set(['thumbnail']);
 const FULL_AT = 0.98;
 const BULK_FULL_AT = 0.9;
+// A full cache is its usual state, and eviction takes what was used longest ago first, so past those marks
+// warming goes on while what this run has used still fits under the level eviction trims to.
+const HELD_FULL_AT = store.EVICT_TO;
+const BULK_HELD_FULL_AT = store.EVICT_TO - 0.1;
+const HELD_RECOUNT_MS = 5000;
+let runStartedAt = Date.now();
+let held = { at: 0, since: 0, bytes: 0 };
+
+function heldRatio(max: number): number {
+  const now = Date.now();
+  if (held.since !== runStartedAt || now - held.at > HELD_RECOUNT_MS) {
+    held = { at: now, since: runStartedAt, bytes: store.bytesHeldSince(runStartedAt) };
+  }
+  return held.bytes / max;
+}
 const main = new Lane();
 const bulk = new Lane();
 const pending = new Set<string>();
@@ -316,13 +331,15 @@ export function offer(targets: WarmTarget[]): void {
 
   const max = getWarmQueueMax();
   const capacity = store.capacityUsed();
-  const full = capacity.max > 0 && capacity.ratio >= FULL_AT;
-  const bulkFull = capacity.max > 0 && capacity.ratio >= BULK_FULL_AT;
+  const nearFull = capacity.max > 0 && capacity.ratio >= BULK_FULL_AT;
+  const heldShare = nearFull ? heldRatio(capacity.max) : 0;
+  const full = nearFull && capacity.ratio >= FULL_AT && heldShare >= HELD_FULL_AT;
+  const bulkFull = nearFull && heldShare >= BULK_HELD_FULL_AT;
 
   if (full && !capacityWarned) {
     capacityWarned = true;
     logger.warn(
-      `Image cache is at ${(capacity.ratio * 100).toFixed(0)}% of its ${formatSize(capacity.max)} budget. ` +
+      `Image cache is at ${(capacity.ratio * 100).toFixed(0)}% of its ${formatSize(capacity.max)} budget, and images used since this warm run began fill ${(heldShare * 100).toFixed(0)}% of it. ` +
       `Warming new images would evict images it just warmed, so they are being skipped. ` +
       `Raise POSTER_CACHE_MAX_SIZE or disable image classes you do not need.`
     );
@@ -344,6 +361,8 @@ export function offer(targets: WarmTarget[]): void {
     const freshKey = target.http ? target.checkKey : target.url;
     if (freshClass && freshKey && store.isCachedFresh(freshClass, freshKey)) {
       if (firstSight) stats.skipped += 1;
+      // Still wanted, so what this run warms next pushes out older images before it.
+      store.markWanted(freshClass, freshKey);
       continue;
     }
     const inBulk = BULK_CLASSES.has(target.imageClass);
@@ -451,6 +470,7 @@ export function getStats(): Stats & {
  * this the counters ran for the life of the process and read as a single run.
  */
 export function resetStats(): void {
+  runStartedAt = Date.now();
   counted.clear();
   failureReasons.clear();
   byClass.clear();
