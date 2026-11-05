@@ -317,7 +317,9 @@ All of these are in the dashboard under **Server**, or as environment variables,
 | `JELLYFIN_UPCOMING_TTL` | `21600` | How long the list of followed shows is kept. |
 | `JELLYFIN_UPCOMING_LOCAL_SHOWS` | `60` | Shows known only from local plays checked for an upcoming episode. |
 | `JELLYFIN_UPCOMING_WATCHLIST_LIMIT` (env) | `100` | Watchlist shows checked for an upcoming episode, and watchlist films for a release date. |
-| `JELLYFIN_WATCHLIST_MEMO_TTL` | `60` | How long the merged watchlist is held in memory after a read, on top of the watchlist catalogs' cache. |
+| `JELLYFIN_WATCHLIST_MEMO_TTL` | `60` | How long the merged watchlist counts as fresh after a read, on top of the watchlist catalogs' cache. |
+| `JELLYFIN_WATCHLIST_HELD_TTL` | `21600` | How long a watchlist past its memo still answers item favourite flags while it is read again. |
+| `JELLYFIN_WATCHLIST_MEMORY_MB` | `32` | Memory held for tracker watchlists across all configurations. |
 | `WATCH_STATE_PULL_TTL` | `300` | How long a front end reading watch state from the addon may reuse an answer. |
 | `WATCH_STATE_PULL_ITEMS` | `100` | In-progress titles a watch state read returns. |
 

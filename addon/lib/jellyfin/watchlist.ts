@@ -23,24 +23,42 @@ interface MemoWatchlist extends HeldWatchlist {
   readAt: number;
 }
 
-// Held until evicted, so a copy past its time can still answer a caller that takes one.
-const trackerMemo = new LRUCache<string, MemoWatchlist>({ max: envInt('JELLYFIN_RESUME_CACHE_MAX', 500, 1) });
+// A held row costs about 220 to 300 bytes of heap.
+const ROW_BYTES = 256;
+
+// Held past its freshness up to a ceiling, so a copy past its time can still answer a caller that takes one;
+// the budget bounds what an instance with many users holds.
+const trackerMemo = new LRUCache<string, MemoWatchlist>({
+  max: envInt('JELLYFIN_RESUME_CACHE_MAX', 500, 1),
+  maxSize: envInt('JELLYFIN_WATCHLIST_MEMORY_MB', 32, 1) * 1024 * 1024,
+  sizeCalculation: (held) => ROW_BYTES * (held.rows.length + 1),
+  ttlAutopurge: true,
+});
 const trackerInFlight = new Map<string, Promise<HeldWatchlist>>();
 
 const memoFreshMs = () => envInt('JELLYFIN_WATCHLIST_MEMO_TTL', 60, 1) * 1000;
+const memoHeldMs = () => Math.max(envInt('JELLYFIN_WATCHLIST_HELD_TTL', 21600, 60) * 1000, memoFreshMs());
+
+const covers = (held: HeldWatchlist, need: number): boolean => held.exhausted || held.rows.length >= need;
 
 function trackerMemoKey(config: any, userUUID: string): string {
   return `${userUUID}:${profileKey(config)}:${JSON.stringify(config?.jellyfinWatchlistServices ?? null)}`;
 }
 
 function readTrackerWatchlist(config: any, userUUID: string, need: number): Promise<HeldWatchlist> {
-  const key = `${trackerMemoKey(config, userUUID)}:${need}`;
+  const prefix = `${trackerMemoKey(config, userUUID)}:`;
+  const key = `${prefix}${need}`;
   const running = trackerInFlight.get(key);
   if (running) return running;
   const work = trackerWatchlist(config, userUUID, need)
     .then((built) => {
       const held = { rows: built.rows, exhausted: built.exhausted, complete: built.complete };
-      if (built.complete) trackerMemo.set(key, { ...held, need, readAt: Date.now() });
+      if (built.complete) {
+        // An older copy this one covers would only ever be passed over for it.
+        const covered = [...trackerMemo.entries()].filter(([candidate, older]) => candidate !== key && candidate.startsWith(prefix) && covers(held, older.need));
+        for (const [candidate] of covered) trackerMemo.delete(candidate);
+        trackerMemo.set(key, { ...held, need, readAt: Date.now() }, { ttl: memoHeldMs() });
+      }
       return held;
     })
     .finally(() => {
@@ -58,7 +76,7 @@ function trackerWatchlistShared(config: any, userUUID: string, need: number, tak
   const prefix = `${trackerMemoKey(config, userUUID)}:`;
   let stale: MemoWatchlist | null = null;
   for (const [candidate, held] of trackerMemo.entries()) {
-    if (!candidate.startsWith(prefix) || !(held.exhausted || held.rows.length >= need)) continue;
+    if (!candidate.startsWith(prefix) || !covers(held, need)) continue;
     if (Date.now() - held.readAt < memoFreshMs()) return Promise.resolve(held);
     stale ??= held;
   }
