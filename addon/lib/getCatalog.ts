@@ -11,6 +11,7 @@ import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
 import { fetchResume, parseResumeItems, fetchListPage, parseListItems, fetchPickItems, parsePickItems, publicMetaDBListType, publicMetaDBListId, WATCHLIST_CATALOG_ID } from "../utils/publicmetadbUtils.js";
 import { mapWithLimit } from "../utils/concurrency.js";
 import { envInt } from '../utils/envNumber';
+import { MERGED_CATALOG_MODE, mergeModeOf } from './collectionBuilder/mergeModes';
 const anilist = require('./anilist');
 const idMapper = require('./id-mapper');
 import { createHash } from 'crypto';
@@ -3607,7 +3608,7 @@ async function getMergedCatalog(
     logger.warn(`[Merged] No sources defined for ${catalogId}`);
     return [];
   }
-  const mergeMode: string = (catalogConfig as any).metadata?.mergeMode || 'interleaved';
+  const mergeMode = mergeModeOf((catalogConfig as any).metadata?.mergeMode, MERGED_CATALOG_MODE);
 
   const validSources = sources.filter((s: any) => {
     if (s.catalogId.startsWith('merged.')) {
