@@ -102,7 +102,7 @@ export function ArtProviderSettings() {
           <SettingRow
             htmlFor="original-lang-fallback"
             label="Original Language Poster Fallback"
-            description="Skip region-mismatched posters in your display language and fall back to English or the title's original language instead."
+            description="Skip posters from another region in your display language and use English instead, unless the poster comes from the title's own country."
             control={
               <Switch
                 id="original-lang-fallback"

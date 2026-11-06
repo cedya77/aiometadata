@@ -3297,8 +3297,14 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
 
 
 
+/** The countries a TMDB record says the title comes from. */
+function tmdbOriginCountries(details) {
+  if (details?.origin_country?.length) return details.origin_country;
+  return (details?.production_countries || []).map(country => country.iso_3166_1).filter(Boolean);
+}
+
 // Helper for language fallback selection from TMDB images
-function selectTmdbImageByLang(images, config, key = 'iso_639_1', originalLanguage = null) {
+function selectTmdbImageByLang(images, config, key = 'iso_639_1', originalLanguage = null, originCountries = []) {
   if (!Array.isArray(images) || images.length === 0) return undefined;
 
   const targetLang = config.artProviders?.englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
@@ -3309,6 +3315,11 @@ function selectTmdbImageByLang(images, config, key = 'iso_639_1', originalLangua
   if (targetExact) return targetExact;
 
   if (preferOrigLang) {
+    // A title in the user's language keeps the art of its own country, whichever region the user reads it from.
+    const ownArt = targetLang !== 'en' && originalLanguage === targetLang
+      && images.find(img => img[key] === targetLang && originCountries.includes(img.iso_3166_1));
+    if (ownArt) return ownArt;
+
     return images.find(img => img[key] === 'en')
       || (originalLanguage && images.find(img => img[key] === originalLanguage))
       || images.find(img => img[key] != null && img[key] !== 'xx')
@@ -3500,6 +3511,7 @@ module.exports = {
   getSeriesLogo,
   getTmdbSeriesArtBatch,
   selectTmdbImageByLang,
+  tmdbOriginCountries,
   mergeTmdbOriginalLanguageImages,
   getTmdbMovieCertificationForCountry,
   getTmdbTvCertificationForCountry,

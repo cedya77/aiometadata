@@ -610,8 +610,8 @@ async function performTmdbSearch(type: string, query: string, language: string, 
           || details.images?.backdrops?.find((b: any) => b.iso_639_1 === null)
           || details.images?.backdrops?.find((b: any) => b.iso_639_1 === language.split('-')[0])
           || details.images?.backdrops?.[0];
-        const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config, 'iso_639_1', originalLanguage);
-        const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config, 'iso_639_1', originalLanguage);
+        const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config, 'iso_639_1', originalLanguage, Utils.tmdbOriginCountries(details));
+        const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config, 'iso_639_1', originalLanguage, Utils.tmdbOriginCountries(details));
         const fallbackImage = `${host}/missing_poster.png`;
         logoUrl = selectedLogo?.file_path ? tmdbImageUrl(tmdbLogoSize(selectedLogo?.width), selectedLogo?.file_path) : null;
         backgroundUrl = selectedBg?.file_path ? tmdbImageUrl(tmdbBackdropSize(selectedBg?.width), selectedBg?.file_path) : details.backdrop_path ? tmdbImageUrl(tmdbBackdropSize(), details.backdrop_path) : null;
@@ -1386,8 +1386,8 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
       || details.images?.backdrops?.find((b: any) => b.iso_639_1 === null)
       || details.images?.backdrops?.find((b: any) => b.iso_639_1 === langCode)
       || details.images?.backdrops?.[0];
-    const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config, 'iso_639_1', originalLanguage);
-    const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config, 'iso_639_1', originalLanguage);
+    const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config, 'iso_639_1', originalLanguage, Utils.tmdbOriginCountries(details));
+    const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config, 'iso_639_1', originalLanguage, Utils.tmdbOriginCountries(details));
 
     const fallbackImage = `${host}/missing_poster.png`;
     const logoUrl = selectedLogo?.file_path ? tmdbImageUrl(tmdbLogoSize(selectedLogo.width), selectedLogo.file_path) : null;
