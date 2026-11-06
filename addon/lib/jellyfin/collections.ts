@@ -464,6 +464,7 @@ async function mixedMembers(args: {
   const { userUUID, config, serverId, parentId, sources, mode, startIndex, limit, includeItemTypes, officialRatings, tags, filterKey, cursorKey } = args;
   const count = sources.length;
   const extrasOf = (i: number): Record<string, string> => (sources[i].genre ? { genre: sources[i].genre as string } : {});
+  const runLength = (i: number): number => knownPageLength(userUUID, sources[i].catalog, extrasOf(i), tags) ?? (parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20);
   const held = mixCursors.get(cursorKey);
   const resumed = held && held.nextIndex === startIndex ? held : null;
   const offsets = resumed ? [...resumed.offsets] : sources.map(() => 0);
@@ -488,7 +489,8 @@ async function mixedMembers(args: {
     if (buffers[i].length || ended[i] || done[i]) return;
     const { catalog } = sources[i];
     const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings);
-    const window = await fetchWindow(userUUID, catalog, offsets[i], chunk, extrasOf(i), keep, tags, filterKey)
+    const size = mode === 'alternating' ? Math.max(chunk, runLeft > 0 ? runLeft : runLength(i)) : chunk;
+    const window = await fetchWindow(userUUID, catalog, offsets[i], size, extrasOf(i), keep, tags, filterKey)
       .catch(() => null);
     buffers[i] = window?.items ?? [];
     // A read that failed keeps what it got and is read again from there on the next page, until it has failed too often.
@@ -532,7 +534,7 @@ async function mixedMembers(args: {
     }
     if (mode === 'interleaved') pass();
     else {
-      if (runLeft < 0) runLeft = knownPageLength(userUUID, sources[i].catalog, extrasOf(i), tags) ?? (parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20);
+      if (runLeft < 0) runLeft = runLength(i);
       runLeft -= 1;
       if (runLeft <= 0) pass();
     }
