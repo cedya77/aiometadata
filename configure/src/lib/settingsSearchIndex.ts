@@ -441,7 +441,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   {
     id: 'artProviders.originalLangFallback', section: 'art-providers', anchor: 'original-lang-fallback',
     label: 'Original Language Poster Fallback',
-    description: "Skip region-mismatched posters in your display language and fall back to English or the title's original language instead.",
+    description: "Skip posters from another region in your display language and use English instead, unless the poster comes from the title's own country.",
     keywords: ['poster', 'language', 'fallback'],
   },
   {

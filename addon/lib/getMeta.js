@@ -1481,17 +1481,18 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   if (!credits) {
     credits = { cast: [], crew: [] };
   }
+  const originCountries = Utils.tmdbOriginCountries(movieData);
   const images = await Utils.mergeTmdbOriginalLanguageImages('movie', tmdbId, rawImages, originalLanguage, langCode, config);
-  const selectedPoster = Utils.selectTmdbImageByLang(images?.posters, config, 'iso_639_1', originalLanguage);
+  const selectedPoster = Utils.selectTmdbImageByLang(images?.posters, config, 'iso_639_1', originalLanguage, originCountries);
   const tmdbPosterUrl = selectedPoster?.file_path ? tmdbImageUrl(tmdbPosterSize(), selectedPoster?.file_path) : poster_path ? tmdbImageUrl(tmdbPosterSize(), poster_path) : `${host}/missing_poster.png`;
   const selectedBg = images?.backdrops?.find(b => b.iso_639_1 === 'xx')
     || images?.backdrops?.find(b => b.iso_639_1 === null)
     || images?.backdrops?.find(b => b.iso_639_1 === langCode)
     || images?.backdrops?.[0];
-  const selectedLandscapePoster = Utils.selectTmdbImageByLang(images?.backdrops, config, 'iso_639_1', originalLanguage);
+  const selectedLandscapePoster = Utils.selectTmdbImageByLang(images?.backdrops, config, 'iso_639_1', originalLanguage, originCountries);
   const tmdbLandscapePosterUrl = selectedLandscapePoster?.file_path ? tmdbImageUrl(tmdbLandscapeSize(selectedLandscapePoster?.width), selectedLandscapePoster?.file_path) : null;
   const tmdbBackgroundUrl = selectedBg?.file_path ? tmdbImageUrl(tmdbBackdropSize(selectedBg?.width), selectedBg?.file_path) : backdrop_path ? tmdbImageUrl(tmdbBackdropSize(), backdrop_path) : null;
-  const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config, 'iso_639_1', originalLanguage);
+  const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config, 'iso_639_1', originalLanguage, originCountries);
   let tmdbLogoUrl = selectedLogo?.file_path ? tmdbImageUrl(tmdbLogoSize(selectedLogo?.width), selectedLogo?.file_path) : null;
 
   let poster, background, logoUrl, imdbRatingValue, landscapePosterUrl;
@@ -1612,17 +1613,18 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   }
   const langCode = language.split('-')[0];
 
+  const originCountries = Utils.tmdbOriginCountries(seriesData);
   const images = await Utils.mergeTmdbOriginalLanguageImages('tv', tmdbId, rawImages, originalLanguage, langCode, config);
-  const selectedPoster = Utils.selectTmdbImageByLang(images?.posters, config, 'iso_639_1', originalLanguage);
+  const selectedPoster = Utils.selectTmdbImageByLang(images?.posters, config, 'iso_639_1', originalLanguage, originCountries);
   const tmdbPosterUrl = selectedPoster?.file_path ? tmdbImageUrl(tmdbPosterSize(), selectedPoster?.file_path) : poster_path ? tmdbImageUrl(tmdbPosterSize(), poster_path) : `${host}/missing_poster.png`;
   const selectedBg = images?.backdrops?.find(b => b.iso_639_1 === 'xx')
     || images?.backdrops?.find(b => b.iso_639_1 === null)
     || images?.backdrops?.find(b => b.iso_639_1 === langCode)
     || images?.backdrops?.[0];
-  const selectedLandscapePoster = Utils.selectTmdbImageByLang(images?.backdrops, config, 'iso_639_1', originalLanguage);
+  const selectedLandscapePoster = Utils.selectTmdbImageByLang(images?.backdrops, config, 'iso_639_1', originalLanguage, originCountries);
   const tmdbLandscapePosterUrl = selectedLandscapePoster?.file_path ? tmdbImageUrl(tmdbLandscapeSize(selectedLandscapePoster?.width), selectedLandscapePoster?.file_path) : null;
   const tmdbBackgroundUrl = selectedBg?.file_path ? tmdbImageUrl(tmdbBackdropSize(selectedBg?.width), selectedBg?.file_path) : backdrop_path ? tmdbImageUrl(tmdbBackdropSize(), backdrop_path) : null;
-  const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config, 'iso_639_1', originalLanguage);
+  const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config, 'iso_639_1', originalLanguage, originCountries);
   let tmdbLogoUrl = selectedLogo?.file_path ? tmdbImageUrl(tmdbLogoSize(selectedLogo?.width), selectedLogo?.file_path) : null;
   let poster, background, logoUrl, imdbRatingValue, landscapePosterUrl;
 
