@@ -11,7 +11,7 @@ import { nuvioHistorySource } from './historySourceNuvio';
 import { listHistorySource } from './historySourceList';
 import { bulkTimes } from './bulkMarks';
 import { parseStremioId } from './ids';
-import { heldPlaylists, importOutcome, importPlaylist, playlistsForExport, playlistTitleId, type PlaylistTitle } from './playlists';
+import { heldPlaylists, importOutcome, importPlaylist, playlistsForExport, playlistTitleId, type Playlist, type PlaylistTitle } from './playlists';
 
 const logger = consola.withTag('Jellyfin');
 const database: any = require('../database');
@@ -311,13 +311,14 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
   };
   const target = (profile: string): string | null => (Object.prototype.hasOwnProperty.call(mapping, profile) && typeof mapping[profile] === 'string' ? mapping[profile] : null);
 
-  const [playstate, watches, ratings, watchlist, dropped, matches] = await Promise.all([
+  const [playstate, watches, ratings, watchlist, dropped, matches, playlistsHeld] = await Promise.all([
     database.listPlaystateFor(userUUID),
     database.listWatchesForConfiguration(userUUID),
     database.listRatingsForConfiguration(userUUID),
     database.listWatchlistForConfiguration(userUUID),
     database.listDroppedForConfiguration(userUUID),
     database.listTrackerMatchesForConfiguration(userUUID),
+    (file.playlists.length ? heldPlaylists(userUUID) : Promise.resolve(new Map())) as Promise<Map<string, Array<Pick<Playlist, 'name' | 'items'>>>>,
   ]);
 
   const incomingStates = new Map<string, { profile: string; videoId: string; title: string; state: State }>();
@@ -517,7 +518,6 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
   }
 
   // A playlist joins the one of its name in the user it maps to, or is made; each one planned counts for the next.
-  const playlistsHeld = file.playlists.length ? await heldPlaylists(userUUID) : new Map();
   for (const row of file.playlists) {
     const profile = target(row.profile);
     if (profile === null) continue;

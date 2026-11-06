@@ -121,9 +121,9 @@ export function dashboardPlaylist(userUUID: string, profile: string | null, id: 
     const playlist = await getPlaylist(ownerFor(userUUID, config), id);
     if (!playlist) return { missing: true as const };
     const ids = playlist.items.slice(offset, offset + limit);
-    const entries = await built(userUUID, profile, ids);
+    const [entries, summary] = await Promise.all([built(userUUID, profile, ids), summaryOf(userUUID, profile, playlist)]);
     return {
-      ...(await summaryOf(userUUID, profile, playlist)),
+      ...summary,
       offset,
       entries: ids.map((entry, i) => ({ ...(entries.get(entry) ?? unavailable(entry)), position: offset + i })),
       more: offset + limit < playlist.items.length,
