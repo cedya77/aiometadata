@@ -285,16 +285,16 @@ export async function playlistImages(req: any, deps: PlaylistRouteDeps, descript
   return recallImages(serverIdFor(String(req.params.userUUID)), playlistItemId(playlist));
 }
 
-function pageOf(req: any, total: number): { start: number; end: number } {
+function pageOf(req: any, total: number, cap = Infinity): { start: number; end: number } {
   const start = Math.max(0, parseInt(String(param(req, 'StartIndex') ?? 0), 10) || 0);
   const asked = param(req, 'Limit');
-  const limit = asked === undefined ? total : Math.max(0, parseInt(String(asked), 10) || 0);
+  const limit = Math.min(cap, asked === undefined ? total : Math.max(0, parseInt(String(asked), 10) || 0));
   return { start, end: start + limit };
 }
 
 /** Its entries as list rows, each with PlaylistItemId; one that no longer builds is left out. */
 async function entries(req: any, deps: PlaylistRouteDeps, playlist: Playlist): Promise<any> {
-  const { start, end } = pageOf(req, playlist.items.length);
+  const { start, end } = pageOf(req, playlist.items.length, itemsPerPlaylist());
   const ids = playlist.items.slice(start, end);
   const built = await deps.buildItems(req, ids);
   const byId = new Map(built.map((item) => [normaliseJellyfinId(String(item.Id)), item]));
