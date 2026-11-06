@@ -217,7 +217,7 @@ export async function playlistCover(req: any, buildItems: PlaylistRouteDeps['bui
   const pictured = first.Type === 'Episode' && first.SeriesId ? String(first.SeriesId) : String(first.Id);
   const images = (await recallImages(serverId, pictured)) ?? (await recallImages(serverId, String(first.Id)));
   const cover = { pictured, images };
-  covers.set(key, cover, { ttl: coverTtlMs() });
+  covers.set(key, cover, { ttl: images ? coverTtlMs() : 60_000 });
   return cover;
 }
 
