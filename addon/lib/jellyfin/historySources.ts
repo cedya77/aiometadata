@@ -425,7 +425,8 @@ function historyBody(
     for (const videoId of spellings) {
       playstate.push({
         profile, videoId, title, positionMs: resume?.positionMs ?? 0, runtimeMs: resume?.runtimeMs ?? 0, played, playCount: played ? Math.max(1, count) : 0,
-        lastPlayedAt: isoAt(lastPlayed), updatedAt: isoAt(Math.max(last ?? 0, marked ?? 0, resume?.at ?? 0, asOf) || 1), origin,
+        lastPlayedAt: isoAt(lastPlayed), lastPlayedKind: last === null && marked && lastPlayed === marked ? 'mark' : null,
+        updatedAt: isoAt(Math.max(last ?? 0, marked ?? 0, resume?.at ?? 0, asOf) || 1), origin,
       });
     }
   }

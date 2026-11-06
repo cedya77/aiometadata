@@ -9,7 +9,7 @@ import { letterboxdHistorySource } from './historySourceLetterboxd';
 import { stremioHistorySource } from './historySourceStremio';
 import { nuvioHistorySource } from './historySourceNuvio';
 import { listHistorySource } from './historySourceList';
-import { bulkTimes } from './bulkMarks';
+import { datedBy, sortPlayedKinds, type PlayedKind } from './playedKinds';
 import { heldPlaylists, importOutcome, importPlaylist, playlistsForExport, playlistTitleId, type Playlist, type PlaylistTitle } from './playlists';
 
 const logger = consola.withTag('Jellyfin');
@@ -18,7 +18,7 @@ const database: any = require('../database');
 export const HISTORY_FORMAT = 'aiometadata-history';
 export const HISTORY_VERSION = 1;
 
-type State = { positionMs: number; runtimeMs: number; played: boolean; playCount: number; lastPlayedAt: number | null; updatedAt: number; origin: string | null };
+type State = { positionMs: number; runtimeMs: number; played: boolean; playCount: number; lastPlayedAt: number | null; lastPlayedKind: PlayedKind | null; updatedAt: number; origin: string | null };
 type PlaystateRow = State & { profile: string; videoId: string; title?: string };
 // A first watch is a mark's: it is kept only for a title never played or watched before.
 type WatchRow = { profile: string; videoId: string; watchedAt: number; origin: string | null; title?: string; first?: boolean };
@@ -114,6 +114,7 @@ export async function buildHistoryExport(userUUID: string, config: any): Promise
       played: Boolean(row.played),
       playCount: Number(row.play_count) || 0,
       lastPlayedAt: iso(row.last_played_at),
+      lastPlayedKind: row.last_played_at ? row.last_played_kind ?? null : null,
       updatedAt: iso(row.updated_at),
       origin: row.origin ?? null,
     })),
@@ -206,8 +207,10 @@ export function readHistoryFile(body: any): HistoryFile | string {
       profile, videoId, updatedAt,
       positionMs: amount(row.positionMs, MAX_MS), runtimeMs: amount(runtimeOf(row), MAX_MS), played: row.played === true,
       playCount: amount(row.playCount, MAX_PLAYS), lastPlayedAt: epoch(row.lastPlayedAt), origin: originOf(row), title: titleOf(row.title),
+      lastPlayedKind: row.lastPlayedKind === 'viewing' || row.lastPlayedKind === 'mark' ? row.lastPlayedKind : null,
     });
   }
+  sortPlayedKinds(out.playstate);
   for (const row of list(body.watches)) {
     const profile = profileOf(row?.profile);
     const videoId = idOf(row?.videoId);
@@ -270,6 +273,7 @@ const stateOf = (row: any): State => ({
   played: Boolean(Number(row.played)),
   playCount: Number(row.play_count) || 0,
   lastPlayedAt: row.last_played_at ? Number(row.last_played_at) : null,
+  lastPlayedKind: row.last_played_at ? (row.last_played_kind === 'mark' ? 'mark' : 'viewing') : null,
   updatedAt: Number(row.updated_at) || 0,
   origin: row.origin ?? null,
 });
@@ -278,12 +282,14 @@ const LOCAL_ORIGINS = new Set(['server', 'play']);
 
 function mergeState(held: State, incoming: State): State {
   const newer = incoming.updatedAt > held.updatedAt ? incoming : held;
+  const dated = datedBy(held, incoming, LOCAL_ORIGINS.has(String(held.origin)));
   return {
     positionMs: newer.positionMs,
     runtimeMs: newer.runtimeMs || Math.max(held.runtimeMs, incoming.runtimeMs),
     played: newer.played,
     playCount: Math.max(held.playCount, incoming.playCount),
-    lastPlayedAt: Math.max(held.lastPlayedAt ?? 0, incoming.lastPlayedAt ?? 0) || null,
+    lastPlayedAt: dated.lastPlayedAt,
+    lastPlayedKind: dated.lastPlayedAt ? dated.lastPlayedKind ?? 'viewing' : null,
     updatedAt: Math.max(held.updatedAt, incoming.updatedAt),
     // A row holding a play made here stays this server's, or forgetting the import would take that play with it.
     origin: LOCAL_ORIGINS.has(String(held.origin)) ? held.origin : newer.origin,
@@ -340,24 +346,7 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     (held.played || !state.played) && held.lastPlayedAt && state.lastPlayedAt && Math.abs(held.lastPlayedAt - state.lastPlayedAt) <= sameStateMs
       ? { ...state, lastPlayedAt: held.lastPlayedAt, updatedAt: Math.min(state.updatedAt, held.updatedAt) }
       : state;
-  // A date a bulk mark wrote is when the marks were made, not a viewing, so a real date beats it either way round.
-  // A held date from a play or mark made here stays.
-  const heldBulk = bulkTimes(playstate.map((row: any) => ({ at: Number(row.last_played_at) || 0, videoId: String(row.video_id) })));
-  const incomingBulk = bulkTimes(file.playstate.map((row) => ({ at: Number(row.lastPlayedAt) || 0, videoId: row.videoId })));
-  const realDateOf = (held: State, state: State): number | null => {
-    if (!held.lastPlayedAt || !state.lastPlayedAt) return null;
-    const heldBulky = heldBulk.has(held.lastPlayedAt) && !LOCAL_ORIGINS.has(String(held.origin));
-    const incomingBulky = incomingBulk.has(state.lastPlayedAt);
-    if (heldBulky && !incomingBulky) return state.lastPlayedAt;
-    if (incomingBulky && !heldBulky) return held.lastPlayedAt;
-    return null;
-  };
-  const mergedInto = (held: State, state: State) => {
-    const viewing = sameViewing(held, state);
-    const merged = mergeState(held, viewing);
-    const real = realDateOf(held, viewing);
-    return real === null ? merged : { ...merged, lastPlayedAt: real };
-  };
+  const mergedInto = (held: State, state: State) => mergeState(held, sameViewing(held, state));
   for (const spellings of titles.values()) {
     const held = spellings.filter((spelling) => heldStates.has(spelling.key));
     const due = held.length ? held.filter((spelling) => !sameState(mergedInto(heldStates.get(spelling.key)!, spelling.state), heldStates.get(spelling.key)!)) : spellings;

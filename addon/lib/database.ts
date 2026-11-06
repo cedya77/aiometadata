@@ -2297,7 +2297,7 @@ class Database {
       const videoId = mark(after.videoId);
       where.push(`(profile > ${profile} OR (profile = ${profile2} AND video_id > ${videoId}))`);
     }
-    const query = `SELECT profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin
+    const query = `SELECT profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, last_played_kind, updated_at, origin
       FROM jellyfin_playstate WHERE ${where.join(' AND ')} ORDER BY profile, video_id LIMIT ${mark(limit)}`;
     return (await this.allQuery(query, params)) || [];
   }
