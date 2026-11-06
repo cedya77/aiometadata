@@ -157,9 +157,12 @@ async function titlesOf(userUUID: string, config: any, serverId: string, id: str
     const meta = await fetchMeta(userUUID, 'series', descriptor.i);
     if (!meta) return [];
     const seriesId = encodeJellyfinId({ k: 'series', t: descriptor.t, i: descriptor.i });
-    // A whole show plays its seasons in order; its specials come in only when their own season is added.
-    return buildEpisodes(meta, descriptor.t, seriesId, serverId, descriptor.k === 'season' ? descriptor.s : null)
-      .filter((episode: any) => aired(episode) && (descriptor.k === 'season' || Number(episode.ParentIndexNumber) > 0))
+    // A whole show plays its seasons in order; its specials come in only when their own season is added, and
+    // episodes with no season only when the show has no seasons, as an absolute-numbered one does.
+    const episodes = buildEpisodes(meta, descriptor.t, seriesId, serverId, descriptor.k === 'season' ? descriptor.s : null);
+    const seasoned = episodes.some((episode: any) => Number(episode.ParentIndexNumber) > 0);
+    return episodes
+      .filter((episode: any) => aired(episode) && (descriptor.k === 'season' || (seasoned ? Number(episode.ParentIndexNumber) > 0 : episode.ParentIndexNumber !== 0)))
       .sort((a: any, b: any) => (Number(a.ParentIndexNumber) || 0) - (Number(b.ParentIndexNumber) || 0) || (Number(a.IndexNumber) || 0) - (Number(b.IndexNumber) || 0))
       .map((episode: any) => String(episode.Id));
   }
