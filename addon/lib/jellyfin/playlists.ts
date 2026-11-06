@@ -70,7 +70,7 @@ async function getPlaylist(owner: Owner, id: string): Promise<Playlist | null> {
 }
 
 async function anyProfilePlaylist(userUUID: string, id: string): Promise<Playlist | null> {
-  const row = (await database.listAllPlaylists(userUUID)).find((held: any) => String(held.id) === id);
+  const row = await database.findPlaylist(userUUID, id);
   return row ? fromRow(row) : null;
 }
 

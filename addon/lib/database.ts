@@ -2993,6 +2993,14 @@ class Database {
     return Number((await this.allPrimaryQuery(query, [userUUID, profile]))[0]?.n) || 0;
   }
 
+  /** A playlist by its id in any of the user's profiles. */
+  async findPlaylist(userUUID: string, id: string): Promise<any | null> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT id, name, items, created_at, updated_at FROM jellyfin_playlists WHERE user_uuid = ? AND id = ? LIMIT 1'
+      : 'SELECT id, name, items, created_at, updated_at FROM jellyfin_playlists WHERE user_uuid = $1 AND id = $2 LIMIT 1';
+    return (await this.allQuery(query, [userUUID, id]))[0] ?? null;
+  }
+
   async hasPlaylists(userUUID: string, profile: string): Promise<boolean> {
     const query = this.type === 'sqlite'
       ? 'SELECT 1 FROM jellyfin_playlists WHERE user_uuid = ? AND profile = ? LIMIT 1'
