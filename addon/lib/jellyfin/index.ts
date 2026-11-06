@@ -433,6 +433,13 @@ export async function readTitle(userUUID: string, config: any, itemId: string): 
   return titleReader ? titleReader(userUUID, config, itemId) : null;
 }
 
+let itemsReader: ((req: any, ids: string[]) => Promise<any[]>) | null = null;
+
+/** Items by id as a client's listing has them, for a request made on its behalf. */
+export async function readItems(req: any, ids: string[]): Promise<any[]> {
+  return itemsReader ? itemsReader(req, ids) : [];
+}
+
 export async function readCalendar(userUUID: string, config: any, from: number, to: number, withFilms = false): Promise<any[] | null> {
   return calendarReader ? calendarReader(userUUID, config, from, to, withFilms) : null;
 }
@@ -3929,6 +3936,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   const playlistDeps: PlaylistRouteDeps = {
     buildItems: (req, ids) => itemsForIds(req, ids, false, playlistConcurrency()),
   };
+  itemsReader = playlistDeps.buildItems;
 
   async function singleItemHandler(req: any, res: any): Promise<void> {
     if (!req.params.listed) noteWantsPeople(true);

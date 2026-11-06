@@ -329,6 +329,7 @@ All of these are in the dashboard under **Server**, or as environment variables,
 | `JELLYFIN_PLAYLISTS_MAX` | `200` | Playlists each user or profile can make. |
 | `JELLYFIN_PLAYLIST_ITEMS_MAX` | `1000` | Titles one playlist holds; a show or season added counts each episode. |
 | `JELLYFIN_PLAYLIST_BUILD_CONCURRENCY` | `6` | Titles of a playlist page, or playlists in the list, built at once. |
+| `JELLYFIN_PLAYLIST_COVER_TTL` | `21600` | How long a playlist's picture is held before it is read again; a new first title is read at once. |
 | `WATCH_STATE_PULL_TTL` | `300` | How long a front end reading watch state from the addon may reuse an answer. |
 | `WATCH_STATE_PULL_ITEMS` | `100` | In-progress titles a watch state read returns. |
 

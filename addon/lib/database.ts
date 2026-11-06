@@ -2950,6 +2950,13 @@ class Database {
     return this.allPrimaryQuery(query, [userUUID]);
   }
 
+  async countPlaylists(userUUID: string, profile: string): Promise<number> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT COUNT(*) AS n FROM jellyfin_playlists WHERE user_uuid = ? AND profile = ?'
+      : 'SELECT COUNT(*) AS n FROM jellyfin_playlists WHERE user_uuid = $1 AND profile = $2';
+    return Number((await this.allPrimaryQuery(query, [userUUID, profile]))[0]?.n) || 0;
+  }
+
   async getPlaylist(userUUID: string, profile: string, id: string): Promise<any | null> {
     const query = this.type === 'sqlite'
       ? 'SELECT id, name, items, created_at, updated_at FROM jellyfin_playlists WHERE user_uuid = ? AND profile = ? AND id = ?'

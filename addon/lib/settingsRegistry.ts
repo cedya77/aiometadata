@@ -1408,6 +1408,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_PLAYLIST_COVER_TTL',
+    envVar: 'JELLYFIN_PLAYLIST_COVER_TTL',
+    label: 'Jellyfin Playlist Cover (seconds)',
+    description: 'How long the picture of a playlist, its first title\'s art, is held before it is read again. A new first title is read at once.',
+    category: 'Features',
+    type: 'number',
+    default: 21600,
+    min: 60,
+  },
+  {
     key: 'JELLYFIN_PLAYLIST_BUILD_CONCURRENCY',
     envVar: 'JELLYFIN_PLAYLIST_BUILD_CONCURRENCY',
     label: 'Jellyfin Playlist Build Concurrency',
