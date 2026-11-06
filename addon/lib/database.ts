@@ -179,6 +179,7 @@ class Database {
     await this.ensureAccountColumns();
     await this.ensurePlaystateProfile();
     await this.ensurePlaystateOrigin();
+    await this.ensurePlaystateKind();
     await this.ensureWatches();
     await this.ensureWatchlistMetaType();
     await this.ensureTrackerOutboxProfile();
@@ -312,6 +313,22 @@ class Database {
       }
     } catch (error: any) {
       logger.warn(`Could not add jellyfin_playstate.origin: ${error.message}`);
+    }
+  }
+
+  async ensurePlaystateKind(): Promise<void> {
+    try {
+      if (this.type === 'sqlite') {
+        const existing = await this.allQuery(`PRAGMA table_info(jellyfin_playstate)`);
+        if (!existing.some((column: any) => column.name === 'last_played_kind')) {
+          await this.runQuery(`ALTER TABLE jellyfin_playstate ADD COLUMN last_played_kind TEXT`);
+          logger.info('Migrated jellyfin_playstate: rows record whether their last played date is a viewing or a mark');
+        }
+      } else {
+        await this.runQuery(`ALTER TABLE jellyfin_playstate ADD COLUMN IF NOT EXISTS last_played_kind TEXT`);
+      }
+    } catch (error: any) {
+      logger.warn(`Could not add jellyfin_playstate.last_played_kind: ${error.message}`);
     }
   }
 
@@ -1747,7 +1764,7 @@ class Database {
   async upsertPlaystate(
     userUUID: string,
     videoId: string,
-    patch: { positionMs?: number; runtimeMs?: number; played?: boolean; lastPlayedAt?: number | null; origin?: string | null; watch?: WatchPatch },
+    patch: { positionMs?: number; runtimeMs?: number; played?: boolean; lastPlayedAt?: number | null; lastPlayedKind?: 'viewing' | 'mark'; origin?: string | null; watch?: WatchPatch },
     profile = '',
     writtenAt?: number
   ): Promise<void> {
@@ -1769,22 +1786,32 @@ class Database {
     // An unmark takes the plays back, keeping its count only to mark the title unwatched, so a watch after it is the first again.
     const playCount = becamePlayed ? 1 : (existing?.play_count ?? 0) + (logged && patch.watch?.kind === 'finish' ? 1 : 0);
     const lastPlayedAt = patch.lastPlayedAt === undefined ? (existing?.last_played_at ?? null) : patch.lastPlayedAt;
+    // A title marked watched is dated by the marking, not by a viewing.
+    const lastPlayedKind = lastPlayedAt === null
+      ? null
+      : patch.lastPlayedAt === undefined
+        ? (existing?.last_played_kind ?? null)
+        : patch.lastPlayedKind ?? (patch.watch?.kind === 'first' ? 'mark' : 'viewing');
 
     const query = this.type === 'sqlite'
-      ? `INSERT INTO jellyfin_playstate (user_uuid, profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ? `INSERT INTO jellyfin_playstate (user_uuid, profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin, last_played_kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (user_uuid, profile, video_id) DO UPDATE SET
            position_ms = excluded.position_ms, runtime_ms = excluded.runtime_ms, played = excluded.played,
            play_count = excluded.play_count, last_played_at = excluded.last_played_at, updated_at = excluded.updated_at,
-           origin = excluded.origin`
-      : `INSERT INTO jellyfin_playstate (user_uuid, profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           origin = excluded.origin,
+           last_played_kind = CASE WHEN ? = 1 THEN jellyfin_playstate.last_played_kind ELSE excluded.last_played_kind END`
+      : `INSERT INTO jellyfin_playstate (user_uuid, profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin, last_played_kind)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (user_uuid, profile, video_id) DO UPDATE SET
            position_ms = EXCLUDED.position_ms, runtime_ms = EXCLUDED.runtime_ms, played = EXCLUDED.played,
            play_count = EXCLUDED.play_count, last_played_at = EXCLUDED.last_played_at, updated_at = EXCLUDED.updated_at,
-           origin = EXCLUDED.origin`;
+           origin = EXCLUDED.origin,
+           last_played_kind = CASE WHEN $12 = 1 THEN jellyfin_playstate.last_played_kind ELSE EXCLUDED.last_played_kind END`;
 
-    await this.runQuery(query, [userUUID, profile, videoId, positionMs, runtimeMs, played ? 1 : 0, playCount, lastPlayedAt, now, origin]);
+    // A patch that leaves the date keeps the stored kind, which a read from the replica may not have seen yet.
+    const keepsKind = patch.lastPlayedAt === undefined ? 1 : 0;
+    await this.runQuery(query, [userUUID, profile, videoId, positionMs, runtimeMs, played ? 1 : 0, playCount, lastPlayedAt, now, origin, lastPlayedKind, keepsKind]);
   }
 
   async logWatch(userUUID: string, profile: string, videoId: string, watch: WatchPatch, wasPlayed: boolean, origin: string | null): Promise<boolean> {
@@ -1880,11 +1907,13 @@ class Database {
       for (const id of ids) {
         const latest = latestOf(after.filter((row) => row.video_id === id));
         if (latest === null) continue;
+        // Only the date set here is known to be a viewing; another watch now latest keeps the row's kind.
+        const setHere = Math.abs(latest - Math.round(to)) < 1000 ? 1 : 0;
         await this.runQuery(
           sqlite
-            ? 'UPDATE jellyfin_playstate SET last_played_at = ?, updated_at = ? WHERE user_uuid = ? AND profile = ? AND video_id = ? AND played = 1 AND position_ms = 0'
-            : 'UPDATE jellyfin_playstate SET last_played_at = $1, updated_at = $2 WHERE user_uuid = $3 AND profile = $4 AND video_id = $5 AND played = 1 AND position_ms = 0',
-          [latest, now, userUUID, profile, id]
+            ? "UPDATE jellyfin_playstate SET last_played_at = ?, last_played_kind = CASE WHEN ? = 1 THEN 'viewing' ELSE last_played_kind END, updated_at = ? WHERE user_uuid = ? AND profile = ? AND video_id = ? AND played = 1 AND position_ms = 0"
+            : "UPDATE jellyfin_playstate SET last_played_at = $1, last_played_kind = CASE WHEN $2 = 1 THEN 'viewing' ELSE last_played_kind END, updated_at = $3 WHERE user_uuid = $4 AND profile = $5 AND video_id = $6 AND played = 1 AND position_ms = 0",
+          [latest, setHere, now, userUUID, profile, id]
         );
       }
     }
@@ -2089,21 +2118,21 @@ class Database {
     return (await this.allQuery(query, [userUUID])) || [];
   }
 
-  async writePlaystateRow(userUUID: string, profile: string, videoId: string, row: { positionMs: number; runtimeMs: number; played: boolean; playCount: number; lastPlayedAt: number | null; updatedAt: number; origin: string | null }): Promise<void> {
+  async writePlaystateRow(userUUID: string, profile: string, videoId: string, row: { positionMs: number; runtimeMs: number; played: boolean; playCount: number; lastPlayedAt: number | null; updatedAt: number; origin: string | null; lastPlayedKind?: 'viewing' | 'mark' | null }): Promise<void> {
     const query = this.type === 'sqlite'
-      ? `INSERT INTO jellyfin_playstate (user_uuid, profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ? `INSERT INTO jellyfin_playstate (user_uuid, profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin, last_played_kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (user_uuid, profile, video_id) DO UPDATE SET
            position_ms = excluded.position_ms, runtime_ms = excluded.runtime_ms, played = excluded.played,
            play_count = excluded.play_count, last_played_at = excluded.last_played_at, updated_at = excluded.updated_at,
-           origin = excluded.origin`
-      : `INSERT INTO jellyfin_playstate (user_uuid, profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           origin = excluded.origin, last_played_kind = excluded.last_played_kind`
+      : `INSERT INTO jellyfin_playstate (user_uuid, profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin, last_played_kind)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (user_uuid, profile, video_id) DO UPDATE SET
            position_ms = EXCLUDED.position_ms, runtime_ms = EXCLUDED.runtime_ms, played = EXCLUDED.played,
            play_count = EXCLUDED.play_count, last_played_at = EXCLUDED.last_played_at, updated_at = EXCLUDED.updated_at,
-           origin = EXCLUDED.origin`;
-    await this.runQuery(query, [userUUID, profile, videoId, row.positionMs, row.runtimeMs, row.played ? 1 : 0, row.playCount, row.lastPlayedAt, row.updatedAt, row.origin]);
+           origin = EXCLUDED.origin, last_played_kind = EXCLUDED.last_played_kind`;
+    await this.runQuery(query, [userUUID, profile, videoId, row.positionMs, row.runtimeMs, row.played ? 1 : 0, row.playCount, row.lastPlayedAt, row.updatedAt, row.origin, row.lastPlayedAt === null ? null : row.lastPlayedKind ?? 'viewing']);
   }
 
   async insertWatch(userUUID: string, profile: string, videoId: string, watchedAt: number, origin: string | null): Promise<boolean> {
