@@ -274,6 +274,12 @@ function firstSight(seen: Set<string>, meta: any): boolean {
   return true;
 }
 
+function memberItem(meta: any, catalog: CatalogRef, serverId: string, parentId: string, landscape: boolean): any {
+  const item = metaToBaseItem(meta, catalog.type, serverId, parentId);
+  if (landscape) showLandscape([item]);
+  return item;
+}
+
 function catalogOffersNone(catalog: CatalogRef): boolean {
   const extra = (catalog.extra ?? []).find((e: any) => e?.name === 'genre');
   return Array.isArray(extra?.options) && extra.options.includes('None');
@@ -397,9 +403,7 @@ export async function boxSetMembers(
       served.push(meta);
     }
     for (const meta of servedOrder(served, page)) {
-      const item = metaToBaseItem(meta, catalog.type, serverId, parentId);
-      if (landscape) showLandscape([item]);
-      collected.push(item);
+      collected.push(memberItem(meta, catalog, serverId, parentId, landscape));
       nextIndex += 1;
     }
     from += page.items.length;
@@ -478,6 +482,7 @@ async function mixedMembers(args: {
 
   const buffers: any[][] = sources.map(() => []);
   const ended = sources.map(() => false);
+  const landscapes = sources.map(({ catalog }) => isLandscapeCatalog(config, catalog));
   const stalled = sources.map(() => false);
   const failures = resumed?.failures ? [...resumed.failures] : sources.map(() => 0);
   const chunk = Math.max(10, Math.ceil((toSkip + limit) / count));
@@ -543,9 +548,7 @@ async function mixedMembers(args: {
       toSkip -= 1;
       continue;
     }
-    const item = metaToBaseItem(meta, sources[i].catalog.type, serverId, parentId);
-    if (isLandscapeCatalog(config, sources[i].catalog)) showLandscape([item]);
-    collected.push(item);
+    collected.push(memberItem(meta, sources[i].catalog, serverId, parentId, landscapes[i]));
     sourceOf.push(i);
     nextIndex += 1;
   }
