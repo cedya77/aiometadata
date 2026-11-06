@@ -155,7 +155,7 @@ export type PlaylistChange =
   | { op: 'remove'; id: string; itemIds: string[] }
   | { op: 'move'; id: string; itemId: string; to: number };
 
-export type ChangeOutcome = { ok: true; id?: string; added?: number } | { ok: false; status: 400 | 404; error: string };
+export type ChangeOutcome = { ok: true; id?: string; added?: number; left?: number } | { ok: false; status: 400 | 404; error: string };
 
 export function dashboardPlaylistChange(userUUID: string, profile: string | null, change: PlaylistChange) {
   return asProfile(userUUID, profile, async (config): Promise<ChangeOutcome> => {
@@ -174,7 +174,7 @@ export function dashboardPlaylistChange(userUUID: string, profile: string | null
         const outcome = await addTitles(owner, config, change.id, change.itemIds, change.position);
         if (outcome === 'missing') return gone;
         if (outcome === 'full') return { ok: false, status: 400, error: `A playlist holds up to ${playlistLimits().items} titles` };
-        return { ok: true, added: outcome.added };
+        return { ok: true, added: outcome.added, left: outcome.left };
       }
       case 'remove':
         return (await removeTitles(owner, change.id, change.itemIds)) ? { ok: true } : gone;

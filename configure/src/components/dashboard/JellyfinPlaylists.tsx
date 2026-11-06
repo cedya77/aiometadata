@@ -30,6 +30,9 @@ const failed = (error: unknown, fallback: string) => toast.error(error instanceo
 
 const titlesLabel = (n: number) => `${n.toLocaleString()} ${n === 1 ? "title" : "titles"}`;
 
+const addedNote = (added: number, left: number, playlistName: string) =>
+  !added ? `${playlistName} already has these` : left ? `Added ${titlesLabel(added)} to ${playlistName}, which is now full; ${titlesLabel(left)} left out` : `Added ${titlesLabel(added)} to ${playlistName}`;
+
 /** What a choice adds: a film, a whole show, a season, or the episodes picked. */
 export interface PlaylistChoice {
   key: string;
@@ -61,8 +64,8 @@ export function AddToPlaylistPanel({ userUUID, profile, choices, onDone }: { use
   const add = async (id: string, playlistName: string) => {
     setBusy(id);
     try {
-      const { added = 0 } = await change(userUUID, profile, { op: "add", id, itemIds: choice.itemIds });
-      toast.success(added ? `Added ${titlesLabel(added)} to ${playlistName}` : `${playlistName} already has these`);
+      const { added = 0, left = 0 } = await change(userUUID, profile, { op: "add", id, itemIds: choice.itemIds });
+      toast.success(addedNote(added, left, playlistName));
       onDone();
     } catch (error) {
       failed(error, "Could not add to the playlist");
@@ -104,7 +107,8 @@ export function AddToPlaylistPanel({ userUUID, profile, choices, onDone }: { use
         ) : preview.playlists.length === 0 ? (
           <p className="px-3 py-1 text-xs text-muted-foreground">No playlists yet. Name one below.</p>
         ) : preview.playlists.map((playlist) => {
-          const note = !playlist.fits ? "Too full" : !playlist.adds ? "Has all of these" : playlist.has ? `Has ${playlist.has}, adds ${playlist.adds}` : `Adds ${playlist.adds}`;
+          const fresh = preview.titles - playlist.has;
+          const note = !playlist.fits ? "Too full" : !playlist.adds ? "Has all of these" : playlist.adds < fresh ? `Room for ${playlist.adds} of ${fresh}` : playlist.has ? `Has ${playlist.has}, adds ${playlist.adds}` : `Adds ${playlist.adds}`;
           return (
             <button key={playlist.id} type="button" disabled={Boolean(busy) || !playlist.adds || !playlist.fits} onClick={() => void add(playlist.id, playlist.name)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-transparent">
               <span className="min-w-0 flex-1 truncate">{playlist.name}</span>
@@ -225,8 +229,8 @@ function AddTitles({ userUUID, profile, playlistId, playlistName }: { userUUID: 
   const add = async (choice: PlaylistChoice) => {
     setBusy(choice.key);
     try {
-      const { added = 0 } = await change(userUUID, profile, { op: "add", id: playlistId, itemIds: choice.itemIds });
-      toast.success(added ? `Added ${titlesLabel(added)} to ${playlistName}` : `${playlistName} already has these`);
+      const { added = 0, left = 0 } = await change(userUUID, profile, { op: "add", id: playlistId, itemIds: choice.itemIds });
+      toast.success(addedNote(added, left, playlistName));
     } catch (error) {
       failed(error, "Could not add to the playlist");
     } finally {

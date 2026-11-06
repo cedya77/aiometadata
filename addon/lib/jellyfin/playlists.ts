@@ -363,7 +363,7 @@ export function titlesToAdd(owner: Owner, config: any, ids: string[]): Promise<s
   return playableIds(owner.userUUID, config, serverIdFor(owner.userUUID), ids);
 }
 
-export type AddOutcome = { playlist: Playlist; added: number } | 'missing' | 'full';
+export type AddOutcome = { playlist: Playlist; added: number; left: number } | 'missing' | 'full';
 
 /** Null when the user already has as many as allowed. */
 export async function createPlaylist(owner: Owner, config: any, name: string, ids: string[]): Promise<Playlist | null> {
@@ -395,9 +395,11 @@ export async function addTitles(owner: Owner, config: any, id: string, ids: stri
   const added = await playableIds(owner.userUUID, config, serverIdFor(owner.userUUID), ids);
   let full = false;
   let count = 0;
+  let left = 0;
   const updated = await changePlaylist(owner, id, (current) => {
     full = false;
     count = 0;
+    left = 0;
     const room = itemsPerPlaylist() - current.items.length;
     const fresh = withoutRepeats(added, current.items);
     if (!fresh.length) return null;
@@ -405,6 +407,7 @@ export async function addTitles(owner: Owner, config: any, id: string, ids: stri
       full = true;
       return null;
     }
+    left = Math.max(0, fresh.length - room);
     fresh.splice(room);
     const at = position === null || !Number.isFinite(position) ? current.items.length : Math.min(Math.max(0, position), current.items.length);
     const items = [...current.items];
@@ -414,7 +417,7 @@ export async function addTitles(owner: Owner, config: any, id: string, ids: stri
   });
   if (!updated) return 'missing';
   if (full) return 'full';
-  return { playlist: updated, added: count };
+  return { playlist: updated, added: count, left };
 }
 
 export async function removeTitles(owner: Owner, id: string, entryIds: string[]): Promise<Playlist | null> {
