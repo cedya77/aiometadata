@@ -1,5 +1,5 @@
 import { mapWithConcurrency } from '../../utils/concurrency';
-import { asProfile, playOf } from './dashboard';
+import { asProfile, itemImageUrl as imageOf, playOf } from './dashboard';
 import { clientRequest } from './context';
 import { normaliseJellyfinId } from './idsCodec';
 import { imageTag } from './imageTags';
@@ -48,9 +48,6 @@ export interface DashboardEntry {
 }
 
 export const isPlaylistId = (value: unknown): value is string => typeof value === 'string' && PLAYLIST_ID.test(value);
-
-const imageOf = (userUUID: string, id: unknown, tag: unknown, kind = 'Primary'): string | null =>
-  id && tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(id))}/Images/${kind}?tag=${encodeURIComponent(String(tag))}` : null;
 
 function entryOf(userUUID: string, item: any): DashboardEntry {
   const episode = item.Type === 'Episode';

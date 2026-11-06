@@ -1511,8 +1511,7 @@ export async function dashboardCalendar(userUUID: string, profile: string | null
     const { readCalendar } = require('./index');
     const items: any[] | null = await readCalendar(userUUID, config, from, end);
     if (!items) return null;
-    const image = (id: unknown, type: string, tag: unknown): string | null =>
-      id && tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(id))}/Images/${type}?tag=${encodeURIComponent(String(tag))}` : null;
+    const image = (id: unknown, type: string, tag: unknown): string | null => itemImageUrl(userUUID, id, tag, type);
     return items
       .filter((item) => item?.Type === 'Episode')
       .map((item) => ({
@@ -1734,6 +1733,9 @@ function sameItem(a: string | null, b: string): boolean {
   return Boolean(a) && normaliseJellyfinId(a) === normaliseJellyfinId(b);
 }
 
+export const itemImageUrl = (userUUID: string, id: unknown, tag: unknown, kind = 'Primary'): string | null =>
+  id && tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(id))}/Images/${kind}?tag=${encodeURIComponent(String(tag))}` : null;
+
 export function playOf(data: any) {
   return {
     played: data?.Played === true,
@@ -1829,8 +1831,7 @@ export async function dashboardTitle(userUUID: string, profile: string | null, r
     if (!read) return null;
     const { meta, item, episodes, seasons: builtSeasons } = read;
     const watches = await titleWatches(userUUID, config, meta, item, episodes).catch(() => new Map<string, number[]>());
-    const image = (id: unknown, type: string, tag: unknown): string | null =>
-      id && tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(id))}/Images/${type}?tag=${encodeURIComponent(String(tag))}` : null;
+    const image = (id: unknown, type: string, tag: unknown): string | null => itemImageUrl(userUUID, id, tag, type);
     const now = Date.now();
     const list = episodes.map((ep: any) => ({
       id: String(ep.Id),
@@ -1917,7 +1918,7 @@ export async function dashboardPerson(userUUID: string, profile: string | null, 
       died: item.EndDate ?? null,
       birthplace: Array.isArray(item.ProductionLocations) && item.ProductionLocations.length ? item.ProductionLocations.join(', ') : null,
       knownFor: item.KnownForType ?? null,
-      photo: tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(item.Id))}/Images/Primary?tag=${encodeURIComponent(String(tag))}` : null,
+      photo: itemImageUrl(userUUID, item.Id, tag),
       credits: credits.map((meta: any) => ({ type: meta.type === 'movie' ? 'movie' : 'series', year: yearFrom(meta.released ?? meta.releaseInfo), roles: Array.isArray(meta._personTypes) ? meta._personTypes : [] })),
     };
   });
@@ -1932,8 +1933,7 @@ export async function dashboardPersonTitles(userUUID: string, profile: string | 
     const types = kind === 'all' ? 'Movie,Series' : kind === 'movie' ? 'Movie' : 'Series';
     const from = Math.max(0, offset);
     const { items, total, next } = await readPersonTitles(userUUID, config, personId, types, roles, from, Math.min(100, Math.max(1, limit)), ascending);
-    const image = (id: unknown, tag: unknown): string | null =>
-      id && tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(id))}/Images/Primary?tag=${encodeURIComponent(String(tag))}` : null;
+    const image = (id: unknown, tag: unknown): string | null => itemImageUrl(userUUID, id, tag);
     return {
       offset: from,
       total,
