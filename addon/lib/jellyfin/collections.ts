@@ -258,10 +258,16 @@ interface MemberCursor {
 // A catalog that fails this many reads in a row is passed over, as one that stays down would block the rest.
 const FAILED_READS_BEFORE_SKIP = 2;
 
-const memberCursors = new LRUCache<string, MemberCursor>({
-  max: 50,
+const cursorCache = <T extends { seen: Set<string> }>(): LRUCache<string, T> => new LRUCache<string, T>({
+  max: 1000,
+  maxSize: envInt('JELLYFIN_FOLDER_CURSOR_IDS', 200000, 25001),
+  sizeCalculation: (cursor) => cursor.seen.size + 1,
   ttl: envInt('JELLYFIN_FOLDER_CURSOR_TTL', 600, 30) * 1000,
 });
+
+// One budget for both walks, as the setting describes; their keys never meet.
+const cursors = cursorCache<MemberCursor | MixCursor>();
+const memberCursors = cursors as unknown as LRUCache<string, MemberCursor>;
 const MEMBER_CURSOR_MAX_IDS = 25000;
 const catalogPageSize = (): number => envInt('CATALOG_LIST_ITEMS_SIZE', 20, 1);
 
@@ -445,10 +451,7 @@ interface MixCursor {
   seen: Set<string>;
 }
 
-const mixCursors = new LRUCache<string, MixCursor>({
-  max: 50,
-  ttl: envInt('JELLYFIN_FOLDER_CURSOR_TTL', 600, 30) * 1000,
-});
+const mixCursors = cursors as unknown as LRUCache<string, MixCursor>;
 
 /** Several sources taken in turn: one title each when interleaved, one page each when alternating. */
 async function mixedMembers(args: {
