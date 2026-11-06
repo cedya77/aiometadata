@@ -1,6 +1,6 @@
 import type { TagDef } from '@/contexts/config';
 
-export type TagRules = Partial<Pick<TagDef, 'viewingHours' | 'allowDownloads' | 'hideKeywords' | 'hideWords' | 'hideGenres'>>;
+export type TagRules = Partial<Pick<TagDef, 'viewingHours' | 'allowDownloads' | 'hideKeywords' | 'hideWords' | 'hideGenres' | 'language'>>;
 export type ViewingHours = NonNullable<TagDef['viewingHours']>;
 
 export const HOUR_PRESETS: Array<{ label: string; hours: ViewingHours | null }> = [

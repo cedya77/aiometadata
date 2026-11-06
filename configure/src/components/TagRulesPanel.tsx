@@ -1,12 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Ban, ChevronRight, Clock, Download, Minus, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { Ban, ChevronRight, Clock, Download, Languages, Minus, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { TmdbKeywordPicker } from '@/components/settings/TmdbKeywordPicker';
 import { cn } from '@/lib/utils';
 import { AGE_RATING_ORDER } from '@/lib/ageRatings';
+import { languageOptions } from '@/data/languages';
 import { TAG_COLORS, TAG_COLOR_KEYS } from '@/lib/tagColors';
 import { HOUR_PRESETS, QUICK_HIDE_KEYWORDS, hiddenSummary, inWindow, nowMinute, samePreset, stepTime, type TagRules, type ViewingHours } from '@/lib/tagRules';
 import { MAX_TAG_NAME_LENGTH, type TagColorKey, type TagDef } from '@/contexts/config';
@@ -14,7 +16,10 @@ import { MAX_TAG_NAME_LENGTH, type TagColorKey, type TagDef } from '@/contexts/c
 const RATINGS = ['None', ...AGE_RATING_ORDER];
 const SEGMENTS = Array.from({ length: 48 }, (_, i) => i);
 
-type Section = 'rating' | 'hide' | 'hours';
+type Section = 'rating' | 'language' | 'hide' | 'hours';
+
+// The select's value for a tag that follows the configuration's language.
+const SAME_LANGUAGE = 'same';
 
 interface TagRulesPanelProps {
   tag: TagDef;
@@ -255,6 +260,7 @@ export function TagRulesPanel({ tag, timezone, profiles, onRename, onRecolor, on
   const rating = tag.ageRating && tag.ageRating !== 'None' ? tag.ageRating : 'None';
   const downloads = tag.allowDownloads !== false;
   const hours = tag.viewingHours;
+  const language = languageOptions.find((option) => option.value === tag.language);
   const hoursSummary = hours
     ? `${hours.start}-${hours.end} · ${inWindow(hours, now) ? 'open now' : `closed, opens ${hours.start}`}`
     : 'Any time';
@@ -327,6 +333,29 @@ export function TagRulesPanel({ tag, timezone, profiles, onRename, onRecolor, on
         )}
         <p className="text-xs text-muted-foreground">
           {rating === 'None' ? 'Every title, whatever its rating.' : `Titles rated ${rating} and lower, in catalogs and search.`}
+        </p>
+      </RuleRow>
+
+      <RuleRow
+        icon={<Languages className="h-3.5 w-3.5" />}
+        title="Language"
+        summary={language ? language.label : 'Same as the configuration'}
+        open={open === 'language'}
+        onToggle={() => toggle('language')}
+      >
+        <Select value={language ? language.value : SAME_LANGUAGE} onValueChange={(value) => onRules({ language: value === SAME_LANGUAGE ? undefined : value })}>
+          <SelectTrigger aria-label={`Language of ${tag.name}`} className="w-full sm:w-[240px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={SAME_LANGUAGE}>Same as the configuration</SelectItem>
+            {languageOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Titles, summaries and catalog names in this language for whoever reads through this tag: its install link (?tag=) or a user it is on. With two tags in different languages, the first one listed here wins.
         </p>
       </RuleRow>
 
