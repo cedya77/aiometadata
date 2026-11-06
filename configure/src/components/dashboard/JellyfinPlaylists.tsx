@@ -45,6 +45,8 @@ export interface PlaylistChoice {
 export function AddToPlaylistPanel({ userUUID, profile, choices, onDone }: { userUUID: string; profile: string | null; choices: PlaylistChoice[]; onDone: () => void }) {
   const [picked, setPicked] = useState(0);
   const [preview, setPreview] = useState<JellyfinPlaylistPreview | null>(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [name, setName] = useState("");
   const readPreview = useJellyfinPlaylistPreview();
@@ -54,12 +56,13 @@ export function AddToPlaylistPanel({ userUUID, profile, choices, onDone }: { use
   useEffect(() => {
     let live = true;
     setPreview(null);
+    setPreviewFailed(false);
     readPreview(userUUID, profile, choice.itemIds)
       .then((read) => { if (live) setPreview(read); })
-      .catch((error) => { if (live) failed(error, "Could not read the playlists"); });
+      .catch(() => { if (live) setPreviewFailed(true); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userUUID, profile, choice.key]);
+  }, [userUUID, profile, choice.key, attempt]);
 
   const add = async (id: string, playlistName: string) => {
     setBusy(id);
@@ -102,7 +105,9 @@ export function AddToPlaylistPanel({ userUUID, profile, choices, onDone }: { use
       )}
       <div className="max-h-72 space-y-0.5 overflow-y-auto [scrollbar-width:thin]">
         <p className="px-3 text-[11px] uppercase tracking-wide text-muted-foreground">{preview ? `To a playlist · ${titlesLabel(preview.titles)}` : "To a playlist"}</p>
-        {!preview ? (
+        {previewFailed ? (
+          <p className="px-3 py-1 text-xs text-muted-foreground">Could not read the playlists. <button type="button" onClick={() => setAttempt((n) => n + 1)} className="text-blue-300 hover:text-blue-200">Retry</button></p>
+        ) : !preview ? (
           <div className="space-y-1 px-1">{[0, 1].map((i) => <Skeleton key={i} className="h-9 w-full rounded-xl" />)}</div>
         ) : preview.playlists.length === 0 ? (
           <p className="px-3 py-1 text-xs text-muted-foreground">No playlists yet. Name one below.</p>
@@ -120,7 +125,7 @@ export function AddToPlaylistPanel({ userUUID, profile, choices, onDone }: { use
       <form className="flex items-center gap-2 px-1" onSubmit={(event) => { event.preventDefault(); void create(); }}>
         <label htmlFor="new-playlist" className="sr-only">New playlist name</label>
         <input id="new-playlist" value={name} onChange={(event) => setName(event.target.value)} maxLength={200} placeholder="New playlist" className="h-9 min-w-0 flex-1 rounded-xl border border-white/10 bg-background/60 px-3 text-sm outline-none focus:border-blue-400/60" />
-        <Button type="submit" size="sm" className="h-9 rounded-xl" disabled={!name.trim() || Boolean(busy) || !preview}>
+        <Button type="submit" size="sm" className="h-9 rounded-xl" disabled={!name.trim() || Boolean(busy) || (!preview && !previewFailed)}>
           {busy === "new" ? <Loader2 className="size-4 animate-spin" /> : "Make"}
         </Button>
       </form>
