@@ -276,7 +276,7 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
   const [offset, setOffset] = useState(0);
   const page = useJellyfinPlaylist(userUUID, profile, current?.id ?? null, offset, { activeTab });
   const pageData = page.data && page.data.id === current?.id ? page.data : undefined;
-  const entries = usePagedRows(pageData, (held) => held.entries, ["dashboard", "jellyfin", "playlists", userUUID, profile, current?.id ?? null], current?.id ?? "");
+  const [entries] = usePagedRows(pageData, (held) => held.entries, ["dashboard", "jellyfin", "playlists", userUUID, profile, current?.id ?? null], current?.id ?? "");
   const items = useMemo(() => entries.map(itemOf), [entries]);
   const total = pageData?.count ?? current?.count ?? 0;
   const more = entries.length < total;

@@ -46,7 +46,7 @@ export function useSwipe(index: number, count: number, onPick: (i: number) => vo
  * Rows read a page at a time, kept in order. A page read again after a change re-reads every page held, so a
  * move or removal on one page shows on all of them; a new reset key starts over.
  */
-export function usePagedRows<P extends { offset: number }, R>(page: P | undefined, rowsOf: (page: P) => R[], base: readonly unknown[], resetKey: string): R[] {
+export function usePagedRows<P extends { offset: number }, R>(page: P | undefined, rowsOf: (page: P) => R[], base: readonly unknown[], resetKey: string) {
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<R[]>([]);
   const loaded = useRef<number[]>([]);
@@ -73,5 +73,5 @@ export function usePagedRows<P extends { offset: number }, R>(page: P | undefine
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
-  return rows;
+  return [rows, setRows] as const;
 }
