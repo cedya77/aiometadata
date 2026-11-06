@@ -1,5 +1,6 @@
 import { envInt } from '../../utils/envNumber';
 import { parseStremioId } from './idsCodec';
+import { bulkTimes } from './bulkMarks';
 import { groupBySpelling, getPlaystatesAcross, upsertPlaystateEverywhere, videoIdAliases } from './aliases';
 import { scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
@@ -470,6 +471,9 @@ async function queueDrift(userUUID: string, config: any, source: DriftSource, vi
 }
 
 export async function pullDrift(userUUID: string, source: DriftSource, viewings: Viewing[]): Promise<number> {
+  const byProfile = new Map<string, Viewing[]>();
+  for (const viewing of viewings) byProfile.set(viewing.profile, [...(byProfile.get(viewing.profile) ?? []), viewing]);
+  const bulk = new Map([...byProfile].map(([profile, list]) => [profile, bulkTimes(list.flatMap((viewing) => viewing.ids.map((videoId) => ({ at: viewing.at, videoId }))))]));
   let added = 0;
   for (const viewing of viewings) {
     const video = spellingFor(source.service, viewing.ids);
@@ -478,7 +482,7 @@ export async function pullDrift(userUUID: string, source: DriftSource, viewings:
       if (row && Number(row.played) === 1) {
         for (const id of viewing.ids) await database.logWatch(userUUID, profile, id, { at: viewing.at, kind: 'dated' }, true, source.service);
       } else {
-        await upsertPlaystateEverywhere(userUUID, video, { positionMs: 0, played: true, lastPlayedAt: viewing.at, origin: source.service, watch: { at: viewing.at, kind: 'dated' } }, profile, viewing.ids);
+        await upsertPlaystateEverywhere(userUUID, video, { positionMs: 0, played: true, lastPlayedAt: viewing.at, lastPlayedKind: bulk.get(viewing.profile)?.has(viewing.at) ? 'mark' : 'viewing', origin: source.service, watch: { at: viewing.at, kind: 'dated' } }, profile, viewing.ids);
       }
       added += 1;
     }
