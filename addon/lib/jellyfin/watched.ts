@@ -5,7 +5,6 @@ import { envInt } from '../../utils/envNumber';
 import { credentialFor, sourceFor } from './trackerSource';
 import { generationOf, videoIdFor } from './resume';
 import { playCountOf } from './dto';
-import { bulkTimes } from './bulkMarks';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -48,7 +47,6 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
       for (const row of group) groupOf.set(String(row.video_id), group);
     }
     const byShow = new Map<string, any[]>();
-    let bulk = new Set<number>();
     if (batchMs > 0) {
       // A batch can run on past this page, so the rest of the window below its last time is read once for every show.
       const rest = records.length === batch && last ? await database.listPlayedBetween(userUUID, profile, Number(last.last_played_at) - batchMs, Number(last.last_played_at)).catch(() => []) : [];
@@ -58,7 +56,6 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
         if (held) held.push(row);
         else byShow.set(key, [row]);
       };
-      bulk = bulkTimes([...carry, ...records, ...rest].map((row) => ({ at: Number(row.last_played_at), videoId: String(row.video_id) })));
       for (const row of [...carry, ...records, ...rest]) {
         const id = String(row.video_id);
         const episodeAt = id.lastIndexOf(':');
@@ -68,16 +65,21 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
       }
     }
     carry = last ? records.filter((row) => Number(row.last_played_at) === Number(last.last_played_at)) : [];
+    const pending: Array<{ lead: any; leadParsed: any; watchedAt: number; bases: Set<string> }> = [];
     for (const r of records) {
-      if (rows.length >= shows) break;
+      if (rows.length + pending.length >= shows) break;
       const parsed = parseStremioId(String(r.video_id));
       if (!parsed || parsed.episode === null || parsed.episode === undefined) continue;
       const group = groupOf.get(String(r.video_id)) ?? [r];
       if (seen.has(parsed.base) || group.some((row: any) => handled.has(String(row.video_id)))) continue;
+      const bases = new Set<string>([parsed.base]);
       for (const row of group) {
         handled.add(String(row.video_id));
         const base = parseStremioId(String(row.video_id))?.base;
-        if (base) seen.add(base);
+        if (base) {
+          seen.add(base);
+          bases.add(base);
+        }
       }
       for (const alias of await videoIdAliases(String(r.video_id))) {
         const base = parseStremioId(alias)?.base;
@@ -93,7 +95,7 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
         leadParsed = spelled;
       }
       const at = Number(r.last_played_at) || 0;
-      let watchedAt = at || Number(r.updated_at) || 0;
+      const watchedAt = at || Number(r.updated_at) || 0;
       if (batchMs > 0 && at > 0) {
         const together = (byShow.get(leadParsed.base) ?? [])
           .filter((row) => Number(row.last_played_at) >= at - batchMs && Number(row.last_played_at) <= at)
@@ -104,19 +106,42 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
           lead = { ...lead, video_id: videoId };
           leadParsed = spelled;
         }
-        // A bulk mark never takes a show back behind an episode this server saw played before it, as when a tracker
-        // returns old marks dated the day they were sent.
-        if (bulk.has(at)) {
-          const own = await database.listOwnPlayedBefore(userUUID, profile, leadParsed.base, at - batchMs).catch(() => []);
-          for (const row of own) {
-            const spelled = regularEpisode(String(row.video_id));
-            if (!spelled || spelled.base !== leadParsed.base || !isAfter(spelled, leadParsed)) continue;
-            lead = { ...lead, video_id: String(row.video_id) };
-            leadParsed = spelled;
-            watchedAt = Number(row.last_played_at);
-          }
-        }
       }
+      pending.push({ lead, leadParsed, watchedAt, bases });
+    }
+    // A mark only moves a show on, so one led by a mark goes back to its latest viewing unless a mark since is further,
+    // as when a tracker returns old marks dated the day they were sent.
+    const markLed = pending.filter((entry) => entry.lead.last_played_kind === 'mark');
+    const played: any[] = markLed.length
+      ? await database.listPlayedAmong(userUUID, profile, [...new Set(markLed.flatMap((entry) => [...entry.bases]))]).catch(() => [])
+      : [];
+    // Episode numbers compare only within one id, since ids can number a show differently.
+    const byBase = new Map<string, Array<{ row: any; spelled: any }>>();
+    for (const row of played) {
+      const spelled = regularEpisode(String(row.video_id));
+      if (spelled) byBase.set(spelled.base, [...(byBase.get(spelled.base) ?? []), { row, spelled }]);
+    }
+    for (const entry of markLed) {
+      let best: { viewing: { row: any; spelled: any }; pick: { row: any; spelled: any } } | null = null;
+      for (const base of entry.bases) {
+        const own = byBase.get(base) ?? [];
+        let viewing: { row: any; spelled: any } | null = null;
+        for (const held of own) {
+          if (held.row.last_played_kind !== 'mark' && (!viewing || Number(held.row.last_played_at) > Number(viewing.row.last_played_at))) viewing = held;
+        }
+        if (!viewing) continue;
+        let pick = viewing;
+        for (const held of own) {
+          if (held.row.last_played_kind === 'mark' && Number(held.row.last_played_at) >= Number(viewing.row.last_played_at) && isAfter(held.spelled, pick.spelled)) pick = held;
+        }
+        if (!best || Number(viewing.row.last_played_at) > Number(best.viewing.row.last_played_at)) best = { viewing, pick };
+      }
+      if (!best) continue;
+      entry.lead = { ...entry.lead, video_id: String(best.pick.row.video_id) };
+      entry.leadParsed = best.pick.spelled;
+      entry.watchedAt = Number(best.pick.row.last_played_at);
+    }
+    for (const { lead, leadParsed, watchedAt } of pending) {
       rows.push({
         metaId: leadParsed.base,
         videoId: String(lead.video_id),

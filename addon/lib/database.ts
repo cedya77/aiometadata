@@ -1639,15 +1639,22 @@ class Database {
     return row?.video_id ? { videoId: String(row.video_id), at: Number(row.last_played_at) } : null;
   }
 
-  /** Episodes of one show this server saw played before a time, leaving out history a sync copied from a tracker. */
-  async listOwnPlayedBefore(userUUID: string, profile: string, base: string, before: number): Promise<Array<{ video_id: string; last_played_at: number }>> {
-    const p = this.type === 'sqlite' ? () => '?' : ((n = 0) => () => `$${++n}`)();
-    const query = `SELECT video_id, last_played_at FROM jellyfin_playstate WHERE user_uuid = ${p()} AND profile = ${p()}
-      AND (origin = 'server' OR ((origin IS NULL OR origin = 'play') AND ABS(updated_at - last_played_at) < 2000))
-      AND played = 1 AND last_played_at IS NOT NULL AND video_id >= ${p()} AND video_id < ${p()}`;
-    // A key range on the id, with the time checked here, so the lookup reads only this show's rows.
-    const rows: Array<{ video_id: string; last_played_at: number }> = (await this.allQuery(query, [userUUID, profile, `${base}:`, `${base};`])) || [];
-    return rows.filter((row) => Number(row.last_played_at) < before);
+  /** The dated, played episodes of these shows, under the bases given. */
+  async listPlayedAmong(userUUID: string, profile: string, bases: string[]): Promise<Array<{ video_id: string; last_played_at: number; last_played_kind: string | null }>> {
+    const out: any[] = [];
+    const escaped = (base: string) => `${base.replace(/[\\%_]/g, (c) => `\\${c}`)}:%`;
+    for (let at = 0; at < bases.length; at += 100) {
+      const chunk = bases.slice(at, at + 100);
+      const p = this.type === 'sqlite' ? () => '?' : ((n = 0) => () => `$${++n}`)();
+      const scope = `user_uuid = ${p()} AND profile = ${p()}`;
+      // SQLite compares text by bytes, so a key range reads each show off the index; Postgres collations may not, so it matches by pattern.
+      const sqlite = this.type === 'sqlite';
+      const spelled = chunk.map(() => (sqlite ? `(video_id >= ${p()} AND video_id < ${p()})` : `video_id LIKE ${p()} ESCAPE '\\'`)).join(' OR ');
+      const query = `SELECT video_id, last_played_at, last_played_kind FROM jellyfin_playstate WHERE ${scope} AND played = 1 AND last_played_at IS NOT NULL AND (${spelled})`;
+      const params = sqlite ? chunk.flatMap((base) => [`${base}:`, `${base};`]) : chunk.map(escaped);
+      out.push(...((await this.allQuery(query, [userUUID, profile, ...params])) || []));
+    }
+    return out;
   }
 
   async listRecentlyPlayed(
@@ -1659,7 +1666,7 @@ class Database {
   ): Promise<Array<{ video_id: string; last_played_at: number; updated_at: number; origin: string | null }>> {
     const p = this.type === 'sqlite' ? () => '?' : ((n = 0) => () => `$${++n}`)();
     const params: any[] = [userUUID, profile, since];
-    let query = `SELECT video_id, last_played_at, updated_at, origin FROM jellyfin_playstate WHERE user_uuid = ${p()} AND profile = ${p()} AND played = 1 AND last_played_at >= ${p()} AND video_id LIKE '%:%:%'`;
+    let query = `SELECT video_id, last_played_at, last_played_kind, updated_at, origin FROM jellyfin_playstate WHERE user_uuid = ${p()} AND profile = ${p()} AND played = 1 AND last_played_at >= ${p()} AND video_id LIKE '%:%:%'`;
     if (after) {
       query += ` AND (last_played_at < ${p()} OR (last_played_at = ${p()} AND video_id > ${p()}))`;
       params.push(after.at, after.at, after.videoId);
@@ -1672,7 +1679,7 @@ class Database {
   /** Episodes played between two times. */
   async listPlayedBetween(userUUID: string, profile: string, from: number, to: number): Promise<Array<{ video_id: string; last_played_at: number }>> {
     const p = this.type === 'sqlite' ? () => '?' : ((n = 0) => () => `$${++n}`)();
-    const query = `SELECT video_id, last_played_at FROM jellyfin_playstate WHERE user_uuid = ${p()} AND profile = ${p()} AND played = 1 AND last_played_at >= ${p()} AND last_played_at <= ${p()} AND video_id LIKE '%:%:%'`;
+    const query = `SELECT video_id, last_played_at, last_played_kind FROM jellyfin_playstate WHERE user_uuid = ${p()} AND profile = ${p()} AND played = 1 AND last_played_at >= ${p()} AND last_played_at <= ${p()} AND video_id LIKE '%:%:%'`;
     return (await this.allQuery(query, [userUUID, profile, from, to])) || [];
   }
 
