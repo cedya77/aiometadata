@@ -251,8 +251,12 @@ interface MemberCursor {
   nextIndex: number;
   sourceIndex: number;
   sourceOffset: number;
+  failures: number;
   seen: Set<string>;
 }
+
+// A catalog that fails this many reads in a row is passed over, as one that stays down would block the rest.
+const FAILED_READS_BEFORE_SKIP = 2;
 
 const memberCursors = new LRUCache<string, MemberCursor>({
   max: 50,
@@ -345,9 +349,11 @@ export async function boxSetMembers(
   let from = 0;
   let seen: Set<string>;
   let toSkip = 0;
+  let failures = 0;
   if (held && held.nextIndex === startIndex) {
     sourceIndex = held.sourceIndex;
     from = held.sourceOffset;
+    failures = held.failures ?? 0;
     seen = new Set(held.seen);
   } else if (sources.length > 1) {
     seen = new Set<string>();
@@ -379,7 +385,7 @@ export async function boxSetMembers(
     const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings);
     const landscape = isLandscapeCatalog(config, catalog);
     const page = await fetchWindow(userUUID, catalog, from, toSkip + limit - collected.length, extras, keep, tags, filterKey)
-      .catch(() => ({ items: [] as any[], hasMore: false }));
+      .catch(() => ({ items: [] as any[], hasMore: false, failed: true }));
 
     const served: any[] = [];
     for (const meta of page.items) {
@@ -397,16 +403,24 @@ export async function boxSetMembers(
       nextIndex += 1;
     }
     from += page.items.length;
+    // A failed read is tried again on the next page, unless nothing has filled this one, which would end the client's paging.
+    if (page.failed) {
+      failures += 1;
+      if (collected.length > 0 && failures < FAILED_READS_BEFORE_SKIP) break;
+    } else {
+      failures = 0;
+    }
 
-    if (!page.hasMore || page.items.length === 0) {
+    if (page.failed || !page.hasMore || page.items.length === 0) {
       sourceIndex += 1;
       from = 0;
+      failures = 0;
     }
   }
 
   const more = sourceIndex < sources.length;
   if (more && collected.length > 0 && seen.size <= MEMBER_CURSOR_MAX_IDS) {
-    memberCursors.set(cursorKey, { nextIndex, sourceIndex, sourceOffset: from, seen });
+    memberCursors.set(cursorKey, { nextIndex, sourceIndex, sourceOffset: from, failures, seen });
   } else {
     memberCursors.delete(cursorKey);
   }
@@ -422,6 +436,7 @@ interface MixCursor {
   done: boolean[];
   turn: number;
   runLeft: number;
+  failures: number[];
   seen: Set<string>;
 }
 
@@ -462,6 +477,8 @@ async function mixedMembers(args: {
 
   const buffers: any[][] = sources.map(() => []);
   const ended = sources.map(() => false);
+  const stalled = sources.map(() => false);
+  const failures = resumed?.failures ? [...resumed.failures] : sources.map(() => 0);
   const chunk = Math.max(10, Math.ceil((toSkip + limit) / count));
   const randomized = new Set<number>();
   const sourceOf: number[] = [];
@@ -472,8 +489,16 @@ async function mixedMembers(args: {
     const { catalog } = sources[i];
     const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings);
     const window = await fetchWindow(userUUID, catalog, offsets[i], chunk, extrasOf(i), keep, tags, filterKey)
-      .catch(() => ({ items: [] as any[], hasMore: false, randomize: false }));
-    buffers[i] = window.items;
+      .catch(() => null);
+    buffers[i] = window?.items ?? [];
+    // A read that failed keeps what it got and is read again from there on the next page, until it has failed too often.
+    if (!window || window.failed) {
+      failures[i] += 1;
+      stalled[i] = failures[i] < FAILED_READS_BEFORE_SKIP;
+      ended[i] = true;
+      return;
+    }
+    failures[i] = 0;
     if (window.randomize) randomized.add(i);
     if (!window.hasMore) ended[i] = true;
   };
@@ -529,10 +554,10 @@ async function mixedMembers(args: {
     collected[k] = mixed[j];
   });
 
-  const finished = sources.map((_, i) => done[i] || (ended[i] && buffers[i].length === 0));
+  const finished = sources.map((_, i) => !stalled[i] && (done[i] || (ended[i] && buffers[i].length === 0)));
   const more = finished.some((f) => !f);
   if (more && collected.length > 0 && seen.size <= MEMBER_CURSOR_MAX_IDS) {
-    mixCursors.set(cursorKey, { nextIndex, offsets, done: finished, turn, runLeft, seen });
+    mixCursors.set(cursorKey, { nextIndex, offsets, done: finished, turn, runLeft, failures, seen });
   } else {
     mixCursors.delete(cursorKey);
   }
