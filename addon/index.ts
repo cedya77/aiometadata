@@ -8699,6 +8699,97 @@ addon.post("/api/dashboard/jellyfin/:userUUID/title/action", requireDashboardAdm
   }
 });
 
+const dashboardProfile = (value) => (typeof value === 'string' ? value : null);
+const dashboardItemIds = (value) => (Array.isArray(value) ? value.filter((id) => typeof id === 'string' && /^[0-9a-f-]{32,36}$/i.test(id)).slice(0, 500) : []);
+
+addon.get("/api/dashboard/jellyfin/:userUUID/playlists", requireDashboardAdmin, async (req, res) => {
+  try {
+    const payload = await require('./lib/jellyfin/dashboardPlaylists').dashboardPlaylists(String(req.params.userUUID), dashboardProfile(req.query.profile));
+    if (!payload) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the playlists' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/playlists/:playlistId", requireDashboardAdmin, async (req, res) => {
+  try {
+    const playlists = require('./lib/jellyfin/dashboardPlaylists');
+    if (!playlists.isPlaylistId(req.params.playlistId)) {
+      res.status(404).json({ error: 'No such playlist' });
+      return;
+    }
+    const offset = Math.max(0, parseInt(String(req.query.offset ?? 0), 10) || 0);
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? 20), 10) || 20));
+    const payload = await playlists.dashboardPlaylist(String(req.params.userUUID), dashboardProfile(req.query.profile), req.params.playlistId, offset, limit);
+    if (!payload || payload.missing) {
+      res.status(404).json({ error: payload ? 'No such playlist' : 'No such configuration' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the playlist' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/playlists/preview", requireDashboardAdmin, async (req, res) => {
+  try {
+    const itemIds = dashboardItemIds(req.body?.itemIds);
+    if (!itemIds.length) {
+      res.status(400).json({ error: 'Name the items to add' });
+      return;
+    }
+    const payload = await require('./lib/jellyfin/dashboardPlaylists').dashboardPlaylistPreview(String(req.params.userUUID), dashboardProfile(req.body?.profile), itemIds);
+    if (!payload) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the playlists' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/playlists/change", requireDashboardAdmin, async (req, res) => {
+  try {
+    const playlists = require('./lib/jellyfin/dashboardPlaylists');
+    const body = req.body ?? {};
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const id = body.id;
+    let change = null;
+    if (body.op === 'create' && name) change = { op: 'create', name, itemIds: dashboardItemIds(body.itemIds) };
+    else if (!playlists.isPlaylistId(id)) change = null;
+    else if (body.op === 'rename' && name) change = { op: 'rename', id, name };
+    else if (body.op === 'delete') change = { op: 'delete', id };
+    else if (body.op === 'add' && dashboardItemIds(body.itemIds).length) change = { op: 'add', id, itemIds: dashboardItemIds(body.itemIds), position: Number.isInteger(body.position) ? body.position : null };
+    else if (body.op === 'remove' && dashboardItemIds(body.itemIds).length) change = { op: 'remove', id, itemIds: dashboardItemIds(body.itemIds) };
+    else if (body.op === 'move' && dashboardItemIds([body.itemId]).length && Number.isInteger(body.to)) change = { op: 'move', id, itemId: body.itemId, to: body.to };
+    if (!change) {
+      res.status(400).json({ error: 'That playlist change could not be read' });
+      return;
+    }
+    const outcome = await playlists.dashboardPlaylistChange(String(req.params.userUUID), dashboardProfile(body.profile), change);
+    if (!outcome) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (!outcome.ok) {
+      res.status(outcome.status).json({ error: outcome.error });
+      return;
+    }
+    res.json(outcome);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to change the playlist' });
+  }
+});
+
 addon.post("/api/dashboard/jellyfin/:userUUID/progress/remove", requireDashboardAdmin, async (req, res) => {
   try {
     const videoId = typeof req.body?.videoId === 'string' && req.body.videoId.length <= 300 ? req.body.videoId : '';

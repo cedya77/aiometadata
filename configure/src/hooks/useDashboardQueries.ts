@@ -2179,6 +2179,113 @@ export function useJellyfinTitleAction() {
   };
 }
 
+export interface JellyfinPlaylistLimits {
+  playlists: number;
+  items: number;
+}
+
+export interface JellyfinPlaylistSummary {
+  id: string;
+  name: string;
+  count: number;
+  createdAt: number;
+  updatedAt: number;
+  image: string | null;
+}
+
+export interface JellyfinPlaylistEntry {
+  id: string;
+  kind: 'movie' | 'episode';
+  title: string;
+  subtitle: string | null;
+  image: string | null;
+  wide: string | null;
+  backdropUrl: string | null;
+  logoUrl: string | null;
+  overview: string | null;
+  year: string | null;
+  score: string | null;
+  genres: string[];
+  open: string;
+  played: boolean;
+  positionMs: number;
+  runtimeMs: number;
+  position: number;
+}
+
+export interface JellyfinPlaylistDetail extends JellyfinPlaylistSummary {
+  offset: number;
+  entries: JellyfinPlaylistEntry[];
+  more: boolean;
+  limits: JellyfinPlaylistLimits;
+}
+
+export interface JellyfinPlaylistPreview {
+  titles: number;
+  playlists: Array<{ id: string; name: string; count: number; has: number; adds: number; fits: boolean }>;
+}
+
+export type JellyfinPlaylistChange =
+  | { op: 'create'; name: string; itemIds: string[] }
+  | { op: 'rename'; id: string; name: string }
+  | { op: 'delete'; id: string }
+  | { op: 'add'; id: string; itemIds: string[]; position?: number }
+  | { op: 'remove'; id: string; itemIds: string[] }
+  | { op: 'move'; id: string; itemId: string; to: number };
+
+export function useJellyfinPlaylists(userUUID: string | null, profile: string | null, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<{ playlists: JellyfinPlaylistSummary[]; limits: JellyfinPlaylistLimits }>(
+    ['dashboard', 'jellyfin', 'playlists', userUUID, profile] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/playlists?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID), poll: false }
+  );
+}
+
+export const JELLYFIN_PLAYLIST_PAGE = 20;
+
+/** One page of a playlist's entries, with the playlist itself. */
+export function useJellyfinPlaylist(userUUID: string | null, profile: string | null, id: string | null, offset: number, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams({ offset: String(offset), limit: String(JELLYFIN_PLAYLIST_PAGE) });
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<JellyfinPlaylistDetail>(
+    ['dashboard', 'jellyfin', 'playlists', userUUID, profile, id, offset] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/playlists/${encodeURIComponent(id ?? '')}?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID && id), poll: false }
+  );
+}
+
+export function useJellyfinPlaylistPreview() {
+  const getHeaders = useApiHeaders();
+  return async (userUUID: string, profile: string | null, itemIds: string[]): Promise<JellyfinPlaylistPreview> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/playlists/preview`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemIds, profile: profile ?? undefined }),
+    });
+    if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || `Could not read the playlists (${response.status})`);
+    return response.json();
+  };
+}
+
+/** One change to a user's playlists; every playlist view reads again after it. */
+export function useJellyfinPlaylistChange() {
+  const getHeaders = useApiHeaders();
+  const queryClient = useQueryClient();
+  return async (userUUID: string, profile: string | null, change: JellyfinPlaylistChange): Promise<{ id?: string; added?: number }> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/playlists/change`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...change, profile: profile ?? undefined }),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(body?.error || `Could not change the playlist (${response.status})`);
+    void queryClient.invalidateQueries({ queryKey: ['dashboard', 'jellyfin', 'playlists', userUUID] });
+    return body ?? {};
+  };
+}
+
 export function useJellyfinClearResume() {
   const getHeaders = useApiHeaders();
   return async (userUUID: string, profileKey: string, videoId: string): Promise<void> => {

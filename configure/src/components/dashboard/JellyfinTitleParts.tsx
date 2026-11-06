@@ -91,7 +91,7 @@ export function DesktopTitleActions({ play, actions }: { play: React.ReactNode; 
 }
 
 /** A panel opened from the More menu, placed where the menu was and closed by a click outside or Escape. */
-function MenuPanel({ at, onClose, children }: { at: Anchor; onClose: () => void; children: React.ReactNode }) {
+export function MenuPanel({ at, onClose, children }: { at: Anchor; onClose: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState(at);
   useLayoutEffect(() => {
@@ -352,7 +352,7 @@ export function SeasonPills({ seasons, watched, selected, onSelect, onMenu }: { 
   );
 }
 
-export function EpisodeListRow({ ep, now, selecting, selected, busy, highlighted, onToggleSelect, onAction, onPlayOn, onDate }: {
+export function EpisodeListRow({ ep, now, selecting, selected, busy, highlighted, onToggleSelect, onAction, onPlayOn, onPlaylist, onDate }: {
   ep: JellyfinTitleEpisode;
   now: number;
   selecting: boolean;
@@ -362,6 +362,7 @@ export function EpisodeListRow({ ep, now, selecting, selected, busy, highlighted
   onToggleSelect: () => void;
   onAction: (action: JellyfinTitleAction) => void;
   onPlayOn: (at: Anchor) => void;
+  onPlaylist?: (at: Anchor) => void;
   onDate: (anchor: WatchDateAnchor) => void;
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -403,7 +404,7 @@ export function EpisodeListRow({ ep, now, selecting, selected, busy, highlighted
             {busy ? <Loader2 className="size-4 animate-spin" /> : <MoreHorizontal className="size-5" />}
           </button>
         )}
-        {menu && <ActionMenu at={menu} onClose={closeMenu} items={episodeMenuItems(ep, unaired, menu, onAction, onPlayOn)} />}
+        {menu && <ActionMenu at={menu} onClose={closeMenu} items={episodeMenuItems(ep, unaired, menu, onAction, onPlayOn, onPlaylist)} />}
       </div>
       {ep.overview && <p className="line-clamp-2 text-[13.5px] leading-normal text-[#f0eae3]/[0.62]">{ep.overview}</p>}
       {(ep.played || ep.positionMs > 0) && (

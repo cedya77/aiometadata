@@ -1734,7 +1734,7 @@ function sameItem(a: string | null, b: string): boolean {
   return Boolean(a) && normaliseJellyfinId(a) === normaliseJellyfinId(b);
 }
 
-function playOf(data: any) {
+export function playOf(data: any) {
   return {
     played: data?.Played === true,
     playCount: Number(data?.PlayCount) || 0,

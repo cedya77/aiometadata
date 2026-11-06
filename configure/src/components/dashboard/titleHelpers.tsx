@@ -1,5 +1,5 @@
 import { useEffect, useState, type RefObject } from "react";
-import { Cast, Check, CheckCheck, Undo2 } from "lucide-react";
+import { Cast, Check, CheckCheck, ListPlus, Undo2 } from "lucide-react";
 import type { JellyfinTitle, JellyfinTitleAction, JellyfinTitleEpisode } from "@/hooks/useDashboardQueries";
 import type { MenuItem } from "./JellyfinShared";
 import { sizedArt } from "./art";
@@ -64,12 +64,13 @@ export function useCenteredTab(track: RefObject<HTMLDivElement | null>, selected
   }, [track, selected]);
 }
 
-export function episodeMenuItems(ep: JellyfinTitleEpisode, unaired: boolean, at: Anchor, onAction: (action: JellyfinTitleAction) => void, onPlayOn: (at: Anchor) => void): MenuItem[] {
+export function episodeMenuItems(ep: JellyfinTitleEpisode, unaired: boolean, at: Anchor, onAction: (action: JellyfinTitleAction) => void, onPlayOn: (at: Anchor) => void, onPlaylist?: (at: Anchor) => void): MenuItem[] {
   return [
     ...(unaired ? [] : [{ icon: <Cast className="size-4" />, label: "Play on a device", onSelect: () => onPlayOn(at) }]),
     { icon: <Check className="size-4" />, label: "Mark watched", onSelect: () => onAction("played") },
     { icon: <Undo2 className="size-4" />, label: "Mark unwatched", onSelect: () => onAction("unplayed") },
     ...(ep.season === 0 ? [] : [{ icon: <CheckCheck className="size-4" />, label: "Watched up to here", onSelect: () => onAction("playedUpTo") }]),
+    ...(unaired || !onPlaylist ? [] : [{ icon: <ListPlus className="size-4" />, label: "Add to playlist", onSelect: () => onPlaylist(at) }]),
   ];
 }
 

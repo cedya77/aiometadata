@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { useQueryClient, type Query } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Bookmark, BookmarkCheck, CalendarPlus, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Clapperboard, Clock, Film, ImageOff, LayoutGrid, Loader2, MoreHorizontal, PencilLine, Play, Plus, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
+import { ArrowLeft, Bookmark, BookmarkCheck, CalendarPlus, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Clapperboard, Clock, Film, ImageOff, LayoutGrid, ListPlus, Loader2, MoreHorizontal, PencilLine, Play, Plus, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinTitle, useJellyfinTitleAction, useJellyfinWatchDate, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitlePerson, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
@@ -17,7 +17,8 @@ import { artPalette, inkGround, type ArtPalette } from "./artPalette";
 import { cx, code, heroArt, HERO_DESKTOP_SHARE, HERO_DESKTOP_UPSCALE, HERO_PHONE_SHARE, episodeMenuItems, GLASS_PILL, orderedSeasons, PHONE_PLAY_PILL, PLAY_PILL, playLabel, seasonLabel, sizedStill, SOLID_AT, under, useCenteredTab, usePhone, type Anchor, type SeasonItem } from "./titleHelpers";
 import { TrailerPlayer } from "./JellyfinTrailer";
 import { playableTrailer, remoteTrailers } from "./trailers";
-import { Credits, DesktopTitleActions, EpisodeListRow, FactsBlock, MoodLine, PhoneTitleActions, SeasonPills, StarPicker, TitleSkeleton, type TitleActionSpec } from "./JellyfinTitleParts";
+import { Credits, DesktopTitleActions, EpisodeListRow, FactsBlock, MenuPanel, MoodLine, PhoneTitleActions, SeasonPills, StarPicker, TitleSkeleton, type TitleActionSpec } from "./JellyfinTitleParts";
+import { AddToPlaylistPanel, type PlaylistChoice } from "./JellyfinPlaylists";
 
 const SECTION_TITLE = "text-xl font-bold sm:text-3xl";
 
@@ -69,7 +70,7 @@ function Overview({ text, phone }: { text: string; phone: boolean }) {
 
 
 
-function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, className, onToggleSelect, onAction, onPlayOn, onDate }: {
+function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, className, onToggleSelect, onAction, onPlayOn, onPlaylist, onDate }: {
   ep: JellyfinTitleEpisode;
   now: number;
   selecting: boolean;
@@ -80,6 +81,7 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
   onToggleSelect: () => void;
   onAction: (action: JellyfinTitleAction) => void;
   onPlayOn: (at: Anchor) => void;
+  onPlaylist?: (at: Anchor) => void;
   onDate: (anchor: WatchDateAnchor) => void;
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -138,7 +140,7 @@ function EpisodeCard({ ep, now, selecting, selected, busy, highlighted, classNam
             <MoreHorizontal className="size-4" />
           </button>
         )}
-        {menu && <ActionMenu at={menu} onClose={closeMenu} items={episodeMenuItems(ep, unaired, menu, onAction, onPlayOn)} />}
+        {menu && <ActionMenu at={menu} onClose={closeMenu} items={episodeMenuItems(ep, unaired, menu, onAction, onPlayOn, onPlaylist)} />}
       </div>
       {ep.overview && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{ep.overview}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -406,6 +408,7 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
   const [seasonMenu, setSeasonMenu] = useState<{ season: SeasonItem; at: { x: number; y: number } } | null>(null);
   const closeSeasonMenu = useCallback(() => setSeasonMenu(null), []);
   const [selecting, setSelecting] = useState(false);
+  const [adding, setAdding] = useState<{ choices: PlaylistChoice[]; at: Anchor; after?: () => void } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [layout, setLayout] = useRemembered<"row" | "grid">("jellyfin.title.episodes", "row");
   const phone = usePhone();
@@ -552,6 +555,7 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
     busy: busy === ep.id + "played" || busy === ep.id + "unplayed" || busy === ep.id + "playedUpTo",
     onToggleSelect: () => toggleSelect(ep.id),
     onPlayOn: (at: Anchor) => setRemote({ target: episodeTarget(ep), at }),
+    onPlaylist: (at: Anchor) => setAdding({ choices: [{ key: ep.id, label: [code(ep), ep.name].filter(Boolean).join(" "), itemIds: [ep.id] }], at }),
     onDate: (anchor: WatchDateAnchor) => openDate(ep.id, ep.watches[0] ?? null, anchor),
     onAction: (action: JellyfinTitleAction) => void run(action, [ep.id], action === "playedUpTo" ? `Watched up to ${code(ep)}` : action === "played" ? `${code(ep)} marked watched` : `${code(ep)} marked unwatched`, action === "playedUpTo" ? undefined : action === "played"),
   });
@@ -626,6 +630,19 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
       run: () => openDate(title.id, title.watches[0] ?? null, centred()),
     }] : []),
   ];
+  // A show offers the whole of it, the season on show and the next episode; a film is itself.
+  const playlistChoices: PlaylistChoice[] = !title ? [] : isSeries ? [
+    { key: "show", label: "Whole show", detail: `${title.aired} aired episodes, season by season, no specials`, itemIds: [title.id] },
+    ...(seasonId && shownSeason !== null ? [{ key: `season:${shownSeason}`, label: seasonLabel(shownSeason), detail: `${ready.length} aired ${ready.length === 1 ? "episode" : "episodes"}`, itemIds: [seasonId] }] : []),
+    ...(next ? [{ key: `next:${next.id}`, label: `${code(next)} only`, detail: next.name ?? undefined, itemIds: [next.id] }] : []),
+  ] : [{ key: "film", label: title.title, itemIds: [title.id] }];
+  if (title) titleActions.push({
+    key: "playlist",
+    label: "Add to playlist",
+    placement: "more",
+    icon: <ListPlus className="size-4" />,
+    panel: (close) => <AddToPlaylistPanel userUUID={userUUID} profile={profile} choices={playlistChoices} onDone={close} />,
+  });
   const playText = isSeries && next ? playLabel(next) : "Play on…";
 
   return createPortal(
@@ -797,12 +814,22 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
         </div>
       </div>
 
+      {adding && (
+        <MenuPanel at={adding.at} onClose={() => setAdding(null)}>
+          <AddToPlaylistPanel userUUID={userUUID} profile={profile} choices={adding.choices} onDone={() => { adding.after?.(); setAdding(null); }} />
+        </MenuPanel>
+      )}
       {selecting && (
         <div className="fixed inset-x-0 bottom-6 z-[110] flex justify-center px-4">
           <div className="glass flex items-center gap-2 rounded-full p-1.5 pl-5 shadow-2xl animate-fade-in">
             <span className="mr-2 text-sm tabular-nums">{selected.size} selected</span>
             <button type="button" disabled={!selected.size || busy !== null} onClick={() => void bulk("played")} className="inline-flex h-10 items-center gap-1.5 rounded-full bg-white px-5 text-sm font-semibold text-black disabled:opacity-50"><Check className="size-4" /> Watched</button>
             <button type="button" disabled={!selected.size || busy !== null} onClick={() => void bulk("unplayed")} className="inline-flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-medium hover:bg-white/10 disabled:opacity-50"><Undo2 className="size-4" /> Unwatched</button>
+            <button type="button" disabled={!selected.size} onClick={(event) => {
+              const ids = episodes.filter((ep) => selected.has(ep.id)).map((ep) => ep.id);
+              const at = event.currentTarget.getBoundingClientRect();
+              setAdding({ choices: [{ key: ids.join(","), label: `${ids.length} ${ids.length === 1 ? "episode" : "episodes"}`, itemIds: ids }], at: { x: at.left, y: Math.max(16, at.top - 360) }, after: endSelect });
+            }} className="inline-flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-medium hover:bg-white/10 disabled:opacity-50"><ListPlus className="size-4" /> Playlist</button>
             <button type="button" onClick={endSelect} aria-label="Cancel" className="flex size-10 items-center justify-center rounded-full hover:bg-white/10"><X className="size-4" /></button>
           </div>
         </div>

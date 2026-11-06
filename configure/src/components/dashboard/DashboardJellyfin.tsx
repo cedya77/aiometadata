@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import JellyfinCalendar from "./JellyfinCalendar";
+import JellyfinPlaylists from "./JellyfinPlaylists";
 import JellyfinLibrary from "./JellyfinLibrary";
 import JellyfinYear from "./JellyfinYear";
 import JellyfinTitlePage from "./JellyfinTitle";
@@ -11,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Activity as ActivityIcon, Bookmark, CalendarDays, ChevronLeft, History, LayoutGrid, Loader2, MoreHorizontal, Network, Search, Sparkles, TableProperties, Tv, Upload, Users } from "lucide-react";
+import { Activity as ActivityIcon, Bookmark, CalendarDays, ChevronLeft, History, LayoutGrid, ListVideo, Loader2, MoreHorizontal, Network, Search, Sparkles, TableProperties, Tv, Upload, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useJellyfinClearResume,
@@ -44,6 +45,7 @@ const SECTIONS: Array<{ key: JellyfinSection; label: string; icon: typeof Tv; un
   { key: "shows", label: "Shows", icon: Tv },
   { key: "calendar", label: "Calendar", icon: CalendarDays },
   { key: "history", label: "History", icon: History },
+  { key: "playlists", label: "Playlists", icon: ListVideo },
   { key: "year", label: "Year", icon: Sparkles },
   { key: "trackers", label: "Trackers", icon: Network },
 ];
@@ -393,6 +395,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
             {played.rows.length > 0 && <><Sentinel key={played.rows.length} onVisible={played.loadMore} /><MoreFooter paged={played} /></>}
           </Shelf>
         )}
+        {section === "playlists" && <JellyfinPlaylists key={`playlists:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} activeTab={activeTab} />}
         {section === "year" && <JellyfinYear key={`year:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} activeTab={activeTab} />}
         {section === "trackers" && <JellyfinSync key={`sync:${profile ?? ""}`} userUUID={userUUID} profile={profile} profileName={profileName} watched={watched} rows={data.sync} activeTab={activeTab} />}
       </div>
