@@ -1141,6 +1141,9 @@ class Database {
       await this.runQuery(deleteTrustedQuery, [userUUID]);
       await require('./jellyfin/tokens').revokeUserTokens(userUUID).catch(() => undefined);
       await require('./jellyfin/context').forgetSeen([userUUID]).catch(() => undefined);
+      await this.deleteViewingData(userUUID).catch((error: any) =>
+        logger.error(`Viewing data of ${userUUID} was not fully deleted: ${error?.message || error}`)
+      );
 
       const deleteAliasQuery = this.type === 'sqlite'
         ? 'DELETE FROM user_aliases WHERE user_uuid = ?'
@@ -1156,6 +1159,29 @@ class Database {
     } catch (error) {
       logger.error(`Error deleting user ${userUUID}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * What a configuration's people watched and kept. A tracker's mirror stays: it is keyed by the tracker account,
+   * which another configuration can share.
+   */
+  async deleteViewingData(userUUID: string): Promise<void> {
+    const sqlite = this.type === 'sqlite';
+    const mark = sqlite ? '?' : '$1';
+    for (const table of ['jellyfin_watchlist', 'jellyfin_favourites', 'jellyfin_ratings', 'jellyfin_dropped', 'jellyfin_preferences', 'jellyfin_playlists']) {
+      await this.runQuery(`DELETE FROM ${table} WHERE user_uuid = ${mark}`, [userUUID]);
+    }
+    // One person can hold tens of thousands of these, so they go in batches with room to serve requests between.
+    for (const table of ['jellyfin_playstate', 'jellyfin_watches']) {
+      for (;;) {
+        const result = await this.runQuery(
+          `DELETE FROM ${table} WHERE user_uuid = ${mark} AND video_id IN (SELECT video_id FROM ${table} WHERE user_uuid = ${mark} LIMIT 2000)`,
+          sqlite ? [userUUID, userUUID] : [userUUID]
+        );
+        if (!Number(sqlite ? result?.changes : result?.rowCount)) break;
+        await new Promise((resolve) => setImmediate(resolve));
+      }
     }
   }
 
