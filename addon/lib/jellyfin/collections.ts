@@ -321,12 +321,13 @@ export async function boxSetMembers(
     sources.map(({ catalog, genre: served }) => [catalog.type, catalog.id, served ?? '']),
   ]);
   const mode = mergeModeOf(folder.mergeMode, FOLDER_MERGE_MODE);
+  const shuffled = Boolean(folder.randomizePerPage) && folder.sources.length > 1;
   if (sources.length > 1 && mode !== 'sequential') {
     const page = await mixedMembers({
       userUUID, config, serverId, parentId, sources, mode, startIndex, limit, includeItemTypes, officialRatings, tags, filterKey,
       cursorKey: `${mode}:${cursorKey}`,
     });
-    return folder.randomizePerPage ? { ...page, items: shuffleMetas(page.items) } : page;
+    return shuffled ? { ...page, items: shuffleMetas(page.items) } : page;
   }
   const held = memberCursors.get(cursorKey);
 
@@ -401,7 +402,7 @@ export async function boxSetMembers(
     memberCursors.delete(cursorKey);
   }
 
-  return { items: folder.randomizePerPage ? shuffleMetas(collected) : collected, hasMore: more };
+  return { items: shuffled ? shuffleMetas(collected) : collected, hasMore: more };
 }
 
 // Where a mixed walk stopped: each source's position, whose turn is next, and
