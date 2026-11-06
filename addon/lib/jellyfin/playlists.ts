@@ -79,7 +79,8 @@ async function countPlaylists(owner: Owner): Promise<number> {
 }
 
 export async function hasPlaylists(req: any, config: any): Promise<boolean> {
-  return (await countPlaylists(ownerOf(req, config)).catch(() => 0)) > 0;
+  const owner = ownerOf(req, config);
+  return database.hasPlaylists(owner.userUUID, owner.profile).catch(() => false);
 }
 
 // One owner's edits run one after another here; a write is kept only if no other instance changed the playlist since it was read.

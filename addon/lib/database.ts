@@ -2957,6 +2957,13 @@ class Database {
     return Number((await this.allPrimaryQuery(query, [userUUID, profile]))[0]?.n) || 0;
   }
 
+  async hasPlaylists(userUUID: string, profile: string): Promise<boolean> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT 1 FROM jellyfin_playlists WHERE user_uuid = ? AND profile = ? LIMIT 1'
+      : 'SELECT 1 FROM jellyfin_playlists WHERE user_uuid = $1 AND profile = $2 LIMIT 1';
+    return (await this.allPrimaryQuery(query, [userUUID, profile])).length > 0;
+  }
+
   async getPlaylist(userUUID: string, profile: string, id: string): Promise<any | null> {
     const query = this.type === 'sqlite'
       ? 'SELECT id, name, items, created_at, updated_at FROM jellyfin_playlists WHERE user_uuid = ? AND profile = ? AND id = ?'
