@@ -472,7 +472,11 @@ async function queueDrift(userUUID: string, config: any, source: DriftSource, vi
 
 export async function pullDrift(userUUID: string, source: DriftSource, viewings: Viewing[]): Promise<number> {
   const byProfile = new Map<string, Viewing[]>();
-  for (const viewing of viewings) byProfile.set(viewing.profile, [...(byProfile.get(viewing.profile) ?? []), viewing]);
+  for (const viewing of viewings) {
+    const group = byProfile.get(viewing.profile);
+    if (group) group.push(viewing);
+    else byProfile.set(viewing.profile, [viewing]);
+  }
   const bulk = new Map([...byProfile].map(([profile, list]) => [profile, bulkTimes(list.flatMap((viewing) => viewing.ids.map((videoId) => ({ at: viewing.at, videoId }))))]));
   let added = 0;
   for (const viewing of viewings) {

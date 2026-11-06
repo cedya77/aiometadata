@@ -20,7 +20,10 @@ export function datedBy<T extends Dated>(held: T, incoming: T, heldIsLocal = fal
 export function sortPlayedKinds<T extends Dated & { profile: string; videoId: string; played: boolean }>(rows: T[]): void {
   const byProfile = new Map<string, T[]>();
   for (const row of rows) {
-    if (row.lastPlayedAt) byProfile.set(row.profile, [...(byProfile.get(row.profile) ?? []), row]);
+    if (!row.lastPlayedAt) continue;
+    const group = byProfile.get(row.profile);
+    if (group) group.push(row);
+    else byProfile.set(row.profile, [row]);
   }
   for (const group of byProfile.values()) {
     const unsorted = group.filter((row) => !row.lastPlayedKind);

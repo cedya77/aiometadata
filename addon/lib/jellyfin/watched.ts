@@ -119,7 +119,10 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
     const byBase = new Map<string, Array<{ row: any; spelled: any }>>();
     for (const row of played) {
       const spelled = regularEpisode(String(row.video_id));
-      if (spelled) byBase.set(spelled.base, [...(byBase.get(spelled.base) ?? []), { row, spelled }]);
+      if (!spelled) continue;
+      const group = byBase.get(spelled.base);
+      if (group) group.push({ row, spelled });
+      else byBase.set(spelled.base, [{ row, spelled }]);
     }
     for (const entry of markLed) {
       let best: { viewing: { row: any; spelled: any }; pick: { row: any; spelled: any } } | null = null;
