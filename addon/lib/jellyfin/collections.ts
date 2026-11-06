@@ -9,7 +9,7 @@ import { viewerAccountOwner, viewerReadsExtensions } from './viewer';
 import { profileTags } from './profiles';
 import { findFolder, subFolders, type CollectionDraft, type FolderDraft, type SourceDraft } from '../collectionBuilder/types';
 import { FOLDER_MERGE_MODE, mergeModeOf, type MergeMode } from '../collectionBuilder/mergeModes';
-import { shuffleMetas } from '../../utils/mergedCatalog';
+import { mergedDedupKey, shuffleMetas } from '../../utils/mergedCatalog';
 
 // A builder collection is a library of box sets; a folder is one box set whose sources are its members.
 
@@ -260,6 +260,16 @@ const memberCursors = new LRUCache<string, MemberCursor>({
 });
 const MEMBER_CURSOR_MAX_IDS = 25000;
 
+// An anime season entry carries its series' IMDb id, which its sibling seasons share, so it is known by its own id.
+const ANIME_ID = /^(mal|kitsu|anilist|anidb):/;
+
+function firstSight(seen: Set<string>, meta: any): boolean {
+  const key = ANIME_ID.test(String(meta?.id ?? '')) ? String(meta.id) : mergedDedupKey(meta);
+  if (!key || seen.has(key)) return false;
+  seen.add(key);
+  return true;
+}
+
 function catalogOffersNone(catalog: CatalogRef): boolean {
   const extra = (catalog.extra ?? []).find((e: any) => e?.name === 'genre');
   return Array.isArray(extra?.options) && extra.options.includes('None');
@@ -373,8 +383,7 @@ export async function boxSetMembers(
 
     const served: any[] = [];
     for (const meta of page.items) {
-      if (!meta?.id || seen.has(String(meta.id))) continue;
-      seen.add(String(meta.id));
+      if (!meta?.id || !firstSight(seen, meta)) continue;
       if (toSkip > 0) {
         toSkip -= 1;
         continue;
@@ -502,8 +511,7 @@ async function mixedMembers(args: {
       runLeft -= 1;
       if (runLeft <= 0) pass();
     }
-    if (!meta?.id || seen.has(String(meta.id))) continue;
-    seen.add(String(meta.id));
+    if (!meta?.id || !firstSight(seen, meta)) continue;
     if (toSkip > 0) {
       toSkip -= 1;
       continue;
