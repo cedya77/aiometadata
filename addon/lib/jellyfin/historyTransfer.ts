@@ -527,9 +527,8 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     // One past the playlist limit is left out, which writes nothing.
     counts.playlists[outcome.kind === 'full' ? 'unchanged' : outcome.kind] += 1;
     if (outcome.kind === 'unchanged' || outcome.kind === 'full') continue;
-    if (outcome.kind === 'updated') {
-      const into = held.find((playlist: any) => playlist.name.trim().toLowerCase() === row.name.trim().toLowerCase());
-      into.items = [...into.items, ...outcome.adds];
+    if (outcome.into) {
+      outcome.into.items = [...outcome.into.items, ...outcome.adds];
     } else {
       playlistsHeld.set(profile, [...held, { name: row.name, items: outcome.adds }]);
     }

@@ -583,11 +583,11 @@ export function playlistTitleId(title: PlaylistTitle): string {
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** What importing a playlist does to the ones held: a name already there takes the titles it lacks, else it is made. */
-export function importOutcome(held: Array<Pick<Playlist, 'name' | 'items'>>, incoming: { name: string; items: string[] }): { kind: 'added' | 'updated' | 'unchanged' | 'full'; adds: string[] } {
+export function importOutcome<P extends Pick<Playlist, 'name' | 'items'>>(held: P[], incoming: { name: string; items: string[] }): { kind: 'added' | 'updated' | 'unchanged' | 'full'; adds: string[]; into?: P } {
   const into = held.find((playlist) => sameName(playlist.name, incoming.name));
   const room = itemsPerPlaylist() - (into?.items.length ?? 0);
   const adds = withoutRepeats(incoming.items, into?.items ?? []).slice(0, Math.max(0, room));
-  if (into) return { kind: adds.length ? 'updated' : 'unchanged', adds };
+  if (into) return { kind: adds.length ? 'updated' : 'unchanged', adds, into };
   if (held.length >= playlistsPerUser()) return { kind: 'full', adds: [] };
   return { kind: 'added', adds };
 }
@@ -607,9 +607,8 @@ export async function importPlaylist(userUUID: string, profile: string, incoming
   await inTurn(owner, async () => {
     for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
       const held = await listPlaylists(owner);
-      const { kind, adds } = importOutcome(held, incoming);
-      if (kind === 'updated') {
-        const into = held.find((playlist) => sameName(playlist.name, incoming.name))!;
+      const { kind, adds, into } = importOutcome(held, incoming);
+      if (kind === 'updated' && into) {
         if (await database.updatePlaylist(userUUID, profile, { ...into, items: [...into.items, ...adds], updatedAt: nextVersion(into) }, into.updatedAt)) return;
         continue;
       }
