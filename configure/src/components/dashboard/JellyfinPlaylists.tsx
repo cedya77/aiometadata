@@ -251,7 +251,9 @@ function AddTitles({ userUUID, profile, playlistId, playlistName }: { userUUID: 
       {picked ? (
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => setPicked(null)} className="inline-flex h-9 items-center rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground">‹ Results</button>
-          {!shown ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : choices.map((choice) => (
+          {!shown && title.isError ? (
+            <span className="text-xs text-muted-foreground">Could not load this title. <button type="button" onClick={() => void title.refetch()} className="text-blue-300 hover:text-blue-200">Retry</button></span>
+          ) : !shown ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : choices.map((choice) => (
             <button key={choice.key} type="button" disabled={Boolean(busy)} onClick={() => void add(choice)} className={CHIP}>
               {busy === choice.key ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} {choice.label}
             </button>
@@ -259,7 +261,9 @@ function AddTitles({ userUUID, profile, playlistId, playlistName }: { userUUID: 
         </div>
       ) : asked.length >= 2 && (
         <div className="flex flex-wrap gap-2">
-          {found.isFetching && !results.length ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : results.length === 0 ? <span className="text-xs text-muted-foreground">Nothing found for “{asked}”.</span> : results.map((result) => (
+          {found.isFetching && !results.length ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : found.isError && found.data?.query !== asked ? (
+            <span className="text-xs text-muted-foreground">The search failed. <button type="button" onClick={() => void found.refetch()} className="text-blue-300 hover:text-blue-200">Retry</button></span>
+          ) : results.length === 0 ? <span className="text-xs text-muted-foreground">Nothing found for “{asked}”.</span> : results.map((result) => (
             <button key={`${result.type}:${result.id}`} type="button" onClick={() => setPicked({ id: result.id, type: result.type })} className={CHIP}>
               {result.type === "movie" ? <Film className="size-3.5" /> : <Tv className="size-3.5" />} {result.title}{result.year ? <span className="text-muted-foreground">{result.year}</span> : null}
             </button>
