@@ -65,6 +65,8 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
   const wallSentinel = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
 
+  const shownList = useRef(`${tab}:${kind}`);
+  shownList.current = `${tab}:${kind}`;
   const [rows, setRows] = usePagedRows(current ? data : undefined, (page) => page.rows, ["dashboard", "jellyfin", "library", userUUID, profile, tab, kind], `${tab}:${kind}`);
   useEffect(() => {
     setOffset(0);
@@ -103,10 +105,12 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
 
   const pickUp = async (row: JellyfinLibraryRow) => {
     setPicking(row.metaId);
+    const from = shownList.current;
     try {
       const done = await undrop(userUUID, profile, row.metaId);
       if (!done) throw new Error(`${row.title} was not dropped here`);
-      setRows((held) => held.filter((r) => r.metaId !== row.metaId));
+      // Taken off the list it was picked up from, not one switched to while the request ran.
+      if (shownList.current === from) setRows((held) => held.filter((r) => r.metaId !== row.metaId));
       toast.success(`${row.title} picked back up`, { description: "It can come back to Next Up and the calendar." });
       void queryClient.invalidateQueries({ queryKey: ["dashboard", "jellyfin", "library", userUUID] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard", "jellyfin", "calendar", userUUID] });
