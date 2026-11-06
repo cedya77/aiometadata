@@ -372,6 +372,14 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
     if (event.key === "ArrowUp" || event.key === "ArrowLeft") { event.preventDefault(); setIndex(Math.max(0, at - 1)); }
   };
   const loading = !list.data || Boolean(current && !pageData && entries.length === 0);
+  const listFailed = !list.data && list.isError && !list.isFetching;
+  const pageFailed = Boolean(current && !pageData && entries.length === 0) && page.isError && !page.isFetching;
+  const failedPanel = (
+    <div className="flex h-[260px] flex-col items-center justify-center gap-3 text-center">
+      <p className="text-sm text-muted-foreground">{listFailed ? "Could not load the playlists." : "Could not load this playlist."}</p>
+      <button type="button" onClick={() => void (listFailed ? list.refetch() : page.refetch())} className="glass h-8 rounded-full px-4 text-xs font-medium hover:bg-white/15">Retry</button>
+    </div>
+  );
   const nameForm = naming && (
     <form className="flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); saveName(); }}>
       <label htmlFor="playlist-name" className="sr-only">{naming.mode === "new" ? "New playlist name" : "Playlist name"}</label>
@@ -425,7 +433,9 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
                 {naming?.mode !== "new" && <button type="button" onClick={() => setNaming({ mode: "new", name: "" })} className={PILL}><Plus className="size-3.5" /> New playlist</button>}
               </div>
               {naming && nameForm}
-              {!list.data
+              {listFailed
+                ? failedPanel
+                : !list.data
                 ? Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-[84px] rounded-xl" />)
                 : playlists.map((playlist) => (
                   <button key={playlist.id} type="button" aria-pressed={playlist.id === current?.id} onClick={() => setSelected(playlist.id)} className={cx("flex items-center gap-3 rounded-xl p-2.5 text-left ring-1 transition", playlist.id === current?.id ? "bg-blue-500/10 ring-blue-400/50" : "bg-white/[0.03] ring-white/[0.06] hover:bg-white/[0.06]")}>
@@ -440,11 +450,11 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
             </div>
             <div className="glass flex min-w-0 flex-col gap-4 rounded-2xl p-4 sm:p-5">
               {!current ? (
-                <p className="py-10 text-center text-sm text-muted-foreground">{list.data ? "No playlists yet. Make one on the left, or open any title and use Add to playlist." : ""}</p>
+                <p className="py-10 text-center text-sm text-muted-foreground">{list.data ? "No playlists yet. Make one on the left, or open any title and use Add to playlist." : listFailed ? "The playlists could not be loaded. Retry on the left." : ""}</p>
               ) : (
                 <>
                   <AddTitles key={current.id} userUUID={userUUID} profile={profile} playlistId={current.id} playlistName={current.name} />
-                  {loading ? (
+                  {pageFailed ? failedPanel : loading ? (
                     <div className="space-y-2">{Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-[66px] rounded-xl" />)}</div>
                   ) : entries.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-muted-foreground">Nothing in it yet. Add titles above, or open any title and use Add to playlist.</p>
@@ -476,7 +486,7 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
           )}
         </div>
 
-        {loading ? (
+        {listFailed || pageFailed ? failedPanel : loading ? (
           <div className={cx("grid gap-5", view === "deck" && "lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]")}>
             {view === "deck" && <div className="flex flex-col gap-1">{Array.from({ length: 7 }, (_, i) => <Skeleton key={i} className="h-[60px] rounded-xl" />)}</div>}
             <div className="flex h-[330px] items-center justify-center sm:h-[470px]"><Skeleton className="aspect-[2/3] w-40 rounded-xl sm:w-56" /></div>
