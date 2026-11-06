@@ -215,11 +215,12 @@ function AddTitles({ userUUID, profile, playlistId, playlistName }: { userUUID: 
   useEffect(() => setPicked(null), [asked]);
   const found = useJellyfinFind(userUUID, profile, asked, null, { activeTab: "jellyfin" });
   const title = useJellyfinTitle(userUUID, profile, picked, { activeTab: "jellyfin" });
-  const choices: PlaylistChoice[] = !picked || !title.data ? [] : title.data.type === "movie"
-    ? [{ key: "film", label: [title.data.title, title.data.year].filter(Boolean).join(" · "), itemIds: [title.data.id] }]
+  const shown = picked && !title.isPlaceholderData ? title.data : undefined;
+  const choices: PlaylistChoice[] = !shown ? [] : shown.type === "movie"
+    ? [{ key: "film", label: [shown.title, shown.year].filter(Boolean).join(" · "), itemIds: [shown.id] }]
     : [
-      { key: "show", label: `${title.data.title}, whole show (${title.data.aired} episodes)`, itemIds: [title.data.id] },
-      ...title.data.seasons.filter((season) => season.season > 0).map((season) => ({ key: `season:${season.season}`, label: `Season ${season.season} (${season.count} episodes)`, itemIds: [season.id] })),
+      { key: "show", label: `${shown.title}, whole show (${shown.aired} episodes)`, itemIds: [shown.id] },
+      ...shown.seasons.filter((season) => season.season > 0).map((season) => ({ key: `season:${season.season}`, label: `Season ${season.season} (${season.count} episodes)`, itemIds: [season.id] })),
     ];
   const add = async (choice: PlaylistChoice) => {
     setBusy(choice.key);
@@ -241,7 +242,7 @@ function AddTitles({ userUUID, profile, playlistId, playlistName }: { userUUID: 
       {picked ? (
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => setPicked(null)} className="inline-flex h-9 items-center rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground">‹ Results</button>
-          {!title.data ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : choices.map((choice) => (
+          {!shown ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : choices.map((choice) => (
             <button key={choice.key} type="button" disabled={Boolean(busy)} onClick={() => void add(choice)} className={CHIP}>
               {busy === choice.key ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} {choice.label}
             </button>
