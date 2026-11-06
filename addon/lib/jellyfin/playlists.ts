@@ -69,6 +69,11 @@ async function getPlaylist(owner: Owner, id: string): Promise<Playlist | null> {
   return row ? fromRow(row) : null;
 }
 
+async function anyProfilePlaylist(userUUID: string, id: string): Promise<Playlist | null> {
+  const row = (await database.listAllPlaylists(userUUID)).find((held: any) => String(held.id) === id);
+  return row ? fromRow(row) : null;
+}
+
 async function countPlaylists(owner: Owner): Promise<number> {
   return database.countPlaylists(owner.userUUID, owner.profile);
 }
@@ -268,7 +273,7 @@ async function playlistDto(req: any, deps: PlaylistRouteDeps, playlist: Playlist
 export async function playlistImages(req: any, deps: PlaylistRouteDeps, descriptor: Descriptor): Promise<any | undefined> {
   if (descriptor.k !== 'playlist') return undefined;
   const config = await loadConfig(req);
-  const playlist = config ? await getPlaylist(ownerOf(req, config), descriptor.p) : null;
+  const playlist = config ? (await getPlaylist(ownerOf(req, config), descriptor.p)) ?? (await anyProfilePlaylist(String(req.params.userUUID), descriptor.p)) : null;
   if (!playlist) return undefined;
   await playlistDto(req, deps, playlist);
   return recallImages(serverIdFor(String(req.params.userUUID)), playlistItemId(playlist));
