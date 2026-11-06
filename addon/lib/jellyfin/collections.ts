@@ -263,6 +263,7 @@ const memberCursors = new LRUCache<string, MemberCursor>({
   ttl: envInt('JELLYFIN_FOLDER_CURSOR_TTL', 600, 30) * 1000,
 });
 const MEMBER_CURSOR_MAX_IDS = 25000;
+const catalogPageSize = (): number => envInt('CATALOG_LIST_ITEMS_SIZE', 20, 1);
 
 // An anime season entry carries its series' IMDb id, which its sibling seasons share, so it is known by its own id.
 const ANIME_ID = /^(mal|kitsu|anilist|anidb):/;
@@ -468,7 +469,7 @@ async function mixedMembers(args: {
   const { userUUID, config, serverId, parentId, sources, mode, startIndex, limit, includeItemTypes, officialRatings, tags, filterKey, cursorKey } = args;
   const count = sources.length;
   const extrasOf = (i: number): Record<string, string> => (sources[i].genre ? { genre: sources[i].genre as string } : {});
-  const runLength = (i: number): number => knownPageLength(userUUID, sources[i].catalog, extrasOf(i), tags) ?? (parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20);
+  const runLength = (i: number): number => knownPageLength(userUUID, sources[i].catalog, extrasOf(i), tags) ?? catalogPageSize();
   const held = mixCursors.get(cursorKey);
   const resumed = held && held.nextIndex === startIndex ? held : null;
   const offsets = resumed ? [...resumed.offsets] : sources.map(() => 0);
