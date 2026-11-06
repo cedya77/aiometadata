@@ -453,6 +453,8 @@ async function mixedMembers(args: {
   const buffers: any[][] = sources.map(() => []);
   const ended = sources.map(() => false);
   const chunk = Math.max(10, Math.ceil((toSkip + limit) / count));
+  const randomized = new Set<number>();
+  const sourceOf: number[] = [];
 
   // Positions count every title a source handed over, repeats too, so the next window starts where this one stopped.
   const fill = async (i: number): Promise<void> => {
@@ -460,8 +462,9 @@ async function mixedMembers(args: {
     const { catalog } = sources[i];
     const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings);
     const window = await fetchWindow(userUUID, catalog, offsets[i], chunk, extrasOf(i), keep, tags, filterKey)
-      .catch(() => ({ items: [] as any[], hasMore: false }));
-    buffers[i] = servedOrder(window.items, window);
+      .catch(() => ({ items: [] as any[], hasMore: false, randomize: false }));
+    buffers[i] = window.items;
+    if (window.randomize) randomized.add(i);
     if (!window.hasMore) ended[i] = true;
   };
   const take = async (i: number): Promise<any | undefined> => {
@@ -507,8 +510,15 @@ async function mixedMembers(args: {
     const item = metaToBaseItem(meta, sources[i].catalog.type, serverId, parentId);
     if (isLandscapeCatalog(config, sources[i].catalog)) showLandscape([item]);
     collected.push(item);
+    sourceOf.push(i);
     nextIndex += 1;
   }
+  // A catalog that shuffles its own pages has its titles shuffled among the places they took.
+  const spots = collected.map((_, k) => k).filter((k) => randomized.has(sourceOf[k]));
+  const mixed = shuffleMetas(spots.map((k) => collected[k]));
+  spots.forEach((k, j) => {
+    collected[k] = mixed[j];
+  });
 
   const finished = sources.map((_, i) => done[i] || (ended[i] && buffers[i].length === 0));
   const more = finished.some((f) => !f);
