@@ -82,8 +82,12 @@ export async function hasPlaylists(req: any, config: any): Promise<boolean> {
   return (await countPlaylists(ownerOf(req, config)).catch(() => 0)) > 0;
 }
 
-// One owner's edits run one after another, so two devices changing a playlist at once never overwrite each other.
+// One owner's edits run one after another here; a write is kept only if no other instance changed the playlist since it was read.
 const turns = new Map<string, Promise<unknown>>();
+
+const WRITE_ATTEMPTS = 5;
+
+const nextVersion = (playlist: Pick<Playlist, 'updatedAt'>): number => Math.max(Date.now(), playlist.updatedAt + 1);
 
 function inTurn<T>(owner: Owner, work: () => Promise<T>): Promise<T> {
   const key = `${owner.userUUID}|${owner.profile}`;
@@ -98,13 +102,15 @@ function inTurn<T>(owner: Owner, work: () => Promise<T>): Promise<T> {
 /** Applies a change to the stored playlist; null from the change leaves it as it is. */
 async function changePlaylist(owner: Owner, id: string, change: (playlist: Playlist) => Partial<Pick<Playlist, 'name' | 'items'>> | null): Promise<Playlist | null> {
   return inTurn(owner, async () => {
-    const playlist = await getPlaylist(owner, id);
-    if (!playlist) return null;
-    const patch = change(playlist);
-    if (!patch) return playlist;
-    const next = { ...playlist, ...patch, updatedAt: Date.now() };
-    await database.savePlaylist(owner.userUUID, owner.profile, next);
-    return next;
+    for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
+      const playlist = await getPlaylist(owner, id);
+      if (!playlist) return null;
+      const patch = change(playlist);
+      if (!patch) return playlist;
+      const next = { ...playlist, ...patch, updatedAt: nextVersion(playlist) };
+      if (await database.updatePlaylist(owner.userUUID, owner.profile, next, playlist.updatedAt)) return next;
+    }
+    throw new Error('The playlist kept changing while it was saved');
   });
 }
 
@@ -389,6 +395,8 @@ export async function addTitles(owner: Owner, config: any, id: string, ids: stri
   let full = false;
   let count = 0;
   const updated = await changePlaylist(owner, id, (current) => {
+    full = false;
+    count = 0;
     const room = itemsPerPlaylist() - current.items.length;
     const fresh = withoutRepeats(added, current.items);
     if (!fresh.length) return null;
@@ -596,17 +604,23 @@ export async function heldPlaylists(userUUID: string): Promise<Map<string, Playl
 export async function importPlaylist(userUUID: string, profile: string, incoming: { name: string; items: string[]; createdAt: number }): Promise<void> {
   const owner = { userUUID, profile };
   await inTurn(owner, async () => {
-    const held = await listPlaylists(owner);
-    const { kind, adds } = importOutcome(held, incoming);
-    if (kind === 'updated') {
-      const into = held.find((playlist) => sameName(playlist.name, incoming.name))!;
-      await database.savePlaylist(userUUID, profile, { ...into, items: [...into.items, ...adds], updatedAt: Date.now() });
-    } else if (kind === 'added') {
-      const now = Date.now();
-      const playlist: Playlist = { id: randomBytes(8).toString('hex'), name: incoming.name.trim().slice(0, NAME_LENGTH), items: adds, createdAt: incoming.createdAt || now, updatedAt: now };
-      await database.savePlaylist(userUUID, profile, playlist);
-      playlistItemId(playlist);
-      await flushPendingJellyfinIds();
+    for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
+      const held = await listPlaylists(owner);
+      const { kind, adds } = importOutcome(held, incoming);
+      if (kind === 'updated') {
+        const into = held.find((playlist) => sameName(playlist.name, incoming.name))!;
+        if (await database.updatePlaylist(userUUID, profile, { ...into, items: [...into.items, ...adds], updatedAt: nextVersion(into) }, into.updatedAt)) return;
+        continue;
+      }
+      if (kind === 'added') {
+        const now = Date.now();
+        const playlist: Playlist = { id: randomBytes(8).toString('hex'), name: incoming.name.trim().slice(0, NAME_LENGTH), items: adds, createdAt: incoming.createdAt || now, updatedAt: now };
+        await database.savePlaylist(userUUID, profile, playlist);
+        playlistItemId(playlist);
+        await flushPendingJellyfinIds();
+      }
+      return;
     }
+    throw new Error('The playlist kept changing while it was imported');
   });
 }

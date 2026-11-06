@@ -2971,6 +2971,14 @@ class Database {
     await this.runQuery(query, [userUUID, profile, playlist.id, playlist.name, JSON.stringify(playlist.items), playlist.createdAt, playlist.updatedAt]);
   }
 
+  async updatePlaylist(userUUID: string, profile: string, playlist: { id: string; name: string; items: string[]; updatedAt: number }, readAt: number): Promise<boolean> {
+    const query = this.type === 'sqlite'
+      ? 'UPDATE jellyfin_playlists SET name = ?, items = ?, updated_at = ? WHERE user_uuid = ? AND profile = ? AND id = ? AND updated_at = ?'
+      : 'UPDATE jellyfin_playlists SET name = $1, items = $2, updated_at = $3 WHERE user_uuid = $4 AND profile = $5 AND id = $6 AND updated_at = $7';
+    const result = await this.runQuery(query, [playlist.name, JSON.stringify(playlist.items), playlist.updatedAt, userUUID, profile, playlist.id, readAt]);
+    return Number(result?.changes ?? result?.rowCount ?? 0) > 0;
+  }
+
   async deletePlaylist(userUUID: string, profile: string, id: string): Promise<boolean> {
     const query = this.type === 'sqlite'
       ? 'DELETE FROM jellyfin_playlists WHERE user_uuid = ? AND profile = ? AND id = ?'
