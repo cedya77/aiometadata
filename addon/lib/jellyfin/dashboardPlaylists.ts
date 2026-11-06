@@ -142,8 +142,9 @@ export function dashboardPlaylistPreview(userUUID: string, profile: string | nul
       titles: titles.length,
       playlists: await mapWithConcurrency(playlists, playlistConcurrency(), async (playlist) => {
         const held = new Set(playlist.items);
-        const adds = titles.filter((title) => !held.has(title)).length;
-        return { id: playlist.id, name: playlist.name, count: playlist.items.length, has: titles.length - adds, adds, fits: playlist.items.length + adds <= playlistLimits().items };
+        const fresh = titles.filter((title) => !held.has(title)).length;
+        const room = Math.max(0, playlistLimits().items - playlist.items.length);
+        return { id: playlist.id, name: playlist.name, count: playlist.items.length, has: titles.length - fresh, adds: Math.min(fresh, room), fits: fresh === 0 || room > 0 };
       }),
     };
   });

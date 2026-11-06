@@ -104,7 +104,7 @@ export function AddToPlaylistPanel({ userUUID, profile, choices, onDone }: { use
         ) : preview.playlists.length === 0 ? (
           <p className="px-3 py-1 text-xs text-muted-foreground">No playlists yet. Name one below.</p>
         ) : preview.playlists.map((playlist) => {
-          const note = !playlist.adds ? "Has all of these" : !playlist.fits ? "Too full" : playlist.has ? `Has ${playlist.has}, adds ${playlist.adds}` : `Adds ${playlist.adds}`;
+          const note = !playlist.fits ? "Too full" : !playlist.adds ? "Has all of these" : playlist.has ? `Has ${playlist.has}, adds ${playlist.adds}` : `Adds ${playlist.adds}`;
           return (
             <button key={playlist.id} type="button" disabled={Boolean(busy) || !playlist.adds || !playlist.fits} onClick={() => void add(playlist.id, playlist.name)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-transparent">
               <span className="min-w-0 flex-1 truncate">{playlist.name}</span>

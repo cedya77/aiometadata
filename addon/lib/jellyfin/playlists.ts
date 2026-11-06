@@ -384,12 +384,14 @@ export async function addTitles(owner: Owner, config: any, id: string, ids: stri
   let full = false;
   let count = 0;
   const updated = await changePlaylist(owner, id, (current) => {
+    const room = itemsPerPlaylist() - current.items.length;
     const fresh = withoutRepeats(added, current.items);
     if (!fresh.length) return null;
-    if (current.items.length + fresh.length > itemsPerPlaylist()) {
+    if (room <= 0) {
       full = true;
       return null;
     }
+    fresh.splice(room);
     const at = position === null || !Number.isFinite(position) ? current.items.length : Math.min(Math.max(0, position), current.items.length);
     const items = [...current.items];
     items.splice(at, 0, ...fresh);
