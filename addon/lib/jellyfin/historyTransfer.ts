@@ -10,7 +10,6 @@ import { stremioHistorySource } from './historySourceStremio';
 import { nuvioHistorySource } from './historySourceNuvio';
 import { listHistorySource } from './historySourceList';
 import { bulkTimes } from './bulkMarks';
-import { parseStremioId } from './ids';
 import { heldPlaylists, importOutcome, importPlaylist, playlistsForExport, playlistTitleId, type Playlist, type PlaylistTitle } from './playlists';
 
 const logger = consola.withTag('Jellyfin');
@@ -343,12 +342,8 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
       : state;
   // A date a bulk mark wrote is when the marks were made, not a viewing, so a real date beats it either way round.
   // A held date from a play or mark made here stays.
-  const markKey = (videoId: string) => {
-    const spelled = parseStremioId(videoId);
-    return spelled && spelled.episode !== null && spelled.episode !== undefined ? `${spelled.season ?? 0}:${spelled.episode}` : videoId;
-  };
-  const heldBulk = bulkTimes(playstate.map((row: any) => ({ at: Number(row.last_played_at) || 0, key: markKey(String(row.video_id)) })));
-  const incomingBulk = bulkTimes(file.playstate.map((row) => ({ at: Number(row.lastPlayedAt) || 0, key: markKey(row.videoId) })));
+  const heldBulk = bulkTimes(playstate.map((row: any) => ({ at: Number(row.last_played_at) || 0, videoId: String(row.video_id) })));
+  const incomingBulk = bulkTimes(file.playstate.map((row) => ({ at: Number(row.lastPlayedAt) || 0, videoId: row.videoId })));
   const realDateOf = (held: State, state: State): number | null => {
     if (!held.lastPlayedAt || !state.lastPlayedAt) return null;
     const heldBulky = heldBulk.has(held.lastPlayedAt) && !LOCAL_ORIGINS.has(String(held.origin));

@@ -6,7 +6,6 @@ import { profileKey, scopeConfigToProfile } from './profiles';
 import { accountOwner } from '../accounts';
 import { runAsAccountOwner } from './viewer';
 import { bulkTimes } from './bulkMarks';
-import { parseStremioId } from './ids';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -71,10 +70,7 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
   for (const [videoId, row] of await filmsHeldElsewhere(userUUID, finished.filter((id: string) => !known.has(id)), profile)) known.set(videoId, row);
   const logged = await database.watchedVideoIds(userUUID, profile);
   // A tracker dates a mark sent to it without one by when it came, so a bulk of them is no viewing date.
-  const bulk = bulkTimes(finished.map((videoId: string) => {
-    const spelled = parseStremioId(videoId);
-    return { at: watched.at.get(videoId) ?? 0, key: spelled && spelled.episode !== null && spelled.episode !== undefined ? `${spelled.season ?? 0}:${spelled.episode}` : videoId };
-  }));
+  const bulk = bulkTimes(finished.map((videoId: string) => ({ at: watched.at.get(videoId) ?? 0, videoId })));
   for (const videoId of finished) {
     const row = known.get(videoId);
     const heldAs = row && String(row.video_id) !== videoId ? [String(row.video_id)] : [];

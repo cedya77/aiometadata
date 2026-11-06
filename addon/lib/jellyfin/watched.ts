@@ -58,10 +58,7 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
         if (held) held.push(row);
         else byShow.set(key, [row]);
       };
-      bulk = bulkTimes([...carry, ...records, ...rest].map((row) => {
-        const spelled = regularEpisode(String(row.video_id));
-        return { at: Number(row.last_played_at), key: spelled ? `${spelled.season ?? 0}:${spelled.episode}` : String(row.video_id) };
-      }));
+      bulk = bulkTimes([...carry, ...records, ...rest].map((row) => ({ at: Number(row.last_played_at), videoId: String(row.video_id) })));
       for (const row of [...carry, ...records, ...rest]) {
         const id = String(row.video_id);
         const episodeAt = id.lastIndexOf(':');
