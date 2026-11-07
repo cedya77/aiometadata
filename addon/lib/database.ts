@@ -55,6 +55,8 @@ class Database {
     this.connectedType = value;
   }
 
+  private starting: Promise<void> | null = null;
+
   // SQLite answers on the server's one thread, so after this much of it in a row others get a turn.
   private sqliteSpentMs = 0;
 
@@ -110,7 +112,14 @@ class Database {
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
+    // A request can arrive while the server boots; a second start would create the same tables at the same moment.
+    this.starting ??= this.start().finally(() => {
+      this.starting = null;
+    });
+    return this.starting;
+  }
 
+  private async start(): Promise<void> {
     const databaseUri = process.env.DATABASE_URI;
     if (!databaseUri) {
       throw new Error('DATABASE_URI environment variable is required');
