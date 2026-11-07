@@ -41,7 +41,7 @@ const snapshots = new LRUCache<string, HeldRows>({
 
 const resumeMaxAgeMs = (): number => envInt('JELLYFIN_RESUME_MAX_AGE', 15 * 60, 60) * 1000;
 
-const resumeFloorPercent = (): number => Math.min(envInt('JELLYFIN_MIN_RESUME_PERCENT', 0, 0), 49);
+export const resumeFloorPercent = (): number => Math.min(envInt('JELLYFIN_MIN_RESUME_PERCENT', 0, 0), 49);
 
 export function belowResumeFloor(positionMs: number, runtimeMs: number): boolean {
   const floor = resumeFloorPercent();

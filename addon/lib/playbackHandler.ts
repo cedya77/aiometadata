@@ -389,7 +389,11 @@ async function planReport(type: string, id: string, report: PlaybackReport, prog
   const credited = intent === 'watched' && report.event !== 'stop';
   // A watch only hides a tracker's paused session; it has to be deleted or an unwatch revives it.
   // A mark ends a session the same way a finished stop does, and an unmark starts the title over.
-  const clears = report.event === 'played' || report.event === 'unplayed' || (report.event === 'stop' && intent === 'watched');
+  // Below the minimum resume no resume point is kept here, so a tracker gets none either; a stop clears one it held from before.
+  const { resumeFloorPercent } = require('./jellyfin/resume');
+  const belowFloor = (intent === 'paused' || intent === 'partial') && progress !== null
+    && (report.positionMs as number) / (report.durationMs as number) * 100 < resumeFloorPercent();
+  const clears = report.event === 'played' || report.event === 'unplayed' || (report.event === 'stop' && (intent === 'watched' || belowFloor));
 
   // An episode a tracker has as a film is delivered as that film, so the tracker's film switch decides.
   const { filmFor } = require('./jellyfin/trackerMatch');
@@ -399,9 +403,9 @@ async function planReport(type: string, id: string, report: PlaybackReport, prog
   const jobs: OutboxJob[] = [];
   for (const service of scrobblingTrackers() as WatchTrackingService[]) {
     if (!shouldTrackServiceMediaType(config, service, await sentType(service))) continue;
-    const scrobbles = service === 'publicmetadb'
+    const scrobbles = !belowFloor && (service === 'publicmetadb'
       ? (report.event === 'stop' || report.event === 'pause') && (intent === 'partial' || intent === 'watched' || intent === 'paused')
-      : intent !== 'none' && intent !== 'unwatched' && !credited;
+      : intent !== 'none' && intent !== 'unwatched' && !credited);
     // A later start or pause replaces one still waiting; a stop is never replaced, since it may be the watch.
     if (scrobbles) {
       jobs.push({
