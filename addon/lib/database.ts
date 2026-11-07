@@ -367,6 +367,8 @@ class Database {
       )`);
       await this.runQuery(`CREATE INDEX IF NOT EXISTS idx_jellyfin_watches_recent ON jellyfin_watches(user_uuid, profile, watched_at DESC)`);
       await this.runQuery(`CREATE INDEX IF NOT EXISTS idx_jellyfin_watches_at ON jellyfin_watches(watched_at)`);
+      // Recent viewings across all of a user's profiles, newest first, read off an index rather than sorting the history.
+      await this.runQuery(`CREATE INDEX IF NOT EXISTS idx_jellyfin_watches_user_recent ON jellyfin_watches(user_uuid, watched_at DESC)`);
       if (existing) return;
       const result = await this.runQuery(`INSERT INTO jellyfin_watches (user_uuid, profile, video_id, watched_at, origin)
         SELECT user_uuid, profile, video_id, last_played_at, origin FROM jellyfin_playstate
@@ -556,6 +558,7 @@ class Database {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_coalesce ON tracker_outbox(lane, coalesce_key)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_user ON tracker_outbox(user_uuid, id)`,
       `CREATE TABLE IF NOT EXISTS tracker_activity (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source_key TEXT NOT NULL,
@@ -835,6 +838,8 @@ class Database {
       `CREATE INDEX IF NOT EXISTS idx_jellyfin_playstate_recent ON jellyfin_playstate(user_uuid, profile, updated_at DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_jellyfin_playstate_played ON jellyfin_playstate(last_played_at)`,
       `CREATE INDEX IF NOT EXISTS idx_jellyfin_playstate_user_played ON jellyfin_playstate(user_uuid, profile, played, last_played_at DESC, video_id)`,
+      // Prefix matches on an id read this index, as the database's own collation may not compare ids by bytes.
+      `CREATE INDEX IF NOT EXISTS idx_jellyfin_playstate_video_bytes ON jellyfin_playstate(user_uuid, profile, video_id COLLATE "C")`,
       `CREATE TABLE IF NOT EXISTS jellyfin_preferences (
         user_uuid VARCHAR(64) NOT NULL,
         profile TEXT NOT NULL DEFAULT '',
@@ -897,6 +902,7 @@ class Database {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_coalesce ON tracker_outbox(lane, coalesce_key)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_user ON tracker_outbox(user_uuid, id)`,
       `CREATE TABLE IF NOT EXISTS tracker_activity (
         id BIGSERIAL PRIMARY KEY,
         source_key VARCHAR(64) NOT NULL,
@@ -1716,8 +1722,8 @@ class Database {
     const params: any[] = [userUUID, profile, since];
     let query = `SELECT video_id, last_played_at, last_played_kind, updated_at, origin FROM jellyfin_playstate WHERE user_uuid = ${p()} AND profile = ${p()} AND played = 1 AND last_played_at >= ${p()} AND video_id LIKE '%:%:%'`;
     if (after) {
-      query += ` AND (last_played_at < ${p()} OR (last_played_at = ${p()} AND video_id > ${p()}))`;
-      params.push(after.at, after.at, after.videoId);
+      query += ` AND last_played_at <= ${p()} AND (last_played_at < ${p()} OR (last_played_at = ${p()} AND video_id > ${p()}))`;
+      params.push(after.at, after.at, after.at, after.videoId);
     }
     query += ` ORDER BY last_played_at DESC, video_id LIMIT ${p()}`;
     params.push(limit);
@@ -1737,6 +1743,11 @@ class Database {
       : 'SELECT COUNT(*) AS count FROM jellyfin_playstate WHERE last_played_at >= $1 AND played = 1';
     const row = await this.getQuery(query, [since]);
     return Number(row?.count) || 0;
+  }
+
+  async latestWatchAt(userUUID: string): Promise<number> {
+    const row = await this.getQuery(`SELECT MAX(watched_at) AS at FROM jellyfin_watches WHERE user_uuid = ${this.type === 'sqlite' ? '?' : '$1'}`, [userUUID]);
+    return Number(row?.at) || 0;
   }
 
   async playstateForConfiguration(userUUID: string): Promise<any[]> {
@@ -2763,9 +2774,21 @@ class Database {
     return out;
   }
 
+  /** Read a page at a time along the key, letting other requests run between pages of a large library. */
   async listWatchIndex(sourceKey: string): Promise<Array<{ video_id: string; kind: string; meta_id: string; media_type: string; at: number; listed: number }>> {
-    const rows = await this.allQuery(`SELECT video_id, kind, meta_id, media_type, at, listed FROM jellyfin_watch_index WHERE source_key = ${this.type === 'sqlite' ? '?' : '$1'}`, [sourceKey]);
-    return rows.map((row: any) => ({ ...row, at: Number(row.at), listed: Number(row.listed) }));
+    const page = 5000;
+    const query = this.type === 'sqlite'
+      ? 'SELECT video_id, kind, meta_id, media_type, at, listed FROM jellyfin_watch_index WHERE source_key = ? AND video_id > ? ORDER BY video_id LIMIT ?'
+      : 'SELECT video_id, kind, meta_id, media_type, at, listed FROM jellyfin_watch_index WHERE source_key = $1 AND video_id > $2 ORDER BY video_id LIMIT $3';
+    const out: Array<{ video_id: string; kind: string; meta_id: string; media_type: string; at: number; listed: number }> = [];
+    let after = '';
+    for (;;) {
+      const rows: any[] = (await this.allQuery(query, [sourceKey, after, page])) || [];
+      for (const row of rows) out.push({ ...row, at: Number(row.at), listed: Number(row.listed) });
+      if (rows.length < page) return out;
+      after = String(rows[rows.length - 1].video_id);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
   }
 
   async watchIndexAmong(sourceKey: string, videoIds: string[]): Promise<Array<{ video_id: string; kind: string; at: number }>> {

@@ -250,7 +250,7 @@ export async function touchSessions(userUUID: string, profile: string): Promise<
     try {
       const cutoff = now - liveWindowMs();
       const cap = envInt('JELLYFIN_SESSION_CACHE_MAX', 5000, 1);
-      const live: string[] = await redis.zrevrangebyscore(POSITIONS_INDEX, '+inf', cutoff, 'LIMIT', 0, cap);
+      const live: string[] = await redis.zrevrangebyscore(accountIndex(userUUID), '+inf', cutoff, 'LIMIT', 0, cap);
       for (const key of live) if (key.startsWith(prefix)) keys.add(key);
     } catch { /* what this process holds still carries forward */ }
   }
@@ -384,12 +384,6 @@ function reportFor(
   };
 }
 
-async function listedFilms(userUUID: string, config: any): Promise<Set<string>> {
-  const { watchlistEntries } = require('./watchlist');
-  const { entries } = await watchlistEntries(userUUID, config);
-  return new Set(entries.map((entry: any) => String(entry.metaId)));
-}
-
 async function announce(userUUID: string, config: any, profile: string, session: ResolvedSession): Promise<void> {
   const { hasListeners, pushUserData } = require('./socket');
   if (!(await hasListeners(userUUID, profile))) return;
@@ -400,7 +394,8 @@ async function announce(userUUID: string, config: any, profile: string, session:
   const played = Boolean(Number(row?.played));
   let favourite = false;
   if (session.descriptor.k === 'movie' && config) {
-    const listed = await listedFilms(userUUID, config).catch(() => new Set<string>());
+    const { listedIds } = require('./watchlist');
+    const listed: Set<string> = await listedIds(userUUID, config).catch(() => new Set<string>());
     favourite = [session.descriptor.i, ...session.aliases].some((id) => listed.has(String(id)));
   }
   const itemId = dashedGuid(normaliseJellyfinId(session.itemId));
@@ -465,7 +460,6 @@ async function writePlaystate(
       const gapMs = runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
       const watch = finished ? { at: now, kind: 'finish', gapMs } : undefined;
       await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: now, origin: 'server', ...(watch ? { watch } : {}) }, profile, session.aliases);
-      if (watch) require('./dashboard').noteDashboardFinish(userUUID);
       return;
     }
     const { belowResumeFloor } = require('./resume');

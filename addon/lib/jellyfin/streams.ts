@@ -249,10 +249,13 @@ function requestHeadersOf(stream: any): Record<string, string> | null {
   return entries.length ? Object.fromEntries(entries) : null;
 }
 
+export function canPlay(stream: any, allowHeaders = false): boolean {
+  return Boolean(stream && typeof stream.url === 'string' && stream.url) && (allowHeaders || !needsHeaders(stream));
+}
+
 export function toPlayable(stream: any, allowHeaders = false): PlayableStream | null {
-  if (!stream || typeof stream.url !== 'string' || !stream.url) return null;
+  if (!canPlay(stream, allowHeaders)) return null;
   const headers = needsHeaders(stream);
-  if (headers && !allowHeaders) return null;
 
   const label = [stream.name, stream.title || stream.description]
     .filter(Boolean)
@@ -262,8 +265,6 @@ export function toPlayable(stream: any, allowHeaders = false): PlayableStream | 
   const id = mediaSourceIdFor(stream);
   const filename = String(stream?.behaviorHints?.filename || '');
   const durationMs = Number.isFinite(Number(stream?.streamData?.duration)) && Number(stream.streamData.duration) > 0 ? Number(stream.streamData.duration) : null;
-  rememberIssued(id, stream.url, durationMs);
-
   return {
     id,
     url: stream.url,

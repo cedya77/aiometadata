@@ -35,7 +35,7 @@ import { liveDevices, rememberTokenDevice, saveCapabilities, sendToDevice } from
 import { artTag, imageTag, isWideTag } from './imageTags';
 import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
-import { coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
+import { canPlay, coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberIssued, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
 import { heldNextUp, memoNextUp, resumeSnapshot, resumeUserData } from './resume';
 import { animeSequels } from './sequels';
@@ -1239,7 +1239,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const idsRaw = req.query.Ids ?? req.query.ids;
     if (idsRaw) {
       const ids = String(idsRaw).split(',').map((id) => id.trim()).filter(Boolean);
-      const items = await itemsForIds(req, ids, ids.length === 1, 1);
+      const items = await itemsForIds(req, ids, ids.length === 1, shelfConcurrency());
       res.json(itemList(items, items.length, 0));
       return;
     }
@@ -1647,7 +1647,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const seen = new Set<string>();
     const sources: any[] = [];
     const notices: any[] = [];
+    const cap = maxMediaSources();
     for (const stream of streams) {
+      if (sources.length >= cap && canPlay(stream, allowHeaders)) continue;
       const playable = toPlayable(stream, allowHeaders);
       if (!playable) {
         if (!streamNoticesOffered()) continue;
@@ -1659,14 +1661,15 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
       if (seen.has(playable.id)) continue;
       seen.add(playable.id);
+      rememberIssued(playable.id, playable.url, playable.durationMs);
       const source = mediaSourceFor(playable, runtimeTicks);
       if (playable.needsHeaders) headerSources.add(source);
       sources.push(source);
     }
 
-    logger.debug(`Streams ${stremioType}/${stremioId}: ${streams.length} offered, ${sources.length} playable, ${notices.length} to read`);
+    logger.debug(`Streams ${stremioType}/${stremioId}: ${streams.length} offered, ${sources.length} kept, ${notices.length} to read`);
     if (streams.length && !sources.length && !notices.length) rememberFailure(cacheKey, 'No playable stream for this title');
-    return [...sources.slice(0, maxMediaSources()), ...notices];
+    return [...sources, ...notices];
   };
 
   // What the picker says when a resolve leaves nothing to list.
@@ -1821,7 +1824,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         });
       });
       source.MediaStreams = streams;
-      rememberOffered(subtitleKey(userUUID, itemId, source.Id), kept);
+      rememberOffered(subtitleKey(userUUID, itemId, source.Id), kept, start);
     }
   };
 
@@ -1940,20 +1943,21 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const index = parseInt(String(req.params.index), 10);
     const format = formatOf(String(req.params.format));
 
-    const sources = await withDefaultSourceId(await resolveMediaSources(req, descriptor, null, false, true), itemId);
-    const source = sources.find((s: any) => normaliseJellyfinId(s.Id) === normaliseJellyfinId(sourceId));
-    if (!source) {
-      res.status(404).end();
-      return;
-    }
-    const embedded = Array.isArray(source.MediaStreams) ? source.MediaStreams.length : 0;
+    // A player asks for every subtitle at once, so the list it was sent answers without resolving the streams again.
     const key = subtitleKey(userUUID, itemId, sourceId);
-    let tracks = recallOffered(key);
-    if (!tracks) {
+    let sent = recallOffered(key);
+    if (!sent) {
+      const sources = await withDefaultSourceId(await resolveMediaSources(req, descriptor, null, false, true), itemId);
+      const source = sources.find((s: any) => normaliseJellyfinId(s.Id) === normaliseJellyfinId(sourceId));
+      if (!source) {
+        res.status(404).end();
+        return;
+      }
+      const embedded = Array.isArray(source.MediaStreams) ? source.MediaStreams.length : 0;
       await attachExternalSubtitles(req, itemId, [source], { addonFor: source.Id });
-      tracks = recallOffered(key) ?? [];
+      sent = recallOffered(key) ?? { tracks: [], start: embedded };
     }
-    const track = tracks[index - embedded];
+    const track = sent.tracks[index - sent.start];
     if (!track) {
       res.status(404).end();
       return;
@@ -3921,7 +3925,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       const captured: any[] = [];
       // query and params are prototype getters, so a spread would lose them.
       const forged = Object.create(req, {
-        params: { value: { ...req.params, itemId: id, listed: true, lookup }, enumerable: true },
+        params: { value: { ...req.params, itemId: id, listed: true, lookup, skipWatched: true }, enumerable: true },
         query: { value: req.query, enumerable: true },
       });
       await singleItemHandler(
@@ -3930,7 +3934,12 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       );
       return captured[0]?.Id ? captured[0] : null;
     });
-    return built.filter(Boolean);
+    const items = built.filter(Boolean);
+    // Watched state goes on the whole list at once; a season has its own, read with its show's episodes.
+    const unstated = items.filter((item: any) => item.Type !== 'Season');
+    const config = unstated.length ? await loadConfig(req).catch(() => null) : null;
+    if (config) await applyWatchedState(unstated, await watchedSnapshot(req.params.userUUID, config), req.params.userUUID, profileKey(config), config);
+    return items;
   }
 
   const playlistDeps: PlaylistRouteDeps = {
@@ -3989,7 +3998,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       await attachSourcesInTime(req, episode, descriptor, String(req.params.itemId));
 
       const episodeConfig = await loadConfig(req);
-      if (episodeConfig) {
+      if (episodeConfig && !req.params.skipWatched) {
         await applyWatchedState([episode], await watchedSnapshot(userUUID, episodeConfig), userUUID, profileKey(episodeConfig), episodeConfig);
       }
 
@@ -4062,7 +4071,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
 
       const itemConfig = await loadConfig(req);
-      if (itemConfig) {
+      if (itemConfig && !req.params.skipWatched) {
         await applyWatchedState([item], await watchedSnapshot(userUUID, itemConfig), userUUID, profileKey(itemConfig), itemConfig);
       }
 

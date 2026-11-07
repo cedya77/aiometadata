@@ -378,26 +378,20 @@ const statsMemo = new LRUCache<string, StatsMark & { work: Promise<Map<string, P
   ttl: envInt('JELLYFIN_DASHBOARD_STATS_TTL', 120, 10) * 1000,
 });
 const statsRefreshing = new Set<string>();
-const statsFinished = new LRUCache<string, number>({ max: 1000, ttl: 60 * 60 * 1000 });
 
-/** A title played to its end again changes no count, so the wait for a recount ends here. */
-export function noteDashboardFinish(userUUID: string): void {
-  statsFinished.set(userUUID, Date.now());
-}
-
-function statsMark(summary: any[]): StatsMark {
+function statsMark(summary: any[], latestWatch: number): StatsMark {
   const of = (fields: (row: any) => unknown[]) => summary.map((row) => [row.profile ?? '', ...fields(row).map((n) => Number(n) || 0)].join(':')).sort().join('|');
   return {
-    counts: of((row) => [row.rows_total, row.played, row.in_progress]),
+    counts: `${latestWatch}|${of((row) => [row.rows_total, row.played, row.in_progress])}`,
     moment: of((row) => [row.last_played_at, row.updated_at]),
     at: Date.now(),
   };
 }
 
-/** A play moving forward only changes the activity chart, so it waits a while; anything that changes a count does not. */
-const stillGood = (userUUID: string, held: StatsMark, now: StatsMark): boolean =>
+/** A play moving forward only changes the activity chart, so it waits a while; a viewing or a changed count does not. */
+const stillGood = (held: StatsMark, now: StatsMark): boolean =>
   held.counts === now.counts && (held.moment === now.moment
-    || (now.at - held.at < envInt('JELLYFIN_DASHBOARD_STATS_PLAYING_SECONDS', 300, 0) * 1000 && (statsFinished.get(userUUID) ?? 0) <= held.at));
+    || now.at - held.at < envInt('JELLYFIN_DASHBOARD_STATS_PLAYING_SECONDS', 300, 0) * 1000);
 
 const statsStoreKey = (userUUID: string) => `jf:dashstats:v4:${userUUID}`;
 
@@ -428,15 +422,15 @@ export async function forgetDashboardStats(userUUID: string): Promise<void> {
   if (redis) await redis.del(statsStoreKey(userUUID)).catch(() => undefined);
 }
 
-function profileStats(userUUID: string, summary: any[]): Promise<Map<string, ProfileStats>> {
-  const now = statsMark(summary);
+async function profileStats(userUUID: string, summary: any[]): Promise<Map<string, ProfileStats>> {
+  const now = statsMark(summary, await database.latestWatchAt(userUUID).catch(() => 0));
   const held = statsMemo.get(userUUID);
-  if (held && stillGood(userUUID, held, now)) return held.work;
+  if (held && stillGood(held, now)) return held.work;
   const profiles = summary.map((row) => String(row.profile ?? ''));
   const rows = summary.reduce((sum, row) => sum + (Number(row.rows_total) || 0), 0);
   const work = (async () => {
     const stored = await storedStats(userUUID);
-    if (stored && stillGood(userUUID, stored, now)) {
+    if (stored && stillGood(stored, now)) {
       statsMemo.set(userUUID, { ...stored, work: Promise.resolve(stored.stats) });
       return stored.stats;
     }
@@ -826,7 +820,11 @@ async function importGroups(userUUID: string, source: SyncSource, outcomes: Map<
     if (!list.length && !left) continue;
     const titles = [...new Set(list.map((v: any) => `${v.profile}|${v.metaId}`))];
     const newest = [...list].sort((a: any, b: any) => b.at - a.at);
-    const shown = new Set(newest.map((v: any) => `${v.profile}|${v.metaId}`).filter((id: string, i: number, all: string[]) => all.indexOf(id) === i).slice(0, 4));
+    const shown = new Set<string>();
+    for (const v of newest) {
+      if (shown.size >= 4) break;
+      shown.add(`${v.profile}|${v.metaId}`);
+    }
     const preview = await driftItems(userUUID, source, outcomes, list.filter((v: any) => shown.has(`${v.profile}|${v.metaId}`)));
     groups.push({
       origin,
@@ -1353,7 +1351,8 @@ async function foldedPlays(userUUID: string, names: Map<string, string>, kind: P
   const read = (n: number) => kind === 'progress'
     ? database.listPlaystateInProgressFor(userUUID, n, profile)
     : database.listViewingHistory(userUUID, n, profile);
-  let ask = want * 2;
+  // A viewing is stored under each of its ids, so a few rows fold into one; asking for more at first saves a second read.
+  let ask = want * 4;
   for (;;) {
     const raw: any[] = await read(ask);
     const out = await playRows(userUUID, raw, names);

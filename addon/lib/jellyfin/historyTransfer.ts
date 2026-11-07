@@ -1,6 +1,7 @@
 import consola from 'consola';
 import express from 'express';
 import { envInt } from '../../utils/envNumber';
+import { yieldEvery } from '../../utils/yieldEvery';
 import { listProfiles } from './profiles';
 import { ratingFrom } from './ratings';
 import { openUpload, positive, type Ambiguous, type HistorySource, type Unmatched } from './historySources';
@@ -549,10 +550,12 @@ async function runImport(userUUID: string, plan: Plan, startedAt: number): Promi
   const beatMs = Math.max(1000, Math.floor(staleMs() / 6));
   let done = 0;
   let beat = Date.now();
+  const pause = yieldEvery();
   try {
     for (const write of plan.writes) {
       await write();
       done += 1;
+      await pause();
       if (Date.now() - beat >= beatMs) {
         beat = Date.now();
         if (!(await database.updateHistoryImport(userUUID, startedAt, { done, heartbeatAt: beat }))) {

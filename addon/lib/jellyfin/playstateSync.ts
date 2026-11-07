@@ -1,5 +1,6 @@
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
+import { yieldEvery } from '../../utils/yieldEvery';
 import { sourceFor } from './trackerSource';
 import { filmsHeldElsewhere, getPlaystatesAcross, upsertPlaystateEverywhere } from './aliases';
 import { profileKey, scopeConfigToProfile } from './profiles';
@@ -34,7 +35,9 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
     : '';
   const passKey = `jellyfin_playstate_pass_v2:${userUUID}${profile ? `:${profile}` : ''}`;
   if (digest && (await readGlobalCache(passKey))?.digest === digest) return { added, skipped, unchanged: true };
+  const pause = yieldEvery();
   for (const row of resume) {
+    await pause();
     // The most recent action wins: a point the tracker set after this row's last
     // change replaces it, whether the row is a point, a mark or a rewatch; an
     // older one is what the row already replaced.
@@ -72,6 +75,7 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
   // A tracker dates a mark sent to it without one by when it came, so a bulk of them is no viewing date.
   const bulk = bulkTimes(finished.map((videoId: string) => ({ at: watched.at.get(videoId) ?? 0, videoId })));
   for (const videoId of finished) {
+    await pause();
     const row = known.get(videoId);
     const heldAs = row && String(row.video_id) !== videoId ? [String(row.video_id)] : [];
     const trackerAt = watched.at.get(videoId);

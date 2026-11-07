@@ -3,6 +3,7 @@ import {
   filmSpellings,
   historyFromSections,
   lookupAll,
+  parsedJson,
   positive,
   runtimeAskOf,
   runtimesFor,
@@ -92,13 +93,13 @@ export const traktHistorySource: HistorySource = {
     const single = sectionOfRows(upload.json);
     if (single && upload.files.size === 1) sections[single].push(...(upload.json as any[]));
     else {
-      for (const [name, text] of upload.files) {
+      for (const name of upload.files.keys()) {
         if (name.includes('/')) continue;
         const section = sectionOfFile(name);
         if (!section && name !== 'user-profile.json') continue;
         let parsed: any;
         try {
-          parsed = JSON.parse(text);
+          parsed = parsedJson(upload, name);
         } catch {
           return `${name} in this Trakt export is not valid JSON`;
         }

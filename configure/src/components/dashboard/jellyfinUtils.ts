@@ -113,8 +113,9 @@ export function activityOf(profiles: JellyfinProfileSummary[]): Activity {
  * A list paged by hand keeps only its newest page's query active, so an edit made elsewhere refreshes that page alone.
  * When a page already shown comes back changed, every loaded page is read again and the list is built from them.
  */
-export async function reloadPages<R>(queryClient: QueryClient, base: readonly unknown[], offsets: number[], rowsOf: (page: any) => R[] | undefined = (page) => page?.rows): Promise<R[][] | null> {
-  await queryClient.refetchQueries({ queryKey: base, type: "inactive" });
+export async function reloadPages<R>(queryClient: QueryClient, base: readonly unknown[], offsets: number[], rowsOf: (page: any) => R[] | undefined = (page) => page?.rows, onlyThese = false): Promise<R[][] | null> {
+  if (onlyThese) await Promise.all(offsets.map((at) => queryClient.refetchQueries({ queryKey: [...base, at], exact: true, type: "inactive" })));
+  else await queryClient.refetchQueries({ queryKey: base, type: "inactive" });
   const pages: R[][] = [];
   for (const at of offsets) {
     const rows = rowsOf(queryClient.getQueryData([...base, at]));
