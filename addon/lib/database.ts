@@ -539,6 +539,7 @@ class Database {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_coalesce ON tracker_outbox(lane, coalesce_key)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_user ON tracker_outbox(user_uuid, id)`,
       `CREATE TABLE IF NOT EXISTS tracker_activity (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source_key TEXT NOT NULL,
@@ -882,6 +883,7 @@ class Database {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_coalesce ON tracker_outbox(lane, coalesce_key)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_user ON tracker_outbox(user_uuid, id)`,
       `CREATE TABLE IF NOT EXISTS tracker_activity (
         id BIGSERIAL PRIMARY KEY,
         source_key VARCHAR(64) NOT NULL,
