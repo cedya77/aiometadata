@@ -4372,11 +4372,13 @@ addon.post("/api/integrations/credential", async (req, res) => {
       setAccountKey(config, profile, provider, tokenId);
       if (card.accounts[ACCOUNT_SERVICES[provider].master] === undefined) card.accounts[ACCOUNT_SERVICES[provider].master] = true;
     } else {
+      const previous = config.apiKeys?.[mapping.field];
+      if (previous && previous !== tokenId) replaced = previous;
       config.apiKeys = { ...(config.apiKeys || {}), [mapping.field]: tokenId };
     }
     await database.saveUserConfig(userUUID, access.passwordHash, config);
     configCache.del(userUUID);
-    if (replaced) await require('./lib/accountLinks').releaseTokenIfUnused(provider, replaced, provider === 'simkl' ? revokeSimklGrant : undefined);
+    if (replaced) await require('./lib/accountLinks').releaseFieldToken(mapping.field, replaced, profile && provider === 'simkl' ? revokeSimklGrant : undefined);
     require('./lib/jellyfin/watched').warmChangedSources(userUUID, before, config);
     res.json({ success: true, field: mapping.field, tokenId });
   } catch (error) {
