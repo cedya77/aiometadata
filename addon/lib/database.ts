@@ -1672,8 +1672,8 @@ class Database {
     const params: any[] = [userUUID, profile, since];
     let query = `SELECT video_id, last_played_at, last_played_kind, updated_at, origin FROM jellyfin_playstate WHERE user_uuid = ${p()} AND profile = ${p()} AND played = 1 AND last_played_at >= ${p()} AND video_id LIKE '%:%:%'`;
     if (after) {
-      query += ` AND (last_played_at < ${p()} OR (last_played_at = ${p()} AND video_id > ${p()}))`;
-      params.push(after.at, after.at, after.videoId);
+      query += ` AND last_played_at <= ${p()} AND (last_played_at < ${p()} OR (last_played_at = ${p()} AND video_id > ${p()}))`;
+      params.push(after.at, after.at, after.at, after.videoId);
     }
     query += ` ORDER BY last_played_at DESC, video_id LIMIT ${p()}`;
     params.push(limit);
