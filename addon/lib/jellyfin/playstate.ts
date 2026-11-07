@@ -250,7 +250,7 @@ export async function touchSessions(userUUID: string, profile: string): Promise<
     try {
       const cutoff = now - liveWindowMs();
       const cap = envInt('JELLYFIN_SESSION_CACHE_MAX', 5000, 1);
-      const live: string[] = await redis.zrevrangebyscore(POSITIONS_INDEX, '+inf', cutoff, 'LIMIT', 0, cap);
+      const live: string[] = await redis.zrevrangebyscore(accountIndex(userUUID), '+inf', cutoff, 'LIMIT', 0, cap);
       for (const key of live) if (key.startsWith(prefix)) keys.add(key);
     } catch { /* what this process holds still carries forward */ }
   }
