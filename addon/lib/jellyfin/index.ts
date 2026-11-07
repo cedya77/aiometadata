@@ -1239,7 +1239,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const idsRaw = req.query.Ids ?? req.query.ids;
     if (idsRaw) {
       const ids = String(idsRaw).split(',').map((id) => id.trim()).filter(Boolean);
-      const items = await itemsForIds(req, ids, ids.length === 1, 1);
+      const items = await itemsForIds(req, ids, ids.length === 1, shelfConcurrency());
       res.json(itemList(items, items.length, 0));
       return;
     }
@@ -3921,7 +3921,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       const captured: any[] = [];
       // query and params are prototype getters, so a spread would lose them.
       const forged = Object.create(req, {
-        params: { value: { ...req.params, itemId: id, listed: true, lookup }, enumerable: true },
+        params: { value: { ...req.params, itemId: id, listed: true, lookup, skipWatched: true }, enumerable: true },
         query: { value: req.query, enumerable: true },
       });
       await singleItemHandler(
@@ -3930,7 +3930,12 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       );
       return captured[0]?.Id ? captured[0] : null;
     });
-    return built.filter(Boolean);
+    const items = built.filter(Boolean);
+    // Watched state goes on the whole list at once; a season has its own, read with its show's episodes.
+    const unstated = items.filter((item: any) => item.Type !== 'Season');
+    const config = unstated.length ? await loadConfig(req).catch(() => null) : null;
+    if (config) await applyWatchedState(unstated, await watchedSnapshot(req.params.userUUID, config), req.params.userUUID, profileKey(config), config);
+    return items;
   }
 
   const playlistDeps: PlaylistRouteDeps = {
@@ -3989,7 +3994,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       await attachSourcesInTime(req, episode, descriptor, String(req.params.itemId));
 
       const episodeConfig = await loadConfig(req);
-      if (episodeConfig) {
+      if (episodeConfig && !req.params.skipWatched) {
         await applyWatchedState([episode], await watchedSnapshot(userUUID, episodeConfig), userUUID, profileKey(episodeConfig), episodeConfig);
       }
 
@@ -4062,7 +4067,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
 
       const itemConfig = await loadConfig(req);
-      if (itemConfig) {
+      if (itemConfig && !req.params.skipWatched) {
         await applyWatchedState([item], await watchedSnapshot(userUUID, itemConfig), userUUID, profileKey(itemConfig), itemConfig);
       }
 
