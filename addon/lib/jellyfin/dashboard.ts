@@ -1276,7 +1276,8 @@ async function foldedPlays(userUUID: string, names: Map<string, string>, kind: P
   const read = (n: number) => kind === 'progress'
     ? database.listPlaystateInProgressFor(userUUID, n, profile)
     : database.listViewingHistory(userUUID, n, profile);
-  let ask = want * 2;
+  // A viewing is stored under each of its ids, so a few rows fold into one; asking for more at first saves a second read.
+  let ask = want * 4;
   for (;;) {
     const raw: any[] = await read(ask);
     const out = await playRows(userUUID, raw, names);

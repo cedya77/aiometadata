@@ -348,6 +348,8 @@ class Database {
       )`);
       await this.runQuery(`CREATE INDEX IF NOT EXISTS idx_jellyfin_watches_recent ON jellyfin_watches(user_uuid, profile, watched_at DESC)`);
       await this.runQuery(`CREATE INDEX IF NOT EXISTS idx_jellyfin_watches_at ON jellyfin_watches(watched_at)`);
+      // Recent viewings across all of a user's profiles, newest first, read off an index rather than sorting the history.
+      await this.runQuery(`CREATE INDEX IF NOT EXISTS idx_jellyfin_watches_user_recent ON jellyfin_watches(user_uuid, watched_at DESC)`);
       if (existing) return;
       const result = await this.runQuery(`INSERT INTO jellyfin_watches (user_uuid, profile, video_id, watched_at, origin)
         SELECT user_uuid, profile, video_id, last_played_at, origin FROM jellyfin_playstate
