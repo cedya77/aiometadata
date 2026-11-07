@@ -35,7 +35,7 @@ import { liveDevices, rememberTokenDevice, saveCapabilities, sendToDevice } from
 import { artTag, imageTag, isWideTag } from './imageTags';
 import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
-import { coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
+import { canPlay, coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberIssued, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
 import { heldNextUp, memoNextUp, resumeSnapshot, resumeUserData } from './resume';
 import { animeSequels } from './sequels';
@@ -1647,7 +1647,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const seen = new Set<string>();
     const sources: any[] = [];
     const notices: any[] = [];
+    const cap = maxMediaSources();
     for (const stream of streams) {
+      if (sources.length >= cap && canPlay(stream, allowHeaders)) continue;
       const playable = toPlayable(stream, allowHeaders);
       if (!playable) {
         if (!streamNoticesOffered()) continue;
@@ -1659,14 +1661,15 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
       if (seen.has(playable.id)) continue;
       seen.add(playable.id);
+      rememberIssued(playable.id, playable.url, playable.durationMs);
       const source = mediaSourceFor(playable, runtimeTicks);
       if (playable.needsHeaders) headerSources.add(source);
       sources.push(source);
     }
 
-    logger.debug(`Streams ${stremioType}/${stremioId}: ${streams.length} offered, ${sources.length} playable, ${notices.length} to read`);
+    logger.debug(`Streams ${stremioType}/${stremioId}: ${streams.length} offered, ${sources.length} kept, ${notices.length} to read`);
     if (streams.length && !sources.length && !notices.length) rememberFailure(cacheKey, 'No playable stream for this title');
-    return [...sources.slice(0, maxMediaSources()), ...notices];
+    return [...sources, ...notices];
   };
 
   // What the picker says when a resolve leaves nothing to list.
