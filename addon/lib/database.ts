@@ -2702,9 +2702,21 @@ class Database {
     return out;
   }
 
+  /** Read a page at a time along the key, letting other requests run between pages of a large library. */
   async listWatchIndex(sourceKey: string): Promise<Array<{ video_id: string; kind: string; meta_id: string; media_type: string; at: number; listed: number }>> {
-    const rows = await this.allQuery(`SELECT video_id, kind, meta_id, media_type, at, listed FROM jellyfin_watch_index WHERE source_key = ${this.type === 'sqlite' ? '?' : '$1'}`, [sourceKey]);
-    return rows.map((row: any) => ({ ...row, at: Number(row.at), listed: Number(row.listed) }));
+    const page = 5000;
+    const query = this.type === 'sqlite'
+      ? 'SELECT video_id, kind, meta_id, media_type, at, listed FROM jellyfin_watch_index WHERE source_key = ? AND video_id > ? ORDER BY video_id LIMIT ?'
+      : 'SELECT video_id, kind, meta_id, media_type, at, listed FROM jellyfin_watch_index WHERE source_key = $1 AND video_id > $2 ORDER BY video_id LIMIT $3';
+    const out: Array<{ video_id: string; kind: string; meta_id: string; media_type: string; at: number; listed: number }> = [];
+    let after = '';
+    for (;;) {
+      const rows: any[] = (await this.allQuery(query, [sourceKey, after, page])) || [];
+      for (const row of rows) out.push({ ...row, at: Number(row.at), listed: Number(row.listed) });
+      if (rows.length < page) return out;
+      after = String(rows[rows.length - 1].video_id);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
   }
 
   async watchIndexAmong(sourceKey: string, videoIds: string[]): Promise<Array<{ video_id: string; kind: string; at: number }>> {

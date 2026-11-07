@@ -2,6 +2,7 @@ import consola from 'consola';
 import { LRUCache } from 'lru-cache';
 import { createHash } from 'crypto';
 import { envInt } from '../../utils/envNumber';
+import { yieldEvery } from '../../utils/yieldEvery';
 import { credentialFor, sourceFor } from './trackerSource';
 import { generationOf, videoIdFor } from './resume';
 import { playCountOf } from './dto';
@@ -408,7 +409,8 @@ interface RawSnapshot {
 }
 
 /** A Simkl library, as `/sync/all-items` returns it, made into a snapshot. */
-export function assembleSimkl(data: any): RawSnapshot {
+export async function assembleSimkl(data: any): Promise<RawSnapshot> {
+  const pause = yieldEvery();
   const snapshot: Collecting = {
     episodes: new Set(),
     movies: new Set(),
@@ -423,6 +425,7 @@ export function assembleSimkl(data: any): RawSnapshot {
   const history = new Map<string, HistoryEntry>();
 
   for (const entry of Array.isArray(data?.movies) ? data.movies : []) {
+    await pause();
     if (entry?.status !== 'completed') continue;
     const ids = entry?.movie?.ids ?? {};
     const at = Date.parse(entry?.last_watched_at ?? '') || 0;
@@ -434,8 +437,14 @@ export function assembleSimkl(data: any): RawSnapshot {
     if (id) recordWatch(history, { kind: 'movie', id, mediaType: 'movie', at });
   }
 
-  for (const entry of Array.isArray(data?.shows) ? data.shows : []) collectShow(entry, snapshot, false, history);
-  for (const entry of Array.isArray(data?.anime) ? data.anime : []) collectShow(entry, snapshot, true, history);
+  for (const entry of Array.isArray(data?.shows) ? data.shows : []) {
+    await pause();
+    collectShow(entry, snapshot, false, history);
+  }
+  for (const entry of Array.isArray(data?.anime) ? data.anime : []) {
+    await pause();
+    collectShow(entry, snapshot, true, history);
+  }
 
   return {
     episodes: [...snapshot.episodes],
@@ -823,7 +832,9 @@ async function assembleFromMirror(service: MirroredService, credential: string, 
   if (service === 'simkl') {
     const { canonicalIds } = require('./canonicalIds');
     const data: any = { movies: [], shows: [], anime: [] };
+    const pause = yieldEvery();
     for (const row of rows) {
+      await pause();
       const type = row.key.split(':')[0];
       if (!data[type]) continue;
       let entry = row.data;
@@ -926,13 +937,19 @@ async function writeIndex(source: string, raw: RawSnapshot): Promise<{ added: nu
       listed: entry ? 1 : 0,
     });
   };
-  for (const id of raw.episodes) add(id, 'episode');
+  // A large library takes seconds to compare, so the loops let other requests run as they go.
+  const pause = yieldEvery();
+  for (const id of raw.episodes) {
+    add(id, 'episode');
+    await pause();
+  }
   for (const id of raw.movies) add(id, 'movie');
   for (const entry of raw.history ?? []) if (!want.has(entry.id)) add(entry.id, entry.kind);
 
   const have = new Map<string, IndexRow>((await database.listWatchIndex(source)).map((row: IndexRow) => [row.video_id, row]));
   const changed: IndexRow[] = [];
   for (const row of want.values()) {
+    await pause();
     const held = have.get(row.video_id);
     if (!held || held.kind !== row.kind || held.meta_id !== row.meta_id || held.media_type !== row.media_type || held.at !== Math.round(row.at) || held.listed !== row.listed) changed.push(row);
   }
