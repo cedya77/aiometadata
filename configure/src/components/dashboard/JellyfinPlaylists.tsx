@@ -190,7 +190,7 @@ const PLAYLIST_VIEWS: ReadonlyArray<readonly [PlaylistView, typeof Layers, strin
 
 /** One entry of the list, dragged by its handle to a new place. */
 function SortableEntry({ entry, number, busy, onRemove }: { entry: JellyfinPlaylistEntry; number: number; busy: boolean; onRemove: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: entry.id, disabled: busy });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: entry.id, disabled: { draggable: busy, droppable: false } });
   const open = useOpenTitle();
   const state = stateOf(entry);
   const name = entry.kind === "episode" && entry.subtitle ? `${entry.title} ${entry.subtitle}` : entry.title;
