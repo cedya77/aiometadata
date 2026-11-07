@@ -417,16 +417,16 @@ export async function subtitleBody(url: string, to: SubtitleFormat): Promise<{ b
   }
 }
 
-const offered = new LRUCache<string, SubtitleTrack[]>({
+const offered = new LRUCache<string, { tracks: SubtitleTrack[]; start: number }>({
   max: envInt('JELLYFIN_STREAM_CACHE_MAX', 2000, 1),
   ttl: envInt('JELLYFIN_SUBTITLE_TTL', 60 * 60, 60) * 1000,
 });
 
-/** The external tracks a source was sent with, by index, so the route serves what the client saw. */
-export function rememberOffered(key: string, tracks: SubtitleTrack[]): void {
-  offered.set(key, tracks);
+/** The external tracks a source was sent with, and the stream index the first took, so the route serves what the client saw. */
+export function rememberOffered(key: string, tracks: SubtitleTrack[], start: number): void {
+  offered.set(key, { tracks, start });
 }
 
-export function recallOffered(key: string): SubtitleTrack[] | undefined {
+export function recallOffered(key: string): { tracks: SubtitleTrack[]; start: number } | undefined {
   return offered.get(key);
 }

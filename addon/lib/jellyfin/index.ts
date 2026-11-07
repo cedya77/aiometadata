@@ -1821,7 +1821,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         });
       });
       source.MediaStreams = streams;
-      rememberOffered(subtitleKey(userUUID, itemId, source.Id), kept);
+      rememberOffered(subtitleKey(userUUID, itemId, source.Id), kept, start);
     }
   };
 
@@ -1940,20 +1940,21 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const index = parseInt(String(req.params.index), 10);
     const format = formatOf(String(req.params.format));
 
-    const sources = await withDefaultSourceId(await resolveMediaSources(req, descriptor, null, false, true), itemId);
-    const source = sources.find((s: any) => normaliseJellyfinId(s.Id) === normaliseJellyfinId(sourceId));
-    if (!source) {
-      res.status(404).end();
-      return;
-    }
-    const embedded = Array.isArray(source.MediaStreams) ? source.MediaStreams.length : 0;
+    // A player asks for every subtitle at once, so the list it was sent answers without resolving the streams again.
     const key = subtitleKey(userUUID, itemId, sourceId);
-    let tracks = recallOffered(key);
-    if (!tracks) {
+    let sent = recallOffered(key);
+    if (!sent) {
+      const sources = await withDefaultSourceId(await resolveMediaSources(req, descriptor, null, false, true), itemId);
+      const source = sources.find((s: any) => normaliseJellyfinId(s.Id) === normaliseJellyfinId(sourceId));
+      if (!source) {
+        res.status(404).end();
+        return;
+      }
+      const embedded = Array.isArray(source.MediaStreams) ? source.MediaStreams.length : 0;
       await attachExternalSubtitles(req, itemId, [source], { addonFor: source.Id });
-      tracks = recallOffered(key) ?? [];
+      sent = recallOffered(key) ?? { tracks: [], start: embedded };
     }
-    const track = tracks[index - embedded];
+    const track = sent.tracks[index - sent.start];
     if (!track) {
       res.status(404).end();
       return;
