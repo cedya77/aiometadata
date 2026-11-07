@@ -8477,7 +8477,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/calendar", requireDashboardAdmin, a
       res.status(404).json({ error: 'No such configuration' });
       return;
     }
-    res.json({ rows });
+    res.json(rows === 'pending' ? { rows: [], pending: true } : { rows });
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to read the Jellyfin calendar' });

@@ -2123,6 +2123,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_DASHBOARD_CALENDAR_WAIT',
+    envVar: 'JELLYFIN_DASHBOARD_CALENDAR_WAIT',
+    label: 'Jellyfin Dashboard Calendar Wait (seconds)',
+    description: 'How long the calendar waits on a slow tracker before showing as still loading. It keeps reading, and the page asks again until it is ready.',
+    category: 'Features',
+    type: 'number',
+    default: 15,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_DASHBOARD_MISS_TTL',
     envVar: 'JELLYFIN_DASHBOARD_MISS_TTL',
     label: 'Jellyfin Dashboard Missing Title Cache (seconds)',

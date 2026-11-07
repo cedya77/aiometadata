@@ -443,12 +443,13 @@ export default function JellyfinCalendar({ userUUID, profile, profileName, activ
   const [ambient, setAmbient] = useState<string | undefined>();
 
   const span = useMemo(() => (view === "month" ? monthWindow(month, first) : { start: weekStart, days: WEEK }), [view, month, first, weekStart]);
-  const { data, isLoading, isFetching, isError, refetch } = useJellyfinCalendar(userUUID, profile, span.start, span.days, { activeTab });
+  const { data, isLoading: reading, isFetching, isError, refetch } = useJellyfinCalendar(userUUID, profile, span.start, span.days, { activeTab });
+  const isLoading = reading || Boolean(data?.pending);
   const [before, after] = useMemo(() => (view === "month"
     ? [monthWindow(new Date(month.getFullYear(), month.getMonth() - 1, 1), first), monthWindow(new Date(month.getFullYear(), month.getMonth() + 1, 1), first)]
     : [{ start: addDays(weekStart, -WEEK), days: WEEK }, { start: addDays(weekStart, WEEK), days: WEEK }]), [view, month, first, weekStart]);
-  useJellyfinCalendar(userUUID, profile, before.start, before.days, { activeTab, enabled: Boolean(data) });
-  useJellyfinCalendar(userUUID, profile, after.start, after.days, { activeTab, enabled: Boolean(data) });
+  useJellyfinCalendar(userUUID, profile, before.start, before.days, { activeTab, enabled: Boolean(data) && !data?.pending });
+  useJellyfinCalendar(userUUID, profile, after.start, after.days, { activeTab, enabled: Boolean(data) && !data?.pending });
   const days = useMemo(() => buildDays(span.start, span.days, data?.rows, now, today), [span, data, now, today]);
   const counted = view === "month" ? days.filter((day) => day.date.getMonth() === month.getMonth()) : days;
   const total = counted.reduce((sum, day) => sum + day.airings.length, 0);

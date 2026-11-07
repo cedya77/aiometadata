@@ -1579,12 +1579,18 @@ export interface CalendarRow {
 
 const CALENDAR_SPAN_DAYS = 45;
 
-export async function dashboardCalendar(userUUID: string, profile: string | null, from: number, to: number): Promise<CalendarRow[] | null> {
+export async function dashboardCalendar(userUUID: string, profile: string | null, from: number, to: number): Promise<CalendarRow[] | 'pending' | null> {
   return asProfile(userUUID, profile, async (config) => {
     const dayMs = 24 * 60 * 60 * 1000;
     const end = Math.min(to, from + CALENDAR_SPAN_DAYS * dayMs);
     const { readCalendar } = require('./index');
-    const items: any[] | null = await readCalendar(userUUID, config, from, end);
+    // A slow tracker can hold the first read for minutes; the work goes on, and the page asks again.
+    let timer: NodeJS.Timeout | undefined;
+    const items: any[] | null | 'pending' = await Promise.race([
+      readCalendar(userUUID, config, from, end),
+      new Promise<'pending'>((resolve) => { timer = setTimeout(() => resolve('pending'), envInt('JELLYFIN_DASHBOARD_CALENDAR_WAIT', 15, 1) * 1000); }),
+    ]).finally(() => clearTimeout(timer));
+    if (items === 'pending') return items;
     if (!items) return null;
     const image = (id: unknown, type: string, tag: unknown): string | null =>
       id && tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(id))}/Images/${type}?tag=${encodeURIComponent(String(tag))}` : null;

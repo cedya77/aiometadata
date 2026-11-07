@@ -1898,10 +1898,10 @@ export function useJellyfinCalendar(userUUID: string | null, profile: string | n
   if (profile !== null) params.set('profile', profile);
   params.set('from', String(start.getTime() - CALENDAR_DAY_MS));
   params.set('to', String(start.getTime() + (days + 1) * CALENDAR_DAY_MS));
-  return useJellyfinQuery<{ rows: JellyfinCalendarRow[] }>(
+  return useJellyfinQuery<{ rows: JellyfinCalendarRow[]; pending?: boolean }>(
     ['dashboard', 'jellyfin', 'calendar', userUUID, profile, start.getTime(), days] as const,
     `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/calendar?${params}`,
-    { ...options, enabledWhen: Boolean(userUUID), poll: false }
+    { ...options, enabledWhen: Boolean(userUUID), pollEvery: (data) => (data?.pending ? 5000 : false) }
   );
 }
 
