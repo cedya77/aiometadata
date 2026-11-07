@@ -348,11 +348,13 @@ const statsMemo = new LRUCache<string, { fingerprint: string; work: Promise<Map<
 });
 const statsRefreshing = new Set<string>();
 
-function statsFingerprint(summary: any[]): string {
-  return summary
-    .map((row) => `${row.profile ?? ''}:${Number(row.rows_total) || 0}:${Number(row.in_progress) || 0}:${Number(row.played) || 0}:${Number(row.last_played_at) || 0}:${Number(row.updated_at) || 0}`)
+// A player saving its place every minute moves the last play and write times but adds no watch, so the last play is
+// taken by the day and every viewing by the latest watch.
+function statsFingerprint(summary: any[], latestWatch: number): string {
+  return `${latestWatch}|${summary
+    .map((row) => `${row.profile ?? ''}:${Number(row.rows_total) || 0}:${Number(row.in_progress) || 0}:${Number(row.played) || 0}:${Math.floor((Number(row.last_played_at) || 0) / DAY_MS)}`)
     .sort()
-    .join('|');
+    .join('|')}`;
 }
 
 const statsStoreKey = (key: string) => `jf:dashstats:v3:${key}`;
@@ -386,9 +388,9 @@ export async function forgetDashboardStats(userUUID: string): Promise<void> {
   await redis.del(...keys).catch(() => undefined);
 }
 
-function profileStats(userUUID: string, offsetMinutes: number, summary: any[]): Promise<Map<string, ProfileStats>> {
+async function profileStats(userUUID: string, offsetMinutes: number, summary: any[]): Promise<Map<string, ProfileStats>> {
   const key = `${userUUID}:${offsetMinutes}`;
-  const fingerprint = statsFingerprint(summary);
+  const fingerprint = statsFingerprint(summary, await database.latestWatchAt(userUUID).catch(() => 0));
   const held = statsMemo.get(key);
   if (held && held.fingerprint === fingerprint) return held.work;
   const work = (async () => {

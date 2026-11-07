@@ -1695,6 +1695,11 @@ class Database {
     return Number(row?.count) || 0;
   }
 
+  async latestWatchAt(userUUID: string): Promise<number> {
+    const row = await this.getQuery(`SELECT MAX(watched_at) AS at FROM jellyfin_watches WHERE user_uuid = ${this.type === 'sqlite' ? '?' : '$1'}`, [userUUID]);
+    return Number(row?.at) || 0;
+  }
+
   async playstateForConfiguration(userUUID: string): Promise<any[]> {
     const query = this.type === 'sqlite'
       ? `SELECT profile, COUNT(*) AS rows_total,
