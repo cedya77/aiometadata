@@ -1363,11 +1363,8 @@ addon.post("/api/auth/trakt/disconnect", async (req, res) => {
       return res.status(404).json({ error: "User config not found" });
     }
     
-    // Delete OAuth token from database if it exists
-    if (config.apiKeys?.traktTokenId) {
-      await database.deleteOAuthToken(config.apiKeys.traktTokenId);
-      delete config.apiKeys.traktTokenId;
-    }
+    const released = config.apiKeys?.traktTokenId;
+    if (released) delete config.apiKeys.traktTokenId;
     
     // Remove Trakt user info
     delete config.traktUser;
@@ -1387,6 +1384,9 @@ addon.post("/api/auth/trakt/disconnect", async (req, res) => {
     
     // Invalidate config cache
     configCache.del(userUUID);
+
+    // Released once this configuration no longer names it, and only if no other does.
+    if (released) await require('./lib/accountLinks').releaseFieldToken('traktTokenId', released);
     
     // `removed` says exactly what this disconnect took out, so a page holding
     // unsaved edits can apply the same removals instead of adopting the whole
