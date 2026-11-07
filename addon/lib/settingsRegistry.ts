@@ -2765,7 +2765,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     description: 'How many already-written item ids are remembered, so the same id is not written again.',
     category: 'Cache',
     type: 'number',
-    default: 50000,
+    default: 100000,
     min: 1,
   },
   {

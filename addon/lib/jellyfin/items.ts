@@ -864,9 +864,26 @@ export function metaToBaseItem(
   };
 }
 
+export function studioNamesOf(meta: any): string[] {
+  return [...new Set([...(Array.isArray(meta?.studios) ? meta.studios : []), ...(Array.isArray(meta?.networks) ? meta.networks : [])].filter((name) => typeof name === 'string' && name))];
+}
+
+/** A title's studios as Id descriptors, carrying the provider and its id where the title's metadata named them. */
+export function studioDescriptorsOf(meta: any): Array<{ k: 'studio'; n: string; s?: 'tmdb-company' | 'tmdb-network' | 'tvdb' | 'mal'; x?: number }> {
+  const refs: any[] = Array.isArray(meta?._studioRefs) ? meta._studioRefs : [];
+  return studioNamesOf(meta).map((name) => {
+    const ref = refs.find((candidate) => candidate?.name === name);
+    return ref ? { k: 'studio' as const, n: name, s: ref.source, x: Number(ref.id) } : { k: 'studio' as const, n: name };
+  });
+}
+
+/** The Id titles carried for a studio before studio Ids could be decoded; still matched for links clients kept. */
+export function legacyStudioId(name: string): string {
+  return createHash('md5').update(`studio:${name}`).digest('hex');
+}
+
 function studiosOf(meta: any): any[] {
-  const names = [...new Set([...(Array.isArray(meta.studios) ? meta.studios : []), ...(Array.isArray(meta.networks) ? meta.networks : [])].filter((name) => typeof name === 'string' && name))];
-  return names.map((name) => ({ Name: name, Id: createHash('md5').update(`studio:${name}`).digest('hex') }));
+  return studioDescriptorsOf(meta).map((descriptor) => ({ Name: descriptor.n, Id: encodeJellyfinId(descriptor) }));
 }
 
 function countriesOf(meta: any): string[] {
@@ -1031,29 +1048,43 @@ export function wantedYears(years: unknown): Set<number> | null {
   return list.length ? new Set(list) : null;
 }
 
-/** Keeps the titles of the asked types and, when asked, ratings and years; a title with no rating or year matches none. */
+/** The studios a request keeps: lowercased names, Ids titles carried before studio Ids decoded, and provider ids where known. */
+export interface StudioFilter {
+  names: Set<string>;
+  legacy: Set<string>;
+  refs: Array<{ name: string; source: 'tmdb-company' | 'tmdb-network' | 'tvdb' | 'mal'; id: number }>;
+}
+
+function fromStudio(meta: any, studios: StudioFilter): boolean {
+  return studioNamesOf(meta).some((name) => studios.names.has(name.toLowerCase()) || studios.legacy.has(legacyStudioId(name)));
+}
+
+/** Keeps the titles of the asked types and, when asked, ratings, years and studios; a title lacking the field matches none. */
 export function includeTypesFilter(
   mediaType: string,
   includeItemTypes: string | undefined,
   officialRatings?: unknown,
-  years?: unknown
+  years?: unknown,
+  studios?: StudioFilter | null
 ): ((meta: any) => boolean) | undefined {
   const wanted = wantedTypes(includeItemTypes);
   const ratings = wantedRatings(officialRatings);
   const yearSet = wantedYears(years);
-  if (!wanted && !ratings && !yearSet) return undefined;
+  if (!wanted && !ratings && !yearSet && !studios) return undefined;
 
   return (meta: any) =>
     (!wanted || wanted.has(itemTypeOf(meta, mediaType)))
     && (!ratings || ratings.has(String(officialRatingOf(meta) ?? '').toUpperCase()))
-    && (!yearSet || yearSet.has(productionYear(meta) ?? -1));
+    && (!yearSet || yearSet.has(productionYear(meta) ?? -1))
+    && (!studios || fromStudio(meta, studios));
 }
 
-/** What a filtered list's lengths and cursors are held under: its types, and its ratings and years when it names any. */
-export function listFilterKey(includeItemTypes: unknown, officialRatings?: unknown, years?: unknown): string {
+/** What a filtered list's lengths and cursors are held under: its types, and its ratings, years and studios when it names any. */
+export function listFilterKey(includeItemTypes: unknown, officialRatings?: unknown, years?: unknown, studios?: StudioFilter | null): string {
   const ratings = wantedRatings(officialRatings);
   const yearSet = wantedYears(years);
-  return `${includeItemTypes ? String(includeItemTypes) : ''}${ratings ? `|ratings:${[...ratings].sort().join('|')}` : ''}${yearSet ? `|years:${[...yearSet].sort((a, b) => a - b).join('|')}` : ''}`;
+  const studioKey = studios ? `|studios:${[...[...studios.names].sort(), ...[...studios.legacy].sort()].join('|')}` : '';
+  return `${includeItemTypes ? String(includeItemTypes) : ''}${ratings ? `|ratings:${[...ratings].sort().join('|')}` : ''}${yearSet ? `|years:${[...yearSet].sort((a, b) => a - b).join('|')}` : ''}${studioKey}`;
 }
 
 // A catalog built here holds only its declared type: films and TVDB collections in a movie one, shows in a

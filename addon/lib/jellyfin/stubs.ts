@@ -8,7 +8,6 @@ import express from 'express';
 const EMPTY_LIST = { Items: [] as unknown[], TotalRecordCount: 0, StartIndex: 0 };
 
 const LIST_ROUTES = [
-  '/Studios',
   '/Artists',
   '/Artists/AlbumArtists',
   '/MusicGenres',

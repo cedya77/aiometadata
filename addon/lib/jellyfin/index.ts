@@ -41,7 +41,7 @@ import { buildViews, catalogView, collectionTypeFor, findCatalogByViewId, getCat
 import { decodeJellyfinId } from './ids';
 import { liveDevices, rememberTokenDevice, saveCapabilities, sendToDevice } from './socket';
 import { artTag, imageTag, isWideTag } from './imageTags';
-import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, productionYear, wantedYears, type Window } from './items';
+import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, productionYear, studioDescriptorsOf, wantedYears, type Window } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { canPlay, coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberIssued, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
@@ -59,7 +59,7 @@ import { hasCreditDate, personByName, personCredits, resolvePerson, similarTitle
 import { titleCards } from '../titleCards';
 import { allBoxSets, boxSetGenres, boxSetMembers, boxSetsDeep, boxSetsFor, boxSetsUnder, collectionById, collectionView, folderById } from './collections';
 import { applyWatchlistState, entryItemType, setWatchlisted, watchlistEntries, watchlistItems } from './watchlist';
-import { asksForFavourites, chainPicks, facetsOf, listTotal, yearItems } from './libraryFilters';
+import { asksForFavourites, chainPicks, facetsOf, listTotal, studioFilterOf, yearItems } from './libraryFilters';
 import { yearListing } from './discoverPages';
 import { applyRatings, applyWatchedState, finishedSeries, ownNextUpRows, seriesCountsAmong, upcomingFollowed, watchedAmong, watchedHistory, watchedSnapshot, type NextUpRow, type UpcomingRow } from './watched';
 import { cachedArtwork } from './artwork';
@@ -1083,6 +1083,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const includeItemTypes = req.query.IncludeItemTypes ?? req.query.includeItemTypes;
     const officialRatings = req.query.OfficialRatings ?? req.query.officialRatings;
     const years = req.query.Years ?? req.query.years;
+    const studios = await studioFilterOf(req.query, decodeJellyfinId);
     const recursive = String(req.query.Recursive ?? req.query.recursive ?? '').toLowerCase() === 'true';
     const rootParent = isRootParent(req.query.ParentId ?? req.query.parentId, userUUID);
     const parentId = rootParent ? undefined : req.query.ParentId ?? req.query.parentId;
@@ -1431,7 +1432,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       let passed = 0;
       const tags = profileTags(config);
 
-      const typesKey = listFilterKey(includeItemTypes, officialRatings, years);
+      const typesKey = listFilterKey(includeItemTypes, officialRatings, years, studios);
       await warmCatalogLengths(userUUID, pool, extras, tags, typesKey);
       // A filtered read its budget cut short, so titles may follow this page.
       let truncated = false;
@@ -1451,7 +1452,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           skip,
           limit - collected.length,
           extras,
-          includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings, years),
+          includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings, years, studios),
           tags,
           typesKey
         ).catch((): Window => ({ items: [], hasMore: false }));
@@ -1632,9 +1633,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       startIndex,
       pageLimit,
       extras,
-      includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings, years),
+      includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings, years, studios),
       profileTags(config),
-      `${listFilterKey(includeItemTypes, officialRatings, years)}${played.key}${favourite.key}`,
+      `${listFilterKey(includeItemTypes, officialRatings, years, studios)}${played.key}${favourite.key}`,
       chainPicks(played.pick, favourite.pick)
     );
 
@@ -2458,10 +2459,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     return { genres, pairs };
   };
 
-  // Jellyfin lists the ratings and years in view; reading a whole catalog for a menu would cost too much, so its first
-  // page stands in. It is also the page every filtered walk starts on, so a value offered here is one it will find.
-  const facetsInView = async (req: any): Promise<{ ratings: string[]; years: number[] }> => {
-    const none = { ratings: [], years: [] };
+  // Jellyfin lists the ratings, years and studios in view; reading a whole catalog for a menu would cost too much, so its
+  // first page stands in. It is also the page every filtered walk starts on, so a value offered here is one it will find.
+  const facetsInView = async (req: any): Promise<ReturnType<typeof facetsOf>> => {
+    const none = facetsOf([]);
     const parentId = req.query.ParentId ?? req.query.parentId;
     const config = parentId ? await loadConfig(req) : null;
     if (!config) return none;
@@ -2472,7 +2473,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       const folder = collection ? folderById(collection, descriptor.f) : null;
       if (!collection || !folder) return none;
       const page = await boxSetMembers(userUUID, config, serverIdFor(userUUID), collection, folder, 0, 100);
-      return facetsOf(page.items.map((item: any) => ({ rating: item.OfficialRating ?? null, year: item.ProductionYear ?? null })));
+      return facetsOf(page.items.map((item: any) => ({
+        rating: item.OfficialRating ?? null,
+        year: item.ProductionYear ?? null,
+        studios: (Array.isArray(item.Studios) ? item.Studios : []).map((studio: any) => ({ k: 'studio' as const, n: String(studio?.Name ?? '') })).filter((studio: any) => studio.n),
+      })));
     }
     if (descriptor?.k !== 'view') return none;
     const catalog = await findCatalogByViewId(userUUID, config, descriptor.t, descriptor.c);
@@ -2486,20 +2491,29 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
     if (!extras.genre && requiresGenre(catalog)) return none;
     const metas = (await fetchCatalogPage(userUUID, catalog.type, catalog.id, extras, tags)) ?? [];
-    return facetsOf(metas.map((meta: any) => ({ rating: officialRatingOf(meta), year: productionYear(meta) })));
+    return facetsOf(metas.map((meta: any) => ({ rating: officialRatingOf(meta), year: productionYear(meta), studios: studioDescriptorsOf(meta) })));
   };
 
   router.get('/Items/Filters', async (req: any, res: any) => {
-    const [{ genres, pairs }, facets] = await Promise.all([genrePairs(req), facetsInView(req).catch(() => ({ ratings: [], years: [] }))]);
+    const [{ genres, pairs }, facets] = await Promise.all([genrePairs(req), facetsInView(req).catch(() => facetsOf([]))]);
     res.json({ Genres: genres, Tags: [], OfficialRatings: facets.ratings, Years: facets.years, GenreItems: pairs });
   });
 
-  router.get('/Years', async (req: any, res: any) => {
-    const { years } = await facetsInView(req).catch(() => ({ years: [] as number[] }));
-    const items = yearItems(years, serverIdFor(req.params.userUUID), req.query.SortOrder ?? req.query.sortOrder);
+  const pagedList = (req: any, res: any, items: any[]) => {
     const startIndex = Math.max(0, qInt(req, 'StartIndex', 0));
     const limit = Math.max(1, qInt(req, 'Limit', items.length || 1));
     res.json(itemList(items.slice(startIndex, startIndex + limit), items.length, startIndex));
+  };
+
+  router.get('/Years', async (req: any, res: any) => {
+    const { years } = await facetsInView(req).catch(() => facetsOf([]));
+    pagedList(req, res, yearItems(years, serverIdFor(req.params.userUUID), req.query.SortOrder ?? req.query.sortOrder));
+  });
+
+  router.get('/Studios', async (req: any, res: any) => {
+    const { studios } = await facetsInView(req).catch(() => facetsOf([]));
+    const serverId = serverIdFor(req.params.userUUID);
+    pagedList(req, res, studios.map((studio) => namedItem('Studio', studio.n, encodeJellyfinId(studio), serverId)));
   });
 
   // Unlike the legacy route, genres here are { Name, Id } pairs.

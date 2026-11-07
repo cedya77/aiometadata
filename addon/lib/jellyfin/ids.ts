@@ -21,7 +21,7 @@ const cache = new LRUCache<string, Descriptor>({
 });
 
 const persisted = new LRUCache<string, true>({
-  max: envInt('JELLYFIN_ID_PERSISTED_MAX', 50000, 1),
+  max: envInt('JELLYFIN_ID_PERSISTED_MAX', 100000, 1),
 });
 
 let pending: Array<{ id: string; payload: Descriptor; codecVersion: number }> = [];
