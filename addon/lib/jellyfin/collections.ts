@@ -356,7 +356,8 @@ export async function boxSetMembers(
     });
     return shuffled ? { ...page, items: shuffleMetas(page.items) } : page;
   }
-  const held = memberCursors.get(cursorKey);
+  // Each position is kept under the place it continues from, so a read elsewhere in the folder leaves it be.
+  const held = memberCursors.get(`${cursorKey}@${startIndex}`);
 
   let sourceIndex = 0;
   let from = 0;
@@ -431,9 +432,7 @@ export async function boxSetMembers(
 
   const more = sourceIndex < sources.length;
   if (more && collected.length > 0 && seen.size <= MEMBER_CURSOR_MAX_IDS) {
-    memberCursors.set(cursorKey, { nextIndex, sourceIndex, sourceOffset: from, failures, seen });
-  } else {
-    memberCursors.delete(cursorKey);
+    memberCursors.set(`${cursorKey}@${nextIndex}`, { nextIndex, sourceIndex, sourceOffset: from, failures, seen });
   }
 
   return { items: shuffled ? shuffleMetas(collected) : collected, hasMore: more };
@@ -448,6 +447,8 @@ interface MixCursor {
   turn: number;
   runLeft: number;
   failures: number[];
+  /** Where each source's window began, which the catalog can resume at; offsets run on from there. */
+  starts: number[];
   seen: Set<string>;
 }
 
@@ -473,7 +474,7 @@ async function mixedMembers(args: {
   const count = sources.length;
   const extrasOf = (i: number): Record<string, string> => (sources[i].genre ? { genre: sources[i].genre as string } : {});
   const runLength = (i: number): number => knownPageLength(userUUID, sources[i].catalog, extrasOf(i), tags) ?? catalogPageSize();
-  const held = mixCursors.get(cursorKey);
+  const held = mixCursors.get(`${cursorKey}@${startIndex}`);
   const resumed = held && held.nextIndex === startIndex ? held : null;
   const offsets = resumed ? [...resumed.offsets] : sources.map(() => 0);
   const done = resumed ? [...resumed.done] : sources.map(({ catalog }) => catalogCannotServe(catalog, includeItemTypes));
@@ -489,6 +490,8 @@ async function mixedMembers(args: {
   const landscapes = sources.map(({ catalog }) => isLandscapeCatalog(config, catalog));
   const stalled = sources.map(() => false);
   const failures = resumed?.failures ? [...resumed.failures] : sources.map(() => 0);
+  const starts = resumed?.starts ? [...resumed.starts] : [...offsets];
+  const reread = sources.map(() => Boolean(resumed));
   const chunk = Math.max(10, Math.ceil((toSkip + limit) / count));
   const randomized = new Set<number>();
   const sourceOf: number[] = [];
@@ -499,9 +502,15 @@ async function mixedMembers(args: {
     const { catalog } = sources[i];
     const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings);
     const size = mode === 'alternating' ? Math.max(chunk, runLeft > 0 ? runLeft : runLength(i)) : chunk;
-    const window = await fetchWindow(userUUID, catalog, offsets[i], size, extrasOf(i), keep, tags, filterKey)
+    // A filtered source resumes where its window began, a place the catalog walk keeps, and skips what it gave;
+    // an unfiltered one finds its place by page.
+    const from = reread[i] && keep ? starts[i] : offsets[i];
+    reread[i] = false;
+    starts[i] = from;
+    const given = offsets[i] - from;
+    const window = await fetchWindow(userUUID, catalog, from, size + given, extrasOf(i), keep, tags, filterKey)
       .catch(() => null);
-    buffers[i] = window?.items ?? [];
+    buffers[i] = (window?.items ?? []).slice(given);
     // A read that failed keeps what it got and is read again from there on the next page, until it has failed too often.
     if (!window || window.failed) {
       failures[i] += 1;
@@ -566,9 +575,7 @@ async function mixedMembers(args: {
   const finished = sources.map((_, i) => !stalled[i] && (done[i] || (ended[i] && buffers[i].length === 0)));
   const more = finished.some((f) => !f);
   if (more && collected.length > 0 && seen.size <= MEMBER_CURSOR_MAX_IDS) {
-    mixCursors.set(cursorKey, { nextIndex, offsets, done: finished, turn, runLeft, failures, seen });
-  } else {
-    mixCursors.delete(cursorKey);
+    mixCursors.set(`${cursorKey}@${nextIndex}`, { nextIndex, offsets, done: finished, turn, runLeft, failures, starts, seen });
   }
   return { items: collected, hasMore: more };
 }
