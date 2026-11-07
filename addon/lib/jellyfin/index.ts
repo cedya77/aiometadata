@@ -58,7 +58,8 @@ import { malEpisodeFor, segmentId, segmentsFor, type SegmentType } from './segme
 import { hasCreditDate, personByName, personCredits, resolvePerson, similarTitles } from './people';
 import { titleCards } from '../titleCards';
 import { allBoxSets, boxSetGenres, boxSetMembers, boxSetsDeep, boxSetsFor, boxSetsUnder, collectionById, collectionView, folderById } from './collections';
-import { entryItemType, setWatchlisted, watchlistEntries, watchlistItems } from './watchlist';
+import { applyWatchlistState, entryItemType, setWatchlisted, watchlistEntries, watchlistItems } from './watchlist';
+import { asksForFavourites, chainPicks } from './libraryFilters';
 import { applyRatings, applyWatchedState, finishedSeries, ownNextUpRows, seriesCountsAmong, upcomingFollowed, watchedAmong, watchedHistory, watchedSnapshot, type NextUpRow, type UpcomingRow } from './watched';
 import { cachedArtwork } from './artwork';
 import { oneIdAsked, withCriticRatings } from './criticRatings';
@@ -343,6 +344,26 @@ async function playedPick(req: any, userUUID: string, config: any, type: string,
       const built = metas.map((meta: any) => metaToBaseItem(meta, type, serverId, parentId));
       await applyWatchedState(built, snapshot, userUUID, profileKey(config));
       return metas.filter((_: any, i: number) => (built[i].UserData?.Played === true) === (played === 'played'));
+    },
+  };
+}
+
+function favouritePick(req: any, userUUID: string, config: any, type: string, serverId: string, parentId: string): { pick?: (metas: any[]) => Promise<any[]>; key: string } {
+  if (!asksForFavourites(req.query, clientHasOwnWatchlist())) return { key: '' };
+  // Read once for the request, not once for every page the walk judges.
+  let entries: Promise<any[]> | undefined;
+  return {
+    key: '|favourite',
+    pick: async (metas: any[]) => {
+      entries ??= watchlistEntries(userUUID, config, Number.MAX_SAFE_INTEGER, true).then((read) => read.entries);
+      const built = metas.map((meta: any) => metaToBaseItem(meta, type, serverId, parentId));
+      const descriptors = new Map<string, any>();
+      await Promise.all(built.map(async (item: any) => {
+        const descriptor = await decodeJellyfinId(String(item.Id));
+        if (descriptor) descriptors.set(String(item.Id), descriptor);
+      }));
+      await applyWatchlistState(built, userUUID, config, descriptors, await entries);
+      return metas.filter((_: any, i: number) => built[i].UserData?.IsFavorite === true);
     },
   };
 }
@@ -1064,7 +1085,6 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const rootParent = isRootParent(req.query.ParentId ?? req.query.parentId, userUUID);
     const parentId = rootParent ? undefined : req.query.ParentId ?? req.query.parentId;
     const filters = String(req.query.Filters ?? req.query.filters ?? '');
-    const favouriteFlag = String(req.query.IsFavorite ?? req.query.isFavorite ?? '').toLowerCase() === 'true';
 
     const config = await loadConfig(req);
     if (!config) {
@@ -1081,9 +1101,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     if (await answerPlaylistListing(playlistReq, res, playlistDeps, config)) return;
 
     // The watchlist, newest first, is every client's favourites; older clients ask for it by likes.
-    const ownWatchlist = clientHasOwnWatchlist();
-    const likesFilter = filters.split(',').map((f) => f.trim()).includes('Likes');
-    if (filters.includes('IsFavorite') || favouriteFlag || (ownWatchlist && likesFilter)) {
+    // Inside a catalog library it is that catalog's titles on the watchlist, filtered further down.
+    const inCatalogLibrary = parentId ? (await decodeJellyfinId(String(parentId)))?.k === 'view' : false;
+    if (asksForFavourites(req.query, clientHasOwnWatchlist()) && !inCatalogLibrary) {
       const started = Date.now();
       const wanted = includeItemTypes
         ? new Set(String(includeItemTypes).split(',').map((t) => t.trim()).filter(Boolean))
@@ -1572,6 +1592,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const pageLimit = limit > pageCap * 2 ? pageCap : limit;
 
     const played = await playedPick(req, userUUID, config, catalog.type, serverId, String(parentId));
+    const favourite = favouritePick(req, userUUID, config, catalog.type, serverId, String(parentId));
     const window = await fetchWindow(
       userUUID,
       catalog,
@@ -1580,8 +1601,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       extras,
       includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings),
       profileTags(config),
-      `${listFilterKey(includeItemTypes, officialRatings)}${played.key}`,
-      played.pick
+      `${listFilterKey(includeItemTypes, officialRatings)}${played.key}${favourite.key}`,
+      chainPicks(played.pick, favourite.pick)
     );
     const hasMore = window.hasMore;
 
