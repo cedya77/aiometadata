@@ -60,7 +60,8 @@ import { titleCards } from '../titleCards';
 import { allBoxSets, boxSetGenres, boxSetMembers, boxSetsDeep, boxSetsFor, boxSetsUnder, collectionById, collectionView, folderById } from './collections';
 import { applyWatchlistState, entryItemType, setWatchlisted, watchlistEntries, watchlistItems } from './watchlist';
 import { asksForFavourites, chainPicks, facetsOf, listTotal, studioFilterOf, yearItems } from './libraryFilters';
-import { yearListing } from './discoverPages';
+import { studioListing, yearListing } from './discoverPages';
+import { hasTmdbKey } from '../getTmdb';
 import { applyRatings, applyWatchedState, finishedSeries, ownNextUpRows, seriesCountsAmong, upcomingFollowed, watchedAmong, watchedHistory, watchedSnapshot, type NextUpRow, type UpcomingRow } from './watched';
 import { cachedArtwork } from './artwork';
 import { oneIdAsked, withCriticRatings } from './criticRatings';
@@ -1370,30 +1371,43 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
 
     if (!parentId) {
-      // A year asked across every library is TMDB's whole year, as a person is their whole filmography; the walk
-      // below is the fallback when TMDB cannot be asked.
+      // A year asked across every library is TMDB's whole year, as a person is their whole filmography. A provider
+      // applies only the year or studio, so a request naming anything else as well is left to the walk, which applies
+      // it all. A provider that fails is reported rather than walked around, as the walk reads every catalog; without
+      // a TMDB key the walk is all there is.
       const yearSet = wantedYears(years);
-      if (yearSet) {
-        const listed = await yearListing({
-          config,
-          userUUID,
-          serverId,
-          years: [...yearSet],
-          includeItemTypes,
-          sortBy: req.query.SortBy ?? req.query.sortBy,
-          sortOrder: req.query.SortOrder ?? req.query.sortOrder,
-          startIndex,
-          limit,
-        }).catch((error: any) => {
-          logger.debug(`Year listing for ${[...yearSet].join(',')} fell back to the catalogs: ${error?.message || error}`);
-          return null;
-        });
-        if (listed) {
-          await applyWatchedState(listed.items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
-          res.json(itemList(listed.items, listed.total, startIndex));
-          return;
+      const onlyLink = !extras.genre && !officialRatings && !wantedTags(req.query.Tags ?? req.query.tags);
+      const linkLimit = limit > envInt('JELLYFIN_LIST_PAGE_MAX', 50, 20) * 2 ? envInt('JELLYFIN_LIST_PAGE_MAX', 50, 20) : limit;
+      const linkOptions = {
+        config,
+        userUUID,
+        serverId,
+        includeItemTypes,
+        sortBy: req.query.SortBy ?? req.query.sortBy,
+        sortOrder: req.query.SortOrder ?? req.query.sortOrder,
+        startIndex,
+        limit: linkLimit,
+      };
+      const answeredFromProvider = async (what: string, list: () => Promise<{ items: any[]; total: number } | null>): Promise<boolean> => {
+        let listed: { items: any[]; total: number } | null;
+        try {
+          listed = await list();
+        } catch (error: any) {
+          if (!hasTmdbKey(config)) {
+            logger.debug(`${what} fell back to the catalogs: ${error?.message || error}`);
+            return false;
+          }
+          logger.debug(`${what} failed: ${error?.message || error}`);
+          res.status(503).json({ Message: 'Service Unavailable' });
+          return true;
         }
-      }
+        if (!listed) return false;
+        await applyWatchedState(listed.items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
+        res.json(itemList(listed.items, listed.total, startIndex));
+        return true;
+      };
+      if (studios && !yearSet && onlyLink && (await answeredFromProvider('Studio listing', () => studioListing({ ...linkOptions, filter: studios })))) return;
+      if (yearSet && !studios && onlyLink && (await answeredFromProvider(`Year listing for ${[...yearSet].join(',')}`, () => yearListing({ ...linkOptions, years: [...yearSet] })))) return;
 
       if (!recursive) {
         const views = await userViews(req, userUUID, serverId, config);
