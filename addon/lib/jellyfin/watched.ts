@@ -2,6 +2,7 @@ import consola from 'consola';
 import { LRUCache } from 'lru-cache';
 import { createHash } from 'crypto';
 import { envInt } from '../../utils/envNumber';
+import { yieldEvery } from '../../utils/yieldEvery';
 import { credentialFor, sourceFor } from './trackerSource';
 import { generationOf, videoIdFor } from './resume';
 import { playCountOf } from './dto';
@@ -33,12 +34,13 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
   const isAfter = (a: any, b: any): boolean => (a.season ?? 0) > (b.season ?? 0) || ((a.season ?? 0) === (b.season ?? 0) && a.episode > b.episode);
   let after: { at: number; videoId: string } | null = null;
   let carry: any[] = [];
-  for (let scanned = 0; rows.length < shows && scanned < scanCap; scanned += batch) {
+  const pending: Array<{ lead: any; leadParsed: any; watchedAt: number; bases: Set<string> }> = [];
+  for (let scanned = 0; pending.length < shows && scanned < scanCap; scanned += batch) {
     let records: any[];
     try {
       records = await database.listRecentlyPlayed(userUUID, since, batch, profile, after);
     } catch {
-      return rows;
+      break;
     }
     const last = records[records.length - 1];
     if (last) after = { at: Number(last.last_played_at), videoId: String(last.video_id) };
@@ -65,9 +67,8 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
       }
     }
     carry = last ? records.filter((row) => Number(row.last_played_at) === Number(last.last_played_at)) : [];
-    const pending: Array<{ lead: any; leadParsed: any; watchedAt: number; bases: Set<string> }> = [];
     for (const r of records) {
-      if (rows.length + pending.length >= shows) break;
+      if (pending.length >= shows) break;
       const parsed = parseStremioId(String(r.video_id));
       if (!parsed || parsed.episode === null || parsed.episode === undefined) continue;
       const group = groupOf.get(String(r.video_id)) ?? [r];
@@ -109,52 +110,52 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
       }
       pending.push({ lead, leadParsed, watchedAt, bases });
     }
-    // A mark only moves a show on, so one led by a mark goes back to its latest viewing unless a mark since is further,
-    // as when a tracker returns old marks dated the day they were sent.
-    const markLed = pending.filter((entry) => entry.lead.last_played_kind === 'mark');
-    const played: any[] = markLed.length
-      ? await database.listPlayedAmong(userUUID, profile, [...new Set(markLed.flatMap((entry) => [...entry.bases]))]).catch(() => [])
-      : [];
-    // Episode numbers compare only within one id, since ids can number a show differently.
-    const byBase = new Map<string, Array<{ row: any; spelled: any }>>();
-    for (const row of played) {
-      const spelled = regularEpisode(String(row.video_id));
-      if (!spelled) continue;
-      const group = byBase.get(spelled.base);
-      if (group) group.push({ row, spelled });
-      else byBase.set(spelled.base, [{ row, spelled }]);
-    }
-    for (const entry of markLed) {
-      let best: { viewing: { row: any; spelled: any }; pick: { row: any; spelled: any } } | null = null;
-      for (const base of entry.bases) {
-        const own = byBase.get(base) ?? [];
-        let viewing: { row: any; spelled: any } | null = null;
-        for (const held of own) {
-          if (held.row.last_played_kind !== 'mark' && (!viewing || Number(held.row.last_played_at) > Number(viewing.row.last_played_at))) viewing = held;
-        }
-        if (!viewing) continue;
-        let pick = viewing;
-        for (const held of own) {
-          if (held.row.last_played_kind === 'mark' && Number(held.row.last_played_at) >= Number(viewing.row.last_played_at) && isAfter(held.spelled, pick.spelled)) pick = held;
-        }
-        if (!best || Number(viewing.row.last_played_at) > Number(best.viewing.row.last_played_at)) best = { viewing, pick };
-      }
-      if (!best) continue;
-      entry.lead = { ...entry.lead, video_id: String(best.pick.row.video_id) };
-      entry.leadParsed = best.pick.spelled;
-      entry.watchedAt = Number(best.pick.row.last_played_at);
-    }
-    for (const { lead, leadParsed, watchedAt } of pending) {
-      rows.push({
-        metaId: leadParsed.base,
-        videoId: String(lead.video_id),
-        season: leadParsed.season ?? null,
-        episode: leadParsed.episode,
-        mediaType: leadParsed.idType === 'kitsu' || leadParsed.idType === 'mal' || leadParsed.idType === 'anilist' ? 'anime' : 'series',
-        lastWatchedAt: watchedAt,
-      });
-    }
     if (records.length < batch) break;
+  }
+  // A mark only moves a show on, so one led by a mark goes back to its latest viewing unless a mark since is further,
+  // as when a tracker returns old marks dated the day they were sent.
+  const markLed = pending.filter((entry) => entry.lead.last_played_kind === 'mark');
+  const played: any[] = markLed.length
+    ? await database.listPlayedAmong(userUUID, profile, [...new Set(markLed.flatMap((entry) => [...entry.bases]))]).catch(() => [])
+    : [];
+  // Episode numbers compare only within one id, since ids can number a show differently.
+  const byBase = new Map<string, Array<{ row: any; spelled: any }>>();
+  for (const row of played) {
+    const spelled = regularEpisode(String(row.video_id));
+    if (!spelled) continue;
+    const group = byBase.get(spelled.base);
+    if (group) group.push({ row, spelled });
+    else byBase.set(spelled.base, [{ row, spelled }]);
+  }
+  for (const entry of markLed) {
+    let best: { viewing: { row: any; spelled: any }; pick: { row: any; spelled: any } } | null = null;
+    for (const base of entry.bases) {
+      const own = byBase.get(base) ?? [];
+      let viewing: { row: any; spelled: any } | null = null;
+      for (const held of own) {
+        if (held.row.last_played_kind !== 'mark' && (!viewing || Number(held.row.last_played_at) > Number(viewing.row.last_played_at))) viewing = held;
+      }
+      if (!viewing) continue;
+      let pick = viewing;
+      for (const held of own) {
+        if (held.row.last_played_kind === 'mark' && Number(held.row.last_played_at) >= Number(viewing.row.last_played_at) && isAfter(held.spelled, pick.spelled)) pick = held;
+      }
+      if (!best || Number(viewing.row.last_played_at) > Number(best.viewing.row.last_played_at)) best = { viewing, pick };
+    }
+    if (!best) continue;
+    entry.lead = { ...entry.lead, video_id: String(best.pick.row.video_id) };
+    entry.leadParsed = best.pick.spelled;
+    entry.watchedAt = Number(best.pick.row.last_played_at);
+  }
+  for (const { lead, leadParsed, watchedAt } of pending) {
+    rows.push({
+      metaId: leadParsed.base,
+      videoId: String(lead.video_id),
+      season: leadParsed.season ?? null,
+      episode: leadParsed.episode,
+      mediaType: leadParsed.idType === 'kitsu' || leadParsed.idType === 'mal' || leadParsed.idType === 'anilist' ? 'anime' : 'series',
+      lastWatchedAt: watchedAt,
+    });
   }
   return rows;
 }
@@ -408,7 +409,8 @@ interface RawSnapshot {
 }
 
 /** A Simkl library, as `/sync/all-items` returns it, made into a snapshot. */
-export function assembleSimkl(data: any): RawSnapshot {
+export async function assembleSimkl(data: any): Promise<RawSnapshot> {
+  const pause = yieldEvery();
   const snapshot: Collecting = {
     episodes: new Set(),
     movies: new Set(),
@@ -423,6 +425,7 @@ export function assembleSimkl(data: any): RawSnapshot {
   const history = new Map<string, HistoryEntry>();
 
   for (const entry of Array.isArray(data?.movies) ? data.movies : []) {
+    await pause();
     if (entry?.status !== 'completed') continue;
     const ids = entry?.movie?.ids ?? {};
     const at = Date.parse(entry?.last_watched_at ?? '') || 0;
@@ -434,8 +437,14 @@ export function assembleSimkl(data: any): RawSnapshot {
     if (id) recordWatch(history, { kind: 'movie', id, mediaType: 'movie', at });
   }
 
-  for (const entry of Array.isArray(data?.shows) ? data.shows : []) collectShow(entry, snapshot, false, history);
-  for (const entry of Array.isArray(data?.anime) ? data.anime : []) collectShow(entry, snapshot, true, history);
+  for (const entry of Array.isArray(data?.shows) ? data.shows : []) {
+    await pause();
+    collectShow(entry, snapshot, false, history);
+  }
+  for (const entry of Array.isArray(data?.anime) ? data.anime : []) {
+    await pause();
+    collectShow(entry, snapshot, true, history);
+  }
 
   return {
     episodes: [...snapshot.episodes],
@@ -823,7 +832,9 @@ async function assembleFromMirror(service: MirroredService, credential: string, 
   if (service === 'simkl') {
     const { canonicalIds } = require('./canonicalIds');
     const data: any = { movies: [], shows: [], anime: [] };
+    const pause = yieldEvery();
     for (const row of rows) {
+      await pause();
       const type = row.key.split(':')[0];
       if (!data[type]) continue;
       let entry = row.data;
@@ -926,13 +937,19 @@ async function writeIndex(source: string, raw: RawSnapshot): Promise<{ added: nu
       listed: entry ? 1 : 0,
     });
   };
-  for (const id of raw.episodes) add(id, 'episode');
+  // A large library takes seconds to compare, so the loops let other requests run as they go.
+  const pause = yieldEvery();
+  for (const id of raw.episodes) {
+    add(id, 'episode');
+    await pause();
+  }
   for (const id of raw.movies) add(id, 'movie');
   for (const entry of raw.history ?? []) if (!want.has(entry.id)) add(entry.id, entry.kind);
 
   const have = new Map<string, IndexRow>((await database.listWatchIndex(source)).map((row: IndexRow) => [row.video_id, row]));
   const changed: IndexRow[] = [];
   for (const row of want.values()) {
+    await pause();
     const held = have.get(row.video_id);
     if (!held || held.kind !== row.kind || held.meta_id !== row.meta_id || held.media_type !== row.media_type || held.at !== Math.round(row.at) || held.listed !== row.listed) changed.push(row);
   }
@@ -1578,10 +1595,11 @@ export async function invalidateWatched(config: any): Promise<void> {
 }
 
 export async function forgetTrackerReads(service: string, credential: string): Promise<void> {
-  // What this server just changed must show on the next read, not after a refresh.
+  // Marked stale rather than dropped: the next read serves it and reads again behind it, where a dropped one made a
+  // client wait on the tracker. The watch made here is already in the local index.
   const prefix = `${sourceHash(service, credential)}:`;
-  for (const key of [...served.keys()]) {
-    if (String(key).startsWith(prefix)) served.delete(key);
+  for (const [key, held] of [...served.entries()]) {
+    if (String(key).startsWith(prefix)) served.set(key, { ...held, at: 0 });
   }
 
   try {

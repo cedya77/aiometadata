@@ -1,4 +1,5 @@
 import { envInt } from '../../utils/envNumber';
+import { yieldEvery } from '../../utils/yieldEvery';
 import { parseStremioId } from './idsCodec';
 import { bulkTimes } from './bulkMarks';
 import { groupBySpelling, getPlaystatesAcross, upsertPlaystateEverywhere, videoIdAliases } from './aliases';
@@ -151,7 +152,12 @@ async function groupImported<T extends { video_id: any; last_played_at: number }
     }
   });
   const joined = new Map<number, T[]>();
-  groups.forEach((group, i) => joined.set(find(i), [...(joined.get(find(i)) ?? []), ...group]));
+  groups.forEach((group, i) => {
+    const root = find(i);
+    const held = joined.get(root);
+    if (held) held.push(...group);
+    else joined.set(root, [...group]);
+  });
   return [...joined.values()];
 }
 
@@ -349,7 +355,11 @@ function targetSpellings(target: { ids: Record<string, any>; season?: number; ep
 async function statesFor(userUUID: string, viewings: Viewing[]): Promise<Map<string, any>> {
   const out = new Map<string, any>();
   const byProfile = new Map<string, string[]>();
-  for (const v of viewings) byProfile.set(v.profile, [...(byProfile.get(v.profile) ?? []), ...v.ids]);
+  for (const v of viewings) {
+    const held = byProfile.get(v.profile);
+    if (held) held.push(...v.ids);
+    else byProfile.set(v.profile, [...v.ids]);
+  }
   for (const [profile, ids] of byProfile) {
     const rows: Map<string, any> = await getPlaystatesAcross(userUUID, [...new Set(ids)], profile);
     for (const [id, row] of rows) out.set(`${profile}|${id}`, row);
@@ -410,12 +420,18 @@ async function queueDrift(userUUID: string, config: any, source: DriftSource, vi
   const { enqueueTrackerWrites } = require('../trackerOutbox');
   const byProfile = new Map<string, Viewing[]>();
   if (isAnimeList(source.service)) viewings = furthestPerEntry(source.service, viewings, (v) => v.profile);
-  for (const v of viewings) byProfile.set(v.profile, [...(byProfile.get(v.profile) ?? []), v]);
+  for (const v of viewings) {
+    const held = byProfile.get(v.profile);
+    if (held) held.push(v);
+    else byProfile.set(v.profile, [v]);
+  }
   const rewatches = new Map<string, Viewing[]>();
   if (batched(source.service)) {
     for (const v of again) {
       byProfile.set(v.profile, byProfile.get(v.profile) ?? []);
-      rewatches.set(v.profile, [...(rewatches.get(v.profile) ?? []), v]);
+      const held = rewatches.get(v.profile);
+      if (held) held.push(v);
+      else rewatches.set(v.profile, [v]);
     }
   }
   let queued = 0;
@@ -479,7 +495,9 @@ export async function pullDrift(userUUID: string, source: DriftSource, viewings:
   }
   const bulk = new Map([...byProfile].map(([profile, list]) => [profile, bulkTimes(list.flatMap((viewing) => viewing.ids.map((videoId) => ({ at: viewing.at, videoId }))))]));
   let added = 0;
+  const pause = yieldEvery();
   for (const viewing of viewings) {
+    await pause();
     const video = spellingFor(source.service, viewing.ids);
     for (const profile of source.keys) {
       const row = (await getPlaystatesAcross(userUUID, [video], profile)).get(video);

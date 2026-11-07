@@ -30,7 +30,7 @@ const ROW_BYTES = 256;
 // the budget bounds what an instance with many users holds.
 const trackerMemo = new LRUCache<string, MemoWatchlist>({
   max: envInt('JELLYFIN_RESUME_CACHE_MAX', 500, 1),
-  maxSize: envInt('JELLYFIN_WATCHLIST_MEMORY_MB', 32, 1) * 1024 * 1024,
+  maxSize: Math.max(1, Math.floor(envInt('JELLYFIN_WATCHLIST_MEMORY_MB', 32, 1) * 1024 * 1024 * 3 / 4)),
   sizeCalculation: (held) => ROW_BYTES * (held.rows.length + 1),
   ttlAutopurge: true,
 });
@@ -38,6 +38,31 @@ const trackerInFlight = new Map<string, Promise<HeldWatchlist>>();
 
 const memoFreshMs = () => envInt('JELLYFIN_WATCHLIST_MEMO_TTL', 60, 1) * 1000;
 const memoHeldMs = () => Math.max(envInt('JELLYFIN_WATCHLIST_HELD_TTL', 21600, 60) * 1000, memoFreshMs());
+
+// A quarter of the watchlist budget, the rest staying with the tracker copies.
+const listedMemo = new LRUCache<string, Set<string>>({
+  max: envInt('JELLYFIN_RESUME_CACHE_MAX', 500, 1),
+  maxSize: Math.max(1, Math.floor(envInt('JELLYFIN_WATCHLIST_MEMORY_MB', 32, 1) * 1024 * 1024 / 4)),
+  sizeCalculation: (ids) => 128 * (ids.size + 1),
+});
+let listedGeneration = 0;
+
+function forgetListed(userUUID: string): void {
+  listedGeneration++;
+  for (const key of [...listedMemo.keys()]) if (key.startsWith(`${userUUID}:`)) listedMemo.delete(key);
+}
+
+/** Every watchlisted title's id, held briefly for a flag asked on every progress save. */
+export async function listedIds(userUUID: string, config: any): Promise<Set<string>> {
+  const key = trackerMemoKey(config, userUUID);
+  const held = listedMemo.get(key);
+  if (held) return held;
+  const generation = listedGeneration;
+  const { entries } = await watchlistEntries(userUUID, config, Number.MAX_SAFE_INTEGER, true);
+  const ids = new Set(entries.map((entry) => String(entry.metaId)));
+  if (generation === listedGeneration) listedMemo.set(key, ids, { ttl: memoFreshMs() });
+  return ids;
+}
 
 const covers = (held: HeldWatchlist, need: number): boolean => held.exhausted || held.rows.length >= need;
 
@@ -99,6 +124,7 @@ const sameTitle = (a: string, b: string): boolean => a === b || showOf(a) === b 
 
 /** The held copies count as past their time; a change made here is already in the server's own rows. */
 export function invalidateWatchlist(userUUID: string): void {
+  forgetListed(userUUID);
   for (const [key, held] of trackerMemo.entries()) {
     if (String(key).startsWith(`${userUUID}:`)) held.readAt = 0;
   }
@@ -268,6 +294,7 @@ export async function setWatchlisted(userUUID: string, config: any, descriptor: 
   for (const entry of siblings) {
     await database.setWatchlisted(userUUID, profile, entry.metaId, entry.mediaType, false, entry.mediaType === 'movie' || entry.film ? 'movie' : 'series');
   }
+  forgetListed(userUUID);
   invalidateDatedShelves(userUUID);
   if (writesTrackers(config)) {
     const { enqueueTrackerWrites, hasCredential } = require('../trackerOutbox');

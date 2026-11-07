@@ -173,6 +173,7 @@ async function syncSimkl(key: string, tokenId: string, config: any, watermark: a
   // A delta carries arrivals and changes, never departures: those are found by comparing
   // ids, and only when Simkl says something left.
   const bucket: Record<string, string> = { movies: 'movies', shows: 'tv_shows', anime: 'anime' };
+  let left = 0;
   const departed = SIMKL_TYPES.some(
     (type) => (activities?.[bucket[type]]?.removed_from_list ?? null) !== (watermark?.[bucket[type]]?.removed_from_list ?? null)
   );
@@ -186,9 +187,11 @@ async function syncSimkl(key: string, tokenId: string, config: any, watermark: a
         .map((row: any) => String(row.item_key))
         .filter((itemKey: string) => SIMKL_TYPES.some((type) => itemKey.startsWith(`${type}:`)) && !present.has(itemKey));
       if (gone.length) await database.deleteTrackerMirror(key, gone);
+      left = gone.length;
     }
   }
-  return { changed: true, watermark: activities, full: false };
+  // Simkl's clock moves for ratings and for this server's own scrobbles too; only rows that came or went rebuild the index.
+  return { changed: rows.length > 0 || left > 0, watermark: activities, full: false };
 }
 
 // --- MDBList ------------------------------------------------------------------------

@@ -24,7 +24,8 @@ import { Ambient } from "./JellyfinShared";
 import { duration, useOpenTitle, when } from "./jellyfinUtils";
 import { Deck, DeckDetail, Fan, ListRow, Poster, ViewToggle, type DeckDetailInfo, type DeckItem } from "./JellyfinDeck";
 import { remember, remembered, usePagedRows, useSwipe } from "./deckState";
-import { cx } from "./titleHelpers";
+import { cx, usePhone } from "./titleHelpers";
+import { sizedArt } from "./art";
 
 const failed = (error: unknown, fallback: string) => toast.error(error instanceof Error ? error.message : fallback);
 
@@ -165,9 +166,11 @@ function EntryDetail({ entry, total, busy, onMove, onRemove }: { entry: Jellyfin
     rating: null,
     note: [`${entry.position + 1} of ${total}`, stateOf(entry)].filter(Boolean).join(" · "),
   };
-  const aside = entry.wide ? (
+  const phone = usePhone();
+  // Hidden on a phone, where an image left in the page would still be fetched.
+  const aside = entry.wide && !phone ? (
     <div className="relative hidden w-48 shrink-0 self-start overflow-hidden rounded-xl ring-1 ring-white/10 sm:block">
-      <img src={entry.wide} alt="" className="aspect-video w-full object-cover" />
+      <img src={sizedArt(entry.wide, 384) ?? entry.wide} alt="" className="aspect-video w-full object-cover" />
       {pct > 0 && <span className="absolute inset-x-0 bottom-0 h-1 bg-black/50"><span className={cx("block h-full", entry.played ? "bg-emerald-400" : "bg-blue-400")} style={{ width: `${pct}%` }} /></span>}
     </div>
   ) : undefined;
@@ -187,7 +190,7 @@ const PLAYLIST_VIEWS: ReadonlyArray<readonly [PlaylistView, typeof Layers, strin
 
 /** One entry of the list, dragged by its handle to a new place. */
 function SortableEntry({ entry, number, busy, onRemove }: { entry: JellyfinPlaylistEntry; number: number; busy: boolean; onRemove: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: entry.id, disabled: busy });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: entry.id, disabled: { draggable: busy, droppable: false } });
   const open = useOpenTitle();
   const state = stateOf(entry);
   const name = entry.kind === "episode" && entry.subtitle ? `${entry.title} ${entry.subtitle}` : entry.title;
@@ -289,7 +292,7 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
   const [offset, setOffset] = useState(0);
   const page = useJellyfinPlaylist(userUUID, profile, current?.id ?? null, offset, { activeTab });
   const pageData = page.data && page.data.id === current?.id ? page.data : undefined;
-  const [entries] = usePagedRows(pageData, (held) => held.entries, ["dashboard", "jellyfin", "playlists", userUUID, profile, current?.id ?? null], current?.id ?? "");
+  const [entries, , changedFrom] = usePagedRows(pageData, (held) => held.entries, ["dashboard", "jellyfin", "playlists", userUUID, profile, current?.id ?? null], current?.id ?? "");
   const items = useMemo(() => entries.map(itemOf), [entries]);
   const total = pageData?.count ?? current?.count ?? 0;
   const more = entries.length < total;
@@ -303,6 +306,13 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
   const listBox = useRef<HTMLDivElement>(null);
   const at = Math.min(index, Math.max(0, entries.length - 1));
   const focus = entries[at];
+  // The background follows the title the pointer settles on, not every row it passes on the way.
+  const ambientWanted = view === "deck" ? focus?.wide ?? focus?.image ?? null : null;
+  const [ambient, setAmbient] = useState<string | null>(null);
+  useEffect(() => {
+    const wait = setTimeout(() => setAmbient(ambientWanted), 150);
+    return () => clearTimeout(wait);
+  }, [ambientWanted]);
   const pick = (i: number) => {
     setIndex(i);
     if (i >= entries.length - 4) loadMore();
@@ -325,6 +335,7 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
     try {
       await work();
     } catch (error) {
+      changedFrom.current = 0;
       failed(error, fallback);
     } finally {
       setBusy(false);
@@ -345,10 +356,12 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
   };
   const move = (entry: JellyfinPlaylistEntry, to: number) => {
     if (!current) return;
+    changedFrom.current = Math.min(entry.position, to);
     void run(async () => { await change(userUUID, profile, { op: "move", id: current.id, itemId: entry.id, to }); setIndex(to); }, "Could not move it");
   };
   const removeEntry = (entry: JellyfinPlaylistEntry) => {
     if (!current) return;
+    changedFrom.current = entry.position;
     void run(async () => {
       await change(userUUID, profile, { op: "remove", id: current.id, itemIds: [entry.id] });
       toast.success(`Removed ${entry.kind === "episode" && entry.subtitle ? entry.subtitle : entry.title}`);
@@ -371,6 +384,7 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
     const entry = listed[from];
     setArranged(arrayMove(listed, from, to));
     if (!current) return;
+    changedFrom.current = Math.min(from, to);
     void run(async () => {
       try {
         await change(userUUID, profile, { op: "move", id: current.id, itemId: entry.id, to });
@@ -409,7 +423,7 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
 
   return (
     <section className="relative isolate overflow-hidden">
-      <Ambient src={view === "deck" ? focus?.wide ?? focus?.image ?? null : null} />
+      <Ambient src={ambient} />
       <div className="relative px-4 py-6 sm:px-6">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div className="flex min-w-0 items-center gap-4">

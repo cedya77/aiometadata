@@ -43,14 +43,15 @@ export function useSwipe(index: number, count: number, onPick: (i: number) => vo
 }
 
 /**
- * Rows read a page at a time, kept in order. A page read again after a change re-reads every page held, so a
- * move or removal on one page shows on all of them; a new reset key starts over.
+ * Rows read a page at a time, kept in order. A page read again after a change re-reads every page held from where
+ * the change began, so a move or removal on one page shows on all after it; a new reset key starts over.
  */
 export function usePagedRows<P extends { offset: number }, R>(page: P | undefined, rowsOf: (page: P) => R[], base: readonly unknown[], resetKey: string) {
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<R[]>([]);
   const loaded = useRef<number[]>([]);
   const generation = useRef(0);
+  const changedFrom = useRef(0);
   useEffect(() => {
     generation.current += 1;
     loaded.current = [];
@@ -64,14 +65,16 @@ export function usePagedRows<P extends { offset: number }, R>(page: P | undefine
       setRows((held) => (page.offset === 0 ? rowsOf(page) : [...held.slice(0, page.offset), ...rowsOf(page)]));
       return;
     }
-    const offsets = [...loaded.current];
+    const from = changedFrom.current;
+    changedFrom.current = 0;
+    const offsets = loaded.current.filter((at, i, all) => (all[i + 1] ?? Infinity) > from);
     const started = generation.current;
-    void reloadPages<R>(queryClient, base, offsets, (held) => (held ? rowsOf(held) : undefined)).then((pages) => {
+    void reloadPages<R>(queryClient, base, offsets, (held) => (held ? rowsOf(held) : undefined), from > 0).then((pages) => {
       if (!pages || started !== generation.current) return;
       // Each page goes in at its own offset, so pages that overlap once the list has grown never repeat a row.
-      setRows(pages.reduce<R[]>((held, rows, i) => [...held.slice(0, offsets[i]), ...rows], []));
+      setRows((kept) => pages.reduce<R[]>((held, rows, i) => [...held.slice(0, offsets[i]), ...rows], kept.slice(0, offsets[0] ?? 0)));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
-  return [rows, setRows] as const;
+  return [rows, setRows, changedFrom] as const;
 }

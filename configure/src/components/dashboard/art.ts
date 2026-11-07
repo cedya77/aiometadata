@@ -1,5 +1,9 @@
+const JELLYFIN_IMAGE = /\/jellyfin\/[^/]+\/Items\/[^/]+\/Images\//;
+
 export function sizedArt(url: string | null | undefined, width: number): string | null {
   if (!url) return null;
+  // The Jellyfin image route serves full-size art unless asked for a width.
+  if (JELLYFIN_IMAGE.test(url)) return /[?&]maxWidth=/.test(url) ? url : `${url}${url.includes("?") ? "&" : "?"}maxWidth=${width}`;
   return url.replace(/\/poster-cache\/(?!proxy\/|w\d+\/)/, `/poster-cache/w${width}/`);
 }
 

@@ -348,11 +348,13 @@ const statsMemo = new LRUCache<string, { fingerprint: string; work: Promise<Map<
 });
 const statsRefreshing = new Set<string>();
 
-function statsFingerprint(summary: any[]): string {
-  return summary
-    .map((row) => `${row.profile ?? ''}:${Number(row.rows_total) || 0}:${Number(row.in_progress) || 0}:${Number(row.played) || 0}:${Number(row.last_played_at) || 0}:${Number(row.updated_at) || 0}`)
+// A player saving its place every minute moves the last play and write times but adds no watch, so the last play is
+// taken by the day and every viewing by the latest watch.
+function statsFingerprint(summary: any[], latestWatch: number): string {
+  return `${latestWatch}|${summary
+    .map((row) => `${row.profile ?? ''}:${Number(row.rows_total) || 0}:${Number(row.in_progress) || 0}:${Number(row.played) || 0}:${Math.floor((Number(row.last_played_at) || 0) / DAY_MS)}`)
     .sort()
-    .join('|');
+    .join('|')}`;
 }
 
 const statsStoreKey = (key: string) => `jf:dashstats:v3:${key}`;
@@ -386,9 +388,9 @@ export async function forgetDashboardStats(userUUID: string): Promise<void> {
   await redis.del(...keys).catch(() => undefined);
 }
 
-function profileStats(userUUID: string, offsetMinutes: number, summary: any[]): Promise<Map<string, ProfileStats>> {
+async function profileStats(userUUID: string, offsetMinutes: number, summary: any[]): Promise<Map<string, ProfileStats>> {
   const key = `${userUUID}:${offsetMinutes}`;
-  const fingerprint = statsFingerprint(summary);
+  const fingerprint = statsFingerprint(summary, await database.latestWatchAt(userUUID).catch(() => 0));
   const held = statsMemo.get(key);
   if (held && held.fingerprint === fingerprint) return held.work;
   const work = (async () => {
@@ -749,7 +751,11 @@ async function importGroups(userUUID: string, source: SyncSource, outcomes: Map<
     if (!list.length && !left) continue;
     const titles = [...new Set(list.map((v: any) => `${v.profile}|${v.metaId}`))];
     const newest = [...list].sort((a: any, b: any) => b.at - a.at);
-    const shown = new Set(newest.map((v: any) => `${v.profile}|${v.metaId}`).filter((id: string, i: number, all: string[]) => all.indexOf(id) === i).slice(0, 4));
+    const shown = new Set<string>();
+    for (const v of newest) {
+      if (shown.size >= 4) break;
+      shown.add(`${v.profile}|${v.metaId}`);
+    }
     const preview = await driftItems(userUUID, source, outcomes, list.filter((v: any) => shown.has(`${v.profile}|${v.metaId}`)));
     groups.push({
       origin,
@@ -1276,7 +1282,8 @@ async function foldedPlays(userUUID: string, names: Map<string, string>, kind: P
   const read = (n: number) => kind === 'progress'
     ? database.listPlaystateInProgressFor(userUUID, n, profile)
     : database.listViewingHistory(userUUID, n, profile);
-  let ask = want * 2;
+  // A viewing is stored under each of its ids, so a few rows fold into one; asking for more at first saves a second read.
+  let ask = want * 4;
   for (;;) {
     const raw: any[] = await read(ask);
     const out = await playRows(userUUID, raw, names);

@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { inflateRawSync } from 'zlib';
 import consola from 'consola';
+import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { kitsuForTmdb, videoIdAliases } from './aliases';
 
@@ -89,7 +90,35 @@ function unzipTextFiles(buffer: Buffer): SourceFiles | string {
   return new Map(found.map(([name, text]) => [name.slice(shared.length), text]));
 }
 
+// The import screen sends the same file again while its titles are matched; it is opened once. An upload counts its text
+// twice over for what parsing it holds, and one past the budget is not kept.
+const opened = new LRUCache<string, Upload>({
+  max: 2,
+  maxSize: 128 * 1048576,
+  sizeCalculation: (upload) => 3 * Math.max(1, [...upload.files.values()].reduce((sum, text) => sum + text.length, 0)),
+  ttl: 2 * 60 * 1000,
+  updateAgeOnGet: true,
+});
+const parsedFiles = new WeakMap<Upload, Map<string, unknown>>();
+
 export function openUpload(buffer: Buffer, fileName: string | null): Upload | string {
+  const key = `${createHash('sha1').update(buffer).digest('hex')}:${fileName ?? ''}`;
+  const held = opened.get(key);
+  if (held) return held;
+  const upload = openFresh(buffer, fileName);
+  if (typeof upload !== 'string') opened.set(key, upload);
+  return upload;
+}
+
+/** One file of an upload read as JSON, once per upload; throws when it is not JSON. */
+export function parsedJson(upload: Upload, name: string): unknown {
+  let held = parsedFiles.get(upload);
+  if (!held) parsedFiles.set(upload, (held = new Map()));
+  if (!held.has(name)) held.set(name, JSON.parse(upload.files.get(name) ?? ''));
+  return held.get(name);
+}
+
+function openFresh(buffer: Buffer, fileName: string | null): Upload | string {
   if (isZip(buffer)) {
     const files = unzipTextFiles(buffer);
     if (typeof files === 'string') return files;
