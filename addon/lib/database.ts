@@ -1653,7 +1653,16 @@ class Database {
   // Only plays with a time: history a sync copied from a tracker carries none.
   async latestOwnPlayAmong(userUUID: string, profile: string, bases: string[]): Promise<{ videoId: string; at: number } | null> {
     if (!bases.length) return null;
-    const p = this.type === 'sqlite' ? () => '?' : ((n = 0) => () => `$${++n}`)();
+    const own = `(origin = 'server' OR ((origin IS NULL OR origin = 'play') AND ABS(updated_at - last_played_at) < 2000))
+      AND last_played_at IS NOT NULL AND (played = 1 OR position_ms > 0)`;
+    if (this.type === 'sqlite') {
+      // SQLite compares text by bytes, so each show is read off the key; one list of LIKEs reads the user's whole history.
+      const one = `SELECT video_id, last_played_at, updated_at FROM jellyfin_playstate WHERE user_uuid = ? AND profile = ? AND video_id >= ? AND video_id < ? AND ${own}`;
+      const query = `SELECT video_id, last_played_at FROM (${bases.map(() => one).join(' UNION ALL ')}) ORDER BY last_played_at DESC, updated_at, video_id LIMIT 1`;
+      const row = await this.getQuery(query, bases.flatMap((base) => [userUUID, profile, `${base}:`, `${base};`]));
+      return row?.video_id ? { videoId: String(row.video_id), at: Number(row.last_played_at) } : null;
+    }
+    const p = ((n = 0) => () => `$${++n}`)();
     const params: any[] = [userUUID, profile];
     const scope = `user_uuid = ${p()} AND profile = ${p()}`;
     const spelled = bases.map((base) => {
@@ -1661,8 +1670,7 @@ class Database {
       return `video_id LIKE ${p()}`;
     });
     const query = `SELECT video_id, last_played_at FROM jellyfin_playstate WHERE ${scope}
-      AND (origin = 'server' OR ((origin IS NULL OR origin = 'play') AND ABS(updated_at - last_played_at) < 2000))
-      AND last_played_at IS NOT NULL AND (played = 1 OR position_ms > 0) AND (${spelled.join(' OR ')})
+      AND ${own} AND (${spelled.join(' OR ')})
       ORDER BY last_played_at DESC, updated_at, video_id LIMIT 1`;
     const row = await this.getQuery(query, params);
     return row?.video_id ? { videoId: String(row.video_id), at: Number(row.last_played_at) } : null;
