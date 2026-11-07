@@ -3715,21 +3715,21 @@ class Database {
       const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
       const cutoffDateStr = cutoffDate.toISOString();
 
-      const query = this.type === 'sqlite'
-        ? 'DELETE FROM user_configs WHERE updated_at < ?'
-        : 'DELETE FROM user_configs WHERE updated_at < $1';
-      const doomed = await this.allQuery(this.type === 'sqlite'
+      const doomed = await this.allPrimaryQuery(this.type === 'sqlite'
         ? 'SELECT user_uuid FROM user_configs WHERE updated_at < ?'
         : 'SELECT user_uuid FROM user_configs WHERE updated_at < $1', [cutoffDateStr]);
 
-      const result = await this.runQuery(query, [cutoffDateStr]);
-      await require('./jellyfin/context').forgetSeen((doomed || []).map((row: any) => String(row.user_uuid))).catch(() => undefined);
+      // Each goes the way a single delete does, so its viewing data and tokens go with it.
+      let deleted = 0;
+      for (const row of doomed || []) {
+        if (await this.deleteUser(String(row.user_uuid))) deleted += 1;
+      }
 
       await this.runAliasCleanup(
         'DELETE FROM user_aliases WHERE user_uuid NOT IN (SELECT user_uuid FROM user_configs)'
       );
 
-      return this.type === 'sqlite' ? result.changes : result.rowCount;
+      return deleted;
     } catch (error) {
       logger.error('Error deleting inactive users:', error);
       return 0;
