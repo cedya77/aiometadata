@@ -816,6 +816,8 @@ class Database {
       `CREATE INDEX IF NOT EXISTS idx_jellyfin_playstate_recent ON jellyfin_playstate(user_uuid, profile, updated_at DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_jellyfin_playstate_played ON jellyfin_playstate(last_played_at)`,
       `CREATE INDEX IF NOT EXISTS idx_jellyfin_playstate_user_played ON jellyfin_playstate(user_uuid, profile, played, last_played_at DESC, video_id)`,
+      // Prefix matches on an id read this index, as the database's own collation may not compare ids by bytes.
+      `CREATE INDEX IF NOT EXISTS idx_jellyfin_playstate_video_bytes ON jellyfin_playstate(user_uuid, profile, video_id COLLATE "C")`,
       `CREATE TABLE IF NOT EXISTS jellyfin_preferences (
         user_uuid VARCHAR(64) NOT NULL,
         profile TEXT NOT NULL DEFAULT '',
