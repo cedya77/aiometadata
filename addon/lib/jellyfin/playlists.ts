@@ -140,26 +140,39 @@ function withoutRepeats(ids: string[], taken: Iterable<string> = []): string[] {
   return ids.filter((id) => !seen.has(id) && Boolean(seen.add(id)));
 }
 
+interface TitlesRead {
+  ids: string[];
+  more: boolean;
+}
+
 const aired = (episode: any): boolean => !(Date.parse(String(episode?.PremiereDate ?? '')) > Date.now());
 
 /** The titles that play, in order. As in Jellyfin, a show or a season adds its aired episodes, and a folder what its titles add. */
 async function playableIds(userUUID: string, config: any, serverId: string, raw: string[]): Promise<string[]> {
-  const limit = itemsPerPlaylist();
-  const asked = [...new Set(raw.map(normaliseJellyfinId))].slice(0, limit);
-  const width = playlistConcurrency();
-  const out: string[] = [];
-  // Read a few at a time, in order, and stop once a playlist could hold no more.
-  for (let at = 0; at < asked.length && out.length < limit; at += width) {
-    const found = await mapWithConcurrency(asked.slice(at, at + width), width, async (id: string) => {
-      const descriptor = await decodeJellyfinId(id).catch(() => null);
-      return descriptor ? titlesOf(userUUID, config, serverId, id, descriptor).catch(() => [] as string[]) : [];
-    });
-    out.push(...found.flat());
-  }
-  return out.slice(0, limit);
+  return (await titlesRead(userUUID, config, serverId, raw)).ids.slice(0, itemsPerPlaylist());
 }
 
-async function titlesOf(userUUID: string, config: any, serverId: string, id: string, descriptor: Descriptor): Promise<string[]> {
+/** Every title read, which can pass the limit so an add can tell what it left out; `more` when reading stopped short of them all. */
+async function titlesRead(userUUID: string, config: any, serverId: string, raw: string[]): Promise<TitlesRead> {
+  const limit = itemsPerPlaylist();
+  const unique = [...new Set(raw.map(normaliseJellyfinId))];
+  const asked = unique.slice(0, limit);
+  const width = playlistConcurrency();
+  const read: TitlesRead = { ids: [], more: unique.length > limit };
+  // Read a few at a time, in order, and stop once a playlist could hold no more.
+  let at = 0;
+  for (; at < asked.length && read.ids.length < limit; at += width) {
+    const found = await mapWithConcurrency(asked.slice(at, at + width), width, async (id: string) => {
+      const descriptor = await decodeJellyfinId(id).catch(() => null);
+      return descriptor ? titlesOf(userUUID, config, serverId, id, descriptor, read).catch(() => [] as string[]) : [];
+    });
+    read.ids.push(...found.flat());
+  }
+  if (at < asked.length) read.more = true;
+  return read;
+}
+
+async function titlesOf(userUUID: string, config: any, serverId: string, id: string, descriptor: Descriptor, read: TitlesRead): Promise<string[]> {
   if (descriptor.k === 'episode') return [id];
   if (descriptor.k === 'movie') {
     const meta = await fetchMeta(userUUID, 'movie', descriptor.i);
@@ -191,10 +204,12 @@ async function titlesOf(userUUID: string, config: any, serverId: string, id: str
       const found = await mapWithConcurrency(page.items.slice(at, at + width), width, async (member: any) => {
         if (member?.Type === 'Movie') return [String(member.Id)];
         const inner = member?.Type === 'Series' ? await decodeJellyfinId(String(member.Id)).catch(() => null) : null;
-        return inner?.k === 'series' ? titlesOf(userUUID, config, serverId, String(member.Id), inner).catch(() => [] as string[]) : [];
+        return inner?.k === 'series' ? titlesOf(userUUID, config, serverId, String(member.Id), inner, read).catch(() => [] as string[]) : [];
       });
       out.push(...found.flat());
+      if (out.length >= limit && (at + width < page.items.length || out.length > limit)) read.more = true;
     }
+    if (page.hasMore) read.more = true;
     return out.slice(0, limit);
   }
   return [];
@@ -359,11 +374,11 @@ export function ownerFor(userUUID: string, config: any): Owner {
 export { listPlaylists, getPlaylist, withoutRepeats };
 
 /** The titles these ids would add, in order, before any already held are left out. */
-export function titlesToAdd(owner: Owner, config: any, ids: string[]): Promise<string[]> {
-  return playableIds(owner.userUUID, config, serverIdFor(owner.userUUID), ids);
+export function titlesToAdd(owner: Owner, config: any, ids: string[]): Promise<TitlesRead> {
+  return titlesRead(owner.userUUID, config, serverIdFor(owner.userUUID), ids);
 }
 
-export type AddOutcome = { playlist: Playlist; added: number; left: number } | 'missing' | 'full';
+export type AddOutcome = { playlist: Playlist; added: number; left: number; more: boolean } | 'missing' | 'full';
 
 /** Null when the user already has as many as allowed. */
 export async function createPlaylist(owner: Owner, config: any, name: string, ids: string[]): Promise<Playlist | null> {
@@ -392,7 +407,7 @@ export async function editPlaylist(owner: Owner, config: any, id: string, change
 
 /** Adds what is not there yet at a position, or at the end. */
 export async function addTitles(owner: Owner, config: any, id: string, ids: string[], position: number | null = null): Promise<AddOutcome> {
-  const added = await playableIds(owner.userUUID, config, serverIdFor(owner.userUUID), ids);
+  const { ids: added, more } = await titlesRead(owner.userUUID, config, serverIdFor(owner.userUUID), ids);
   let full = false;
   let count = 0;
   let left = 0;
@@ -417,7 +432,7 @@ export async function addTitles(owner: Owner, config: any, id: string, ids: stri
   });
   if (!updated) return 'missing';
   if (full) return 'full';
-  return { playlist: updated, added: count, left };
+  return { playlist: updated, added: count, left, more };
 }
 
 export async function removeTitles(owner: Owner, id: string, entryIds: string[]): Promise<Playlist | null> {

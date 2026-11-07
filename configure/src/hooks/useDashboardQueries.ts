@@ -2222,6 +2222,7 @@ export interface JellyfinPlaylistDetail extends JellyfinPlaylistSummary {
 
 export interface JellyfinPlaylistPreview {
   titles: number;
+  more?: boolean;
   playlists: Array<{ id: string; name: string; count: number; has: number; adds: number; fits: boolean }>;
 }
 
@@ -2273,7 +2274,7 @@ export function useJellyfinPlaylistPreview() {
 export function useJellyfinPlaylistChange() {
   const getHeaders = useApiHeaders();
   const queryClient = useQueryClient();
-  return async (userUUID: string, profile: string | null, change: JellyfinPlaylistChange): Promise<{ id?: string; added?: number; left?: number }> => {
+  return async (userUUID: string, profile: string | null, change: JellyfinPlaylistChange): Promise<{ id?: string; added?: number; left?: number; more?: boolean }> => {
     const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/playlists/change`, {
       method: 'POST',
       headers: { ...getHeaders(), 'Content-Type': 'application/json' },

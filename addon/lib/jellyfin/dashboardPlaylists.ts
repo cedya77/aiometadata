@@ -133,15 +133,17 @@ export function dashboardPlaylist(userUUID: string, profile: string | null, id: 
 export function dashboardPlaylistPreview(userUUID: string, profile: string | null, itemIds: string[]) {
   return asProfile(userUUID, profile, async (config) => {
     const owner = ownerFor(userUUID, config);
-    const titles = withoutRepeats(await titlesToAdd(owner, config, itemIds));
+    const { ids, more } = await titlesToAdd(owner, config, itemIds);
+    const titles = withoutRepeats(ids);
     const playlists = await listPlaylists(owner);
     return {
       titles: titles.length,
+      more,
       playlists: await mapWithConcurrency(playlists, playlistConcurrency(), async (playlist) => {
         const held = new Set(playlist.items);
         const fresh = titles.filter((title) => !held.has(title)).length;
         const room = Math.max(0, playlistLimits().items - playlist.items.length);
-        return { id: playlist.id, name: playlist.name, count: playlist.items.length, has: titles.length - fresh, adds: Math.min(fresh, room), fits: fresh === 0 || room > 0 };
+        return { id: playlist.id, name: playlist.name, count: playlist.items.length, has: titles.length - fresh, adds: Math.min(fresh, room), fits: room > 0 || (fresh === 0 && !more) };
       }),
     };
   });
@@ -155,7 +157,7 @@ export type PlaylistChange =
   | { op: 'remove'; id: string; itemIds: string[] }
   | { op: 'move'; id: string; itemId: string; to: number };
 
-export type ChangeOutcome = { ok: true; id?: string; added?: number; left?: number } | { ok: false; status: 400 | 404; error: string };
+export type ChangeOutcome = { ok: true; id?: string; added?: number; left?: number; more?: boolean } | { ok: false; status: 400 | 404; error: string };
 
 export function dashboardPlaylistChange(userUUID: string, profile: string | null, change: PlaylistChange) {
   return asProfile(userUUID, profile, async (config): Promise<ChangeOutcome> => {
@@ -174,7 +176,7 @@ export function dashboardPlaylistChange(userUUID: string, profile: string | null
         const outcome = await addTitles(owner, config, change.id, change.itemIds, change.position);
         if (outcome === 'missing') return gone;
         if (outcome === 'full') return { ok: false, status: 400, error: `A playlist holds up to ${playlistLimits().items} titles` };
-        return { ok: true, added: outcome.added, left: outcome.left };
+        return { ok: true, added: outcome.added, left: outcome.left, more: outcome.more };
       }
       case 'remove':
         return (await removeTitles(owner, change.id, change.itemIds)) ? { ok: true } : gone;
