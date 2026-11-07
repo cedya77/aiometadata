@@ -8,6 +8,7 @@ import { encodeJellyfinId, parseStremioId } from './ids';
 import { normaliseJellyfinId } from './idsCodec';
 import { rememberSeriesRatingIds } from './seriesRatingIds';
 import { EMPTY_USER_DATA } from './dto';
+import { walkRecords } from './walkRecords';
 import { placeholderSources } from './streams';
 import redis from '../redisClient';
 import type { CatalogRef } from './views';
@@ -395,20 +396,17 @@ export async function warmCatalogLengths(userUUID: string, catalogs: CatalogRef[
 }
 
 // Where a client walking a catalog in order stopped: the catalog position after
-// its last item and what it has been shown. Repeats are dropped from a window, so
+// its last item, and what it has been shown. Repeats are dropped from a window, so
 // a client's position runs behind the catalog's, and mapping the next StartIndex
 // back by page would show the tail of the last page again and lose a title.
-interface WalkCursor {
-  raw: number;
-  seen: string[];
-}
-
-const walkCursors = new LRUCache<string, WalkCursor>({
-  max: envInt('JELLYFIN_PAGE_LENGTH_CACHE_MAX', 2000, 1),
-  ttl: envInt('JELLYFIN_WALK_CURSOR_TTL', 600, 60) * 1000,
-});
-
 const WALK_CURSOR_MAX_IDS = 5000;
+
+const walks = walkRecords<{ raw: number }>({
+  max: envInt('JELLYFIN_PAGE_LENGTH_CACHE_MAX', 2000, 1),
+  maxIds: 200 * WALK_CURSOR_MAX_IDS,
+  ttlMs: envInt('JELLYFIN_WALK_CURSOR_TTL', 600, 60) * 1000,
+  seenCap: WALK_CURSOR_MAX_IDS,
+});
 
 /**
  * `skip` is an absolute offset, but the catalog route rounds it up to a whole
@@ -444,14 +442,16 @@ export async function fetchWindow(
     }
   }
 
-  const cursor = pageLength && startIndex > 0 ? walkCursors.get(`${lengthKey}@${startIndex}`) : undefined;
+  // A window resumes at the latest place a walk stopped before it, and reads on to its start.
+  const resumed = pageLength && startIndex > 0 ? walks.resume(lengthKey, startIndex) : null;
+  const cursor = resumed ? { raw: resumed.place.state.raw, seen: resumed.seen } : undefined;
   const minRaw = cursor ? cursor.raw : 0;
 
   let sequential = servedCatalogs.has(pageKey);
   const alignedSkip = sequential
     ? (cursor ? cursor.raw : filtering ? 0 : startIndex)
     : cursor ? Math.floor(cursor.raw / pageLength!) * pageLength! : filtering ? 0 : pageLength ? Math.floor(startIndex / pageLength) * pageLength : startIndex;
-  let offset = cursor ? 0 : startIndex - alignedSkip;
+  let offset = resumed ? startIndex - resumed.place.at : startIndex - alignedSkip;
 
   const collected: any[] = [];
   const rawAt: number[] = [];
@@ -562,10 +562,8 @@ export async function fetchWindow(
   // is off by the repeats before it, and would carry that into every later page.
   const exact = filtering || startIndex === 0 || !!cursor;
   if (exact && items.length > 0) {
-    const shown = [...(cursor?.seen ?? []), ...collected.slice(0, offset + items.length).map((meta) => String(meta.id))];
-    if (shown.length <= WALK_CURSOR_MAX_IDS) {
-      walkCursors.set(`${lengthKey}@${startIndex + items.length}`, { raw: rawAt[offset + items.length - 1] + 1, seen: shown });
-    }
+    const shown = collected.slice(0, offset + items.length).map((meta) => String(meta.id));
+    walks.save(lengthKey, resumed, shown, startIndex + items.length, { raw: rawAt[offset + items.length - 1] + 1 });
   }
 
   return {
