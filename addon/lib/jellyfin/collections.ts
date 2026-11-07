@@ -2,7 +2,7 @@ import { imageTag } from './imageTags';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId } from './ids';
 import { collectionFolder, EMPTY_USER_DATA } from './dto';
-import { catalogCannotServe, fetchWindow, includeTypesFilter, listFilterKey, isLandscapeCatalog, knownCatalogLength, knownPageLength, metaToBaseItem, rememberImages, servedOrder, showLandscape, warmCatalogLengths } from './items';
+import { catalogCannotServe, fetchWindow, includeTypesFilter, listFilterKey, type ExtraFilters, type StudioFilter, type Window, isLandscapeCatalog, knownCatalogLength, knownPageLength, metaToBaseItem, rememberImages, servedOrder, showLandscape, warmCatalogLengths } from './items';
 import { getCatalogs, requiresGenre, viewIdFor, viewTypeFor, type CatalogRef } from './views';
 import { viewerAccountOwner, viewerReadsExtensions } from './viewer';
 import { profileTags } from './profiles';
@@ -245,6 +245,7 @@ export async function collectionViews(userUUID: string, config: any, serverId: s
 export interface MembersPage {
   items: any[];
   hasMore: boolean;
+  truncated?: boolean;
 }
 
 interface MemberCursor {
@@ -319,6 +320,13 @@ export async function boxSetGenres(
   return { catalog: sources[0]?.catalog ?? null, genres: [...seen.values()] };
 }
 
+/** The filters a box set listing applies beside its types, genre and ratings. */
+export interface MemberFilters {
+  years?: unknown;
+  studios?: StudioFilter | null;
+  extra?: ExtraFilters | null;
+}
+
 export async function boxSetMembers(
   userUUID: string,
   config: any,
@@ -329,7 +337,8 @@ export async function boxSetMembers(
   limit: number,
   includeItemTypes?: string,
   genre?: string,
-  officialRatings?: string
+  officialRatings?: string,
+  filters: MemberFilters = {}
 ): Promise<MembersPage> {
   const sources = visibleSources(await getCatalogs(userUUID, config), folder)
     .map((entry) => ({ ...entry, genre: genre ? genreFor(entry.source, entry.catalog, genre) : pinnedGenre(entry.source) }))
@@ -337,7 +346,7 @@ export async function boxSetMembers(
   const parentId = boxSetId(collection, folder);
   const tags = profileTags(config);
   const extrasOf = (entry: { genre: string | null }): Record<string, string> => (entry.genre ? { genre: entry.genre } : {});
-  const filterKey = listFilterKey(includeItemTypes, officialRatings);
+  const filterKey = listFilterKey(includeItemTypes, officialRatings, filters.years, filters.studios, filters.extra);
 
   const cursorKey = JSON.stringify([
     userUUID, collection.id, folder.id, filterKey, genre ?? '', tags, viewerAccountOwner(),
@@ -347,7 +356,7 @@ export async function boxSetMembers(
   const shuffled = Boolean(folder.randomizePerPage) && folder.sources.length > 1;
   if (sources.length > 1 && mode !== 'sequential') {
     const page = await mixedMembers({
-      userUUID, config, serverId, parentId, sources, mode, startIndex, limit, includeItemTypes, officialRatings, tags, filterKey,
+      userUUID, config, serverId, parentId, sources, mode, startIndex, limit, includeItemTypes, officialRatings, filters, tags, filterKey,
       cursorKey: `${mode}:${cursorKey}`,
     });
     return shuffled ? { ...page, items: shuffleMetas(page.items) } : page;
@@ -386,6 +395,7 @@ export async function boxSetMembers(
 
   const collected: any[] = [];
   let nextIndex = startIndex;
+  let truncated = false;
 
   while (sourceIndex < sources.length && collected.length < limit) {
     const { catalog } = sources[sourceIndex];
@@ -395,10 +405,10 @@ export async function boxSetMembers(
       continue;
     }
     const extras = extrasOf(sources[sourceIndex]);
-    const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings);
+    const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings, filters.years, filters.studios, filters.extra);
     const landscape = isLandscapeCatalog(config, catalog);
     const page = await fetchWindow(userUUID, catalog, from, toSkip + limit - collected.length, extras, keep, tags, filterKey)
-      .catch(() => ({ items: [] as any[], hasMore: false, failed: true }));
+      .catch((): Window => ({ items: [], hasMore: false, failed: true }));
 
     const served: any[] = [];
     for (const meta of page.items) {
@@ -421,6 +431,11 @@ export async function boxSetMembers(
     } else {
       failures = 0;
     }
+    // A source its read budget cut short is read on from here on the next ask.
+    if (page.truncated) {
+      truncated = true;
+      break;
+    }
 
     if (page.failed || !page.hasMore || page.items.length === 0) {
       sourceIndex += 1;
@@ -434,7 +449,7 @@ export async function boxSetMembers(
     walks.save(cursorKey, resumed, added, nextIndex, { sourceIndex, sourceOffset: from, failures });
   }
 
-  return { items: shuffled ? shuffleMetas(collected) : collected, hasMore: more };
+  return { items: shuffled ? shuffleMetas(collected) : collected, hasMore: more, ...(truncated ? { truncated: true } : {}) };
 }
 
 // Where a mixed walk stopped: each source's position, whose turn is next, and
@@ -461,11 +476,12 @@ async function mixedMembers(args: {
   limit: number;
   includeItemTypes?: string;
   officialRatings?: string;
+  filters: MemberFilters;
   tags: string[];
   filterKey: string;
   cursorKey: string;
 }): Promise<MembersPage> {
-  const { userUUID, config, serverId, parentId, sources, mode, startIndex, limit, includeItemTypes, officialRatings, tags, filterKey, cursorKey } = args;
+  const { userUUID, config, serverId, parentId, sources, mode, startIndex, limit, includeItemTypes, officialRatings, filters, tags, filterKey, cursorKey } = args;
   const count = sources.length;
   const extrasOf = (i: number): Record<string, string> => (sources[i].genre ? { genre: sources[i].genre as string } : {});
   const runLength = (i: number): number => knownPageLength(userUUID, sources[i].catalog, extrasOf(i), tags) ?? catalogPageSize();
@@ -486,6 +502,8 @@ async function mixedMembers(args: {
   const ended = sources.map(() => false);
   const landscapes = sources.map(({ catalog }) => isLandscapeCatalog(config, catalog));
   const stalled = sources.map(() => false);
+  const cut = sources.map(() => false);
+  let paused = false;
   const failures = resumed?.failures ? [...resumed.failures] : sources.map(() => 0);
   const starts = resumed?.starts ? [...resumed.starts] : [...offsets];
   const reread = sources.map(() => Boolean(resumed));
@@ -497,7 +515,7 @@ async function mixedMembers(args: {
   const fill = async (i: number): Promise<void> => {
     if (buffers[i].length || ended[i] || done[i]) return;
     const { catalog } = sources[i];
-    const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings);
+    const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings, filters.years, filters.studios, filters.extra);
     const size = mode === 'alternating' ? Math.max(chunk, runLeft > 0 ? runLeft : runLength(i)) : chunk;
     // A filtered source resumes where its window began, a place the catalog walk keeps, and skips what it gave;
     // an unfiltered one finds its place by page.
@@ -516,13 +534,20 @@ async function mixedMembers(args: {
       return;
     }
     failures[i] = 0;
+    cut[i] = window.truncated === true;
     if (window.randomize) randomized.add(i);
     if (!window.hasMore) ended[i] = true;
   };
+  // A source its read budget cut short holds the page there, as the titles it has yet to find come next.
   const take = async (i: number): Promise<any | undefined> => {
+    if (!buffers[i].length && cut[i]) {
+      paused = true;
+      return undefined;
+    }
     await fill(i);
     if (!buffers[i].length) {
-      done[i] = true;
+      if (cut[i]) paused = true;
+      else done[i] = true;
       return undefined;
     }
     offsets[i] += 1;
@@ -543,6 +568,7 @@ async function mixedMembers(args: {
       continue;
     }
     const meta = await take(i);
+    if (paused) break;
     if (meta === undefined) {
       pass();
       continue;
@@ -574,5 +600,5 @@ async function mixedMembers(args: {
   if (more && collected.length > 0 && seen.size <= MEMBER_CURSOR_MAX_IDS) {
     walks.save(cursorKey, at, added, nextIndex, { offsets, done: finished, turn, runLeft, failures, starts });
   }
-  return { items: collected, hasMore: more };
+  return { items: collected, hasMore: more, ...(paused ? { truncated: true } : {}) };
 }

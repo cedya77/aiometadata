@@ -4,23 +4,32 @@ import type { StudioFilter } from './items';
 type Pick = (metas: any[]) => Promise<any[]>;
 type StudioDescriptor = { k: 'studio'; n: string; s?: 'tmdb-company' | 'tmdb-network' | 'tvdb' | 'mal'; x?: number };
 
-/** The ratings, years and studios a page holds, each once, as filter menus list them. */
-export function facetsOf(entries: Array<{ rating: string | null; year: number | null; studios?: StudioDescriptor[] }>): { ratings: string[]; years: number[]; studios: StudioDescriptor[] } {
+const MENU_TAGS = 30;
+
+/** The ratings, years, studios and most frequent tags a page holds, each once, as filter menus list them. */
+export function facetsOf(entries: Array<{ rating: string | null; year: number | null; studios?: StudioDescriptor[]; tags?: string[] }>): { ratings: string[]; years: number[]; studios: StudioDescriptor[]; tags: string[] } {
   const ratings = new Set<string>();
   const years = new Set<number>();
   const studios = new Map<string, StudioDescriptor>();
-  for (const { rating, year, studios: named = [] } of entries) {
+  const tags = new Map<string, { name: string; count: number }>();
+  for (const { rating, year, studios: named = [], tags: tagged = [] } of entries) {
     if (rating) ratings.add(rating);
     if (Number.isInteger(year)) years.add(year as number);
     for (const studio of named) {
       const held = studios.get(studio.n);
       if (!held || (!held.x && studio.x)) studios.set(studio.n, studio);
     }
+    for (const tag of new Set(tagged.map((t) => String(t).trim()).filter(Boolean))) {
+      const key = tag.toLowerCase();
+      const held = tags.get(key);
+      tags.set(key, { name: held?.name ?? tag, count: (held?.count ?? 0) + 1 });
+    }
   }
   return {
     ratings: [...ratings].sort(),
     years: [...years].sort((a, b) => a - b),
     studios: [...studios.values()].sort((a, b) => a.n.localeCompare(b.n)),
+    tags: [...tags.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, MENU_TAGS).map((t) => t.name),
   };
 }
 
@@ -56,6 +65,37 @@ export function asksForFavourites(query: Record<string, unknown>, ownWatchlist: 
   const filters = String(query.Filters ?? query.filters ?? '').split(',').map((f) => f.trim());
   const flag = String(query.IsFavorite ?? query.isFavorite ?? '').toLowerCase() === 'true';
   return filters.includes('IsFavorite') || filters.includes('IsFavoriteOrLikes') || flag || (ownWatchlist && filters.includes('Likes'));
+}
+
+export function asksForResumable(query: Record<string, unknown>): boolean {
+  return String(query.Filters ?? query.filters ?? '').split(',').map((f) => f.trim()).includes('IsResumable');
+}
+
+const EXCLUDED_MAX = 100;
+
+/** The item Ids a request leaves out, normalised as item Ids are compared; null when it names none. */
+export function excludedIds(query: Record<string, unknown>): Set<string> | null {
+  const ids = String(query.ExcludeItemIds ?? query.excludeItemIds ?? '').split(',').map((id) => id.trim().replace(/-/g, '').toLowerCase()).filter((id) => /^[0-9a-f]{32}$/.test(id));
+  return ids.length ? new Set(ids.slice(0, EXCLUDED_MAX)) : null;
+}
+
+/** The catalog ids of the titles a request leaves out; null when it names none. */
+export async function excludedTitles(query: Record<string, unknown>, decode: (id: string) => Promise<any>): Promise<Set<string> | null> {
+  const ids = excludedIds(query);
+  if (!ids) return null;
+  const descriptors = await Promise.all([...ids].map((id) => decode(id).catch(() => null)));
+  const titles = new Set(descriptors.filter((d) => (d?.k === 'movie' || d?.k === 'series') && d.i).map((d) => String(d.i)));
+  return titles.size ? titles : null;
+}
+
+/** A walk's filter that also leaves out the excluded titles, so a page and the next count the same list. */
+export function withoutTitles(keep: ((meta: any) => boolean) | undefined, excluded: Set<string> | null): ((meta: any) => boolean) | undefined {
+  if (!excluded) return keep;
+  return (meta: any) => !excluded.has(String(meta?.id)) && (!keep || keep(meta));
+}
+
+export function excludedKey(excluded: Set<string> | null): string {
+  return excluded ? `#not:${[...excluded].sort().join(',')}` : '';
 }
 
 /**

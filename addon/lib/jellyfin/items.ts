@@ -1059,32 +1059,85 @@ function fromStudio(meta: any, studios: StudioFilter): boolean {
   return studioNamesOf(meta).some((name) => studios.names.has(name.toLowerCase()) || studios.legacy.has(legacyStudioId(name)));
 }
 
-/** Keeps the titles of the asked types and, when asked, ratings, years and studios; a title lacking the field matches none. */
+/** The keyword, rating, series status and folder filters a request names; each is null when it names none. */
+export interface ExtraFilters {
+  tags: Set<string> | null;
+  minRating: number | null;
+  statuses: Set<string> | null;
+  folders: 'folder' | 'item' | null;
+}
+
+// Jellyfin's series statuses as titles here carry them; one no title carries, such as Unreleased, matches none.
+const SERIES_STATUSES: Record<string, string> = { continuing: 'Continuing', ended: 'Ended', unreleased: 'Unreleased' };
+
+export function extraFiltersOf(query: Record<string, unknown>): ExtraFilters {
+  const rating = parseRating(query.MinCommunityRating ?? query.minCommunityRating);
+  const statuses = String(query.SeriesStatus ?? query.seriesStatus ?? '').split(',').map((s) => s.trim()).filter(Boolean).map((s) => SERIES_STATUSES[s.toLowerCase()] ?? s);
+  const filters = String(query.Filters ?? query.filters ?? '').split(',').map((f) => f.trim());
+  return {
+    tags: wantedTags(query.Tags ?? query.tags),
+    minRating: rating,
+    statuses: statuses.length ? new Set(statuses) : null,
+    folders: filters.includes('IsFolder') ? 'folder' : filters.includes('IsNotFolder') ? 'item' : null,
+  };
+}
+
+function passesExtra(meta: any, mediaType: string, extra: ExtraFilters): boolean {
+  if (extra.tags) {
+    const anime = extra.tags.has(ANIME_TAG) && (isAnimeCatalogType(mediaType) || PER_ENTRY_ANIME.test(String(meta?.id ?? '')));
+    const keywords = (Array.isArray(meta?.keywords) ? meta.keywords : []).map((k: unknown) => String(k).toLowerCase());
+    if (!anime && !keywords.some((k: string) => extra.tags!.has(k))) return false;
+  }
+  if (extra.minRating !== null && (parseRating(meta?.imdbRating) ?? -1) < extra.minRating) return false;
+  const type = itemTypeOf(meta, mediaType);
+  if (extra.statuses && !(type === 'Series' && extra.statuses.has(seriesStatus(meta) ?? ''))) return false;
+  if (extra.folders === 'folder' && type === 'Movie') return false;
+  if (extra.folders === 'item' && type !== 'Movie') return false;
+  return true;
+}
+
+const hasExtra = (extra?: ExtraFilters | null): extra is ExtraFilters =>
+  Boolean(extra && (extra.tags || extra.minRating !== null || extra.statuses || extra.folders));
+
+/** Keeps the titles of the asked types and, when asked, ratings, years, studios and the extra filters; a title lacking the field matches none. */
 export function includeTypesFilter(
   mediaType: string,
   includeItemTypes: string | undefined,
   officialRatings?: unknown,
   years?: unknown,
-  studios?: StudioFilter | null
+  studios?: StudioFilter | null,
+  extra?: ExtraFilters | null
 ): ((meta: any) => boolean) | undefined {
   const wanted = wantedTypes(includeItemTypes);
   const ratings = wantedRatings(officialRatings);
   const yearSet = wantedYears(years);
-  if (!wanted && !ratings && !yearSet && !studios) return undefined;
+  const extras = hasExtra(extra) ? extra : null;
+  if (!wanted && !ratings && !yearSet && !studios && !extras) return undefined;
 
   return (meta: any) =>
     (!wanted || wanted.has(itemTypeOf(meta, mediaType)))
     && (!ratings || ratings.has(String(officialRatingOf(meta) ?? '').toUpperCase()))
     && (!yearSet || yearSet.has(productionYear(meta) ?? -1))
-    && (!studios || fromStudio(meta, studios));
+    && (!studios || fromStudio(meta, studios))
+    && (!extras || passesExtra(meta, mediaType, extras));
 }
 
-/** What a filtered list's lengths and cursors are held under: its types, and its ratings, years and studios when it names any. */
-export function listFilterKey(includeItemTypes: unknown, officialRatings?: unknown, years?: unknown, studios?: StudioFilter | null): string {
+function extraKey(extra?: ExtraFilters | null): string {
+  if (!hasExtra(extra)) return '';
+  return [
+    extra.tags ? `|tags:${[...extra.tags].sort().join('|')}` : '',
+    extra.minRating !== null ? `|minrating:${extra.minRating}` : '',
+    extra.statuses ? `|status:${[...extra.statuses].sort().join('|')}` : '',
+    extra.folders ? `|folders:${extra.folders}` : '',
+  ].join('');
+}
+
+/** What a filtered list's lengths and cursors are held under: its types, and each other filter only when it names one. */
+export function listFilterKey(includeItemTypes: unknown, officialRatings?: unknown, years?: unknown, studios?: StudioFilter | null, extra?: ExtraFilters | null): string {
   const ratings = wantedRatings(officialRatings);
   const yearSet = wantedYears(years);
   const studioKey = studios ? `|studios:${[...[...studios.names].sort(), ...[...studios.legacy].sort()].join('|')}` : '';
-  return `${includeItemTypes ? String(includeItemTypes) : ''}${ratings ? `|ratings:${[...ratings].sort().join('|')}` : ''}${yearSet ? `|years:${[...yearSet].sort((a, b) => a - b).join('|')}` : ''}${studioKey}`;
+  return `${includeItemTypes ? String(includeItemTypes) : ''}${ratings ? `|ratings:${[...ratings].sort().join('|')}` : ''}${yearSet ? `|years:${[...yearSet].sort((a, b) => a - b).join('|')}` : ''}${studioKey}${extraKey(extra)}`;
 }
 
 // A catalog built here holds only its declared type: films and TVDB collections in a movie one, shows in a
