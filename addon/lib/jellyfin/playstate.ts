@@ -464,6 +464,7 @@ async function writePlaystate(
       const gapMs = runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
       const watch = finished ? { at: now, kind: 'finish', gapMs } : undefined;
       await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: now, origin: 'server', ...(watch ? { watch } : {}) }, profile, session.aliases);
+      if (watch) require('./dashboard').noteDashboardFinish(userUUID);
       return;
     }
     const { belowResumeFloor } = require('./resume');

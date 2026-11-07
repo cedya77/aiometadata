@@ -1685,15 +1685,6 @@ class Database {
     return (await this.allQuery(query, [userUUID])) || [];
   }
 
-  async watchedRowsForConfiguration(userUUID: string): Promise<any[]> {
-    const query = this.type === 'sqlite'
-      ? `SELECT profile, video_id, played, position_ms, last_played_at, origin FROM jellyfin_playstate
-         WHERE user_uuid = ? AND (played = 1 OR position_ms > 0)`
-      : `SELECT profile, video_id, played, position_ms, last_played_at, origin FROM jellyfin_playstate
-         WHERE user_uuid = $1 AND (played = 1 OR position_ms > 0)`;
-    return (await this.allQuery(query, [userUUID])) || [];
-  }
-
   async outboxForConfiguration(userUUID: string, limit = 500): Promise<any[]> {
     const query = this.type === 'sqlite'
       ? 'SELECT profile, service, attempts, created_at, last_error FROM tracker_outbox WHERE user_uuid = ? AND expires_at > ? ORDER BY id LIMIT ?'
@@ -2079,13 +2070,6 @@ class Database {
       ? 'SELECT video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = ? AND profile = ? AND watched_at >= ? AND watched_at < ?'
       : 'SELECT video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = $1 AND profile = $2 AND watched_at >= $3 AND watched_at < $4';
     return ((await this.allQuery(query, [userUUID, profile, from, to])) || []).map((row: any) => ({ video_id: String(row.video_id), watched_at: Number(row.watched_at), origin: row.origin ?? null }));
-  }
-
-  async listWatchesSince(userUUID: string, since: number): Promise<Array<{ profile: string; video_id: string; watched_at: number; origin: string | null }>> {
-    const query = this.type === 'sqlite'
-      ? 'SELECT profile, video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = ? AND watched_at >= ?'
-      : 'SELECT profile, video_id, watched_at, origin FROM jellyfin_watches WHERE user_uuid = $1 AND watched_at >= $2';
-    return ((await this.allQuery(query, [userUUID, since])) || []).map((row: any) => ({ profile: String(row.profile ?? ''), video_id: String(row.video_id), watched_at: Number(row.watched_at), origin: row.origin ?? null }));
   }
 
   async listWatchesForConfiguration(userUUID: string): Promise<any[]> {

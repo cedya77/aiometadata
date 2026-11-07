@@ -261,9 +261,12 @@ export async function dedupeByAlias<T extends { videoId: string }>(rows: T[]): P
   return out;
 }
 
-/** Rows grouped by title: known aliases, and the spellings one play through this server wrote together. */
-export async function groupBySpelling<T extends { video_id: any; last_played_at?: any; origin?: any }>(rows: T[]): Promise<T[][]> {
-  const ids = rows.map((row) => String(row.video_id));
+const BREATH_EVERY = 500;
+
+/** Which title each id belongs to: known aliases, and the spellings one play through this server wrote together. */
+export async function spellingRoots(ids: string[], writtenAt: (i: number) => unknown, breathe = false): Promise<(id: string) => string> {
+  // A history longer than the memo would only push out what others are using, and find nothing it put there.
+  const aliasesOf = breathe && ids.length > aliasMemo.max / 2 ? (id: string) => aliasMemo.peek(id) ?? computeVideoIdAliases(id) : videoIdAliases;
   const parent = new Map<string, string>(ids.map((id) => [id, id]));
   const find = (id: string): string => {
     let root = id;
@@ -279,18 +282,26 @@ export async function groupBySpelling<T extends { video_id: any; last_played_at?
   };
 
   const together = new Map<string, string>();
-  for (const [i, row] of rows.entries()) {
+  for (let i = 0; i < ids.length; i += 1) {
     const id = ids[i];
-    for (const alias of await videoIdAliases(id).catch(() => [] as string[])) union(id, alias);
-    if (row.origin !== 'server' || !row.last_played_at) continue;
+    if (breathe && i % BREATH_EVERY === BREATH_EVERY - 1) await new Promise((resolve) => setImmediate(resolve));
+    for (const alias of await aliasesOf(id).catch(() => [] as string[])) union(id, alias);
+    const written = writtenAt(i);
+    if (!written) continue;
     const parsed = parseStremioId(id);
     const at = parsed && parsed.episode !== null && parsed.episode !== undefined ? `${parsed.season ?? ''}:${parsed.episode}` : 'title';
-    const key = `${row.last_played_at}|${at}`;
+    const key = `${written}|${at}`;
     const first = together.get(key);
     if (first) union(id, first);
     else together.set(key, id);
   }
+  return find;
+}
 
+/** Rows grouped by title. */
+export async function groupBySpelling<T extends { video_id: any; last_played_at?: any; origin?: any }>(rows: T[]): Promise<T[][]> {
+  const ids = rows.map((row) => String(row.video_id));
+  const find = await spellingRoots(ids, (i) => (rows[i].origin === 'server' ? rows[i].last_played_at : null));
   const groups = new Map<string, T[]>();
   for (const [i, row] of rows.entries()) {
     const root = find(ids[i]);

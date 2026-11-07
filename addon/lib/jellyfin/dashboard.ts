@@ -7,7 +7,6 @@ import { syncStatus } from './playstateSync';
 import { clientRequest, seenConfigurations } from './context';
 import { seriesIndex } from './episodeIndex';
 import { fetchMeta, isBoxSetMeta, parseRuntimeTicks, seriesStatus } from './items';
-import { groupBySpelling } from './aliases';
 import { itemIdForVideo } from './history';
 import { defaultUserName, listProfiles, profileKey, scopeConfigToProfile } from './profiles';
 import { isClassEnabled, POSTER_CACHE_ROUTE } from '../posterCache/config';
@@ -337,82 +336,127 @@ interface ProfileStats {
   inProgress: number;
   movies: number;
   episodes: number;
-  days: Record<string, number>;
+  /** Finishes per quarter hour of UTC, which every time zone's days can be read from. */
+  ticks: Record<string, number>;
+}
+
+const QUARTER_MS = 15 * 60_000;
+
+function daysOf(stats: ProfileStats | undefined, offsetMinutes: number): Record<string, number> {
+  const days: Record<string, number> = {};
+  for (const [quarter, count] of Object.entries(stats?.ticks ?? {})) {
+    const day = new Date(Number(quarter) * QUARTER_MS - offsetMinutes * 60_000).toISOString().slice(0, 10);
+    days[day] = (days[day] ?? 0) + count;
+  }
+  return days;
 }
 
 const ACTIVITY_DAYS = 371;
 
-const statsMemo = new LRUCache<string, { fingerprint: string; work: Promise<Map<string, ProfileStats>> }>({
+// A history read holds a page of rows and every id, so only a few run at once.
+let historyReading = 0;
+const historyWaiting: Array<() => void> = [];
+
+async function historyRead<T>(work: () => Promise<T>): Promise<T> {
+  const width = envInt('JELLYFIN_DASHBOARD_HISTORY_READS', 2, 1);
+  if (historyReading >= width) await new Promise<void>((resolve) => historyWaiting.push(resolve));
+  else historyReading += 1;
+  try {
+    return await work();
+  } finally {
+    const next = historyWaiting.shift();
+    if (next) next();
+    else historyReading -= 1;
+  }
+}
+
+type StatsMark = { counts: string; moment: string; at: number };
+
+const statsMemo = new LRUCache<string, StatsMark & { work: Promise<Map<string, ProfileStats>> }>({
   max: 200,
   ttl: envInt('JELLYFIN_DASHBOARD_STATS_TTL', 120, 10) * 1000,
 });
 const statsRefreshing = new Set<string>();
+const statsFinished = new LRUCache<string, number>({ max: 1000, ttl: 60 * 60 * 1000 });
 
-function statsFingerprint(summary: any[]): string {
-  return summary
-    .map((row) => `${row.profile ?? ''}:${Number(row.rows_total) || 0}:${Number(row.in_progress) || 0}:${Number(row.played) || 0}:${Number(row.last_played_at) || 0}:${Number(row.updated_at) || 0}`)
-    .sort()
-    .join('|');
+/** A title played to its end again changes no count, so the wait for a recount ends here. */
+export function noteDashboardFinish(userUUID: string): void {
+  statsFinished.set(userUUID, Date.now());
 }
 
-const statsStoreKey = (key: string) => `jf:dashstats:v3:${key}`;
+function statsMark(summary: any[]): StatsMark {
+  const of = (fields: (row: any) => unknown[]) => summary.map((row) => [row.profile ?? '', ...fields(row).map((n) => Number(n) || 0)].join(':')).sort().join('|');
+  return {
+    counts: of((row) => [row.rows_total, row.played, row.in_progress]),
+    moment: of((row) => [row.last_played_at, row.updated_at]),
+    at: Date.now(),
+  };
+}
 
-async function storedStats(key: string): Promise<{ fingerprint: string; stats: Map<string, ProfileStats> } | null> {
+/** A play moving forward only changes the activity chart, so it waits a while; anything that changes a count does not. */
+const stillGood = (userUUID: string, held: StatsMark, now: StatsMark): boolean =>
+  held.counts === now.counts && (held.moment === now.moment
+    || (now.at - held.at < envInt('JELLYFIN_DASHBOARD_STATS_PLAYING_SECONDS', 300, 0) * 1000 && (statsFinished.get(userUUID) ?? 0) <= held.at));
+
+const statsStoreKey = (userUUID: string) => `jf:dashstats:v4:${userUUID}`;
+
+async function storedStats(userUUID: string): Promise<(StatsMark & { stats: Map<string, ProfileStats> }) | null> {
   if (!redis) return null;
   try {
-    const raw = await redis.get(statsStoreKey(key));
+    const raw = await redis.get(statsStoreKey(userUUID));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return { fingerprint: String(parsed.fingerprint), stats: new Map(parsed.stats) };
+    return { counts: String(parsed.counts), moment: String(parsed.moment), at: Number(parsed.at) || 0, stats: new Map(parsed.stats) };
   } catch {
     return null;
   }
 }
 
-async function computeStats(userUUID: string, offsetMinutes: number, fingerprint: string): Promise<Map<string, ProfileStats>> {
-  const key = `${userUUID}:${offsetMinutes}`;
-  const stats = await readProfileStats(userUUID, offsetMinutes);
-  if (redis) {
+async function computeStats(userUUID: string, mark: StatsMark, profiles: string[]): Promise<Map<string, ProfileStats>> {
+  const stats = await historyRead(() => readProfileStats(userUUID, profiles));
+  // Counted before the id mappings loaded, every spelling counts as its own title, so it is not kept.
+  if (redis && require('../id-mappings').mappingsReady()) {
     const seconds = envInt('JELLYFIN_DASHBOARD_STATS_KEEP_DAYS', 30, 1) * 24 * 60 * 60;
-    redis.set(statsStoreKey(key), JSON.stringify({ fingerprint, stats: [...stats.entries()] }), 'EX', seconds).catch(() => undefined);
+    redis.set(statsStoreKey(userUUID), JSON.stringify({ ...mark, stats: [...stats.entries()] }), 'EX', seconds).catch(() => undefined);
   }
   return stats;
 }
 
 export async function forgetDashboardStats(userUUID: string): Promise<void> {
-  for (const key of [...statsMemo.keys()]) if (key.startsWith(`${userUUID}:`)) statsMemo.delete(key);
-  if (!redis) return;
-  const keys = Array.from({ length: 14 * 60 * 2 + 1 }, (_, i) => statsStoreKey(`${userUUID}:${i - 14 * 60}`));
-  await redis.del(...keys).catch(() => undefined);
+  statsMemo.delete(userUUID);
+  if (redis) await redis.del(statsStoreKey(userUUID)).catch(() => undefined);
 }
 
-function profileStats(userUUID: string, offsetMinutes: number, summary: any[]): Promise<Map<string, ProfileStats>> {
-  const key = `${userUUID}:${offsetMinutes}`;
-  const fingerprint = statsFingerprint(summary);
-  const held = statsMemo.get(key);
-  if (held && held.fingerprint === fingerprint) return held.work;
+function profileStats(userUUID: string, summary: any[]): Promise<Map<string, ProfileStats>> {
+  const now = statsMark(summary);
+  const held = statsMemo.get(userUUID);
+  if (held && stillGood(userUUID, held, now)) return held.work;
+  const profiles = summary.map((row) => String(row.profile ?? ''));
   const work = (async () => {
-    const stored = await storedStats(key);
-    if (stored && stored.fingerprint === fingerprint) return stored.stats;
-    if (!stored) return computeStats(userUUID, offsetMinutes, fingerprint);
-    if (!statsRefreshing.has(key)) {
-      statsRefreshing.add(key);
-      computeStats(userUUID, offsetMinutes, fingerprint)
-        .then((fresh) => statsMemo.set(key, { fingerprint, work: Promise.resolve(fresh) }))
+    const stored = await storedStats(userUUID);
+    if (stored && stillGood(userUUID, stored, now)) {
+      statsMemo.set(userUUID, { ...stored, work: Promise.resolve(stored.stats) });
+      return stored.stats;
+    }
+    if (!stored) return computeStats(userUUID, now, profiles);
+    if (!statsRefreshing.has(userUUID)) {
+      statsRefreshing.add(userUUID);
+      computeStats(userUUID, now, profiles)
+        .then((fresh) => statsMemo.set(userUUID, { ...now, work: Promise.resolve(fresh) }))
         .catch(() => undefined)
-        .finally(() => statsRefreshing.delete(key));
+        .finally(() => statsRefreshing.delete(userUUID));
     }
     return stored.stats;
   })();
-  statsMemo.set(key, { fingerprint, work });
-  work.catch(() => statsMemo.delete(key));
+  statsMemo.set(userUUID, { ...now, work });
+  work.catch(() => statsMemo.delete(userUUID));
   return work;
 }
 
 /** Each history's titles played and in progress, a title's spellings counted once, and its latest play. */
 export async function playCounts(userUUID: string): Promise<Map<string, { played: number; movies: number; episodes: number; inProgress: number; lastAt: number | null }>> {
   const byProfile: any[] = await database.playstateForConfiguration(userUUID);
-  const stats = await profileStats(userUUID, 0, byProfile);
+  const stats = await profileStats(userUUID, byProfile);
   return new Map(byProfile.map((row: any) => {
     const key = String(row.profile ?? '');
     const titles = stats.get(key);
@@ -426,40 +470,71 @@ export async function playCounts(userUUID: string): Promise<Map<string, { played
   }));
 }
 
-async function readProfileStats(userUUID: string, offsetMinutes: number): Promise<Map<string, ProfileStats>> {
-  const rows: any[] = await database.watchedRowsForConfiguration(userUUID);
-  const byProfile = new Map<string, any[]>();
-  for (const row of rows) {
-    const key = String(row.profile ?? '');
-    if (!byProfile.has(key)) byProfile.set(key, []);
-    byProfile.get(key)!.push(row);
+const STATS_PAGE = 5000;
+const IN_PROGRESS = 1;
+const PLAYED = 2;
+const WATCHED = 4;
+const WRITTEN_HERE = 8;
+
+/** Reads a profile's history a page at a time, keeping each id once and its row as numbers. */
+async function readStatsRows(userUUID: string, profile: string, watchedMs: number) {
+  const ids: string[] = [];
+  const times: number[] = [];
+  const flags: number[] = [];
+  let after: { profile: string; videoId: string } | undefined;
+  for (;;) {
+    const page: any[] = await database.listPlaystatePage(userUUID, [profile], STATS_PAGE, after);
+    for (const row of page) {
+      ids.push(String(row.video_id));
+      times.push(Number(row.last_played_at) || 0);
+      const position = Number(row.position_ms);
+      flags.push((position > 0 ? IN_PROGRESS : 0) | (Number(row.played) === 1 ? PLAYED : 0) | (position >= watchedMs ? WATCHED : 0) | (row.origin === 'server' && row.last_played_at ? WRITTEN_HERE : 0));
+    }
+    if (page.length < STATS_PAGE) return { ids, times, flags };
+    after = { profile, videoId: ids[ids.length - 1] };
+    await new Promise((resolve) => setImmediate(resolve));
   }
+}
+
+async function readProfileStats(userUUID: string, profiles: string[]): Promise<Map<string, ProfileStats>> {
   const since = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
-  const watches = new Map<string, number[]>();
-  for (const watch of await database.listWatchesSince(userUUID, since)) {
-    const key = `${watch.profile}|${watch.video_id}`;
-    watches.set(key, [...(watches.get(key) ?? []), watch.watched_at]);
-  }
-  const dayOf = (at: number) => new Date(at - offsetMinutes * 60_000).toISOString().slice(0, 10);
+  const watchedMs = envInt('JELLYFIN_DASHBOARD_WATCHED_MINUTES', 5, 1) * 60_000;
+  const { spellingRoots } = require('./aliases');
   const out = new Map<string, ProfileStats>();
-  for (const [profile, list] of byProfile) {
-    const stats: ProfileStats = { played: 0, inProgress: 0, movies: 0, episodes: 0, days: {} };
-    const watchedMs = envInt('JELLYFIN_DASHBOARD_WATCHED_MINUTES', 5, 1) * 60_000;
-    for (const group of await groupBySpelling(list)) {
-      if (group.some((row) => Number(row.position_ms) > 0)) stats.inProgress += 1;
-      const played = group.some((row) => Number(row.played) === 1);
-      if (played) {
+  for (const profile of profiles) {
+    const { ids, times, flags } = await readStatsRows(userUUID, profile, watchedMs);
+    if (!ids.length) continue;
+    const rootOf: (id: string) => string = await spellingRoots(ids, (i: number) => (flags[i] & WRITTEN_HERE ? times[i] : null), true);
+    const titles = new Map<string, { id: string; flags: number; at: number; finishes: Set<number> | null }>();
+    const known = new Set(ids);
+    for (let i = 0; i < ids.length; i += 1) {
+      const root = rootOf(ids[i]);
+      const title = titles.get(root);
+      if (title) {
+        title.flags |= flags[i];
+        title.at = Math.max(title.at, times[i]);
+      } else titles.set(root, { id: ids[i], flags: flags[i], at: times[i], finishes: null });
+    }
+    for (const watch of await database.listWatchesBetween(userUUID, profile, since, Number.MAX_SAFE_INTEGER)) {
+      if (!known.has(watch.video_id)) continue;
+      const title = titles.get(rootOf(watch.video_id))!;
+      (title.finishes ??= new Set()).add(watch.watched_at);
+    }
+    const stats: ProfileStats = { played: 0, inProgress: 0, movies: 0, episodes: 0, ticks: {} };
+    const tick = (at: number) => {
+      const quarter = Math.floor(at / QUARTER_MS);
+      stats.ticks[quarter] = (stats.ticks[quarter] ?? 0) + 1;
+    };
+    for (const title of titles.values()) {
+      if (title.flags & IN_PROGRESS) stats.inProgress += 1;
+      if (title.flags & PLAYED) {
         stats.played += 1;
-        const parsed = parseStremioId(String(group[0].video_id));
+        const parsed = parseStremioId(title.id);
         if (parsed?.episode !== null && parsed?.episode !== undefined) stats.episodes += 1;
         else stats.movies += 1;
       }
-      const finishes = new Set(group.flatMap((row) => watches.get(`${profile}|${row.video_id}`) ?? []));
-      for (const at of finishes) stats.days[dayOf(at)] = (stats.days[dayOf(at)] ?? 0) + 1;
-      if (!group.some((row) => Number(row.position_ms) >= watchedMs)) continue;
-      const at = group.reduce((max, row) => Math.max(max, Number(row.last_played_at) || 0), 0);
-      if (at < since || finishes.has(at)) continue;
-      stats.days[dayOf(at)] = (stats.days[dayOf(at)] ?? 0) + 1;
+      if (title.finishes) for (const at of title.finishes) tick(at);
+      if (title.flags & WATCHED && title.at >= since && !title.finishes?.has(title.at)) tick(title.at);
     }
     out.set(profile, stats);
   }
@@ -1223,7 +1298,7 @@ export async function dashboardConfiguration(userUUID: string, profile: string |
   const limit = Math.min(100, Math.max(1, rows || envInt('JELLYFIN_DASHBOARD_ROWS', 30, 1)));
   const byProfile: any[] = await database.playstateForConfiguration(userUUID);
   const [counts, sync]: [Map<string, ProfileStats>, SyncRow[]] = await Promise.all([
-    profileStats(userUUID, offsetMinutes, byProfile),
+    profileStats(userUUID, byProfile),
     trackerSync(config, userUUID),
   ]);
   const everyProfile = listProfiles(config, userUUID);
@@ -1241,7 +1316,7 @@ export async function dashboardConfiguration(userUUID: string, profile: string |
       played: titles?.played ?? 0,
       movies: titles?.movies ?? 0,
       episodes: titles?.episodes ?? 0,
-      days: titles?.days ?? {},
+      days: daysOf(titles, offsetMinutes),
       lastActivity: Math.max(Number(p?.last_played_at) || 0, Number(p?.updated_at) || 0) || null,
     };
   });
