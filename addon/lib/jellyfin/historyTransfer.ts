@@ -335,7 +335,15 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     const prior = incomingStates.get(key);
     incomingStates.set(key, { profile, videoId, title: keyOf(profile, title ?? videoId), state: prior ? mergeState(prior.state, state) : state });
   }
-  const heldStates = new Map<string, State>(playstate.map((row: any) => [keyOf(String(row.profile ?? ''), String(row.video_id)), stateOf(row)]));
+  // Dates written before kinds were kept are told apart by the bulk mark rule, as a file's are.
+  const heldRows = playstate.map((row: any) => ({ profile: String(row.profile ?? ''), videoId: String(row.video_id), ...stateOf(row), lastPlayedKind: (row.last_played_at ? row.last_played_kind ?? null : null) as PlayedKind | null }));
+  sortPlayedKinds(heldRows);
+  const heldStates = new Map<string, State>(heldRows.map(({ profile, videoId, ...state }: any) => [keyOf(profile, videoId), state]));
+  const currentState = (key: string, row: any): State => {
+    const state = stateOf(row);
+    const held = heldStates.get(key);
+    return !row.last_played_kind && held?.lastPlayedAt === state.lastPlayedAt ? { ...state, lastPlayedKind: held?.lastPlayedKind ?? state.lastPlayedKind } : state;
+  };
   const titles = new Map<string, Array<{ key: string; profile: string; videoId: string; state: State }>>();
   for (const [key, { title, ...entry }] of incomingStates) {
     if (!titles.has(title)) titles.set(title, []);
@@ -358,8 +366,9 @@ export async function planHistoryImport(userUUID: string, file: HistoryFile, map
     for (const { profile, videoId, state } of due) {
       queue('playstate', async () => {
         const current = await database.currentPlaystate(userUUID, profile, videoId);
-        const next = current ? mergedInto(stateOf(current), state) : state;
-        if (current && sameState(next, stateOf(current))) return;
+        const heldNow = current ? currentState(keyOf(profile, videoId), current) : null;
+        const next = heldNow ? mergedInto(heldNow, state) : state;
+        if (heldNow && sameState(next, heldNow)) return;
         await database.writePlaystateRow(userUUID, profile, videoId, next);
       });
     }
