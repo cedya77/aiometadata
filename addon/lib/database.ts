@@ -1919,12 +1919,20 @@ class Database {
   async listViewingHistory(userUUID: string, limit: number, profile: string | null = null): Promise<any[]> {
     const sqlite = this.type === 'sqlite';
     const scoped = profile === null ? '' : ` AND w.profile = ${sqlite ? '?' : '$3'}`;
+    // The Nth newest time decides the cut, so every row tied at it still takes its place in the full order.
+    const cutRow = await this.getQuery(
+      sqlite
+        ? `SELECT watched_at FROM jellyfin_watches WHERE user_uuid = ?${profile === null ? '' : ' AND profile = ?'} ORDER BY watched_at DESC LIMIT 1 OFFSET ?`
+        : `SELECT watched_at FROM jellyfin_watches WHERE user_uuid = $1${profile === null ? '' : ' AND profile = $3'} ORDER BY watched_at DESC LIMIT 1 OFFSET $2`,
+      profile === null ? [userUUID, limit - 1] : sqlite ? [userUUID, profile, limit - 1] : [userUUID, limit - 1, profile]
+    );
+    const cut = Number(cutRow?.watched_at) || 0;
     const query = `SELECT w.profile, w.video_id, w.watched_at, w.origin,
         p.position_ms, p.runtime_ms, p.played, p.last_played_at, p.updated_at,
         (SELECT COUNT(*) FROM jellyfin_watches e WHERE e.user_uuid = w.user_uuid AND e.profile = w.profile AND e.video_id = w.video_id AND e.watched_at < w.watched_at) AS earlier
       FROM jellyfin_watches w
       LEFT JOIN jellyfin_playstate p ON p.user_uuid = w.user_uuid AND p.profile = w.profile AND p.video_id = w.video_id
-      WHERE w.user_uuid = ${sqlite ? '?' : '$1'}${scoped}
+      WHERE w.user_uuid = ${sqlite ? '?' : '$1'}${scoped} AND w.watched_at >= ${cut}
       ORDER BY w.watched_at DESC, p.updated_at IS NULL, p.updated_at, w.video_id LIMIT ${sqlite ? '?' : '$2'}`;
     const params = profile === null ? [userUUID, limit] : sqlite ? [userUUID, profile, limit] : [userUUID, limit, profile];
     return (await this.allQuery(query, params)) || [];
