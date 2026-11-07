@@ -69,6 +69,7 @@ const {
 const { renderOAuthPage, escapeHtml } = require('./lib/oauthPage');
 const { hasAnyWatchTrackingEnabled, scrobblesJellyfin } = require('./lib/watchTracking');
 const simklAuth = require('./lib/simkl');
+const { revokeSimklGrant } = require('./lib/accountLinks');
 const { SimklClient } = simklAuth;
 const {
   createSessionId,
@@ -1184,13 +1185,6 @@ async function persistSimklToken(user, accessToken, v2Tokens = null) {
   }
 
   return tokenId;
-}
-
-function revokeSimklGrant(token) {
-  const { clientId, clientSecret } = simklAuth.simklV2Credentials();
-  if (!clientId || !token) return;
-  simklAuth.revokeSimklV2Token(clientId, clientSecret, token)
-    .catch((error) => consola.debug(`[Simkl] Could not revoke a replaced grant: ${error?.message}`));
 }
 
 function simklRedirectUri() {

@@ -1450,6 +1450,10 @@ class Database {
 
   async deleteUser(userUUID: string): Promise<boolean> {
     try {
+      const [held] = await this.allPrimaryQuery(
+        this.type === 'sqlite' ? 'SELECT config_data FROM user_configs WHERE user_uuid = ?' : 'SELECT config_data FROM user_configs WHERE user_uuid = $1',
+        [userUUID]
+      );
       const query = this.type === 'sqlite'
         ? 'DELETE FROM user_configs WHERE user_uuid = ?'
         : 'DELETE FROM user_configs WHERE user_uuid = $1';
@@ -1477,6 +1481,13 @@ class Database {
         : 'DELETE FROM user_aliases WHERE user_uuid = $1';
       await this.runAliasCleanup(deleteAliasQuery, [userUUID]);
       await this.unlinkConfigFromAllAccounts(userUUID);
+      if (held) {
+        try {
+          await require('./accountLinks').releaseConfigTokens(typeof held.config_data === 'string' ? JSON.parse(held.config_data) : held.config_data);
+        } catch (error: any) {
+          logger.error(`Tokens of ${userUUID} were not fully released: ${error?.message || error}`);
+        }
+      }
 
       // After the row is gone: clearing first lets a concurrent read cache it again.
       await require('./configCache').del(userUUID).catch(() => undefined);
