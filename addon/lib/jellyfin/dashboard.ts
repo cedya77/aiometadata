@@ -751,7 +751,11 @@ async function importGroups(userUUID: string, source: SyncSource, outcomes: Map<
     if (!list.length && !left) continue;
     const titles = [...new Set(list.map((v: any) => `${v.profile}|${v.metaId}`))];
     const newest = [...list].sort((a: any, b: any) => b.at - a.at);
-    const shown = new Set(newest.map((v: any) => `${v.profile}|${v.metaId}`).filter((id: string, i: number, all: string[]) => all.indexOf(id) === i).slice(0, 4));
+    const shown = new Set<string>();
+    for (const v of newest) {
+      if (shown.size >= 4) break;
+      shown.add(`${v.profile}|${v.metaId}`);
+    }
     const preview = await driftItems(userUUID, source, outcomes, list.filter((v: any) => shown.has(`${v.profile}|${v.metaId}`)));
     groups.push({
       origin,
