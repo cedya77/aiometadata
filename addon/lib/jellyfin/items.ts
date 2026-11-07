@@ -897,11 +897,13 @@ const SORT_VALUES: Record<string, (item: any) => number | string | null> = {
   sortname: (item) => item?.SortName ?? item?.Name ?? null,
 };
 
+const NAME_ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
 // A missing value sorts lowest, so it comes last when descending.
 function compareSortValues(a: number | string | null, b: number | string | null): number {
   if (a === null || b === null) return a === b ? 0 : a === null ? -1 : 1;
   if (typeof a === 'number' && typeof b === 'number') return a - b;
-  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  return NAME_ORDER.compare(String(a), String(b));
 }
 
 /** Orders a list by SortBy and SortOrder; a key without its own order takes the first, and unknown keys change nothing. */
