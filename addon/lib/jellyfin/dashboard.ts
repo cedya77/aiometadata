@@ -353,11 +353,12 @@ function daysOf(stats: ProfileStats | undefined, offsetMinutes: number): Record<
 
 const ACTIVITY_DAYS = 371;
 
-// A history read holds a page of rows and every id, so only a few run at once.
+// A long history read holds a page of rows and every id, so only a few run at once.
 let historyReading = 0;
 const historyWaiting: Array<() => void> = [];
 
-async function historyRead<T>(work: () => Promise<T>): Promise<T> {
+async function historyRead<T>(rows: number, work: () => Promise<T>): Promise<T> {
+  if (rows < envInt('JELLYFIN_DASHBOARD_HISTORY_QUEUE_ROWS', 10000, 0)) return work();
   const width = envInt('JELLYFIN_DASHBOARD_HISTORY_READS', 2, 1);
   if (historyReading >= width) await new Promise<void>((resolve) => historyWaiting.push(resolve));
   else historyReading += 1;
@@ -412,8 +413,8 @@ async function storedStats(userUUID: string): Promise<(StatsMark & { stats: Map<
   }
 }
 
-async function computeStats(userUUID: string, mark: StatsMark, profiles: string[]): Promise<Map<string, ProfileStats>> {
-  const stats = await historyRead(() => readProfileStats(userUUID, profiles));
+async function computeStats(userUUID: string, mark: StatsMark, profiles: string[], rows: number): Promise<Map<string, ProfileStats>> {
+  const stats = await historyRead(rows, () => readProfileStats(userUUID, profiles));
   // Counted before the id mappings loaded, every spelling counts as its own title, so it is not kept.
   if (redis && require('../id-mappings').mappingsReady()) {
     const seconds = envInt('JELLYFIN_DASHBOARD_STATS_KEEP_DAYS', 30, 1) * 24 * 60 * 60;
@@ -432,16 +433,17 @@ function profileStats(userUUID: string, summary: any[]): Promise<Map<string, Pro
   const held = statsMemo.get(userUUID);
   if (held && stillGood(userUUID, held, now)) return held.work;
   const profiles = summary.map((row) => String(row.profile ?? ''));
+  const rows = summary.reduce((sum, row) => sum + (Number(row.rows_total) || 0), 0);
   const work = (async () => {
     const stored = await storedStats(userUUID);
     if (stored && stillGood(userUUID, stored, now)) {
       statsMemo.set(userUUID, { ...stored, work: Promise.resolve(stored.stats) });
       return stored.stats;
     }
-    if (!stored) return computeStats(userUUID, now, profiles);
+    if (!stored) return computeStats(userUUID, now, profiles, rows);
     if (!statsRefreshing.has(userUUID)) {
       statsRefreshing.add(userUUID);
-      computeStats(userUUID, now, profiles)
+      computeStats(userUUID, now, profiles, rows)
         .then((fresh) => statsMemo.set(userUUID, { ...now, work: Promise.resolve(fresh) }))
         .catch(() => undefined)
         .finally(() => statsRefreshing.delete(userUUID));
