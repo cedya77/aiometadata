@@ -292,7 +292,7 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
   const [offset, setOffset] = useState(0);
   const page = useJellyfinPlaylist(userUUID, profile, current?.id ?? null, offset, { activeTab });
   const pageData = page.data && page.data.id === current?.id ? page.data : undefined;
-  const [entries] = usePagedRows(pageData, (held) => held.entries, ["dashboard", "jellyfin", "playlists", userUUID, profile, current?.id ?? null], current?.id ?? "");
+  const [entries, , changedFrom] = usePagedRows(pageData, (held) => held.entries, ["dashboard", "jellyfin", "playlists", userUUID, profile, current?.id ?? null], current?.id ?? "");
   const items = useMemo(() => entries.map(itemOf), [entries]);
   const total = pageData?.count ?? current?.count ?? 0;
   const more = entries.length < total;
@@ -335,6 +335,7 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
     try {
       await work();
     } catch (error) {
+      changedFrom.current = 0;
       failed(error, fallback);
     } finally {
       setBusy(false);
@@ -355,10 +356,12 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
   };
   const move = (entry: JellyfinPlaylistEntry, to: number) => {
     if (!current) return;
+    changedFrom.current = Math.min(entry.position, to);
     void run(async () => { await change(userUUID, profile, { op: "move", id: current.id, itemId: entry.id, to }); setIndex(to); }, "Could not move it");
   };
   const removeEntry = (entry: JellyfinPlaylistEntry) => {
     if (!current) return;
+    changedFrom.current = entry.position;
     void run(async () => {
       await change(userUUID, profile, { op: "remove", id: current.id, itemIds: [entry.id] });
       toast.success(`Removed ${entry.kind === "episode" && entry.subtitle ? entry.subtitle : entry.title}`);
@@ -381,6 +384,7 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
     const entry = listed[from];
     setArranged(arrayMove(listed, from, to));
     if (!current) return;
+    changedFrom.current = Math.min(from, to);
     void run(async () => {
       try {
         await change(userUUID, profile, { op: "move", id: current.id, itemId: entry.id, to });
