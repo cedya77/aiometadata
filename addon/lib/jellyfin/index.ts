@@ -28,6 +28,14 @@ import {
   systemInfo,
   userDto,
   SERVER_NAME,
+  namedItem,
+  rootFolder,
+  rootFolderId,
+  isRootParent,
+  yearItemId,
+  imageInfos,
+  parseYear,
+  lookupByName,
 } from './dto';
 import { buildViews, catalogView, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBoxSetCatalog, isBrowsable, requiresGenre, rowFor } from './views';
 import { decodeJellyfinId } from './ids';
@@ -349,7 +357,7 @@ function userFor(profile: Profile, serverId: string, configuration?: any): any {
 const USER_CONFIGURATION_ID = 'user-configuration';
 
 const CACHEABLE_PATH =
-  /^\/(items\/[^/]+\/images|persons\/[^/]+\/images|userimage|users\/[^/]+\/images|images\/general|videos\/)/i;
+  /^\/(items\/[^/]+\/images\/|persons\/[^/]+\/images|userimage|users\/[^/]+\/images|images\/general|videos\/)/i;
 
 function landingPage(req: any): string {
   const origin = `${req.protocol}://${req.get('host')}`;
@@ -1052,7 +1060,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const limit = Math.min(Math.max(1, qInt(req, 'Limit', 100)), 500);
     const includeItemTypes = req.query.IncludeItemTypes ?? req.query.includeItemTypes;
     const officialRatings = req.query.OfficialRatings ?? req.query.officialRatings;
-    const parentId = req.query.ParentId ?? req.query.parentId;
+    const recursive = String(req.query.Recursive ?? req.query.recursive ?? '').toLowerCase() === 'true';
+    const rootParent = isRootParent(req.query.ParentId ?? req.query.parentId, userUUID);
+    const parentId = rootParent ? undefined : req.query.ParentId ?? req.query.parentId;
     const filters = String(req.query.Filters ?? req.query.filters ?? '');
     const favouriteFlag = String(req.query.IsFavorite ?? req.query.isFavorite ?? '').toLowerCase() === 'true';
 
@@ -1064,7 +1074,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     const serverId = serverIdFor(userUUID);
 
-    if (await answerPlaylistListing(req, res, playlistDeps, config)) return;
+    // The playlist listing reads ParentId itself, so under the root it is handed a query without one.
+    const playlistReq = rootParent
+      ? Object.create(req, { query: { value: Object.fromEntries(Object.entries(req.query).filter(([key]) => key.toLowerCase() !== 'parentid')), enumerable: true } })
+      : req;
+    if (await answerPlaylistListing(playlistReq, res, playlistDeps, config)) return;
 
     // The watchlist, newest first, is every client's favourites; older clients ask for it by likes.
     const ownWatchlist = clientHasOwnWatchlist();
@@ -1333,9 +1347,6 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
 
     if (!parentId) {
-      const recursive = String(req.query.Recursive ?? req.query.recursive ?? '')
-        .toLowerCase() === 'true';
-
       if (!recursive) {
         const views = await userViews(req, userUUID, serverId, config);
         res.json(itemList(views.slice(startIndex, startIndex + limit), views.length, startIndex));
@@ -2229,6 +2240,28 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.json(itemList(people, people.length, 0));
   });
 
+  // Unlike the search, a provider failure here is not reported as an unknown person.
+  router.get('/Persons/:name', async (req: any, res: any) => {
+    const config = await loadConfig(req);
+    if (!config) {
+      res.status(404).json({ Message: 'Person not found' });
+      return;
+    }
+    const looked = await lookupByName(String(req.params.name), (name) => personByName(config, name));
+    if (looked.status === 503) {
+      logger.debug(`Person lookup failed for "${req.params.name}": ${(looked.error as any)?.message || looked.error}`);
+      res.status(503).json({ Message: 'Service Unavailable' });
+      return;
+    }
+    if (looked.status === 404) {
+      res.status(404).json({ Message: 'Person not found' });
+      return;
+    }
+    const person = looked.found;
+    const id = encodeJellyfinId({ k: 'person', n: person.name, s: person.source, x: person.id });
+    res.json(personItem(id, serverIdFor(req.params.userUUID), person.name, person));
+  });
+
   const toHint = (item: any) => ({
     ItemId: item.Id,
     Id: item.Id,
@@ -2339,21 +2372,27 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
     }
 
-    res.json({
-      Name: match ? match.genre : name,
-      Id: encodeJellyfinId({
-        k: 'genre',
-        t: match ? match.catalog.type : 'movie',
-        c: match ? match.catalog.id : '',
-        g: match ? match.genre : name,
-      }),
-      ServerId: serverId,
-      Type: 'Genre',
-      IsFolder: false,
-      ImageTags: {},
-      BackdropImageTags: [],
-      ImageBlurHashes: {},
+    const id = encodeJellyfinId({
+      k: 'genre',
+      t: match ? match.catalog.type : 'movie',
+      c: match ? match.catalog.id : '',
+      g: match ? match.genre : name,
     });
+    res.json(namedItem('Genre', match ? match.genre : name, id, serverId));
+  });
+
+  router.get('/Studios/:name', (req: any, res: any) => {
+    const name = String(req.params.name);
+    res.json(namedItem('Studio', name, encodeJellyfinId({ k: 'studio', n: name }), serverIdFor(req.params.userUUID)));
+  });
+
+  router.get('/Years/:year', (req: any, res: any) => {
+    const year = parseYear(String(req.params.year), new Date());
+    if (year === null) {
+      res.status(404).json({ Message: 'Year not found' });
+      return;
+    }
+    res.json(namedItem('Year', String(year), yearItemId(year), serverIdFor(req.params.userUUID), { ProductionYear: year }));
   });
 
   const genrePairs = async (req: any): Promise<{ genres: string[]; pairs: any[] }> => {
@@ -2502,6 +2541,20 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     chain.push(series);
     res.json(chain);
+  });
+
+  router.get('/Items/:itemId/Images', async (req: any, res: any) => {
+    const itemId = String(req.params.itemId);
+    const images = await imagesFor(req, itemId);
+    if (images) {
+      res.json(imageInfos(images));
+      return;
+    }
+    if (await decodeJellyfinId(itemId)) {
+      res.json([]);
+      return;
+    }
+    res.status(404).json({ Message: 'Item not found' });
   });
 
   router.get(['/Items/:itemId/Images/:imageType', '/Items/:itemId/Images/:imageType/:index'], async (req: any, res: any) => {
@@ -3979,6 +4032,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return;
     }
 
+    if (descriptor.k === 'studio') {
+      res.json(namedItem('Studio', descriptor.n, String(req.params.itemId), serverIdFor(userUUID)));
+      return;
+    }
+
     if (descriptor.k === 'episode') {
       const found = await seriesForEpisode(userUUID, await loadConfig(req), descriptor);
       if (!found) {
@@ -4111,6 +4169,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   }
   // Ahead of the stubs, which answer /Playlists with an empty list.
   registerPlaylistRoutes(router, playlistDeps);
+  router.get(['/Items/Root', '/Users/:userId/Items/Root'], (req: any, res: any) => {
+    res.json(rootFolder(rootFolderId(req.params.userUUID), serverIdFor(req.params.userUUID)));
+  });
   // Ahead of the item route, which would take /Items/Suggestions for an item id.
   registerStubs(router);
   router.get(['/Items/:itemId', '/Users/:userId/Items/:itemId'], singleItemHandler);

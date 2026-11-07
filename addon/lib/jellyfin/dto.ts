@@ -1,3 +1,7 @@
+import { createHash } from 'crypto';
+import { normaliseJellyfinId } from './idsCodec';
+import { imageTag, wideTag } from './imageTags';
+
 // The official Kotlin SDK refuses anything below 12.0.0.
 export const JELLYFIN_VERSION = '12.1.0';
 export const SERVER_NAME = 'AIOMetadata';
@@ -245,6 +249,85 @@ export function collectionFolder(
     LockedFields: [],
     LockData: false,
   };
+}
+
+const md5 = (value: string): string => createHash('md5').update(value).digest('hex');
+
+export function namedItem(type: 'Genre' | 'Studio' | 'Year', name: string, id: string, serverId: string, extra: Record<string, unknown> = {}): any {
+  return {
+    Name: name,
+    Id: id,
+    ServerId: serverId,
+    Type: type,
+    IsFolder: false,
+    ImageTags: {},
+    BackdropImageTags: [],
+    ImageBlurHashes: {},
+    ...extra,
+  };
+}
+
+export function rootFolderId(userUUID: string): string {
+  return md5(`root:${userUUID}`);
+}
+
+export function rootFolder(id: string, serverId: string): any {
+  return {
+    Name: 'Media Folders',
+    Id: id,
+    ServerId: serverId,
+    Type: 'UserRootFolder',
+    IsFolder: true,
+    ImageTags: {},
+    BackdropImageTags: [],
+    ImageBlurHashes: {},
+  };
+}
+
+/** A listing under the root folder is a listing with no parent. */
+export function isRootParent(rawParentId: unknown, userUUID: string): boolean {
+  if (rawParentId === undefined || rawParentId === null || rawParentId === '') return false;
+  return normaliseJellyfinId(String(rawParentId)) === rootFolderId(userUUID);
+}
+
+export function yearItemId(year: number): string {
+  return md5(`year:${year}`);
+}
+
+export function parseYear(raw: string, now: Date): number | null {
+  if (!/^\d{4}$/.test(raw)) return null;
+  const year = Number(raw);
+  return year >= 1850 && year <= now.getUTCFullYear() + 10 ? year : null;
+}
+
+type ListImages = { primary?: string; backdrop?: string; logo?: string; thumb?: string };
+
+/** An item's images as Jellyfin lists them, tagged as the item builder tags them (items.ts:742-755). */
+export function imageInfos(images: ListImages): any[] {
+  const entry = (type: string, url: string | undefined, index: number | null, tag?: string) =>
+    typeof url === 'string' && url ? [{ ImageType: type, ImageIndex: index, ImageTag: tag ?? imageTag(url), Size: 0 }] : [];
+  const { primary, backdrop, logo, thumb } = images;
+  const widePrimary = Boolean(primary) && primary === thumb ? wideTag(imageTag(primary as string)) : undefined;
+  return [
+    ...entry('Primary', primary, null, widePrimary),
+    ...entry('Backdrop', backdrop, 0),
+    ...entry('Logo', logo, null),
+    ...entry('Thumb', thumb, null),
+  ];
+}
+
+export type NameLookup<T> = { status: 200; found: T } | { status: 404 } | { status: 503; error: unknown };
+
+export async function lookupByName<T>(name: string, find: (name: string) => Promise<T | null>): Promise<NameLookup<T>> {
+  const wanted = String(name ?? '').trim();
+  if (!wanted) return { status: 404 };
+  let found: T | null;
+  try {
+    found = await find(wanted);
+  } catch (error) {
+    return { status: 503, error };
+  }
+  return found ? { status: 200, found } : { status: 404 };
 }
 
 export { EMPTY_USER_DATA };
