@@ -442,8 +442,10 @@ export async function fetchWindow(
     }
   }
 
-  // A window resumes at the latest place a walk stopped before it, and reads on to its start.
-  const resumed = pageLength && startIndex > 0 ? walks.resume(lengthKey, startIndex) : null;
+  // A window resumes where a walk stopped. Short of that place, only a filtered one reads on from an earlier place,
+  // as it has to count its way there anyway; any other jump goes straight to its page.
+  const found = pageLength && startIndex > 0 ? walks.resume(lengthKey, startIndex) : null;
+  const resumed = found && (filtering || found.place.at === startIndex) ? found : null;
   const cursor = resumed ? { raw: resumed.place.state.raw, seen: resumed.seen } : undefined;
   const minRaw = cursor ? cursor.raw : 0;
 
