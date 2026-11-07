@@ -444,7 +444,8 @@ async function writePlaystate(
   event: 'start' | 'pause' | 'stop' | 'played' | 'unplayed',
   positionMs: number,
   played: boolean | null,
-  finished = false
+  finished = false,
+  viewed = false
 ): Promise<void> {
   const database: any = require('../database');
   const videoId = session.videoId;
@@ -457,7 +458,7 @@ async function writePlaystate(
     }
     const now = Date.now();
     if (event === 'played') {
-      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: now, origin: 'server', watch: { at: now, kind: 'first' } }, profile, session.aliases);
+      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: now, lastPlayedKind: viewed ? 'viewing' : 'mark', origin: 'server', watch: { at: now, kind: 'first' } }, profile, session.aliases);
       return;
     }
     if (event === 'stop' && played === true) {
@@ -693,8 +694,10 @@ async function markItems(
       return null;
     }
     const key = `${userUUID}:${profile}:${id}`;
-    if (!played || !(await getPosition(key))?.marked) deletePosition(key);
-    await writePlaystate(userUUID, profile, session, event, 0, played);
+    // A session still open when the title is marked was watched to here, so the mark dates a viewing.
+    const viewed = played && Boolean((await getPosition(key))?.marked);
+    if (!viewed) deletePosition(key);
+    await writePlaystate(userUUID, profile, session, event, 0, played, false, viewed);
     return session;
   })).filter((s): s is ResolvedSession => s !== null);
 

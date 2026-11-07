@@ -216,7 +216,7 @@ The watchlist is the client's favourites. Marking a title favourite adds it to t
 
 ## Playlists
 
-Clients keep playlists with Jellyfin's standard `/Playlists` API, and each user or profile has their own. Adding a show adds its aired episodes season by season, leaving out specials unless you add that season itself. Adding a collection folder adds its films and its shows' episodes in the folder's order, as far as the playlist holds. A title is in a playlist once. Once a user has a playlist, a **Playlists** folder appears beside the libraries, pictured by each playlist's first title. Playlists are not shared between users.
+Clients keep playlists with Jellyfin's standard `/Playlists` API, and each user or profile has their own. Adding a show adds its aired episodes season by season, leaving out specials unless you add that season itself. Adding a collection folder adds its films and its shows' episodes in the folder's order. An add stops where the playlist is full. A title is in a playlist once. Once a user has a playlist, a **Playlists** folder appears beside the libraries, pictured by each playlist's first title. Playlists are not shared between users.
 
 The watch history export carries playlists, and an import puts each one in the user its profile is mapped to. A playlist of the same name there gains the titles it lacks, in order; any other is made.
 

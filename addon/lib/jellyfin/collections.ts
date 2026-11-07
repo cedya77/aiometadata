@@ -9,7 +9,7 @@ import { viewerAccountOwner, viewerReadsExtensions } from './viewer';
 import { profileTags } from './profiles';
 import { findFolder, subFolders, type CollectionDraft, type FolderDraft, type SourceDraft } from '../collectionBuilder/types';
 import { FOLDER_MERGE_MODE, mergeModeOf, type MergeMode } from '../collectionBuilder/mergeModes';
-import { shuffleMetas } from '../../utils/mergedCatalog';
+import { mergedDedupKey, shuffleMetas } from '../../utils/mergedCatalog';
 
 // A builder collection is a library of box sets; a folder is one box set whose sources are its members.
 
@@ -251,14 +251,41 @@ interface MemberCursor {
   nextIndex: number;
   sourceIndex: number;
   sourceOffset: number;
+  failures: number;
   seen: Set<string>;
 }
 
-const memberCursors = new LRUCache<string, MemberCursor>({
-  max: 50,
+// A catalog that fails this many reads in a row is passed over, as one that stays down would block the rest.
+const FAILED_READS_BEFORE_SKIP = 2;
+
+const cursorCache = <T extends { seen: Set<string> }>(): LRUCache<string, T> => new LRUCache<string, T>({
+  max: 1000,
+  maxSize: envInt('JELLYFIN_FOLDER_CURSOR_IDS', 200000, 25001),
+  sizeCalculation: (cursor) => cursor.seen.size + 1,
   ttl: envInt('JELLYFIN_FOLDER_CURSOR_TTL', 600, 30) * 1000,
 });
+
+// One budget for both walks, as the setting describes; their keys never meet.
+const cursors = cursorCache<MemberCursor | MixCursor>();
+const memberCursors = cursors as unknown as LRUCache<string, MemberCursor>;
 const MEMBER_CURSOR_MAX_IDS = 25000;
+const catalogPageSize = (): number => envInt('CATALOG_LIST_ITEMS_SIZE', 20, 1);
+
+// An anime season entry carries its series' IMDb id, which its sibling seasons share, so it is known by its own id.
+const ANIME_ID = /^(mal|kitsu|anilist|anidb):/;
+
+function firstSight(seen: Set<string>, meta: any): boolean {
+  const key = ANIME_ID.test(String(meta?.id ?? '')) ? String(meta.id) : mergedDedupKey(meta);
+  if (!key || seen.has(key)) return false;
+  seen.add(key);
+  return true;
+}
+
+function memberItem(meta: any, catalog: CatalogRef, serverId: string, parentId: string, landscape: boolean): any {
+  const item = metaToBaseItem(meta, catalog.type, serverId, parentId);
+  if (landscape) showLandscape([item]);
+  return item;
+}
 
 function catalogOffersNone(catalog: CatalogRef): boolean {
   const extra = (catalog.extra ?? []).find((e: any) => e?.name === 'genre');
@@ -321,12 +348,13 @@ export async function boxSetMembers(
     sources.map(({ catalog, genre: served }) => [catalog.type, catalog.id, served ?? '']),
   ]);
   const mode = mergeModeOf(folder.mergeMode, FOLDER_MERGE_MODE);
+  const shuffled = Boolean(folder.randomizePerPage) && folder.sources.length > 1;
   if (sources.length > 1 && mode !== 'sequential') {
     const page = await mixedMembers({
       userUUID, config, serverId, parentId, sources, mode, startIndex, limit, includeItemTypes, officialRatings, tags, filterKey,
       cursorKey: `${mode}:${cursorKey}`,
     });
-    return folder.randomizePerPage ? { ...page, items: shuffleMetas(page.items) } : page;
+    return shuffled ? { ...page, items: shuffleMetas(page.items) } : page;
   }
   const held = memberCursors.get(cursorKey);
 
@@ -334,9 +362,11 @@ export async function boxSetMembers(
   let from = 0;
   let seen: Set<string>;
   let toSkip = 0;
+  let failures = 0;
   if (held && held.nextIndex === startIndex) {
     sourceIndex = held.sourceIndex;
     from = held.sourceOffset;
+    failures = held.failures ?? 0;
     seen = new Set(held.seen);
   } else if (sources.length > 1) {
     seen = new Set<string>();
@@ -368,12 +398,11 @@ export async function boxSetMembers(
     const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings);
     const landscape = isLandscapeCatalog(config, catalog);
     const page = await fetchWindow(userUUID, catalog, from, toSkip + limit - collected.length, extras, keep, tags, filterKey)
-      .catch(() => ({ items: [] as any[], hasMore: false }));
+      .catch(() => ({ items: [] as any[], hasMore: false, failed: true }));
 
     const served: any[] = [];
     for (const meta of page.items) {
-      if (!meta?.id || seen.has(String(meta.id))) continue;
-      seen.add(String(meta.id));
+      if (!meta?.id || !firstSight(seen, meta)) continue;
       if (toSkip > 0) {
         toSkip -= 1;
         continue;
@@ -381,27 +410,33 @@ export async function boxSetMembers(
       served.push(meta);
     }
     for (const meta of servedOrder(served, page)) {
-      const item = metaToBaseItem(meta, catalog.type, serverId, parentId);
-      if (landscape) showLandscape([item]);
-      collected.push(item);
+      collected.push(memberItem(meta, catalog, serverId, parentId, landscape));
       nextIndex += 1;
     }
     from += page.items.length;
+    // A failed read is tried again on the next page, unless nothing has filled this one, which would end the client's paging.
+    if (page.failed) {
+      failures += 1;
+      if (collected.length > 0 && failures < FAILED_READS_BEFORE_SKIP) break;
+    } else {
+      failures = 0;
+    }
 
-    if (!page.hasMore || page.items.length === 0) {
+    if (page.failed || !page.hasMore || page.items.length === 0) {
       sourceIndex += 1;
       from = 0;
+      failures = 0;
     }
   }
 
   const more = sourceIndex < sources.length;
   if (more && collected.length > 0 && seen.size <= MEMBER_CURSOR_MAX_IDS) {
-    memberCursors.set(cursorKey, { nextIndex, sourceIndex, sourceOffset: from, seen });
+    memberCursors.set(cursorKey, { nextIndex, sourceIndex, sourceOffset: from, failures, seen });
   } else {
     memberCursors.delete(cursorKey);
   }
 
-  return { items: folder.randomizePerPage ? shuffleMetas(collected) : collected, hasMore: more };
+  return { items: shuffled ? shuffleMetas(collected) : collected, hasMore: more };
 }
 
 // Where a mixed walk stopped: each source's position, whose turn is next, and
@@ -412,13 +447,11 @@ interface MixCursor {
   done: boolean[];
   turn: number;
   runLeft: number;
+  failures: number[];
   seen: Set<string>;
 }
 
-const mixCursors = new LRUCache<string, MixCursor>({
-  max: 50,
-  ttl: envInt('JELLYFIN_FOLDER_CURSOR_TTL', 600, 30) * 1000,
-});
+const mixCursors = cursors as unknown as LRUCache<string, MixCursor>;
 
 /** Several sources taken in turn: one title each when interleaved, one page each when alternating. */
 async function mixedMembers(args: {
@@ -439,6 +472,7 @@ async function mixedMembers(args: {
   const { userUUID, config, serverId, parentId, sources, mode, startIndex, limit, includeItemTypes, officialRatings, tags, filterKey, cursorKey } = args;
   const count = sources.length;
   const extrasOf = (i: number): Record<string, string> => (sources[i].genre ? { genre: sources[i].genre as string } : {});
+  const runLength = (i: number): number => knownPageLength(userUUID, sources[i].catalog, extrasOf(i), tags) ?? catalogPageSize();
   const held = mixCursors.get(cursorKey);
   const resumed = held && held.nextIndex === startIndex ? held : null;
   const offsets = resumed ? [...resumed.offsets] : sources.map(() => 0);
@@ -452,16 +486,31 @@ async function mixedMembers(args: {
 
   const buffers: any[][] = sources.map(() => []);
   const ended = sources.map(() => false);
+  const landscapes = sources.map(({ catalog }) => isLandscapeCatalog(config, catalog));
+  const stalled = sources.map(() => false);
+  const failures = resumed?.failures ? [...resumed.failures] : sources.map(() => 0);
   const chunk = Math.max(10, Math.ceil((toSkip + limit) / count));
+  const randomized = new Set<number>();
+  const sourceOf: number[] = [];
 
   // Positions count every title a source handed over, repeats too, so the next window starts where this one stopped.
   const fill = async (i: number): Promise<void> => {
     if (buffers[i].length || ended[i] || done[i]) return;
     const { catalog } = sources[i];
     const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings);
-    const window = await fetchWindow(userUUID, catalog, offsets[i], chunk, extrasOf(i), keep, tags, filterKey)
-      .catch(() => ({ items: [] as any[], hasMore: false }));
-    buffers[i] = servedOrder(window.items, window);
+    const size = mode === 'alternating' ? Math.max(chunk, runLeft > 0 ? runLeft : runLength(i)) : chunk;
+    const window = await fetchWindow(userUUID, catalog, offsets[i], size, extrasOf(i), keep, tags, filterKey)
+      .catch(() => null);
+    buffers[i] = window?.items ?? [];
+    // A read that failed keeps what it got and is read again from there on the next page, until it has failed too often.
+    if (!window || window.failed) {
+      failures[i] += 1;
+      stalled[i] = failures[i] < FAILED_READS_BEFORE_SKIP;
+      ended[i] = true;
+      return;
+    }
+    failures[i] = 0;
+    if (window.randomize) randomized.add(i);
     if (!window.hasMore) ended[i] = true;
   };
   const take = async (i: number): Promise<any | undefined> => {
@@ -494,26 +543,30 @@ async function mixedMembers(args: {
     }
     if (mode === 'interleaved') pass();
     else {
-      if (runLeft < 0) runLeft = knownPageLength(userUUID, sources[i].catalog, extrasOf(i), tags) ?? (parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20);
+      if (runLeft < 0) runLeft = runLength(i);
       runLeft -= 1;
       if (runLeft <= 0) pass();
     }
-    if (!meta?.id || seen.has(String(meta.id))) continue;
-    seen.add(String(meta.id));
+    if (!meta?.id || !firstSight(seen, meta)) continue;
     if (toSkip > 0) {
       toSkip -= 1;
       continue;
     }
-    const item = metaToBaseItem(meta, sources[i].catalog.type, serverId, parentId);
-    if (isLandscapeCatalog(config, sources[i].catalog)) showLandscape([item]);
-    collected.push(item);
+    collected.push(memberItem(meta, sources[i].catalog, serverId, parentId, landscapes[i]));
+    sourceOf.push(i);
     nextIndex += 1;
   }
+  // A catalog that shuffles its own pages has its titles shuffled among the places they took.
+  const spots = collected.map((_, k) => k).filter((k) => randomized.has(sourceOf[k]));
+  const mixed = shuffleMetas(spots.map((k) => collected[k]));
+  spots.forEach((k, j) => {
+    collected[k] = mixed[j];
+  });
 
-  const finished = sources.map((_, i) => done[i] || (ended[i] && buffers[i].length === 0));
+  const finished = sources.map((_, i) => !stalled[i] && (done[i] || (ended[i] && buffers[i].length === 0)));
   const more = finished.some((f) => !f);
   if (more && collected.length > 0 && seen.size <= MEMBER_CURSOR_MAX_IDS) {
-    mixCursors.set(cursorKey, { nextIndex, offsets, done: finished, turn, runLeft, seen });
+    mixCursors.set(cursorKey, { nextIndex, offsets, done: finished, turn, runLeft, failures, seen });
   } else {
     mixCursors.delete(cursorKey);
   }

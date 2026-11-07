@@ -826,7 +826,7 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
             <button type="button" disabled={!selected.size || busy !== null} onClick={() => void bulk("played")} className="inline-flex h-10 items-center gap-1.5 rounded-full bg-white px-5 text-sm font-semibold text-black disabled:opacity-50"><Check className="size-4" /> Watched</button>
             <button type="button" disabled={!selected.size || busy !== null} onClick={() => void bulk("unplayed")} className="inline-flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-medium hover:bg-white/10 disabled:opacity-50"><Undo2 className="size-4" /> Unwatched</button>
             <button type="button" disabled={!selected.size} onClick={(event) => {
-              const ids = episodes.filter((ep) => selected.has(ep.id)).map((ep) => ep.id);
+              const ids = seasons.flatMap(([, list]) => list).filter((ep) => selected.has(ep.id)).map((ep) => ep.id);
               const at = event.currentTarget.getBoundingClientRect();
               setAdding({ choices: [{ key: ids.join(","), label: `${ids.length} ${ids.length === 1 ? "episode" : "episodes"}`, itemIds: ids }], at: { x: at.left, y: Math.max(16, at.top - 360) }, after: endSelect });
             }} className="inline-flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-medium hover:bg-white/10 disabled:opacity-50"><ListPlus className="size-4" /> Playlist</button>

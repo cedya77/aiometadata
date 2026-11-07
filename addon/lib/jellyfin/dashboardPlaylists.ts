@@ -1,5 +1,5 @@
 import { mapWithConcurrency } from '../../utils/concurrency';
-import { asProfile, playOf } from './dashboard';
+import { asProfile, itemImageUrl as imageOf, playOf } from './dashboard';
 import { clientRequest } from './context';
 import { normaliseJellyfinId } from './idsCodec';
 import { imageTag } from './imageTags';
@@ -48,9 +48,6 @@ export interface DashboardEntry {
 }
 
 export const isPlaylistId = (value: unknown): value is string => typeof value === 'string' && PLAYLIST_ID.test(value);
-
-const imageOf = (userUUID: string, id: unknown, tag: unknown, kind = 'Primary'): string | null =>
-  id && tag ? `/jellyfin/${encodeURIComponent(userUUID)}/Items/${encodeURIComponent(String(id))}/Images/${kind}?tag=${encodeURIComponent(String(tag))}` : null;
 
 function entryOf(userUUID: string, item: any): DashboardEntry {
   const episode = item.Type === 'Episode';
@@ -121,9 +118,9 @@ export function dashboardPlaylist(userUUID: string, profile: string | null, id: 
     const playlist = await getPlaylist(ownerFor(userUUID, config), id);
     if (!playlist) return { missing: true as const };
     const ids = playlist.items.slice(offset, offset + limit);
-    const entries = await built(userUUID, profile, ids);
+    const [entries, summary] = await Promise.all([built(userUUID, profile, ids), summaryOf(userUUID, profile, playlist)]);
     return {
-      ...(await summaryOf(userUUID, profile, playlist)),
+      ...summary,
       offset,
       entries: ids.map((entry, i) => ({ ...(entries.get(entry) ?? unavailable(entry)), position: offset + i })),
       more: offset + limit < playlist.items.length,
@@ -142,8 +139,9 @@ export function dashboardPlaylistPreview(userUUID: string, profile: string | nul
       titles: titles.length,
       playlists: await mapWithConcurrency(playlists, playlistConcurrency(), async (playlist) => {
         const held = new Set(playlist.items);
-        const adds = titles.filter((title) => !held.has(title)).length;
-        return { id: playlist.id, name: playlist.name, count: playlist.items.length, has: titles.length - adds, adds, fits: playlist.items.length + adds <= playlistLimits().items };
+        const fresh = titles.filter((title) => !held.has(title)).length;
+        const room = Math.max(0, playlistLimits().items - playlist.items.length);
+        return { id: playlist.id, name: playlist.name, count: playlist.items.length, has: titles.length - fresh, adds: Math.min(fresh, room), fits: fresh === 0 || room > 0 };
       }),
     };
   });
@@ -157,7 +155,7 @@ export type PlaylistChange =
   | { op: 'remove'; id: string; itemIds: string[] }
   | { op: 'move'; id: string; itemId: string; to: number };
 
-export type ChangeOutcome = { ok: true; id?: string; added?: number } | { ok: false; status: 400 | 404; error: string };
+export type ChangeOutcome = { ok: true; id?: string; added?: number; left?: number } | { ok: false; status: 400 | 404; error: string };
 
 export function dashboardPlaylistChange(userUUID: string, profile: string | null, change: PlaylistChange) {
   return asProfile(userUUID, profile, async (config): Promise<ChangeOutcome> => {
@@ -176,7 +174,7 @@ export function dashboardPlaylistChange(userUUID: string, profile: string | null
         const outcome = await addTitles(owner, config, change.id, change.itemIds, change.position);
         if (outcome === 'missing') return gone;
         if (outcome === 'full') return { ok: false, status: 400, error: `A playlist holds up to ${playlistLimits().items} titles` };
-        return { ok: true, added: outcome.added };
+        return { ok: true, added: outcome.added, left: outcome.left };
       }
       case 'remove':
         return (await removeTitles(owner, change.id, change.itemIds)) ? { ok: true } : gone;
