@@ -1,4 +1,5 @@
 import { envInt } from '../../utils/envNumber';
+import { yieldEvery } from '../../utils/yieldEvery';
 import { parseStremioId } from './idsCodec';
 import { bulkTimes } from './bulkMarks';
 import { groupBySpelling, getPlaystatesAcross, upsertPlaystateEverywhere, videoIdAliases } from './aliases';
@@ -479,7 +480,9 @@ export async function pullDrift(userUUID: string, source: DriftSource, viewings:
   }
   const bulk = new Map([...byProfile].map(([profile, list]) => [profile, bulkTimes(list.flatMap((viewing) => viewing.ids.map((videoId) => ({ at: viewing.at, videoId }))))]));
   let added = 0;
+  const pause = yieldEvery();
   for (const viewing of viewings) {
+    await pause();
     const video = spellingFor(source.service, viewing.ids);
     for (const profile of source.keys) {
       const row = (await getPlaystatesAcross(userUUID, [video], profile)).get(video);
