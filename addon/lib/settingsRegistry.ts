@@ -2134,6 +2134,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'SQLITE_BREATH_MS',
+    envVar: 'SQLITE_BREATH_MS',
+    label: 'SQLite Time Before Others Get a Turn (ms)',
+    description: 'SQLite answers on the server\'s one thread. After this much of it in a row, other requests get a turn, so one heavy page does not hold up the rest. PostgreSQL does not need this.',
+    category: 'Features',
+    type: 'number',
+    default: 40,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_DASHBOARD_HISTORY_QUEUE_ROWS',
     envVar: 'JELLYFIN_DASHBOARD_HISTORY_QUEUE_ROWS',
     label: 'Jellyfin Dashboard Long History (rows)',

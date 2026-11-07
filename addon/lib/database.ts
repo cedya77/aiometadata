@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 const redisIdCache: any = require('./redis-id-cache');
 import consola from 'consola';
+import { envInt } from '../utils/envNumber';
 
 const logger = consola.withTag('Database');
 
@@ -52,6 +53,24 @@ class Database {
 
   set type(value: DbType | null) {
     this.connectedType = value;
+  }
+
+  // SQLite answers on the server's one thread, so after this much of it in a row others get a turn.
+  private sqliteSpentMs = 0;
+
+  private timedSQLite<T>(work: () => T): T {
+    const started = performance.now();
+    try {
+      return work();
+    } finally {
+      this.sqliteSpentMs += performance.now() - started;
+    }
+  }
+
+  private async sqliteBreath(): Promise<void> {
+    if (this.sqliteSpentMs < envInt('SQLITE_BREATH_MS', 40, 1)) return;
+    this.sqliteSpentMs = 0;
+    await new Promise((resolve) => setImmediate(resolve));
   }
 
   executeSQLiteStatement(statement: any, method: string, params: any = []) {
@@ -1114,7 +1133,8 @@ class Database {
 
     if (this.type === 'sqlite') {
       const statement = this.db.prepare(query);
-      const result = this.executeSQLiteStatement(statement, 'run', params);
+      const result = this.timedSQLite(() => this.executeSQLiteStatement(statement, 'run', params));
+      await this.sqliteBreath();
       return {
         lastID: Number(result.lastInsertRowid),
         changes: result.changes,
@@ -1132,7 +1152,9 @@ class Database {
 
     if (this.type === 'sqlite') {
       const statement = this.readDb.prepare(query);
-      return this.executeSQLiteStatement(statement, 'get', params) || null;
+      const row = this.timedSQLite(() => this.executeSQLiteStatement(statement, 'get', params));
+      await this.sqliteBreath();
+      return row || null;
     } else {
       const result = await this.readDb.query(query, params);
       return result.rows[0] || null;
@@ -1146,7 +1168,9 @@ class Database {
 
     if (this.type === 'sqlite') {
       const statement = this.readDb.prepare(query);
-      return this.executeSQLiteStatement(statement, 'all', params);
+      const rows = this.timedSQLite(() => this.executeSQLiteStatement(statement, 'all', params));
+      await this.sqliteBreath();
+      return rows;
     } else {
       const result = await this.readDb.query(query, params);
       return result.rows;
@@ -1159,7 +1183,9 @@ class Database {
     }
 
     if (this.type === 'sqlite') {
-      return this.executeSQLiteStatement(this.db.prepare(query), 'all', params);
+      const rows = this.timedSQLite(() => this.executeSQLiteStatement(this.db.prepare(query), 'all', params));
+      await this.sqliteBreath();
+      return rows;
     }
     const result = await this.db.query(query, params);
     return result.rows;
