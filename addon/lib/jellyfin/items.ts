@@ -300,6 +300,10 @@ export interface Window {
   hasMore: boolean;
   failed?: boolean;
   randomize?: boolean;
+  /** A filtered walk that ran out of page budget before filling the window; more may follow. */
+  truncated?: boolean;
+  /** A filtered walk that reached its page ceiling and was taken as the end of the list. */
+  capped?: boolean;
 }
 
 export function servedOrder(items: any[], window: Partial<Window>): any[] {
@@ -408,6 +412,12 @@ const walks = walkRecords<{ raw: number }>({
   seenCap: WALK_CURSOR_MAX_IDS,
 });
 
+const EMPTY_RESTARTS_MAX = 3;
+const emptyRestarts = new LRUCache<string, number>({
+  max: envInt('JELLYFIN_PAGE_LENGTH_CACHE_MAX', 2000, 1),
+  ttl: envInt('JELLYFIN_WALK_CURSOR_TTL', 600, 60) * 1000,
+});
+
 /**
  * `skip` is an absolute offset, but the catalog route rounds it up to a whole
  * page for a stable cache key, so an offset landing mid-page silently loses the
@@ -443,8 +453,9 @@ export async function fetchWindow(
   }
 
   // A window resumes where a walk stopped. Short of that place, only a filtered one reads on from an earlier place,
-  // as it has to count its way there anyway; any other jump goes straight to its page.
-  const found = pageLength && startIndex > 0 ? walks.resume(lengthKey, startIndex) : null;
+  // as it has to count its way there anyway; any other jump goes straight to its page. A filtered walk that found
+  // nothing leaves a place at its own start, so asking again reads on instead of over the same pages.
+  const found = pageLength && (startIndex > 0 || filtering) ? walks.resume(lengthKey, startIndex) : null;
   const resumed = found && (filtering || found.place.at === startIndex) ? found : null;
   const cursor = resumed ? { raw: resumed.place.state.raw, seen: resumed.seen } : undefined;
   const minRaw = cursor ? cursor.raw : 0;
@@ -463,17 +474,33 @@ export async function fetchWindow(
   let exhausted = false;
   let failed = false;
   let randomize = false;
-  let budget = maxPages((offset + limit) * (filtering ? 2 : 1), pageLength || 0);
 
   // A length counts what a client was shown, which runs behind the catalog's own
   // positions a cursor walks by, so it would end that walk early.
   const knownLength = filtering || cursor ? undefined : catalogLengths.get(lengthKey);
   const minPage = envInt('JELLYFIN_CATALOG_MIN_PAGE', 10, 1);
+  const ceilingPages = envInt('JELLYFIN_FILTER_SCAN_MAX_PAGES', 50, 1);
+  // A filter on item types alone keeps most of a catalog, as a plain browse does, so only the others stop at the ceiling.
+  const sparse = !!pick || keepKey.includes('|');
+  // One request reads only so many pages of such a filter, so a jump deep into one fills over a few requests rather
+  // than reading to the ceiling at once.
+  const perRequest = envInt('JELLYFIN_FILTER_PAGES_PER_REQUEST', 10, 1);
+  const budgetFor = (length: number): number => {
+    const wanted = maxPages((offset + limit) * (filtering ? 2 : 1), length);
+    return sparse ? Math.min(wanted, perRequest) : wanted;
+  };
+  let budget = budgetFor(pageLength || 0);
+  let capped = false;
   let stop = false;
   let staleRun = 0;
 
   while (!stop && collected.length < offset + limit && pages < budget) {
     if (knownLength !== undefined && skip >= knownLength) {
+      exhausted = true;
+      break;
+    }
+    if (sparse && pageLength && skip >= ceilingPages * pageLength) {
+      capped = true;
       exhausted = true;
       break;
     }
@@ -514,7 +541,7 @@ export async function fetchWindow(
       if (first && i === 0 && !pageLength && (pageSizes.has(page) || advance >= minPage)) {
         pageLength = pageSizes.get(page) ?? advance;
         rememberLength('page', pageKey, pageLength);
-        budget = maxPages((offset + limit) * (filtering ? 2 : 1), pageLength);
+        budget = budgetFor(pageLength);
       }
 
       const candidates: Array<{ meta: any; at: number }> = [];
@@ -553,27 +580,58 @@ export async function fetchWindow(
     }
   }
 
-  if (exhausted && !failed) rememberLength('catalog', lengthKey, startIndex - offset + collected.length);
+  const reached = startIndex - offset + collected.length;
+  if (exhausted && !failed) rememberLength('catalog', lengthKey, reached);
 
   // Duplicates are dropped above, so trimming by count would cut into the window
   // itself; the offset only ever covers items that came before startIndex.
   if (offset > collected.length) offset = collected.length;
   const items = collected.slice(offset, offset + limit);
 
+  // A filtered walk that stopped without overfilling read everything before `skip`: what it did not keep there was
+  // filtered out. Stopping short of the window means the budget ran out first.
+  const scannedToSkip = filtering && !exhausted && !failed && collected.length <= offset + limit;
+  let truncated = scannedToSkip && collected.length < offset + limit;
+
+  // A filtered window that found nothing and leaves no place to read on from starts over each time, and a client told
+  // there is more keeps asking. After a few starts over at the same place, the list ends there instead.
+  let closed = false;
+  if (truncated && items.length === 0 && (!resumed || pick)) {
+    const restartKey = `${lengthKey}#${startIndex}`;
+    const restarts = (emptyRestarts.get(restartKey) ?? 0) + 1;
+    if (restarts >= EMPTY_RESTARTS_MAX) {
+      closed = true;
+      truncated = false;
+      capped = true;
+      emptyRestarts.delete(restartKey);
+    } else {
+      emptyRestarts.set(restartKey, restarts);
+    }
+  }
+
   // Only a window placed exactly may leave a cursor: one mapped from a page number
   // is off by the repeats before it, and would carry that into every later page.
   const exact = filtering || startIndex === 0 || !!cursor;
   if (exact && items.length > 0) {
     const shown = collected.slice(0, offset + items.length).map((meta) => String(meta.id));
-    walks.save(lengthKey, resumed, shown, startIndex + items.length, { raw: rawAt[offset + items.length - 1] + 1 });
+    const raw = scannedToSkip ? skip : rawAt[offset + items.length - 1] + 1;
+    walks.save(lengthKey, resumed, shown, startIndex + items.length, { raw });
+  } else if (truncated && !pick) {
+    // Not for a pick on the viewer's own state: a title marked after this read would sit before the place, unseen.
+    walks.save(lengthKey, resumed, collected.slice(0, offset).map((meta) => String(meta.id)), reached, { raw: skip });
   }
+
+  if (closed) logger.debug(`Filtered walk of ${catalog.type}/${catalog.id} ended with nothing found and no place to read on from (${keepKey || 'no key'})`);
+  else if (capped) logger.debug(`Filtered walk of ${catalog.type}/${catalog.id} stopped at its ${ceilingPages}-page ceiling (${keepKey || 'no key'})`);
 
   return {
     items,
     // A walk cut short by its page budget has more behind it, even if the window is short.
-    hasMore: collected.length > offset + limit || (!exhausted && !failed),
+    hasMore: !closed && (collected.length > offset + limit || (!exhausted && !failed)),
     ...(failed ? { failed: true } : {}),
     ...(randomize ? { randomize: true } : {}),
+    ...(truncated ? { truncated: true } : {}),
+    ...(capped ? { capped: true } : {}),
   };
 }
 

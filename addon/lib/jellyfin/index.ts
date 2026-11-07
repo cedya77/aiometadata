@@ -41,7 +41,7 @@ import { buildViews, catalogView, collectionTypeFor, findCatalogByViewId, getCat
 import { decodeJellyfinId } from './ids';
 import { liveDevices, rememberTokenDevice, saveCapabilities, sendToDevice } from './socket';
 import { artTag, imageTag, isWideTag } from './imageTags';
-import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
+import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, type Window } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { canPlay, coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberIssued, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
@@ -59,7 +59,7 @@ import { hasCreditDate, personByName, personCredits, resolvePerson, similarTitle
 import { titleCards } from '../titleCards';
 import { allBoxSets, boxSetGenres, boxSetMembers, boxSetsDeep, boxSetsFor, boxSetsUnder, collectionById, collectionView, folderById } from './collections';
 import { applyWatchlistState, entryItemType, setWatchlisted, watchlistEntries, watchlistItems } from './watchlist';
-import { asksForFavourites, chainPicks } from './libraryFilters';
+import { asksForFavourites, chainPicks, listTotal } from './libraryFilters';
 import { applyRatings, applyWatchedState, finishedSeries, ownNextUpRows, seriesCountsAmong, upcomingFollowed, watchedAmong, watchedHistory, watchedSnapshot, type NextUpRow, type UpcomingRow } from './watched';
 import { cachedArtwork } from './artwork';
 import { oneIdAsked, withCriticRatings } from './criticRatings';
@@ -1406,6 +1406,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
       const typesKey = listFilterKey(includeItemTypes, officialRatings);
       await warmCatalogLengths(userUUID, pool, extras, tags, typesKey);
+      // A filtered read its budget cut short, so titles may follow this page.
+      let truncated = false;
       for (const catalog of pool) {
         if (collected.length >= limit) break;
 
@@ -1425,7 +1427,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings),
           tags,
           typesKey
-        ).catch(() => ({ items: [] as any[], hasMore: false }));
+        ).catch((): Window => ({ items: [], hasMore: false }));
 
         const viewId = encodeJellyfinId({ k: 'view', t: catalog.type, c: catalog.id });
         for (const meta of servedOrder(page.items, page)) {
@@ -1435,7 +1437,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           collected.push(item);
         }
 
-        if (page.hasMore) break;
+        if (page.hasMore) {
+          truncated = page.truncated === true;
+          break;
+        }
         passed += knownCatalogLength(userUUID, catalog, extras, tags, typesKey) ?? skip + page.items.length;
       }
 
@@ -1447,7 +1452,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       );
       await applyWatchedState(across, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
 
-      res.json(itemList(across, startIndex + across.length, startIndex));
+      // A cross-library row ends where it stops; only a filtered read its budget cut short stays open.
+      res.json(itemList(across, listTotal(startIndex, across.length, limit, { hasMore: truncated, truncated }), startIndex));
       return;
     }
 
@@ -1604,7 +1610,6 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       `${listFilterKey(includeItemTypes, officialRatings)}${played.key}${favourite.key}`,
       chainPicks(played.pick, favourite.pick)
     );
-    const hasMore = window.hasMore;
 
     const items = servedOrder(window.items, window)
       .filter((meta: any) => meta && meta.id)
@@ -1614,14 +1619,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const filtered = filterByIncludeTypes(items, includeItemTypes ? String(includeItemTypes) : undefined)
       .slice(0, pageLimit);
 
-    // Catalogs report no total, so one page of lookahead keeps the client asking
-    // and collapses to the truth once the catalog runs out.
-    const total = hasMore && filtered.length > 0
-      ? startIndex + filtered.length + pageLimit
-      : startIndex + filtered.length;
+    const total = listTotal(startIndex, filtered.length, pageLimit, window);
 
     await applyWatchedState(filtered, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
-    res.json(itemList(filtered, total, startIndex));
+    res.json({ ...itemList(filtered, total, startIndex), ...(window.capped ? { FilterComplete: false } : {}) });
   });
 
   const genreNeeded = new Map<string, boolean>();
