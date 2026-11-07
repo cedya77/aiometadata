@@ -1,4 +1,24 @@
+import { namedItem, yearItemId } from './dto';
+
 type Pick = (metas: any[]) => Promise<any[]>;
+
+/** The ratings and years a page holds, each once, as filter menus list them. */
+export function facetsOf(entries: Array<{ rating: string | null; year: number | null }>): { ratings: string[]; years: number[] } {
+  const ratings = new Set<string>();
+  const years = new Set<number>();
+  for (const { rating, year } of entries) {
+    if (rating) ratings.add(rating);
+    if (Number.isInteger(year)) years.add(year as number);
+  }
+  return { ratings: [...ratings].sort(), years: [...years].sort((a, b) => a - b) };
+}
+
+export function yearItems(years: number[], serverId: string, sortOrder: unknown): any[] {
+  const ascending = String(sortOrder ?? '').toLowerCase().startsWith('asc');
+  return [...years]
+    .sort((a, b) => (ascending ? a - b : b - a))
+    .map((year) => namedItem('Year', String(year), yearItemId(year), serverId, { ProductionYear: year }));
+}
 
 /** A favourites request; a client with its own watchlist asks for it by likes. */
 export function asksForFavourites(query: Record<string, unknown>, ownWatchlist: boolean): boolean {

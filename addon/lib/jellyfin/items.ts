@@ -764,7 +764,7 @@ function premiereDate(meta: any): string | null {
   return Number.isFinite(year) ? new Date(Date.UTC(year, 0, 1)).toISOString() : null;
 }
 
-function productionYear(meta: any): number | null {
+export function productionYear(meta: any): number | null {
   const raw = String(meta.year || meta.releaseInfo || '').slice(0, 4);
   const year = parseInt(raw, 10);
   return Number.isFinite(year) ? year : null;
@@ -1025,25 +1025,35 @@ export function officialRatingOf(meta: any): string | null {
   return ratingFields(meta).OfficialRating;
 }
 
-/** Keeps the titles of the asked types and, when asked, ratings; a title with no rating matches no rating. */
+/** The years a request keeps, from Jellyfin's comma or pipe separated Years; null keeps every title. */
+export function wantedYears(years: unknown): Set<number> | null {
+  const list = String(years ?? '').split(/[|,]/).map((year) => Number(year.trim())).filter((year) => Number.isInteger(year) && year > 0);
+  return list.length ? new Set(list) : null;
+}
+
+/** Keeps the titles of the asked types and, when asked, ratings and years; a title with no rating or year matches none. */
 export function includeTypesFilter(
   mediaType: string,
   includeItemTypes: string | undefined,
-  officialRatings?: unknown
+  officialRatings?: unknown,
+  years?: unknown
 ): ((meta: any) => boolean) | undefined {
   const wanted = wantedTypes(includeItemTypes);
   const ratings = wantedRatings(officialRatings);
-  if (!wanted && !ratings) return undefined;
+  const yearSet = wantedYears(years);
+  if (!wanted && !ratings && !yearSet) return undefined;
 
   return (meta: any) =>
     (!wanted || wanted.has(itemTypeOf(meta, mediaType)))
-    && (!ratings || ratings.has(String(officialRatingOf(meta) ?? '').toUpperCase()));
+    && (!ratings || ratings.has(String(officialRatingOf(meta) ?? '').toUpperCase()))
+    && (!yearSet || yearSet.has(productionYear(meta) ?? -1));
 }
 
-/** What a filtered list's lengths and cursors are held under: its types, and its ratings when it names any. */
-export function listFilterKey(includeItemTypes: unknown, officialRatings?: unknown): string {
+/** What a filtered list's lengths and cursors are held under: its types, and its ratings and years when it names any. */
+export function listFilterKey(includeItemTypes: unknown, officialRatings?: unknown, years?: unknown): string {
   const ratings = wantedRatings(officialRatings);
-  return `${includeItemTypes ? String(includeItemTypes) : ''}${ratings ? `|ratings:${[...ratings].sort().join('|')}` : ''}`;
+  const yearSet = wantedYears(years);
+  return `${includeItemTypes ? String(includeItemTypes) : ''}${ratings ? `|ratings:${[...ratings].sort().join('|')}` : ''}${yearSet ? `|years:${[...yearSet].sort((a, b) => a - b).join('|')}` : ''}`;
 }
 
 // A catalog built here holds only its declared type: films and TVDB collections in a movie one, shows in a
