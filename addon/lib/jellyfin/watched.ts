@@ -1595,10 +1595,11 @@ export async function invalidateWatched(config: any): Promise<void> {
 }
 
 export async function forgetTrackerReads(service: string, credential: string): Promise<void> {
-  // What this server just changed must show on the next read, not after a refresh.
+  // Marked stale rather than dropped: the next read serves it and reads again behind it, where a dropped one made a
+  // client wait on the tracker. The watch made here is already in the local index.
   const prefix = `${sourceHash(service, credential)}:`;
-  for (const key of [...served.keys()]) {
-    if (String(key).startsWith(prefix)) served.delete(key);
+  for (const [key, held] of [...served.entries()]) {
+    if (String(key).startsWith(prefix)) served.set(key, { ...held, at: 0 });
   }
 
   try {
