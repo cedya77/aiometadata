@@ -30,6 +30,9 @@ const failed = (error: unknown, fallback: string) => toast.error(error instanceo
 
 const titlesLabel = (n: number) => `${n.toLocaleString()} ${n === 1 ? "title" : "titles"}`;
 
+const addedNote = (added: number, left: number, playlistName: string) =>
+  !added ? `${playlistName} already has these` : left ? `Added ${titlesLabel(added)} to ${playlistName}, which is now full; ${titlesLabel(left)} left out` : `Added ${titlesLabel(added)} to ${playlistName}`;
+
 /** What a choice adds: a film, a whole show, a season, or the episodes picked. */
 export interface PlaylistChoice {
   key: string;
@@ -42,6 +45,8 @@ export interface PlaylistChoice {
 export function AddToPlaylistPanel({ userUUID, profile, choices, onDone }: { userUUID: string; profile: string | null; choices: PlaylistChoice[]; onDone: () => void }) {
   const [picked, setPicked] = useState(0);
   const [preview, setPreview] = useState<JellyfinPlaylistPreview | null>(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [name, setName] = useState("");
   const readPreview = useJellyfinPlaylistPreview();
@@ -51,18 +56,19 @@ export function AddToPlaylistPanel({ userUUID, profile, choices, onDone }: { use
   useEffect(() => {
     let live = true;
     setPreview(null);
+    setPreviewFailed(false);
     readPreview(userUUID, profile, choice.itemIds)
       .then((read) => { if (live) setPreview(read); })
-      .catch((error) => { if (live) failed(error, "Could not read the playlists"); });
+      .catch(() => { if (live) setPreviewFailed(true); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userUUID, profile, choice.key]);
+  }, [userUUID, profile, choice.key, attempt]);
 
   const add = async (id: string, playlistName: string) => {
     setBusy(id);
     try {
-      const { added = 0 } = await change(userUUID, profile, { op: "add", id, itemIds: choice.itemIds });
-      toast.success(added ? `Added ${titlesLabel(added)} to ${playlistName}` : `${playlistName} already has these`);
+      const { added = 0, left = 0 } = await change(userUUID, profile, { op: "add", id, itemIds: choice.itemIds });
+      toast.success(addedNote(added, left, playlistName));
       onDone();
     } catch (error) {
       failed(error, "Could not add to the playlist");
@@ -99,12 +105,15 @@ export function AddToPlaylistPanel({ userUUID, profile, choices, onDone }: { use
       )}
       <div className="max-h-72 space-y-0.5 overflow-y-auto [scrollbar-width:thin]">
         <p className="px-3 text-[11px] uppercase tracking-wide text-muted-foreground">{preview ? `To a playlist · ${titlesLabel(preview.titles)}` : "To a playlist"}</p>
-        {!preview ? (
+        {previewFailed ? (
+          <p className="px-3 py-1 text-xs text-muted-foreground">Could not read the playlists. <button type="button" onClick={() => setAttempt((n) => n + 1)} className="text-blue-300 hover:text-blue-200">Retry</button></p>
+        ) : !preview ? (
           <div className="space-y-1 px-1">{[0, 1].map((i) => <Skeleton key={i} className="h-9 w-full rounded-xl" />)}</div>
         ) : preview.playlists.length === 0 ? (
           <p className="px-3 py-1 text-xs text-muted-foreground">No playlists yet. Name one below.</p>
         ) : preview.playlists.map((playlist) => {
-          const note = !playlist.adds ? "Has all of these" : !playlist.fits ? "Too full" : playlist.has ? `Has ${playlist.has}, adds ${playlist.adds}` : `Adds ${playlist.adds}`;
+          const fresh = preview.titles - playlist.has;
+          const note = !playlist.fits ? "Too full" : !playlist.adds ? "Has all of these" : playlist.adds < fresh ? `Room for ${playlist.adds} of ${fresh}` : playlist.has ? `Has ${playlist.has}, adds ${playlist.adds}` : `Adds ${playlist.adds}`;
           return (
             <button key={playlist.id} type="button" disabled={Boolean(busy) || !playlist.adds || !playlist.fits} onClick={() => void add(playlist.id, playlist.name)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-transparent">
               <span className="min-w-0 flex-1 truncate">{playlist.name}</span>
@@ -116,7 +125,7 @@ export function AddToPlaylistPanel({ userUUID, profile, choices, onDone }: { use
       <form className="flex items-center gap-2 px-1" onSubmit={(event) => { event.preventDefault(); void create(); }}>
         <label htmlFor="new-playlist" className="sr-only">New playlist name</label>
         <input id="new-playlist" value={name} onChange={(event) => setName(event.target.value)} maxLength={200} placeholder="New playlist" className="h-9 min-w-0 flex-1 rounded-xl border border-white/10 bg-background/60 px-3 text-sm outline-none focus:border-blue-400/60" />
-        <Button type="submit" size="sm" className="h-9 rounded-xl" disabled={!name.trim() || Boolean(busy) || !preview}>
+        <Button type="submit" size="sm" className="h-9 rounded-xl" disabled={!name.trim() || Boolean(busy) || (!preview && !previewFailed)}>
           {busy === "new" ? <Loader2 className="size-4 animate-spin" /> : "Make"}
         </Button>
       </form>
@@ -215,17 +224,18 @@ function AddTitles({ userUUID, profile, playlistId, playlistName }: { userUUID: 
   useEffect(() => setPicked(null), [asked]);
   const found = useJellyfinFind(userUUID, profile, asked, null, { activeTab: "jellyfin" });
   const title = useJellyfinTitle(userUUID, profile, picked, { activeTab: "jellyfin" });
-  const choices: PlaylistChoice[] = !picked || !title.data ? [] : title.data.type === "movie"
-    ? [{ key: "film", label: [title.data.title, title.data.year].filter(Boolean).join(" · "), itemIds: [title.data.id] }]
+  const shown = picked && !title.isPlaceholderData ? title.data : undefined;
+  const choices: PlaylistChoice[] = !shown ? [] : shown.type === "movie"
+    ? [{ key: "film", label: [shown.title, shown.year].filter(Boolean).join(" · "), itemIds: [shown.id] }]
     : [
-      { key: "show", label: `${title.data.title}, whole show (${title.data.aired} episodes)`, itemIds: [title.data.id] },
-      ...title.data.seasons.filter((season) => season.season > 0).map((season) => ({ key: `season:${season.season}`, label: `Season ${season.season} (${season.count} episodes)`, itemIds: [season.id] })),
+      { key: "show", label: `${shown.title}, whole show (${shown.aired} episodes)`, itemIds: [shown.id] },
+      ...shown.seasons.filter((season) => season.season > 0).map((season) => ({ key: `season:${season.season}`, label: `Season ${season.season} (${season.count} episodes)`, itemIds: [season.id] })),
     ];
   const add = async (choice: PlaylistChoice) => {
     setBusy(choice.key);
     try {
-      const { added = 0 } = await change(userUUID, profile, { op: "add", id: playlistId, itemIds: choice.itemIds });
-      toast.success(added ? `Added ${titlesLabel(added)} to ${playlistName}` : `${playlistName} already has these`);
+      const { added = 0, left = 0 } = await change(userUUID, profile, { op: "add", id: playlistId, itemIds: choice.itemIds });
+      toast.success(addedNote(added, left, playlistName));
     } catch (error) {
       failed(error, "Could not add to the playlist");
     } finally {
@@ -241,7 +251,9 @@ function AddTitles({ userUUID, profile, playlistId, playlistName }: { userUUID: 
       {picked ? (
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => setPicked(null)} className="inline-flex h-9 items-center rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground">‹ Results</button>
-          {!title.data ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : choices.map((choice) => (
+          {!shown && title.isError ? (
+            <span className="text-xs text-muted-foreground">Could not load this title. <button type="button" onClick={() => void title.refetch()} className="text-blue-300 hover:text-blue-200">Retry</button></span>
+          ) : !shown ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : choices.map((choice) => (
             <button key={choice.key} type="button" disabled={Boolean(busy)} onClick={() => void add(choice)} className={CHIP}>
               {busy === choice.key ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} {choice.label}
             </button>
@@ -249,7 +261,9 @@ function AddTitles({ userUUID, profile, playlistId, playlistName }: { userUUID: 
         </div>
       ) : asked.length >= 2 && (
         <div className="flex flex-wrap gap-2">
-          {found.isFetching && !results.length ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : results.length === 0 ? <span className="text-xs text-muted-foreground">Nothing found for “{asked}”.</span> : results.map((result) => (
+          {found.isFetching && !results.length ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : found.isError && found.data?.query !== asked ? (
+            <span className="text-xs text-muted-foreground">The search failed. <button type="button" onClick={() => void found.refetch()} className="text-blue-300 hover:text-blue-200">Retry</button></span>
+          ) : results.length === 0 ? <span className="text-xs text-muted-foreground">Nothing found for “{asked}”.</span> : results.map((result) => (
             <button key={`${result.type}:${result.id}`} type="button" onClick={() => setPicked({ id: result.id, type: result.type })} className={CHIP}>
               {result.type === "movie" ? <Film className="size-3.5" /> : <Tv className="size-3.5" />} {result.title}{result.year ? <span className="text-muted-foreground">{result.year}</span> : null}
             </button>
@@ -275,7 +289,7 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
   const [offset, setOffset] = useState(0);
   const page = useJellyfinPlaylist(userUUID, profile, current?.id ?? null, offset, { activeTab });
   const pageData = page.data && page.data.id === current?.id ? page.data : undefined;
-  const entries = usePagedRows(pageData, (held) => held.entries, ["dashboard", "jellyfin", "playlists", userUUID, profile, current?.id ?? null], current?.id ?? "");
+  const [entries] = usePagedRows(pageData, (held) => held.entries, ["dashboard", "jellyfin", "playlists", userUUID, profile, current?.id ?? null], current?.id ?? "");
   const items = useMemo(() => entries.map(itemOf), [entries]);
   const total = pageData?.count ?? current?.count ?? 0;
   const more = entries.length < total;
@@ -371,6 +385,14 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
     if (event.key === "ArrowUp" || event.key === "ArrowLeft") { event.preventDefault(); setIndex(Math.max(0, at - 1)); }
   };
   const loading = !list.data || Boolean(current && !pageData && entries.length === 0);
+  const listFailed = !list.data && list.isError && !list.isFetching;
+  const pageFailed = Boolean(current && !pageData && entries.length === 0) && page.isError && !page.isFetching;
+  const failedPanel = (
+    <div className="flex h-[260px] flex-col items-center justify-center gap-3 text-center">
+      <p className="text-sm text-muted-foreground">{listFailed ? "Could not load the playlists." : "Could not load this playlist."}</p>
+      <button type="button" onClick={() => void (listFailed ? list.refetch() : page.refetch())} className="glass h-8 rounded-full px-4 text-xs font-medium hover:bg-white/15">Retry</button>
+    </div>
+  );
   const nameForm = naming && (
     <form className="flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); saveName(); }}>
       <label htmlFor="playlist-name" className="sr-only">{naming.mode === "new" ? "New playlist name" : "Playlist name"}</label>
@@ -424,7 +446,9 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
                 {naming?.mode !== "new" && <button type="button" onClick={() => setNaming({ mode: "new", name: "" })} className={PILL}><Plus className="size-3.5" /> New playlist</button>}
               </div>
               {naming && nameForm}
-              {!list.data
+              {listFailed
+                ? failedPanel
+                : !list.data
                 ? Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-[84px] rounded-xl" />)
                 : playlists.map((playlist) => (
                   <button key={playlist.id} type="button" aria-pressed={playlist.id === current?.id} onClick={() => setSelected(playlist.id)} className={cx("flex items-center gap-3 rounded-xl p-2.5 text-left ring-1 transition", playlist.id === current?.id ? "bg-blue-500/10 ring-blue-400/50" : "bg-white/[0.03] ring-white/[0.06] hover:bg-white/[0.06]")}>
@@ -439,11 +463,11 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
             </div>
             <div className="glass flex min-w-0 flex-col gap-4 rounded-2xl p-4 sm:p-5">
               {!current ? (
-                <p className="py-10 text-center text-sm text-muted-foreground">{list.data ? "No playlists yet. Make one on the left, or open any title and use Add to playlist." : ""}</p>
+                <p className="py-10 text-center text-sm text-muted-foreground">{list.data ? "No playlists yet. Make one on the left, or open any title and use Add to playlist." : listFailed ? "The playlists could not be loaded. Retry on the left." : ""}</p>
               ) : (
                 <>
                   <AddTitles key={current.id} userUUID={userUUID} profile={profile} playlistId={current.id} playlistName={current.name} />
-                  {loading ? (
+                  {pageFailed ? failedPanel : loading ? (
                     <div className="space-y-2">{Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-[66px] rounded-xl" />)}</div>
                   ) : entries.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-muted-foreground">Nothing in it yet. Add titles above, or open any title and use Add to playlist.</p>
@@ -475,7 +499,7 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
           )}
         </div>
 
-        {loading ? (
+        {listFailed || pageFailed ? failedPanel : loading ? (
           <div className={cx("grid gap-5", view === "deck" && "lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]")}>
             {view === "deck" && <div className="flex flex-col gap-1">{Array.from({ length: 7 }, (_, i) => <Skeleton key={i} className="h-[60px] rounded-xl" />)}</div>}
             <div className="flex h-[330px] items-center justify-center sm:h-[470px]"><Skeleton className="aspect-[2/3] w-40 rounded-xl sm:w-56" /></div>

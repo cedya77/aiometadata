@@ -1,4 +1,5 @@
 import { envInt } from '../../utils/envNumber';
+import { parseStremioId } from './idsCodec';
 
 /** How many marks in a row, each within the gap of the last, read as one bulk mark rather than viewings. */
 export function bulkMarkRule(): { size: number; gapMs: number } {
@@ -18,14 +19,23 @@ export function bulkMarked(times: number[], { size, gapMs } = bulkMarkRule()): b
   return out;
 }
 
-/** The times among these marks that fall in a bulk mark, counting a mark once however many ids spell it. */
-export function bulkTimes(marks: Array<{ at: number; key: string }>, rule = bulkMarkRule()): Set<number> {
-  const seen = new Set<string>();
+/** The times among these marks that fall in a bulk mark; a title's ids differ in type, so a moment counts the most titles one id type names. */
+export function bulkTimes(marks: Array<{ at: number; videoId: string }>, rule = bulkMarkRule()): Set<number> {
+  const moments = new Map<number, Map<string, Set<string>>>();
+  for (const { at, videoId } of marks) {
+    if (!(at > 0)) continue;
+    const parsed = parseStremioId(videoId);
+    const byType = moments.get(at) ?? new Map<string, Set<string>>();
+    moments.set(at, byType);
+    const type = parsed?.idType ?? '';
+    const titles = byType.get(type) ?? new Set<string>();
+    byType.set(type, titles);
+    titles.add(parsed ? `${parsed.base}|${parsed.season ?? ''}:${parsed.episode ?? ''}` : videoId);
+  }
   const times: number[] = [];
-  for (const { at, key } of marks) {
-    if (!(at > 0) || seen.has(`${at}|${key}`)) continue;
-    seen.add(`${at}|${key}`);
-    times.push(at);
+  for (const [at, byType] of moments) {
+    const titles = Math.max(...[...byType.values()].map((names) => names.size));
+    for (let i = 0; i < titles; i += 1) times.push(at);
   }
   const out = new Set<number>();
   bulkMarked(times, rule).forEach((bulk, i) => {

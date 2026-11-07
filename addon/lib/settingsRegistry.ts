@@ -1748,6 +1748,17 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 30,
   },
   {
+    key: 'JELLYFIN_FOLDER_CURSOR_IDS',
+    envVar: 'JELLYFIN_FOLDER_CURSOR_IDS',
+    label: 'Jellyfin Folder Cursor Titles',
+    description: 'How many titles all remembered folder and collection positions may hold together. Past it the positions used longest ago are dropped, and their next page is positioned from the start.',
+    category: 'Features',
+    type: 'number',
+    default: 200000,
+    min: 25001,
+    requiresRestart: true,
+  },
+  {
     key: 'JELLYFIN_LIST_PAGE_MAX',
     envVar: 'JELLYFIN_LIST_PAGE_MAX',
     label: 'Jellyfin List Page Cap',

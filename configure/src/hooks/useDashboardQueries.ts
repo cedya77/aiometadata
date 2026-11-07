@@ -2273,7 +2273,7 @@ export function useJellyfinPlaylistPreview() {
 export function useJellyfinPlaylistChange() {
   const getHeaders = useApiHeaders();
   const queryClient = useQueryClient();
-  return async (userUUID: string, profile: string | null, change: JellyfinPlaylistChange): Promise<{ id?: string; added?: number }> => {
+  return async (userUUID: string, profile: string | null, change: JellyfinPlaylistChange): Promise<{ id?: string; added?: number; left?: number }> => {
     const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/playlists/change`, {
       method: 'POST',
       headers: { ...getHeaders(), 'Content-Type': 'application/json' },

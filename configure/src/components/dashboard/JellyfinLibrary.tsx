@@ -3,10 +3,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Bookmark, Loader2, Star, ThumbsDown, Undo2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { reloadPages, useOpenTitle } from "./jellyfinUtils";
+import { useOpenTitle } from "./jellyfinUtils";
 import { Ambient } from "./JellyfinShared";
 import { Deck, DeckDetail, Fan, ListRow, TiltCard, ViewToggle, type DeckDetailInfo, type DeckItem, type ShelfView } from "./JellyfinDeck";
-import { remember, remembered, useSwipe } from "./deckState";
+import { remember, remembered, usePagedRows, useSwipe } from "./deckState";
 import { cx } from "./titleHelpers";
 import { JELLYFIN_LIBRARY_PAGE, useJellyfinLibrary, useJellyfinUndrop, type DashboardTab, type JellyfinLibraryKind, type JellyfinLibraryRow, type JellyfinLibraryTab } from "@/hooks/useDashboardQueries";
 
@@ -56,7 +56,6 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
   const [kind, setKind] = useState<JellyfinLibraryKind>("all");
   const [index, setIndex] = useState(0);
   const [offset, setOffset] = useState(0);
-  const [rows, setRows] = useState<JellyfinLibraryRow[]>([]);
   const { data, isLoading, isFetching, isPlaceholderData, isError, refetch } = useJellyfinLibrary(userUUID, profile, tab, kind, offset, { activeTab });
   const current = Boolean(data) && !isPlaceholderData && data!.tab === tab && data!.kind === kind;
   const queryClient = useQueryClient();
@@ -66,29 +65,13 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
   const wallSentinel = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
 
-  const loaded = useRef<number[]>([]);
-  // A re-read still out when the tab or filter changes is of the list that was there before.
-  const generation = useRef(0);
+  const shownList = useRef(`${tab}:${kind}`);
+  shownList.current = `${tab}:${kind}`;
+  const [rows, setRows] = usePagedRows(current ? data : undefined, (page) => page.rows, ["dashboard", "jellyfin", "library", userUUID, profile, tab, kind], `${tab}:${kind}`);
   useEffect(() => {
-    generation.current += 1;
     setOffset(0);
-    setRows([]);
     setIndex(0);
-    loaded.current = [];
   }, [tab, kind]);
-  useEffect(() => {
-    if (!current || !data) return;
-    if (data.offset === 0 || !loaded.current.includes(data.offset)) {
-      loaded.current = data.offset === 0 ? [0] : [...loaded.current, data.offset];
-      setRows((held) => (data.offset === 0 ? data.rows : [...held.slice(0, data.offset), ...data.rows]));
-      return;
-    }
-    const offsets = [...loaded.current];
-    const started = generation.current;
-    void reloadPages<JellyfinLibraryRow>(queryClient, ["dashboard", "jellyfin", "library", userUUID, profile, tab, kind], offsets).then((pages) => {
-      if (pages && started === generation.current) setRows(pages.flat());
-    });
-  }, [current, data]);
 
   const total = current ? data!.total : rows.length;
   const more = rows.length < total;
@@ -122,10 +105,12 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
 
   const pickUp = async (row: JellyfinLibraryRow) => {
     setPicking(row.metaId);
+    const from = shownList.current;
     try {
       const done = await undrop(userUUID, profile, row.metaId);
       if (!done) throw new Error(`${row.title} was not dropped here`);
-      setRows((held) => held.filter((r) => r.metaId !== row.metaId));
+      // Taken off the list it was picked up from, not one switched to while the request ran.
+      if (shownList.current === from) setRows((held) => held.filter((r) => r.metaId !== row.metaId));
       toast.success(`${row.title} picked back up`, { description: "It can come back to Next Up and the calendar." });
       void queryClient.invalidateQueries({ queryKey: ["dashboard", "jellyfin", "library", userUUID] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard", "jellyfin", "calendar", userUUID] });

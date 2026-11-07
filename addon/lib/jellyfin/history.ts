@@ -227,6 +227,7 @@ export function exportRow(row: any): any {
     positionMs: Number(row.position_ms) || 0,
     durationMs: Number(row.runtime_ms) || 0,
     lastPlayedAt: iso(row.last_played_at),
+    lastPlayedKind: row.last_played_at ? row.last_played_kind ?? null : null,
     updatedAt: iso(row.updated_at),
     origin: originOf(row).origin,
   };
