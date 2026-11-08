@@ -394,7 +394,15 @@ export default function JellyfinPersonView({ userUUID, profile, profileName, per
                 )}
               </div>
               <div className="min-w-0">
-                <h2 className="mb-4 mt-2 text-4xl font-bold sm:text-5xl">{name}</h2>
+                <div className="mb-4 mt-2 flex items-center gap-4">
+                  {/* On a phone the portrait column is hidden, so the photo sits beside the name. */}
+                  <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted sm:hidden">
+                    {photo && !photoFailed
+                      ? <img src={sized(person?.photo ?? cast.photo, 192) ?? undefined} alt="" onError={() => setPhotoFailed(true)} className="h-full w-full object-cover" />
+                      : name ? <span className="text-2xl font-bold text-muted-foreground">{initials(name)}</span> : <ImageOff className="size-8 text-muted-foreground" />}
+                  </div>
+                  <h2 className="min-w-0 text-4xl font-bold sm:text-5xl">{name}</h2>
+                </div>
                 {isLoading && (
                   <div className="space-y-2">
                     <Skeleton className="h-4 w-full max-w-xl" />
