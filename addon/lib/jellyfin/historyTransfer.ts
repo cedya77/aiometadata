@@ -546,7 +546,13 @@ function forgetLocalCaches(userUUID: string): void {
   void forgetDashboardStats(userUUID);
 }
 
+let importsRunning = 0;
+
+/** Imports running in this process, each holding its plan in memory until it finishes. */
+export const runningImports = (): number => importsRunning;
+
 async function runImport(userUUID: string, plan: Plan, startedAt: number): Promise<void> {
+  importsRunning += 1;
   const beatMs = Math.max(1000, Math.floor(staleMs() / 6));
   let done = 0;
   let beat = Date.now();
@@ -573,6 +579,7 @@ async function runImport(userUUID: string, plan: Plan, startedAt: number): Promi
     await database.updateHistoryImport(userUUID, startedAt, { status: 'failed', done, error: message, heartbeatAt: at, finishedAt: at }).catch(() => undefined);
     logger.warn(`History import into ${userUUID} stopped after ${done}/${plan.writes.length} write(s): ${message}`);
   } finally {
+    importsRunning -= 1;
     forgetLocalCaches(userUUID);
   }
 }
@@ -622,8 +629,8 @@ export async function dismissHistoryImport(userUUID: string): Promise<boolean> {
 
 const rawParsers = new Map<string, any>();
 
-export function historyImportBody(): any {
-  const limit = `${envInt('JELLYFIN_HISTORY_IMPORT_MAX_MB', 64, 1)}mb`;
+export function historyImportBody(limitMb = envInt('JELLYFIN_HISTORY_IMPORT_MAX_MB', 64, 1)): any {
+  const limit = `${limitMb}mb`;
   let parser = rawParsers.get(limit);
   if (!parser) {
     parser = express.raw({ type: 'application/octet-stream', limit });

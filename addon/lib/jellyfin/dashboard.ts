@@ -184,7 +184,7 @@ function historyProfiles(config: any, userUUID: string): Array<{ key: string; na
   return out;
 }
 
-function historyKeyOf(config: any, userUUID: string, profile: string | null): string | null {
+export function historyKeyOf(config: any, userUUID: string, profile: string | null): string | null {
   if (profile === null) return null;
   const found = listProfiles(config, userUUID).find((p) => (p.id ?? '') === profile);
   return found?.id && found.sharesHistory ? '' : profile;
@@ -595,6 +595,13 @@ async function trackerSync(config: any, userUUID: string): Promise<SyncRow[]> {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The tracker accounts of these profiles. */
+export function accountsOpenTo(config: any, userUUID: string, profiles: Set<string>): Set<string> {
+  const keys = new Set<string>();
+  for (const profile of profiles) for (const key of syncSources(config, userUUID, historyKeyOf(config, userUUID, profile)).keys()) keys.add(key);
+  return keys;
+}
 const QUIET_VERBS = new Set(['Started watching', 'Paused']);
 
 const parseDetail = (value: unknown): Record<string, any> => {

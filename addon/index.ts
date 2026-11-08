@@ -6854,6 +6854,56 @@ addon.get(require('./lib/dashboardApp').DASHBOARD_APP_MANIFEST, (req, res) => {
   res.type('application/manifest+json').send(JSON.stringify(manifest));
 });
 
+// A configuration's own Jellyfin page: the same app, opened on its own shell.
+addon.get("/api/own-page/status", (req, res) => {
+  res.json(require('./lib/jellyfin/ownPage').ownPageStatus());
+});
+
+addon.post("/api/own-page/:userUUID/session", (req, res, next) => require('./lib/jellyfin/ownPage').ownPageAddressLimit(req, res, next), async (req, res) => {
+  try {
+    const outcome = await require('./lib/jellyfin/ownPage').startSession(req, String(req.params.userUUID), req.body?.password);
+    res.status(outcome.status).json(outcome.body);
+  } catch (error) {
+    consola.error('[Own Page] Sign-in failed:', error);
+    res.status(500).json({ error: 'The sign-in could not be checked' });
+  }
+});
+
+addon.get("/api/own-page/:userUUID/profiles", (req, res, next) => require('./lib/jellyfin/ownPage').ownPageAddressLimit(req, res, next), async (req, res) => {
+  try {
+    const ownPage = require('./lib/jellyfin/ownPage');
+    const outcome = await ownPage.sessionProfiles(req.headers[ownPage.OWN_PAGE_HEADER], String(req.params.userUUID));
+    res.status(outcome.status).json(outcome.body);
+  } catch (error) {
+    consola.error('[Own Page] Profiles failed:', error);
+    res.status(500).json({ error: 'The profiles could not be read' });
+  }
+});
+
+addon.post("/api/own-page/:userUUID/unlock", (req, res, next) => require('./lib/jellyfin/ownPage').ownPageAddressLimit(req, res, next), async (req, res) => {
+  try {
+    const ownPage = require('./lib/jellyfin/ownPage');
+    const outcome = await ownPage.unlockProfile(req.headers[ownPage.OWN_PAGE_HEADER], String(req.params.userUUID), req.body?.profile, req.body?.pin);
+    res.status(outcome.status).json(outcome.body);
+  } catch (error) {
+    consola.error('[Own Page] Unlock failed:', error);
+    res.status(500).json({ error: 'The PIN could not be checked' });
+  }
+});
+
+addon.get(["/jellyfin-page/:userUUID", "/jellyfin-page/:userUUID/{*page}"], (req, res) => {
+  try {
+    const html = fs.readFileSync(clientIndexPath, 'utf8')
+      .replace(/<title>.*?<\/title>/, '<title>Your viewing page</title>')
+      .replace('</head>', '  <script>window.OWN_PAGE_MODE = true;</script>\n</head>');
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('html').send(html);
+  } catch (error) {
+    consola.error('[Own Page] Page failed:', error);
+    res.status(500).send('The page could not be loaded');
+  }
+});
+
 // Dedicated Dashboard Page Route
 addon.get(["/dashboard", "/dashboard/{*page}"], (req, res) => {
   // Serve the same HTML but with dashboard-specific handling
@@ -7422,6 +7472,9 @@ async function describeSelfDemotion(req, key, proposedValue, confirmed) {
 
   return null;
 }
+
+// A Jellyfin tab route: an administrator as before, or a configuration's own page as far as `access` reaches.
+const jellyfinRoute = (access) => require('./lib/jellyfin/ownPage').ownPageGuard(access, requireDashboardAdmin);
 
 function requireDashboardAdmin(req, res, next) {
   // A signed-in administrator needs no key. ADMIN_KEY stays the way in when the
@@ -8328,7 +8381,7 @@ addon.get("/api/dashboard/jellyfin/search", requireDashboardAdmin, async (req, r
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/export", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/export", jellyfinRoute({ reach: "config", heavy: true, turn: "files" }), async (req, res) => {
   try {
     const userUUID = String(req.params.userUUID);
     const config = await database.getUserConfig(userUUID).catch(() => null);
@@ -8341,7 +8394,15 @@ addon.get("/api/dashboard/jellyfin/:userUUID/export", requireDashboardAdmin, asy
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/import", requireDashboardAdmin, (req, res, next) => require('./lib/jellyfin/historyTransfer').historyImportBody()(req, res, next), async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/import", jellyfinRoute({ reach: "config", heavy: true, turn: "files" }), (req, res, next) => {
+  const { historyImportBody } = require('./lib/jellyfin/historyTransfer');
+  if (!req.ownPage) return historyImportBody()(req, res, next);
+  const limit = require('./lib/jellyfin/ownPage').ownPageImportMb();
+  return historyImportBody(limit)(req, res, (error) => {
+    if (error?.type === 'entity.too.large') return res.status(413).json({ error: `That file is over the ${limit} MB this page takes` });
+    return next(error);
+  });
+}, async (req, res) => {
   try {
     const userUUID = String(req.params.userUUID);
     const config = await database.getUserConfig(userUUID).catch(() => null);
@@ -8357,7 +8418,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/import", requireDashboardAdmin, (r
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/import", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/import", jellyfinRoute({ reach: "config" }), async (req, res) => {
   try {
     res.json({ job: await require('./lib/jellyfin/historyTransfer').historyImportStatus(String(req.params.userUUID)) });
   } catch (error) {
@@ -8366,7 +8427,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/import", requireDashboardAdmin, asy
   }
 });
 
-addon.delete("/api/dashboard/jellyfin/:userUUID/import", requireDashboardAdmin, async (req, res) => {
+addon.delete("/api/dashboard/jellyfin/:userUUID/import", jellyfinRoute({ reach: "config" }), async (req, res) => {
   try {
     const dismissed = await require('./lib/jellyfin/historyTransfer').dismissHistoryImport(String(req.params.userUUID));
     res.status(dismissed ? 200 : 409).json(dismissed ? { ok: true } : { error: 'The import is still running' });
@@ -8376,7 +8437,7 @@ addon.delete("/api/dashboard/jellyfin/:userUUID/import", requireDashboardAdmin, 
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/plays", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/plays", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const kind = req.query.kind === 'played' ? 'played' : 'progress';
@@ -8395,7 +8456,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/plays", requireDashboardAdmin, asyn
 });
 
 // Art the dashboard draws into images it exports, read here so the browser can use it: public image hosts only.
-addon.get("/api/dashboard/art", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/art", jellyfinRoute({ reach: "session" }), async (req, res) => {
   const url = typeof req.query.url === 'string' ? req.query.url : '';
   if (!/^https?:\/\//i.test(url) || url.length > 2048) {
     res.status(400).json({ error: 'An image URL is expected' });
@@ -8418,7 +8479,7 @@ addon.get("/api/dashboard/art", requireDashboardAdmin, async (req, res) => {
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/year", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/year", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const year = parseInt(String(req.query.year ?? ''), 10);
@@ -8444,7 +8505,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/year", requireDashboardAdmin, async
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/shows", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/shows", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const payload = await require('./lib/jellyfin/dashboard').dashboardShows(String(req.params.userUUID), profile, req.query.fresh === '1');
@@ -8459,7 +8520,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/shows", requireDashboardAdmin, asyn
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/calendar", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/calendar", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const from = Number(req.query.from);
@@ -8480,7 +8541,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/calendar", requireDashboardAdmin, a
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/calendar/feed", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/calendar/feed", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const secret = await require('./lib/jellyfin/calendarFeed').calendarFeedSecret(String(req.params.userUUID), profile);
@@ -8491,7 +8552,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/calendar/feed", requireDashboardAdm
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/calendar/feed", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/calendar/feed", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
     const secret = await require('./lib/jellyfin/calendarFeed').issueCalendarFeed(String(req.params.userUUID), profile);
@@ -8506,7 +8567,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/calendar/feed", requireDashboardAd
   }
 });
 
-addon.delete("/api/dashboard/jellyfin/:userUUID/calendar/feed", requireDashboardAdmin, async (req, res) => {
+addon.delete("/api/dashboard/jellyfin/:userUUID/calendar/feed", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     await require('./lib/jellyfin/calendarFeed').revokeCalendarFeed(String(req.params.userUUID), profile);
@@ -8532,7 +8593,7 @@ addon.get("/calendar/:secret.ics", async (req, res) => {
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/library", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/library", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const tab = ['watchlist', 'ratings', 'dropped'].includes(String(req.query.tab)) ? String(req.query.tab) : 'watchlist';
@@ -8551,7 +8612,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/library", requireDashboardAdmin, as
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/library/undrop", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/library/undrop", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const metaId = typeof req.body?.metaId === 'string' ? req.body.metaId.trim() : '';
     const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
@@ -8571,7 +8632,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/library/undrop", requireDashboardA
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/searches", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/searches", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const payload = await require('./lib/jellyfin/dashboard').dashboardSearches(String(req.params.userUUID), profile);
@@ -8586,7 +8647,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/searches", requireDashboardAdmin, a
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/find", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/find", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const query = String(req.query.q ?? '').trim().slice(0, 100);
@@ -8607,7 +8668,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/find", requireDashboardAdmin, async
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/title", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/title", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const ref = {
@@ -8627,7 +8688,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/title", requireDashboardAdmin, asyn
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/person", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/person", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const item = typeof req.query.item === 'string' ? req.query.item : '';
@@ -8645,7 +8706,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/person", requireDashboardAdmin, asy
 
 const PERSON_ROLES = new Set(['all', 'Actor', 'Director', 'Writer', 'Producer', 'Composer']);
 
-addon.get("/api/dashboard/jellyfin/:userUUID/person/titles", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/person/titles", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const item = typeof req.query.item === 'string' ? req.query.item : '';
@@ -8669,7 +8730,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/person/titles", requireDashboardAdm
 
 const TITLE_ACTIONS = new Set(['played', 'unplayed', 'playedUpTo', 'watchlist', 'unwatchlist', 'drop', 'undrop', 'rate']);
 
-addon.post("/api/dashboard/jellyfin/:userUUID/title/action", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/title/action", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const action = String(req.body?.action ?? '');
     const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds.filter((id) => typeof id === 'string' && id).slice(0, 500) : [];
@@ -8698,7 +8759,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/title/action", requireDashboardAdm
 const dashboardProfile = (value) => (typeof value === 'string' ? value : null);
 const dashboardItemIds = (value) => (Array.isArray(value) ? value.filter((id) => typeof id === 'string' && /^[0-9a-f-]{32,36}$/i.test(id)).slice(0, 500) : []);
 
-addon.get("/api/dashboard/jellyfin/:userUUID/playlists", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/playlists", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const payload = await require('./lib/jellyfin/dashboardPlaylists').dashboardPlaylists(String(req.params.userUUID), dashboardProfile(req.query.profile));
     if (!payload) {
@@ -8712,7 +8773,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/playlists", requireDashboardAdmin, 
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/playlists/:playlistId", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/playlists/:playlistId", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const playlists = require('./lib/jellyfin/dashboardPlaylists');
     if (!playlists.isPlaylistId(req.params.playlistId)) {
@@ -8733,7 +8794,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/playlists/:playlistId", requireDash
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/playlists/preview", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/playlists/preview", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const itemIds = dashboardItemIds(req.body?.itemIds);
     if (!itemIds.length) {
@@ -8752,7 +8813,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/playlists/preview", requireDashboa
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/playlists/change", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/playlists/change", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const playlists = require('./lib/jellyfin/dashboardPlaylists');
     const body = req.body ?? {};
@@ -8786,7 +8847,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/playlists/change", requireDashboar
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/progress/remove", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/progress/remove", jellyfinRoute({ reach: "heldProfile", field: "profileKey" }), async (req, res) => {
   try {
     const videoId = typeof req.body?.videoId === 'string' && req.body.videoId.length <= 300 ? req.body.videoId : '';
     const profileKey = typeof req.body?.profileKey === 'string' && req.body.profileKey.length <= 200 ? req.body.profileKey : '';
@@ -8810,7 +8871,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/progress/remove", requireDashboard
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/sync/same-viewing", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/same-viewing", jellyfinRoute({ reach: "heldProfile", field: "profile" }), async (req, res) => {
   try {
     const video = typeof req.body?.video === 'string' && req.body.video.length <= 300 ? req.body.video : '';
     const profileKey = typeof req.body?.profile === 'string' && req.body.profile.length <= 200 ? req.body.profile : '';
@@ -8840,7 +8901,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/same-viewing", requireDashboa
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/title/watch-date", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/title/watch-date", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : '';
     const from = req.body?.from === null ? null : Number(req.body?.from);
@@ -8866,11 +8927,11 @@ addon.post("/api/dashboard/jellyfin/:userUUID/title/watch-date", requireDashboar
   }
 });
 
-addon.get("/api/dashboard/trackers", requireDashboardAdmin, (req, res) => {
+addon.get("/api/dashboard/trackers", jellyfinRoute({ reach: "session" }), (req, res) => {
   res.json({ trackers: require('./lib/trackers').trackerFacts() });
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/sync", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/sync", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const sync = await require('./lib/jellyfin/dashboard').dashboardSync(String(req.params.userUUID), profile);
@@ -8885,7 +8946,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/sync", requireDashboardAdmin, async
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/sync/run", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/run", jellyfinRoute({ reach: "accounts", accounts: ["key"], heavy: true, turn: "trackers" }), async (req, res) => {
   try {
     const key = typeof req.body?.key === 'string' ? req.body.key : '';
     if (!key) {
@@ -8904,7 +8965,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/run", requireDashboardAdmin, 
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/sync/outbox", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/outbox", jellyfinRoute({ reach: "config" }), async (req, res) => {
   try {
     const action = req.body?.action === 'retry' || req.body?.action === 'drop' ? req.body.action : null;
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter((id) => Number.isInteger(id) && id > 0).slice(0, 500) : [];
@@ -8924,7 +8985,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/outbox", requireDashboardAdmi
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift", jellyfinRoute({ reach: "profile", turn: "trackers" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const drift = await require('./lib/jellyfin/dashboard').dashboardDrift(String(req.params.userUUID), profile);
@@ -8939,7 +9000,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift", requireDashboardAdmin,
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/sync/drift", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/drift", jellyfinRoute({ reach: "profile", accounts: ["key"], heavy: true, turn: "trackers" }), async (req, res) => {
   try {
     const key = typeof req.body?.key === 'string' ? req.body.key : '';
     const action = ['push', 'pull', 'leave', 'restore'].includes(req.body?.action) ? req.body.action : null;
@@ -8962,7 +9023,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/drift", requireDashboardAdmin
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift/imported", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift/imported", jellyfinRoute({ reach: "profile", accounts: ["key"] }), async (req, res) => {
   try {
     const key = typeof req.query.key === 'string' ? req.query.key : '';
     const origin = typeof req.query.origin === 'string' ? req.query.origin.slice(0, 32) : '';
@@ -8979,7 +9040,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift/imported", requireDashbo
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift/item", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift/item", jellyfinRoute({ reach: "accounts", accounts: ["key"] }), async (req, res) => {
   try {
     const key = typeof req.query.key === 'string' ? req.query.key : '';
     const video = typeof req.query.video === 'string' ? req.query.video.slice(0, 120) : '';
@@ -8997,7 +9058,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift/item", requireDashboardA
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/sync/match/search", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/match/search", jellyfinRoute({ reach: "accounts", accounts: ["key"] }), async (req, res) => {
   try {
     const key = typeof req.query.key === 'string' ? req.query.key : '';
     const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
@@ -9018,7 +9079,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/sync/match/search", requireDashboar
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/sync/match/detail", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/match/detail", jellyfinRoute({ reach: "accounts", accounts: ["key"] }), async (req, res) => {
   try {
     const key = typeof req.body?.key === 'string' ? req.body.key : '';
     const detail = key ? await require('./lib/jellyfin/dashboard').dashboardMatchDetail(String(req.params.userUUID), key, req.body?.candidate) : null;
@@ -9033,7 +9094,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/match/detail", requireDashboa
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/sync/matches", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/matches", jellyfinRoute({ reach: "accounts", accounts: ["key"] }), async (req, res) => {
   try {
     const key = typeof req.query.key === 'string' ? req.query.key : '';
     const matches = key ? await require('./lib/jellyfin/dashboard').dashboardMatches(String(req.params.userUUID), key) : null;
@@ -9048,7 +9109,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/sync/matches", requireDashboardAdmi
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/sync/match", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/match", jellyfinRoute({ reach: "accounts", accounts: ["key"] }), async (req, res) => {
   try {
     const key = typeof req.body?.key === 'string' ? req.body.key : '';
     const saved = key ? await require('./lib/jellyfin/dashboard').dashboardMatchSave(String(req.params.userUUID), key, req.body) : null;
@@ -9063,7 +9124,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/match", requireDashboardAdmin
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/sync/match/remove", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/match/remove", jellyfinRoute({ reach: "accounts", accounts: ["key"] }), async (req, res) => {
   try {
     const key = typeof req.body?.key === 'string' ? req.body.key : '';
     const group = typeof req.body?.group === 'string' ? req.body.group : '';
@@ -9079,7 +9140,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/match/remove", requireDashboa
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/preview", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/preview", jellyfinRoute({ reach: "profile", accounts: ["from", "to"], heavy: true, turn: "trackers" }), async (req, res) => {
   try {
     const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
     const from = typeof req.body?.from === 'string' ? req.body.from : '';
@@ -9098,7 +9159,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/preview", requireDashboa
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/describe", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/describe", jellyfinRoute({ reach: "session" }), async (req, res) => {
   try {
     const videos = Array.isArray(req.body?.videos) ? req.body.videos.filter((v) => typeof v === 'string').slice(0, 120) : [];
     res.json(await require('./lib/jellyfin/dashboard').dashboardCopyDescribe(String(req.params.userUUID), videos));
@@ -9108,7 +9169,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/describe", requireDashbo
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/sync/copy", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/copy", jellyfinRoute({ reach: "config" }), async (req, res) => {
   try {
     res.json({ jobs: await require('./lib/jellyfin/dashboard').dashboardCopyJobs(String(req.params.userUUID)) });
   } catch (error) {
@@ -9117,7 +9178,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/sync/copy", requireDashboardAdmin, 
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy", jellyfinRoute({ reach: "profile", accounts: ["from", "to"], heavy: true, turn: "trackers" }), async (req, res) => {
   try {
     const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
     const from = typeof req.body?.from === 'string' ? req.body.from : '';
@@ -9137,7 +9198,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy", requireDashboardAdmin,
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/:id", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/:id", jellyfinRoute({ reach: "config" }), async (req, res) => {
   try {
     const action = ['pause', 'resume', 'stop'].includes(req.body?.action) ? req.body.action : null;
     const id = Number(req.params.id);
@@ -9153,7 +9214,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/:id", requireDashboardAd
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/devices", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/devices", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const devices = await require('./lib/jellyfin/dashboard').dashboardDevices(String(req.params.userUUID), profile);
@@ -9168,7 +9229,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/devices", requireDashboardAdmin, as
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/devices/open", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/devices/open", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const deviceId = typeof req.body?.deviceId === 'string' ? req.body.deviceId : '';
     const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : '';
@@ -9200,7 +9261,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/devices/open", requireDashboardAdm
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/shows/refresh", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/shows/refresh", jellyfinRoute({ reach: "session", heavy: true }), async (req, res) => {
   try {
     const metaId = typeof req.body?.metaId === 'string' ? req.body.metaId.trim() : '';
     if (!metaId) {
@@ -9214,7 +9275,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/shows/refresh", requireDashboardAd
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const rows = parseInt(String(req.query.rows ?? ''), 10);
@@ -9224,7 +9285,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID", requireDashboardAdmin, async (req
       res.status(404).json({ error: 'No such configuration' });
       return;
     }
-    res.json(payload);
+    res.json(require('./lib/jellyfin/ownPage').ownPageOverview(req, payload));
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch Jellyfin playback data' });

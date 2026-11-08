@@ -47,7 +47,7 @@ function normalizePath(pathname: string): string {
 function isAppPage(pathname: string): boolean {
   const path = normalizePath(pathname);
   if (APP_PAGES.has(path)) return true;
-  if (path.startsWith('/configure/') || path.startsWith('/dashboard/')) return true;
+  if (path.startsWith('/configure/') || path.startsWith('/dashboard/') || path.startsWith('/jellyfin-page/')) return true;
   return /^\/stremio\/[^/]+\/(configure|rating)$/.test(path);
 }
 

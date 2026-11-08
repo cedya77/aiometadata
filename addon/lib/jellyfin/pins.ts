@@ -24,24 +24,33 @@ function lockoutMs(): number {
   return envInt('JELLYFIN_PIN_LOCKOUT', 900, 1) * 1000;
 }
 
-async function takeAttempt(key: string): Promise<boolean> {
-  const limit = envInt('JELLYFIN_PIN_ATTEMPTS', 5, 1);
+export async function takeAttempt(key: string, limit = envInt('JELLYFIN_PIN_ATTEMPTS', 5, 1), windowMs = lockoutMs()): Promise<boolean> {
   if (redis) {
     const count = await redis.incr(`jellyfin:pin:${key}`).catch(() => null);
     if (count !== null) {
-      if (count === 1) await redis.pexpire(`jellyfin:pin:${key}`, lockoutMs()).catch(() => undefined);
+      if (count === 1) await redis.pexpire(`jellyfin:pin:${key}`, windowMs).catch(() => undefined);
       return count <= limit;
     }
   }
   const now = Date.now();
   const held = local.get(key);
-  const entry = held && held.until > now ? held : { count: 0, until: now + lockoutMs() };
+  const entry = held && held.until > now ? held : { count: 0, until: now + windowMs };
   entry.count += 1;
   local.set(key, entry);
   return entry.count <= limit;
 }
 
-async function resetAttempts(key: string): Promise<void> {
+/** How many attempts a key holds, without adding one. */
+export async function attemptsHeld(key: string): Promise<number> {
+  if (redis) {
+    const count = await redis.get(`jellyfin:pin:${key}`).catch(() => null);
+    if (count !== null) return Number(count) || 0;
+  }
+  const held = local.get(key);
+  return held && held.until > Date.now() ? held.count : 0;
+}
+
+export async function resetAttempts(key: string): Promise<void> {
   local.delete(key);
   if (redis) await redis.del(`jellyfin:pin:${key}`).catch(() => undefined);
 }
