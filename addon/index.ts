@@ -6854,6 +6854,12 @@ addon.get(require('./lib/dashboardApp').DASHBOARD_APP_MANIFEST, (req, res) => {
   res.type('application/manifest+json').send(JSON.stringify(manifest));
 });
 
+addon.get(require('./lib/dashboardApp').OWN_PAGE_APP_MANIFEST, (req, res) => {
+  const manifest = require('./lib/dashboardApp').ownPageAppManifest(req.query);
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.type('application/manifest+json').send(JSON.stringify(manifest));
+});
+
 // A configuration's own Jellyfin page: the same app, opened on its own shell.
 addon.get("/api/own-page/status", (req, res) => {
   res.json(require('./lib/jellyfin/ownPage').ownPageStatus());
@@ -6893,9 +6899,12 @@ addon.post("/api/own-page/:userUUID/unlock", (req, res, next) => require('./lib/
 
 addon.get(["/jellyfin-page/:userUUID", "/jellyfin-page/:userUUID/{*page}"], (req, res) => {
   try {
+    const { ownPageAppHead, DASHBOARD_APP_THEME } = require('./lib/dashboardApp');
     const html = fs.readFileSync(clientIndexPath, 'utf8')
       .replace(/<title>.*?<\/title>/, '<title>Your viewing page</title>')
-      .replace('</head>', '  <script>window.OWN_PAGE_MODE = true;</script>\n</head>');
+      .replace(/\s*<link rel="apple-touch-icon"[^>]*>/, '')
+      .replace(/<meta name="theme-color" content="[^"]*"/, `<meta name="theme-color" content="${DASHBOARD_APP_THEME}"`)
+      .replace('</head>', `    ${ownPageAppHead(String(req.params.userUUID))}\n  <script>window.OWN_PAGE_MODE = true;</script>\n</head>`);
     res.setHeader('Cache-Control', 'no-store');
     res.type('html').send(html);
   } catch (error) {
