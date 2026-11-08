@@ -1226,7 +1226,8 @@ class Database {
     const newAppPassword = typeof normalizedConfig?.jellyfinAppPassword === 'string' ? normalizedConfig.jellyfinAppPassword : '';
     const hasUsers = (Array.isArray(normalizedConfig?.jellyfinUsers) && normalizedConfig.jellyfinUsers.length > 0)
       || Boolean(normalizedConfig && 'jellyfinUserPin' in normalizedConfig);
-    const previousConfig = newAppPassword || hasUsers ? await this.getUserConfig(userUUID).catch(() => null) : null;
+    const syncOnSave = require('./jellyfin/playstateSync').syncOnSaveEnabled();
+    const previousConfig = newAppPassword || hasUsers || syncOnSave ? await this.getUserConfig(userUUID).catch(() => null) : null;
     const previousAppPassword = newAppPassword ? previousConfig?.jellyfinAppPassword : undefined;
     const pinChanged = hasUsers ? await require('./jellyfin/pins').securePins(normalizedConfig, previousConfig) : [];
 
@@ -1280,6 +1281,14 @@ class Database {
     // A new or changed PIN signs that user out, so a device already signed in as them asks for it.
     for (const profileId of pinChanged) {
       await require('./jellyfin/tokens').revokeUserTokens(userUUID, profileId).catch((error: any) => logger.warn(`Signing out ${userUUID} user ${profileId ?? 'main'} failed: ${error.message}`));
+    }
+
+    if (syncOnSave) {
+      try {
+        require('./jellyfin/playstateSync').noteConfigSaved(userUUID, previousConfig, normalizedConfig);
+      } catch (error: any) {
+        logger.debug(`Playstate sync after a save not queued for ${userUUID}: ${error?.message || error}`);
+      }
     }
 
     try {

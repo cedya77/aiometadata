@@ -1,7 +1,7 @@
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
 import { yieldEvery } from '../../utils/yieldEvery';
-import { sourceFor } from './trackerSource';
+import { credentialFor, resumeSourcesFor, sourceFor } from './trackerSource';
 import { filmsHeldElsewhere, getPlaystatesAcross, upsertPlaystateEverywhere } from './aliases';
 import { profileKey, scopeConfigToProfile } from './profiles';
 import { accountOwner } from '../accounts';
@@ -224,6 +224,58 @@ async function syncConfiguration(userUUID: string): Promise<{ added: number } | 
     });
   }
   return { added };
+}
+
+export const syncOnSaveEnabled = (): boolean => String(process.env.JELLYFIN_PLAYSTATE_SYNC_ON_SAVE ?? '').toLowerCase() === 'true';
+
+// What the sync reads for a configuration and each user keeping its own history.
+function syncInputs(userUUID: string, config: any): string {
+  if (!config || typeof config !== 'object') return '';
+  const cards = Array.isArray(config.jellyfinUsers) ? config.jellyfinUsers : [];
+  const scoped = [config, ...cards.filter((card: any) => typeof card?.id === 'string' && card.id).map((card: any) => scopeConfigToProfile(config, userUUID, card.id))];
+  const inputs = scoped.map((one: any) => [profileKey(one), sourceFor(one), resumeSourcesFor(one).map((service) => [service, credentialFor(one, service) ?? null])]);
+  const { createHash } = require('crypto');
+  return createHash('sha256').update(JSON.stringify(inputs)).digest('hex');
+}
+
+interface SaveSync { userUUID: string; notBefore: number }
+const saveQueue: SaveSync[] = [];
+const lastSaveSync = new Map<string, number>();
+let saveDraining = false;
+
+/** A save that changes what the sync reads has it read again soon, one configuration at a time, at most once a cooldown each. */
+export function noteConfigSaved(userUUID: string, before: any, after: any): void {
+  if (!syncOnSaveEnabled()) return;
+  if (syncInputs(userUUID, before) === syncInputs(userUUID, after) || !syncInputs(userUUID, after)) return;
+  const cooldownMs = envInt('JELLYFIN_PLAYSTATE_SYNC_ON_SAVE_COOLDOWN', 600, 60) * 1000;
+  const notBefore = (lastSaveSync.get(userUUID) ?? -Infinity) + cooldownMs;
+  if (saveQueue.some((entry) => entry.userUUID === userUUID)) return;
+  saveQueue.push({ userUUID, notBefore });
+  void drainSaveQueue();
+}
+
+async function drainSaveQueue(): Promise<void> {
+  if (saveDraining) return;
+  saveDraining = true;
+  try {
+    while (saveQueue.length) {
+      const now = Date.now();
+      // The interval pass may already be reading this configuration, so it waits for it to finish.
+      const ready = running ? -1 : saveQueue.findIndex((entry) => entry.notBefore <= now);
+      if (ready < 0) {
+        await new Promise((resolve) => setTimeout(resolve, 10_000).unref?.());
+        continue;
+      }
+      const [{ userUUID }] = saveQueue.splice(ready, 1);
+      lastSaveSync.set(userUUID, Date.now());
+      for (const [key, at] of lastSaveSync) if (Date.now() - at > envInt('JELLYFIN_PLAYSTATE_SYNC_ON_SAVE_COOLDOWN', 600, 60) * 1000) lastSaveSync.delete(key);
+      const outcome = await withinTime(syncConfiguration(userUUID), envInt('JELLYFIN_PLAYSTATE_SYNC_USER_TIMEOUT', 120, 10) * 1000).catch(() => null);
+      if (outcome === TIMED_OUT) logger.warn(`Playstate sync after a save gave up waiting on ${userUUID}`);
+      else logger.info(`Playstate sync after a save of ${userUUID}: ${outcome?.added ?? 0} title(s) taken from trackers`);
+    }
+  } finally {
+    saveDraining = false;
+  }
 }
 
 /**
