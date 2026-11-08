@@ -44,6 +44,36 @@ interface JellyfinDialogProps {
 export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogProps) {
   const { config, setConfig, auth } = useConfig();
   const { requestSave, isSaving, isDirty, canSave } = useSave();
+  const [ownPagesOn, setOwnPagesOn] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    fetch('/api/own-page/status')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => setOwnPagesOn(Boolean(body?.enabled)))
+      .catch(() => setOwnPagesOn(false));
+  }, [open]);
+  const ownPageLink = `${window.location.origin}/jellyfin-page/${encodeURIComponent(userUUID)}`;
+  const copyOwnPageLink = () => {
+    void navigator.clipboard.writeText(ownPageLink).then(() => toast.success('Link copied')).catch(() => toast.error('The link could not be copied'));
+  };
+  // Signed in here, the page needs no second sign-in: the session travels in the part of the address no server sees.
+  const openOwnPage = async () => {
+    const opened = window.open('', '_blank');
+    let token: string | null = null;
+    try {
+      const response = await fetch(`/api/own-page/${encodeURIComponent(userUUID)}/session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(auth.password ? { password: auth.password } : {}),
+      });
+      token = response.ok ? (await response.json()).token ?? null : null;
+    } catch {
+      token = null;
+    }
+    const target = token ? `${ownPageLink}#token=${encodeURIComponent(token)}` : ownPageLink;
+    if (opened) opened.location.href = target;
+    else window.location.href = target;
+  };
   const [resolveMode, setResolveMode] = useState<string>('user');
   const [upcomingMode, setUpcomingMode] = useState<string>('user');
   useEffect(() => {
@@ -107,6 +137,18 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
         </DialogHeader>
 
         <div className="space-y-4">
+          {ownPagesOn && (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#4b83f0]/40 bg-[#4b83f0]/10 p-4">
+              <div className="min-w-0 flex-[1_1_20rem]">
+                <p className="text-[15px] font-semibold">Your viewing page</p>
+                <p className="mt-1 text-[13px] leading-[1.45] text-muted-foreground">Your watching, shows, calendar, year and trackers on one page. Anyone with the link still needs this configuration's password.</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="h-10 gap-1.5 rounded-[10px] px-3.5" onClick={copyOwnPageLink}><Copy className="h-3.5 w-3.5" /> Copy link</Button>
+                <Button className="h-10 rounded-[10px] px-4" onClick={() => void openOwnPage()}>Open</Button>
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed p-3">
             <p className="text-xs text-muted-foreground">The users on the sign-in screen, with their PINs, trackers and catalogs, are set up in Watch Tracking.</p>
             <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => { onOpenChange(false); navigateToSettingsSection('watch-tracking'); }}>

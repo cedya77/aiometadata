@@ -27,7 +27,7 @@ interface AdminContextType {
   jellyfinEnabled: boolean;     // The Jellyfin server is switched on for this instance
 }
 
-const AdminContext = createContext<AdminContextType | undefined>(undefined);
+export const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
 const ADMIN_KEY_STORAGE = 'admin-key';
 const ADMIN_SESSION_STORAGE = 'admin-session';

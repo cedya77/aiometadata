@@ -7,12 +7,13 @@ import JellyfinYear from "./JellyfinYear";
 import JellyfinTitlePage from "./JellyfinTitle";
 import JellyfinSearch, { type LocalTitle } from "./JellyfinSearch";
 import JellyfinImport from "./JellyfinImport";
+import { isOwnPage, ownPageFull, signOutOwnPage, switchOwnPageProfile } from "@/lib/ownPage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Activity as ActivityIcon, Bookmark, CalendarDays, ChevronLeft, History, LayoutGrid, ListVideo, Loader2, MoreHorizontal, Network, Search, Sparkles, TableProperties, Tv, Upload, Users } from "lucide-react";
+import { Activity as ActivityIcon, Bookmark, CalendarDays, ChevronLeft, History, LayoutGrid, ListVideo, Loader2, MoreHorizontal, Network, Search, Sparkles, TableProperties, Tv, Upload, Users, LogOut } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useJellyfinClearResume,
@@ -191,7 +192,10 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   // A profile deleted since it was picked, here or remembered from before, goes back to everyone.
   useEffect(() => {
     if (profile === null || !data?.viewers || data.userUUID !== userUUID || data.profile !== profile) return;
-    if (!data.viewers.some((p) => p.key === profile)) setProfile(null);
+    if (!data.viewers.some((p) => p.key === profile)) {
+      if (ownPageFull()) setProfile(null);
+      else switchOwnPageProfile();
+    }
   }, [data, profile, userUUID]);
   const progressAction = useCallback(async (row: JellyfinPlayRow, action: ProgressAction) => {
     try {
@@ -271,17 +275,25 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
           <DropdownMenuSeparator />
         </>
       )}
-      <DropdownMenuItem disabled={exporting} onSelect={() => void runExport()}><Upload className="size-4" /> Export watch history</DropdownMenuItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Import watch history</DropdownMenuLabel>
-      {sources}
+      {ownPageFull() && (
+        <>
+          <DropdownMenuItem disabled={exporting} onSelect={() => void runExport()}><Upload className="size-4" /> Export watch history</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Import watch history</DropdownMenuLabel>
+          {sources}
+        </>
+      )}
+      {isOwnPage() && (
+        <>
+          {ownPageFull() && <DropdownMenuSeparator />}
+          <DropdownMenuItem onSelect={switchOwnPageProfile}><Users className="size-4" /> Switch profile</DropdownMenuItem>
+          <DropdownMenuItem onSelect={signOutOwnPage}><LogOut className="size-4" /> Sign out</DropdownMenuItem>
+        </>
+      )}
     </>
   );
   // The import keeps its choices and dialogs in one place, so its menu renders both the header button and the phone's avatar tab.
-  const menus = (
-    <JellyfinImport
-      userUUID={userUUID}
-      menu={(sources, importing) => {
+  const menu = (sources: ReactNode, importing: boolean) => {
         const busy = exporting || importing;
         return (
           <>
@@ -313,7 +325,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
                       <>
                         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Profile</DropdownMenuLabel>
                         <DropdownMenuRadioGroup value={profile === null ? ALL_PROFILES : `:${profile}`} onValueChange={(next) => setProfile(next === ALL_PROFILES ? null : next.slice(1))}>
-                          <DropdownMenuRadioItem value={ALL_PROFILES} className="gap-2"><Users className="size-4" /> All</DropdownMenuRadioItem>
+                          {ownPageFull() && <DropdownMenuRadioItem value={ALL_PROFILES} className="gap-2"><Users className="size-4" /> All</DropdownMenuRadioItem>}
                           {viewers.map((p) => <DropdownMenuRadioItem key={p.key} value={`:${p.key}`} className="gap-2"><Avatar src={p.avatar} name={p.name} size="sm" /> {p.name}</DropdownMenuRadioItem>)}
                         </DropdownMenuRadioGroup>
                         <DropdownMenuSeparator />
@@ -327,9 +339,8 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
             />
           </>
         );
-      }}
-    />
-  );
+  };
+  const menus = ownPageFull() ? <JellyfinImport userUUID={userUUID} menu={menu} /> : menu(null, false);
   const search = <JellyfinSearch userUUID={userUUID} profile={profile} profileName={profileName} local={localTitles} activeTab={activeTab} />;
 
   const watched = shown.reduce((sum, p) => sum + p.movies + p.episodes, 0);
@@ -339,8 +350,8 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
     <div className="pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-0">
       {remote && <RemoteSheet userUUID={userUUID} profile={remote.profile} profileName={remote.profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
       {route.stack.length > 0 && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} sentTo={sentTo} stack={route.stack} activeTab={activeTab} onOpen={openStack} />}
-      <Hero data={data} profile={profile} onProfile={setProfile} activity={activity} back={back} actions={menus} search={search} switching={switching} />
-      <JellyfinImport userUUID={userUUID} notice />
+      <Hero data={data} profile={profile} onProfile={setProfile} activity={activity} back={isOwnPage() ? null : back} actions={menus} search={search} switching={switching} />
+      {ownPageFull() && <JellyfinImport userUUID={userUUID} notice />}
       <div ref={sectionsTop} />
       <SectionBar section={section} onSection={setSection} />
       {switching ? (
@@ -353,7 +364,7 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
       <div className="min-h-screen divide-y divide-white/[0.06] border-t border-white/[0.06]">
         {section === "overview" && (
           <>
-            <JellyfinSync key={`sync:${profile ?? ""}`} compact onOpen={() => setSection("trackers")} userUUID={userUUID} profile={profile} profileName={profileName} watched={watched} rows={data.sync} activeTab={activeTab} />
+            <JellyfinSync key={`sync:${profile ?? ""}`} compact onOpen={() => setSection("trackers")} userUUID={userUUID} profile={profile} profileName={profileName} watched={watched} rows={profile === null ? data.sync : data.sync.filter((row) => row.profiles.includes(historyName))} activeTab={activeTab} />
             <Shelf
               title="Continue watching"
               count={progress.more ? data.totals?.progress ?? progress.rows.length : progress.rows.length}

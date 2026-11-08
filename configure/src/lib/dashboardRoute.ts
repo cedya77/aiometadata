@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import type { DashboardTab, JellyfinTitlePerson, JellyfinTitleRef } from '@/hooks/useDashboardQueries';
+import { ownPageBase, ownPageUser } from '@/lib/ownPage';
 
 export type DashboardPage = { kind: 'title'; ref: JellyfinTitleRef; season?: number | null } | { kind: 'person'; person: JellyfinTitlePerson };
 
@@ -46,7 +47,10 @@ export function slugOf(name: string): string {
 }
 
 export function parseDashboardUrl(pathname: string, search: string): DashboardRoute {
-  const parts = pathname.replace(/^\/dashboard/i, '').split('/').filter(Boolean).map(decode);
+  const own = ownPageUser();
+  const parts = own
+    ? ['jellyfin', own, ...pathname.split('/').filter(Boolean).slice(2).map(decode)]
+    : pathname.replace(/^\/dashboard/i, '').split('/').filter(Boolean).map(decode);
   const tab = TABS.find((name) => name === parts[0]) ?? null;
   if (tab !== 'jellyfin' || !parts[1]) return { tab, config: null, profile: null, page: null };
   const section = JELLYFIN_SECTIONS.find((name) => name === parts[2]) ?? 'overview';
@@ -61,10 +65,11 @@ export function parseDashboardUrl(pathname: string, search: string): DashboardRo
 }
 
 export function dashboardUrl(route: DashboardRoute, name?: string): string {
-  if (!route.tab) return BASE;
-  let path = `${BASE}/${route.tab}`;
-  if (route.tab !== 'jellyfin' || !route.config) return path;
-  path += `/${encode(route.config)}`;
+  const own = ownPageUser();
+  if (!route.tab && !own) return BASE;
+  let path = own ? ownPageBase(own) : `${BASE}/${route.tab}`;
+  if (!own && (route.tab !== 'jellyfin' || !route.config)) return path;
+  if (!own) path += `/${encode(route.config as string)}`;
   if (route.section && route.section !== 'overview') path += `/${route.section}`;
   const page = route.page;
   if (page) {

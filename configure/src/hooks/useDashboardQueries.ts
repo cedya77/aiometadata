@@ -1,3 +1,4 @@
+import { isOwnPage, ownPageToken } from "@/lib/ownPage";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -89,6 +90,8 @@ function useApiHeaders() {
     if (isAdmin && adminKey) {
       headers['x-admin-key'] = adminKey;
     }
+    const ownPage = ownPageToken();
+    if (ownPage) headers['x-own-page'] = ownPage;
     return headers;
   }, [isAdmin, adminKey]);
 }
@@ -1635,7 +1638,9 @@ function useJellyfinQuery<T>(key: readonly unknown[], path: string, options: Das
     refetchInterval: (query) => {
       if (!isVisible || !isActiveTab || !isAdmin) return false;
       if (pollEvery) return pollEvery(query.state.data as T | undefined);
-      return poll ? POLLING_INTERVALS.JELLYFIN : false;
+      if (!poll) return false;
+      // A page anyone can keep open asks less often than the operator's.
+      return isOwnPage() ? POLLING_INTERVALS.JELLYFIN * 3 : POLLING_INTERVALS.JELLYFIN;
     },
     refetchIntervalInBackground: false,
     placeholderData: (previous) => previous,

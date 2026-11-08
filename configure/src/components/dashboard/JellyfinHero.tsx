@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sizedArt } from "./art";
+import { isOwnPage, ownPageFull, switchOwnPageProfile } from "@/lib/ownPage";
 import { Loader2, Pause, Play } from "lucide-react";
 import { type JellyfinConfiguration, type JellyfinProfileSummary, type JellyfinSessionRow } from "@/hooks/useDashboardQueries";
 import { Art, ShelfTitle } from "./JellyfinShared";
@@ -197,7 +198,8 @@ export function Hero({ data, profile, onProfile, activity, back, actions, search
   const backdrop = liveArt.art ? liveArt.src : sizedArt(data.inProgress[0]?.backdropUrl ?? data.recentlyPlayed[0]?.backdropUrl
     ?? data.inProgress[0]?.imageUrl ?? data.recentlyPlayed[0]?.imageUrl, 1280);
   const [loaded, setLoaded] = useState<string | null>(null);
-  const chips = viewers.length > 1;
+  const switchable = isOwnPage() && (viewers.length > 1 || !ownPageFull());
+  const chips = viewers.length > 1 || switchable;
   // Someone other than the profile in view is named; the profile's own play reads as its own.
   const several = profile === null && data.profiles.length > 1;
   const watcher = live && (live.viewer ?? (several ? live.profile : null));
@@ -246,8 +248,8 @@ export function Hero({ data, profile, onProfile, activity, back, actions, search
               <p className="flex items-center gap-[7px] text-[13px] text-[var(--live-light)] md:hidden"><LiveDot paused={live.paused} /><span className="truncate">{liveLine}</span></p>
             ) : (
               <p className="text-xs text-muted-foreground truncate">
-                <span className="font-mono">{data.userUUID.slice(0, 8)}</span>
-                {lastActivity ? ` · active ${when(lastActivity)}` : ""}
+                {!isOwnPage() && <span className="font-mono">{data.userUUID.slice(0, 8)}</span>}
+                {lastActivity ? (isOwnPage() ? `Active ${when(lastActivity)}` : ` · active ${when(lastActivity)}`) : ""}
                 {borrowed ? ` · shares ${borrowed}'s history` : shown[0]?.sharedWith.length ? ` · shared with ${shown[0].sharedWith.join(", ")}` : ""}
               </p>
             )}
@@ -257,13 +259,14 @@ export function Hero({ data, profile, onProfile, activity, back, actions, search
         {/* On a phone the profiles move to the avatar tab of the tab bar. */}
         {chips && (
           <div className="hidden flex-wrap gap-1.5 md:flex">
-            <button type="button" onClick={() => onProfile(null)} className={`h-7 rounded-full px-3 text-xs ring-1 transition-colors ${profile === null ? "bg-foreground text-background ring-transparent" : "glass ring-transparent hover:bg-black/50"}`}>All</button>
+            {ownPageFull() && <button type="button" onClick={() => onProfile(null)} className={`h-7 rounded-full px-3 text-xs ring-1 transition-colors ${profile === null ? "bg-foreground text-background ring-transparent" : "glass ring-transparent hover:bg-black/50"}`}>All</button>}
             {viewers.map((p) => (
               <button key={p.key} type="button" onClick={() => onProfile(p.key)} className={`h-7 inline-flex items-center gap-1.5 rounded-full pl-1 pr-3 text-xs ring-1 transition-colors ${profile === p.key ? "bg-foreground text-background ring-transparent" : "glass ring-transparent hover:bg-black/50"}`}>
                 {switching && profile === p.key ? <Loader2 className="h-5 w-5 animate-spin p-0.5" /> : <Avatar src={p.avatar} name={p.name} size="sm" />}
                 {p.name}
               </button>
             ))}
+            {switchable && <button type="button" onClick={switchOwnPageProfile} className="glass h-7 rounded-full px-3 text-xs ring-1 ring-transparent transition-colors hover:bg-black/55">Switch profile</button>}
           </div>
         )}
         {live && <LiveSession s={live} named={several} />}

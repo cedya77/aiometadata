@@ -42,7 +42,8 @@ async function isSigninRequired(response: Response): Promise<boolean> {
  */
 export function installSigninRedirect(): void {
   if (typeof window === 'undefined' || typeof window.fetch !== 'function') return;
-  if ((window as Window & { DASHBOARD_MODE?: boolean }).DASHBOARD_MODE) return;
+  if ((window as Window & { DASHBOARD_MODE?: boolean; OWN_PAGE_MODE?: boolean }).DASHBOARD_MODE) return;
+  if ((window as Window & { OWN_PAGE_MODE?: boolean }).OWN_PAGE_MODE) return;
 
   const original = window.fetch.bind(window);
   let redirecting = false;

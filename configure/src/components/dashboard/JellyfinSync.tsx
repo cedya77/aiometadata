@@ -8,6 +8,7 @@ import { useJellyfinDriftImported, useJellyfinSync, useJellyfinSyncActions, useJ
 import { Eyebrow, Logo, Still, Toggle } from "./TrackerParts";
 import { useTrackers, type Trackers } from "./trackers";
 import JellyfinCopy from "./JellyfinCopy";
+import { ownPageFull } from "@/lib/ownPage";
 import TrackerMatchDialog, { Poster, type MatchSubject } from "./JellyfinTrackerMatch";
 import { episodeLabel } from "./trackerMatchPlan";
 import DriftInfo from "./JellyfinDriftInfo";
@@ -1060,6 +1061,8 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
           </div>
         ) : !data || lanes.length === 0 ? (
           <p className="text-sm text-muted-foreground">No tracker connected. History stays on this server.</p>
+        ) : tab === "copy" && !ownPageFull() ? (
+          <p className="text-sm text-muted-foreground">Copying between trackers needs every profile open. Switch profile and enter the PINs first.</p>
         ) : tab === "copy" ? (
           <JellyfinCopy userUUID={userUUID} profile={profile} lanes={lanes} activeTab={activeTab} initial={copyPair} />
         ) : tab === "activity" ? (
