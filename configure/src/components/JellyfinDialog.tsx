@@ -308,6 +308,19 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
               </div>
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-0.5">
+                  <Label className="text-xs font-medium">Try to match releases across users</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    On by default. In a SyncPlay group, the release another member is playing is listed first when your stream addon offers it, which helps everyone play the same file. Turn off to keep your stream addon's order.
+                  </p>
+                </div>
+                <Switch
+                  checked={config.jellyfinMatchReleases !== false}
+                  onCheckedChange={(next) => setConfig(prev => ({ ...prev, jellyfinMatchReleases: next ? undefined : false }))}
+                  aria-label="Try to match releases across users"
+                />
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-0.5">
                   <Label className="text-xs font-medium">Upcoming row</Label>
                   <p className="text-[11px] text-muted-foreground">
                     {upcomingForced

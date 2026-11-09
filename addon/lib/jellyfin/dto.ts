@@ -137,7 +137,7 @@ export function userPolicy(): any {
       'Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider',
     PasswordResetProviderId:
       'Jellyfin.Server.Implementations.Users.DefaultPasswordResetProvider',
-    SyncPlayAccess: 'None',
+    SyncPlayAccess: require('./syncplay/settings').syncPlayEnabled() ? 'CreateAndJoinGroups' : 'None',
   };
 }
 

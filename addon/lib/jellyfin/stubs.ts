@@ -47,7 +47,6 @@ const ARRAY_ROUTES = [
   '/Environment/Drives',
   '/Library/PhysicalPaths',
   '/Sessions/SyncPlay/List',
-  '/SyncPlay/List',
   '/Items/:itemId/SpecialFeatures',
   '/Users/:userId/Items/:itemId/SpecialFeatures',
   '/Items/:itemId/LocalTrailers',
