@@ -11,7 +11,7 @@ const addon = express();
 
 const { getCatalog } = require("./lib/getCatalog");
 const { applyCatalogFilters, catalogFiltersActive } = require("./utils/catalogFilters");
-const { cursorKey, resolveStartPage, fillFilteredPage, fillOnce, isEndOfList } = require("./lib/catalogPagination");
+const { cursorKey, resolveStartPage, fillFilteredPage, fillOnce, isEndOfList, listedOf } = require("./lib/catalogPagination");
 const { registerInProcessRoute } = require("./lib/inProcessRoutes");
 const anilist = require("./lib/anilist");
 const { getSearch } = require("./lib/getSearch");
@@ -5380,7 +5380,8 @@ const catalogRoute = async function (req, res) {
             break;
           }
       }
-      return { metas: metas || [], ...(ended ? { endOfList: true } : {}) };
+      const listed = listedOf(metas);
+      return { metas: metas || [], ...(ended ? { endOfList: true } : {}), ...(listed !== undefined ? { listed } : {}) };
     };
 
     const keyForPage = (page) => {
@@ -5394,6 +5395,7 @@ const catalogRoute = async function (req, res) {
       cacheWrapper(userUUID, keyForPage(page), () => runCatalogPage(page, skipOverride), cacheOptions);
 
     if (catalogFiltersActive({ config, catalogConfig, cleanId }) && req.params.forJellyfin === '1') {
+      // The source's count is of the list before these filters, so it is not passed on as the filtered list's length.
       const raw = (await readPage(catalogPage, legacySkip))?.metas || [];
       responseData = { metas: await applyCatalogFilters(raw, { type: actualType, config, catalogConfig, cleanId }), rawLength: raw.length };
       filtersAlreadyApplied = true;
@@ -5582,6 +5584,10 @@ const catalogRoute = async function (req, res) {
     }
 
     if (req.params.forJellyfin === '1' && Array.isArray(responseData?.metas)) responseData.pageSize = catalogPageSize;
+    if (req.params.forJellyfin !== '1' && responseData && 'listed' in responseData) {
+      const { listed: _listed, ...forStremio } = responseData;
+      responseData = forStremio;
+    }
 
     if (config.trailerProvider === 'addon' && req.params.forJellyfin !== '1' && Array.isArray(responseData?.metas)) {
       const { applyTrailerAddonWithin } = require('./lib/trailerProjection');

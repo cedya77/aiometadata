@@ -23,6 +23,20 @@ export function isEndOfList(metas: unknown): boolean {
   return Array.isArray(metas) && metas.length === 0 && (metas as any)[END_OF_LIST] === true;
 }
 
+const LISTED = Symbol('listed');
+
+/** Marks a page with how many entries its source says the whole list holds. */
+export function withListed<T extends any[]>(metas: T, listed: unknown): T {
+  const count = Number(listed);
+  if (Array.isArray(metas) && listed !== null && listed !== undefined && Number.isFinite(count) && count >= 0) (metas as any)[LISTED] = Math.floor(count);
+  return metas;
+}
+
+export function listedOf(metas: unknown): number | undefined {
+  const count = Array.isArray(metas) ? (metas as any)[LISTED] : undefined;
+  return typeof count === 'number' ? count : undefined;
+}
+
 export function endPageTtlSeconds(): number {
   return envInt('CATALOG_END_PAGE_TTL', 24 * 60 * 60, 60);
 }

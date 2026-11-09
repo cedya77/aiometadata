@@ -25,7 +25,7 @@ import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
 import { cacheWrapTvdbApi, cacheWrap, cacheWrapCatalog, cacheWrapAniListCatalog, cacheWrapJikanApi, cacheWrapGlobal, classifyResultAllowEmpty, stableStringify, CATALOG_TTL } from './getCache.js';
 import { applyCatalogKeyArgs, applyCatalogKeyStamps, hiddenCatalogGenre } from './catalogKeyArgs.js';
-import { endOfList } from './catalogPagination';
+import { endOfList, withListed } from './catalogPagination';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { tmdbCertificationFilter } from '../utils/ageRating';
 import { getMeta } from './getMeta.js';
@@ -1068,7 +1068,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       metas = stampListedAt(metas, response.items, (item: any) => ({ imdb: item?.imdb_id, tmdb: item?.id, tvdb: item?.tvdb_id }), (item: any) => item?.watchlist_at);
     }
 
-    return metas;
+    return withListed(metas, response.totalItems);
   }
 
   // Handle custom TMDB Discover catalogs (tmdb.discover.{customId})
@@ -1140,6 +1140,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
     try {
       let results: any[];
+      let listed: number | undefined;
       if (runtimeGte === null && runtimeLte === null) {
         const response = mediaType === 'movie'
           ? await moviedb.discoverMovie(parameters, config)
@@ -1150,6 +1151,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
           return Array.isArray(response?.results) && discoverPage > (response.total_pages ?? 0) ? endOfList() : [];
         }
         results = response.results;
+        listed = Math.min(Number(response.total_results) || 0, 500 * 20);
       } else {
         const filtered = await runtimeFilteredDiscoverPage({
           parameters, page: discoverPage, runtimeGte, runtimeLte, language, config,
@@ -1183,7 +1185,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
       const validMetas = metas.filter(meta => meta !== null);
       logger.success(`[TMDB Discover] Processed ${validMetas.length} items for ${id}`);
-      return validMetas;
+      return withListed(validMetas, listed);
     } catch (error: any) {
       logger.error(`[TMDB Discover] Error fetching catalog ${id}: ${error.message}`);
       return [];
@@ -1432,8 +1434,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   }));
 
   let validMetas = metas.filter(meta => meta !== null);
-  
-  return validMetas;
+
+  return withListed(validMetas, Math.min(Number(res.total_results) || 0, 500 * 20));
   } else {
     return [];
   }
@@ -2400,7 +2402,7 @@ async function getTraktCatalog(
     logger.info(`Up Next: parseTraktItems took ${parseTime}ms for ${response.items.length} items`);
     
     logger.success(`[Trakt] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
-    return metas;
+    return withListed(metas, response.totalItems);
     
   } catch (err: any) {
     if (attempt === 0 && err.response?.status === 401 && config.apiKeys?.traktTokenId) {
@@ -3220,7 +3222,7 @@ async function getSimklCatalog(
       
       logger.debug(`[Simkl] Local pagination: ${validItems.length} total valid items, showing ${globalItemIndex}-${Math.min(endIndex, validItems.length)} (hasMore: ${hasMore})`);
       
-      response = { items: paginatedItems, hasMore };
+      response = { items: paginatedItems, hasMore, totalItems: validItems.length };
     } 
     else if (catalogId.startsWith('simkl.watchlist.')) {
       const parts = catalogId.split('.');
@@ -3325,7 +3327,7 @@ async function getSimklCatalog(
         
         logger.debug(`[Simkl] Local pagination: ${allItems.length} total items, showing ${globalItemIndex}-${Math.min(endIndex, allItems.length)} (hasMore: ${hasMore})`);
         
-        response = { items: paginatedItems, hasMore };
+        response = { items: paginatedItems, hasMore, totalItems: allItems.length };
       } else {
         logger.warn(`[Simkl] Invalid watchlist catalog ID format: ${catalogId}`);
         return [];
@@ -3385,7 +3387,7 @@ async function getSimklCatalog(
     logger.info(`[Simkl] parseSimklItems took ${parseTime}ms for ${response.items.length} items`);
     
     logger.success(`[Simkl] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
-    return metas;
+    return withListed(metas, response.totalItems);
     
   } catch (err: any) {
     const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
@@ -3528,7 +3530,8 @@ async function getPublicMetaDBCatalog(
       let metas = await parseListItems(data.items || [], type, language, config);
       metas = stampListedAt(metas, data.items || [], (item: any) => ({ tmdb: item?.tmdb_id }), (item: any) => item?.created);
       logger.success(`[PublicMetaDB] ${listType === 'watchlist' ? 'Watchlist' : 'List'} ${listId}: ${metas.length} items (page ${page})`);
-      return metas;
+      // A list's rows are counted across its films and shows, so only a catalog of both counts them.
+      return type === 'all' ? withListed(metas, (data as any).total) : metas;
     }
 
     if (catalogId.startsWith('publicmetadb.public.')) {
@@ -3538,7 +3541,7 @@ async function getPublicMetaDBCatalog(
       let metas = await parseListItems(data.items || [], type, language, config);
       metas = stampListedAt(metas, data.items || [], (item: any) => ({ tmdb: item?.tmdb_id }), (item: any) => item?.created);
       logger.success(`[PublicMetaDB] Public list ${listId}: ${metas.length} items (page ${page})`);
-      return metas;
+      return type === 'all' ? withListed(metas, data.total) : metas;
     }
 
     if (catalogId.startsWith('publicmetadb.pick.')) {
