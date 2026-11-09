@@ -460,8 +460,6 @@ interface MixCursor {
   turn: number;
   runLeft: number;
   failures: number[];
-  /** Where each source's window began, which the catalog can resume at; offsets run on from there. */
-  starts: number[];
 }
 
 /** Several sources taken in turn: one title each when interleaved, one page each when alternating. */
@@ -505,8 +503,6 @@ async function mixedMembers(args: {
   const cut = sources.map(() => false);
   let paused = false;
   const failures = resumed?.failures ? [...resumed.failures] : sources.map(() => 0);
-  const starts = resumed?.starts ? [...resumed.starts] : [...offsets];
-  const reread = sources.map(() => Boolean(resumed));
   const chunk = Math.max(10, Math.ceil((toSkip + limit) / count));
   const randomized = new Set<number>();
   const sourceOf: number[] = [];
@@ -517,15 +513,10 @@ async function mixedMembers(args: {
     const { catalog } = sources[i];
     const keep = includeTypesFilter(catalog.type, includeItemTypes, officialRatings, filters.years, filters.studios, filters.extra);
     const size = mode === 'alternating' ? Math.max(chunk, runLeft > 0 ? runLeft : runLength(i)) : chunk;
-    // A filtered source resumes where its window began, a place the catalog walk keeps, and skips what it gave;
-    // an unfiltered one finds its place by page.
-    const from = reread[i] && keep ? starts[i] : offsets[i];
-    reread[i] = false;
-    starts[i] = from;
-    const given = offsets[i] - from;
-    const window = await fetchWindow(userUUID, catalog, from, size + given, extrasOf(i), keep, tags, filterKey)
+    // A filtered walk reads on from its nearest place before this one, so a source its budget cut short goes on from there.
+    const window = await fetchWindow(userUUID, catalog, offsets[i], size, extrasOf(i), keep, tags, filterKey)
       .catch(() => null);
-    buffers[i] = (window?.items ?? []).slice(given);
+    buffers[i] = window?.items ?? [];
     // A read that failed keeps what it got and is read again from there on the next page, until it has failed too often.
     if (!window || window.failed) {
       failures[i] += 1;
@@ -598,7 +589,7 @@ async function mixedMembers(args: {
   const finished = sources.map((_, i) => !stalled[i] && (done[i] || (ended[i] && buffers[i].length === 0)));
   const more = finished.some((f) => !f);
   if (more && collected.length > 0 && seen.size <= MEMBER_CURSOR_MAX_IDS) {
-    walks.save(cursorKey, at, added, nextIndex, { offsets, done: finished, turn, runLeft, failures, starts });
+    walks.save(cursorKey, at, added, nextIndex, { offsets, done: finished, turn, runLeft, failures });
   }
   return { items: collected, hasMore: more, ...(paused ? { truncated: true } : {}) };
 }
