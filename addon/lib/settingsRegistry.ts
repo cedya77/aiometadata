@@ -1879,6 +1879,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_STUDIO_LOOKUP_RETRY',
+    envVar: 'JELLYFIN_STUDIO_LOOKUP_RETRY',
+    label: 'Jellyfin Unsure Studio Lookup (seconds)',
+    description: 'How long a studio found only after an earlier TMDB lookup failed, or picked without every company counted, is remembered before it is looked up again.',
+    category: 'Features',
+    type: 'number',
+    default: 300,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_MAL_STUDIO_LISTINGS_MAX',
     envVar: 'JELLYFIN_MAL_STUDIO_LISTINGS_MAX',
     label: 'Jellyfin MyAnimeList Studio Listings at Once',
