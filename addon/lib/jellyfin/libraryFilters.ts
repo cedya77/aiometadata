@@ -139,16 +139,31 @@ export function providerIdsAsked(query: Record<string, unknown>): ProviderId[] |
   return asked;
 }
 
-/** The title ids to build for the pairs asked: a TMDB or TVDB number names a film and a show apart, so both kinds are tried unless one was asked. */
-export function titleIdsFor(asked: ProviderId[], includeItemTypes: unknown): Array<{ kind: 'movie' | 'series'; id: string }> {
+/**
+ * The title ids to build for the pairs asked: a TMDB or TVDB number names a film and a show apart, so both kinds are
+ * tried unless one was asked. An IMDb id is built only as the kinds `imdbKinds` names for it, where it names any.
+ */
+export function titleIdsFor(asked: ProviderId[], includeItemTypes: unknown, imdbKinds: Map<string, Kind[]> = new Map()): Array<{ kind: Kind; id: string }> {
   const wanted = new Set(String(includeItemTypes ?? '').split(',').map((t) => t.trim()).filter(Boolean));
   const kinds = (['movie', 'series'] as const).filter((kind) => !wanted.size || wanted.has(kind === 'movie' ? 'Movie' : 'Series'));
-  const out: Array<{ kind: 'movie' | 'series'; id: string }> = [];
+  const out: Array<{ kind: Kind; id: string }> = [];
   for (const { provider, id } of asked) {
     const titleId = provider === 'imdb' ? id : `${provider}:${id}`;
-    for (const kind of kinds) out.push({ kind, id: titleId });
+    const listed = provider === 'imdb' ? imdbKinds.get(id) : undefined;
+    for (const kind of kinds) if (!listed || listed.includes(kind)) out.push({ kind, id: titleId });
   }
   return out;
+}
+
+type Kind = 'movie' | 'series';
+
+/**
+ * The kinds TMDB lists an IMDb id under, or none when it lists it under neither. Cinemeta answers an IMDb id asked as
+ * the other kind with a title of that kind, so the kind is not left to the title built.
+ */
+export async function imdbKindsOf(imdbId: string, find: (id: string) => Promise<any>): Promise<Kind[]> {
+  const found = await find(imdbId);
+  return [...(found?.movie_results?.length ? ['movie' as const] : []), ...(found?.tv_results?.length ? ['series' as const] : [])];
 }
 
 const heldIds = (item: any): Map<string, string> =>

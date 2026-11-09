@@ -59,7 +59,7 @@ import { hasCreditDate, personByName, personCredits, resolvePerson, similarTitle
 import { titleCards } from '../titleCards';
 import { allBoxSets, boxSetGenres, boxSetMembers, boxSetsDeep, boxSetsFor, boxSetsUnder, collectionById, collectionView, folderById } from './collections';
 import { applyWatchlistState, entryItemType, setWatchlisted, watchlistEntries, watchlistItems } from './watchlist';
-import { asksForFavourites, asksForResumable, carriesProviderId, chainPicks, excludedKey, excludedTitles, facetsOf, listTotal, oneTitlePerNumber, providerIdsAsked, studioFilterOf, titleIdsFor, withoutTitles, yearItems } from './libraryFilters';
+import { asksForFavourites, asksForResumable, carriesProviderId, chainPicks, excludedKey, excludedTitles, facetsOf, imdbKindsOf, listTotal, oneTitlePerNumber, providerIdsAsked, studioFilterOf, titleIdsFor, withoutTitles, yearItems } from './libraryFilters';
 import { studioListing, yearListing } from './discoverPages';
 import { hasTmdbKey } from '../getTmdb';
 import { applyRatings, applyWatchedState, finishedSeries, ownNextUpRows, seriesCountsAmong, upcomingFollowed, watchedAmong, watchedHistory, watchedSnapshot, type NextUpRow, type UpcomingRow } from './watched';
@@ -1118,7 +1118,12 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const providerIds = providerIdsAsked(req.query);
     if (providerIds) {
       const wanted = new Set(String(includeItemTypes ?? '').split(',').map((t) => t.trim()).filter(Boolean));
-      const ids = titleIdsFor(providerIds, includeItemTypes).map(({ kind, id }) => encodeJellyfinId({ k: kind, t: kind, i: id }));
+      const { cacheWrapGlobal } = require('../getCache');
+      const { find } = require('../getTmdb');
+      const kindsOf = (imdbId: string) => cacheWrapGlobal(`jf-imdb-kinds:${imdbId}`, () => imdbKindsOf(imdbId, (id) => find({ id, external_source: 'imdb_id' }, config)), 86400)
+        .catch(() => [] as Array<'movie' | 'series'>);
+      const imdbKinds = new Map(await Promise.all(providerIds.filter(({ provider }) => provider === 'imdb').map(async ({ id }) => [id, await kindsOf(id)] as const)));
+      const ids = titleIdsFor(providerIds, includeItemTypes, new Map([...imdbKinds].filter(([, kinds]) => kinds.length))).map(({ kind, id }) => encodeJellyfinId({ k: kind, t: kind, i: id }));
       const built = ids.length ? await itemsForIds(req, ids, false, shelfConcurrency()) : [];
       const seen = new Set<string>();
       // Tried as a film and as a show, a number is kept only where it is that title's own.
