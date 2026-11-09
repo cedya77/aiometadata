@@ -206,6 +206,14 @@ async function listingFrom(source: Source, options: Listing): Promise<{ items: a
   let kept = 0;
   let examined = 0;
   let dropped = false;
+  // A provider can list a title on more than one of its pages; it is shown where it first appears.
+  const listed = new Set<string>();
+  const firstListing = ({ row, type }: { row: any; type: Kind }): boolean => {
+    const key = `${type}:${row?.id ?? row?.mal_id}`;
+    if (listed.has(key)) return false;
+    listed.add(key);
+    return true;
+  };
   await readTo(wanted);
   let rows = merged();
   while (kept < wanted) {
@@ -218,12 +226,13 @@ async function listingFrom(source: Source, options: Listing): Promise<{ items: a
     const before = kept < startIndex;
     const batch = rows.slice(examined, Math.min(settled(rows.length), examined + (before ? startIndex - kept : wanted - kept)));
     examined += batch.length;
+    const fresh = batch.filter(firstListing);
     if (before) {
-      const shown = (await counts(batch)).filter(Boolean).length;
+      const shown = (await counts(fresh)).filter(Boolean).length;
       kept += shown;
       if (shown < batch.length) dropped = true;
     } else {
-      const built = (await build(batch)).filter(Boolean);
+      const built = (await build(fresh)).filter(Boolean);
       items.push(...built);
       kept += built.length;
       if (built.length < batch.length) dropped = true;
