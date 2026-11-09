@@ -314,6 +314,10 @@ async function resolveAllIds(stremioId: string, type: string, config: any, prefe
     return allIds;
   }
 
+  // An IMDb id the mappings list only as the other kind most likely names a title of that kind, but the mappings can be
+  // wrong: it is still looked up, by TMDB and TVDB as the asked kind, while mappings cached before lookups kept to
+  // their kind, and Cinemeta, which can answer with an unrelated title, are passed by.
+  let listedAsOtherKind = false;
   if (!isAnime) {
     try {
       let wikiMapping: any = null;
@@ -323,6 +327,10 @@ async function resolveAllIds(stremioId: string, type: string, config: any, prefe
         wikiMapping = mappings.getByTvdbId(allIds.tvdbId.toString(), type);
       } else if (allIds.imdbId && (type === 'movie' || type === 'series')) {
         wikiMapping = mappings.getByImdbId(allIds.imdbId, type);
+        if (!wikiMapping && mappings.getByImdbId(allIds.imdbId, type === 'movie' ? 'series' : 'movie')) {
+          listedAsOtherKind = true;
+          logger.debug(`[Wiki] ${allIds.imdbId} is listed only as ${type === 'movie' ? 'a series' : 'a movie'}; looked up as ${type} by TMDB and TVDB alone`);
+        }
       } else if (allIds.tvmazeId && type === 'series') {
         wikiMapping = mappings.getSeriesByTvmaze(allIds.tvmazeId.toString());
       }
@@ -365,7 +373,7 @@ async function resolveAllIds(stremioId: string, type: string, config: any, prefe
     }
 
 
-    let cachedMapping = await redisIdCache.getCachedIdMapping(type, allIds.tmdbId, allIds.tvdbId, allIds.imdbId, allIds.tvmazeId);
+    let cachedMapping = listedAsOtherKind ? null : await redisIdCache.getCachedIdMapping(type, allIds.tmdbId, allIds.tvdbId, allIds.imdbId, allIds.tvmazeId);
     if (cachedMapping && !allIds.tmdbId && await cachedTmdbGone(type, cachedMapping, config)) {
       await redisIdCache.forgetIdMapping(type, cachedMapping);
       cachedMapping = null;
@@ -419,8 +427,14 @@ async function resolveAllIds(stremioId: string, type: string, config: any, prefe
   performanceStats.apiCallsRequired++;
   const apiStartTime = Date.now();
   try {
-    if (allIds.imdbId && !allIds.tmdbId && !allIds.tvdbId) {
-      const cinemetaIds = await getExternalIdsFromImdb(allIds.imdbId, type);
+    if (allIds.imdbId && !allIds.tmdbId && !allIds.tvdbId && !listedAsOtherKind) {
+      let cinemetaIds = await getExternalIdsFromImdb(allIds.imdbId, type);
+      // Cinemeta can answer an IMDb id of the other kind with an unrelated title's ids; TMDB naming another IMDb id for
+      // its TMDB id rules out the whole answer, its TVDB id with it.
+      if (cinemetaIds?.tmdbId && (type === 'movie' || type === 'series')) {
+        const named = (await _fetchFromTmdb(cinemetaIds.tmdbId, type, config)).imdbId;
+        if (named && named !== allIds.imdbId) cinemetaIds = undefined;
+      }
       if (cinemetaIds) {
         allIds.tmdbId = allIds.tmdbId || cinemetaIds.tmdbId;
         allIds.tvdbId = allIds.tvdbId || cinemetaIds.tvdbId;
@@ -471,7 +485,9 @@ async function resolveAllIds(stremioId: string, type: string, config: any, prefe
             moviedb.find({ id: allIds.imdbId, external_source: 'imdb_id' }, config)
                 .then((res: any) => {
                     const duration = Date.now() - tmdbFindStartTime;
-                    const tmdbId = res.movie_results?.[0]?.id || res.tv_results?.[0]?.id || null;
+                    const tmdbId = (type === 'movie' ? res.movie_results?.[0]?.id
+                      : type === 'series' ? res.tv_results?.[0]?.id
+                      : res.movie_results?.[0]?.id || res.tv_results?.[0]?.id) || null;
                     secondaryTimings.push({
                         operation: 'tmdb_find_by_imdb',
                         duration,
