@@ -26,6 +26,7 @@ import { resolveAllIds } from './id-resolver.js';
 import { cacheWrapTvdbApi, cacheWrap, cacheWrapCatalog, cacheWrapAniListCatalog, cacheWrapJikanApi, cacheWrapGlobal, classifyResultAllowEmpty, stableStringify, CATALOG_TTL } from './getCache.js';
 import { applyCatalogKeyArgs, applyCatalogKeyStamps, hiddenCatalogGenre } from './catalogKeyArgs.js';
 import { endOfList, withListed } from './catalogPagination';
+import { seriesRuntime } from './seriesRuntime';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { tmdbCertificationFilter } from '../utils/ageRating';
 import { getMeta } from './getMeta.js';
@@ -1468,12 +1469,8 @@ async function runtimeFilteredDiscoverPage(opts: {
       const checked = await mapWithLimit(response.results, async (item: any) => {
         try {
           const details = await moviedb.tvInfo({ id: item.id, language }, config);
-          const runtime = [
-            details?.episode_run_time?.[0],
-            details?.last_episode_to_air?.runtime,
-            details?.next_episode_to_air?.runtime,
-          ].find((r: any) => typeof r === 'number' && r > 0);
-          if (runtime === undefined) return item.id;
+          const runtime = await seriesRuntime(item.id, details);
+          if (runtime === null) return item.id;
           if (runtimeGte !== null && runtime < runtimeGte) return null;
           if (runtimeLte !== null && runtime > runtimeLte) return null;
           return item.id;
