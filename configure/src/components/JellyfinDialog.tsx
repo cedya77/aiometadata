@@ -931,6 +931,21 @@ export function JellyfinDialog({ open, onOpenChange, userUUID }: JellyfinDialogP
                   aria-label="Wait for the streams when a title opens"
                 />
               </div>
+              {(resolveForced ?? config.jellyfinResolveOnOpen ?? false) && (
+                <div className="space-y-1 pt-1">
+                  <Label htmlFor="jellyfin-open-stream-url" className="text-xs font-medium">Stream addon when a title opens (optional)</Label>
+                  <Input
+                    id="jellyfin-open-stream-url"
+                    value={config.jellyfinOpenStreamUrl ?? ''}
+                    placeholder="https://your-aiostreams/stremio/<lighter config>/manifest.json"
+                    className="font-mono text-xs"
+                    onChange={(e) => setConfig(prev => ({ ...prev, jellyfinOpenStreamUrl: e.target.value || undefined }))}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Lists a title through this addon when it opens, for example a copy of your AIOStreams configuration without rate-limited indexers, so its background work such as preloading starts without spending them on titles you only browse. The picker and play still use the addon above. Empty, the addon above is used.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">

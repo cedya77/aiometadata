@@ -453,6 +453,7 @@ export interface AppConfig {
   collectionCatalogs?: boolean;
   /** Install URL of a stream addon the Jellyfin server delegates playback to. */
   jellyfinStreamUrl?: string;
+  jellyfinOpenStreamUrl?: string;
   jellyfinResolveOnOpen?: boolean;
   jellyfinUpcomingMode?: 'airing';
   /** Where a title's similar titles come from. TMDB when unset. */

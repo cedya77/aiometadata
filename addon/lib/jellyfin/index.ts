@@ -43,6 +43,7 @@ import { refreshSeriesIndex, seriesIndex, warmSeriesIndex } from './episodeIndex
 import { authorizeQuickConnect, claimQuickConnect, initiateQuickConnect, quickConnectResult, readQuickConnect } from './quickConnect';
 import { playbackAllowed, viewingTimeZone } from './viewingHours';
 import { avatarTag, keepsUnderProfileCap, listProfiles, profileById, profileByName, profileByUserId, profileKey, profileTags, scopeConfigToProfile, type Profile } from './profiles';
+import { onOpenPlan, openListingKey, openStreamBase } from './openStreams';
 import { malEpisodeFor, segmentId, segmentsFor, type SegmentType } from './segments';
 import { hasCreditDate, personByName, personCredits, resolvePerson, similarTitles } from './people';
 import { titleCards } from '../titleCards';
@@ -1660,18 +1661,51 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     return streamsState(streamCacheKey(req.params.userUUID, profileKey(config), type, stremioId, clientFor(req, config)));
   };
 
+  // The configuration's open addon, when it has one beside its playback addon.
+  const openAddonBase = async (req: any): Promise<string | null> => {
+    const config = await loadConfig(req);
+    return openStreamBase(
+      normaliseStreamBase(config?.jellyfinStreamUrl || ''),
+      normaliseStreamBase(config?.jellyfinOpenStreamUrl || '')
+    );
+  };
+
+  // An opened title listed through the open addon: the addon starts its own
+  // background work, and nothing is attached, since the list is not the full one.
+  const listThroughOpenAddon = async (req: any, descriptor: any, base: string): Promise<void> => {
+    const stremioId = stremioIdFor(descriptor);
+    if (!stremioId) return;
+    const stremioType = descriptor.k === 'movie' ? 'movie' : 'series';
+    const config = await loadConfig(req);
+    const client = clientFor(req, config);
+    const key = openListingKey(streamCacheKey(req.params.userUUID, profileKey(config), stremioType, stremioId, client));
+    if (recallStreams(key)) return;
+    await coalesce(key, async () => {
+      const fetched = await fetchStreams(base, stremioType, stremioId, client);
+      if (fetched.streams.length) rememberStreams(key, fetched.streams);
+      return fetched.streams;
+    });
+  };
+
   const attachSourcesInTime = async (req: any, item: any, descriptor: any, itemId: string): Promise<void> => {
     if (req.params?.listed && !req.params?.lookup) return;
     const asked = req.params?.forceSources || asksForSources(req);
     const known = asked ? null : await streamsKnown(req, descriptor);
     const on = asked || known === 'cached' || req.params?.listed ? false : await resolveOnOpen(req);
-    if (asked || known === 'cached' || (on && known === 'fetching')) {
+    const openBase = on ? await openAddonBase(req) : null;
+    const plan = onOpenPlan({ asked: Boolean(asked), known, on, openBase });
+    if (plan === 'attach') {
       await attachSources(req, item, descriptor, itemId).catch((error: any) =>
         logger.debug(`Sources for ${itemId} unavailable: ${error?.message || error}`)
       );
       return;
     }
-    if (on) {
+    if (plan === 'list-open') {
+      void listThroughOpenAddon(req, descriptor, openBase).catch((error: any) =>
+        logger.debug(`Open-addon sources for ${itemId} unavailable: ${error?.message || error}`)
+      );
+    }
+    if (plan === 'list-full') {
       void resolveMediaSources(req, descriptor, item.RunTimeTicks ?? null).catch((error: any) =>
         logger.debug(`Background sources for ${itemId} unavailable: ${error?.message || error}`)
       );

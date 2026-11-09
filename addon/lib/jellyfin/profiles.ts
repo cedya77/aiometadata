@@ -5,6 +5,7 @@ import { isPinHash } from './pins';
 import { ACCOUNT_SERVICES, ACCOUNT_SERVICE_LIST, AccountService, accountOwner, credentialOf, trackerConfig, withAccountOwner } from '../accounts';
 import { viewingWindowOf, type ViewingWindow } from './viewingHours';
 import { withTagExclusions } from '../../utils/tagExclusions';
+import { profileStreamAddons } from './openStreams';
 
 /** The main user is the configuration itself, under the id it always had. */
 export interface Profile {
@@ -192,7 +193,7 @@ export function scopeConfigToProfile(config: any, userUUID: string, id: string |
         ...(profile.watchlistServices
           ? { jellyfinWatchlistServices: owns ? heldWatchlistServices(held, profile.watchlistServices) : profile.watchlistServices }
           : owns ? { jellyfinWatchlistServices: undefined } : {}),
-        ...(profile.streamUrl ? { jellyfinStreamUrl: profile.streamUrl } : {}),
+        ...profileStreamAddons(profile.streamUrl),
       }
     : { ...config, jellyfinProfileTags: profile.tags };
   if (profile.tags.length) {

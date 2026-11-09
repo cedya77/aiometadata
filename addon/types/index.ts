@@ -4,6 +4,11 @@ export interface UserConfig {
   language?: string;
   /** Install URL of a stream addon the Jellyfin server delegates playback to. */
   jellyfinStreamUrl?: string;
+  /**
+   * Install URL of a lighter stream addon listed when a title opens (resolve-on-open),
+   * such as the same addon without rate-limited indexers. The picker and play keep jellyfinStreamUrl.
+   */
+  jellyfinOpenStreamUrl?: string;
   jellyfinLatestRows?: boolean;
   jellyfinMarkUnaired?: boolean;
   jellyfinUpcomingMode?: 'airing';
