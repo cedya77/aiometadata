@@ -403,7 +403,10 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
     : 'shared';
 
   const ttlSegment = cacheTTL !== undefined ? `:ttl:${cacheTTL}` : '';
-  const cacheKey = `mdblist-api:items:${keyScope}:${listId}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${filterScoreMin ?? ''}:${filterScoreMax ?? ''}:${mediaTypeFilter || ''}:${pageSize}${ttlSegment}`;
+  // A watchlist is read again once MDBList reports it changed, rather than held for the whole TTL.
+  const watchlistedAt = listId === 'watchlist' ? await watchlistActivityStamp(apiKey) : undefined;
+  const activitySegment = watchlistedAt ? `:act:${watchlistedAt}` : '';
+  const cacheKey = `mdblist-api:items:${keyScope}:${listId}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${filterScoreMin ?? ''}:${filterScoreMax ?? ''}:${mediaTypeFilter || ''}:${pageSize}${ttlSegment}${activitySegment}`;
 
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
 
@@ -427,7 +430,7 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
         const block = await fetchListBlock({
           listId, apiKey, keyScope, blockOffset, blockSize,
           sort, order, genre, filterScoreMin, filterScoreMax, mediaTypeFilter,
-          ttl, ttlSegment,
+          ttl, ttlSegment: `${ttlSegment}${activitySegment}`,
         });
         const within = offset - blockOffset;
         const window = block.rows.slice(within, within + pageSize);
@@ -1118,11 +1121,12 @@ async function tmdbEpisodeFromTvdb(tmdbId: number, season: number, episode: numb
   return hit ? { season: hit.tmdbSeason, episode: hit.tmdbEpisode, ...(hit.showTmdb ? { showTmdb: hit.showTmdb } : {}) } : null;
 }
 
-async function makeRateLimitedMDBListRequest(url: string, apiKey: string, context: string = 'MDBList Proxy'): Promise<any> {
+async function makeRateLimitedMDBListRequest(url: string, apiKey: string, context: string = 'MDBList Proxy', retries?: number): Promise<any> {
   return await makeRateLimitedRequest(
     () => httpGet(url, { dispatcher: mdblistDispatcher }),
     apiKey,
-    context
+    context,
+    retries
   );
 }
 
@@ -1783,13 +1787,13 @@ async function fetchMDBListCatalog(
  * key's library moved: the watch mirror, the paused-titles gate and the hide-watched
  * filter. A watch recorded here clears it.
  */
-async function fetchMdblistLastActivities(apiKey: string, fresh = false): Promise<any> {
+async function fetchMdblistLastActivities(apiKey: string, fresh = false, attempts?: number): Promise<any> {
   const keyHash = crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
   if (fresh) await require('../lib/getCache').redis?.del(`global:mdblist_last_activities:${keyHash}`).catch(() => undefined);
   return cacheWrapGlobal(
     `mdblist_last_activities:${keyHash}`,
     async () => {
-      const response = await makeRateLimitedMDBListRequest(`https://api.mdblist.com/sync/last_activities?apikey=${apiKey}`, apiKey, 'MDBList activities');
+      const response = await makeRateLimitedMDBListRequest(`https://api.mdblist.com/sync/last_activities?apikey=${apiKey}`, apiKey, 'MDBList activities', attempts);
       return response?.data ?? {};
     },
     envInt('MDBLIST_ACTIVITIES_TTL', 300, 30),
@@ -1797,8 +1801,59 @@ async function fetchMdblistLastActivities(apiKey: string, fresh = false): Promis
   );
 }
 
+interface ActivityStamp { value?: string; checkedAt: number; failedAt?: number; inFlight?: Promise<void>; askedAt?: number }
+const activityStamps = new Map<string, ActivityStamp>();
+const ACTIVITY_STAMPS_MAX = 5000;
+
+/**
+ * When the key's watchlist last changed, which a watchlist read is keyed by so a change is read again. It never holds
+ * a read up for long: the last stamp is kept while a newer one is asked for in one attempt, a first one is waited on
+ * only briefly, and a failed ask is not repeated for a while. Unknown, the read keeps its plain key.
+ */
+async function watchlistActivityStamp(apiKey: string): Promise<string | undefined> {
+  const keyHash = crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
+  let entry = activityStamps.get(keyHash);
+  if (!entry) {
+    if (activityStamps.size >= ACTIVITY_STAMPS_MAX) activityStamps.clear();
+    entry = { checkedAt: 0 };
+    activityStamps.set(keyHash, entry);
+  }
+  const now = Date.now();
+  // An ask with no answer after a while is given up on, so one that hangs does not stop the stamp being asked for again.
+  if (entry.inFlight && now - (entry.askedAt ?? now) > envInt('MDBLIST_ACTIVITY_STAMP_GIVE_UP', 30, 1) * 1000) {
+    entry.inFlight = undefined;
+    entry.failedAt = now;
+  }
+  const stale = now - entry.checkedAt >= envInt('MDBLIST_ACTIVITY_STAMP_TTL', 30, 1) * 1000;
+  const resting = entry.failedAt !== undefined && now - entry.failedAt < envInt('MDBLIST_ACTIVITY_STAMP_BACKOFF', 60, 1) * 1000;
+  if (stale && !resting && !entry.inFlight) {
+    const held = entry;
+    held.askedAt = now;
+    const asked: Promise<void> = fetchMdblistLastActivities(apiKey, false, 1)
+      .then((activities) => {
+        held.value = activities?.watchlisted_at ? String(activities.watchlisted_at) : undefined;
+        held.checkedAt = Date.now();
+        held.failedAt = undefined;
+      })
+      .catch((error: any) => {
+        held.failedAt = Date.now();
+        logger.debug(`[MDBList] Watchlist activity stamp unavailable: ${error?.message || error}`);
+      })
+      .finally(() => { if (held.inFlight === asked) held.inFlight = undefined; });
+    held.inFlight = asked;
+  }
+  if (entry.inFlight && entry.value === undefined) {
+    let timer: NodeJS.Timeout | undefined;
+    const wait = new Promise<void>((resolve) => { timer = setTimeout(resolve, envInt('MDBLIST_ACTIVITY_STAMP_WAIT_MS', 1500, 0)); });
+    await Promise.race([entry.inFlight, wait]);
+    clearTimeout(timer);
+  }
+  return entry.value;
+}
+
 export {
   fetchMdblistLastActivities,
+  watchlistActivityStamp,
   fetchMDBListItems,
   fetchMDBListExternalItems,
   usesMdblistExternalItemsEndpoint,
