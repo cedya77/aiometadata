@@ -18,6 +18,7 @@ const e = require("express");
 const { resolveAllIds } = require('./id-resolver');
 const { cacheWrapMeta, cacheWrapJikanApi, cacheWrapGlobal } = require('./getCache');
 const { deriveStabilityStamp } = require('./metaColdStore');
+const { typicalEpisodeRuntime } = require('../utils/seriesRuntime');
 function CATALOG_TTL() { return parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10); }
 const kitsu = require('./kitsu');
 var nameToImdb = require("name-to-imdb");
@@ -1665,6 +1666,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     tmdbId: w.id
   })).filter(w => w.name);
   let videos = [];
+  let typicalRuntime = null;
   const tmdbSeasons = (seasons || []).filter(season => season.season_number != 0);
   const tmdbSeasonPosters = {};
   tmdbSeasons.forEach(season => {
@@ -1719,6 +1721,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           seasonDetails.push(seasonData);
         });
     });
+    typicalRuntime = typicalEpisodeRuntime(seasonDetails.flatMap(season => season.episodes || []));
     const isAnimeContent = isAnimeFunc(seriesData, seriesData.genres) || kitsuId || malId;
     logger.debug(`[TmdbSeriesMeta] isAnimeContent: ${isAnimeContent}`);
     
@@ -1957,7 +1960,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     
     videos = (await Promise.all(videosPromises)).filter(Boolean);
   }
-  const runtime = seriesData.episode_run_time?.[0] ?? seriesData.last_episode_to_air?.runtime ?? seriesData.next_episode_to_air?.runtime ?? null;
+  const runtime = typicalRuntime ?? seriesData.episode_run_time?.[0] ?? seriesData.last_episode_to_air?.runtime ?? seriesData.next_episode_to_air?.runtime ?? null;
   let overview = seriesData.overview;
   overview = Utils.processOverviewTranslations(seriesData.translations, language, overview);
   let finalName = seriesData.name;
