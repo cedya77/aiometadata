@@ -99,11 +99,16 @@ export function excludedKey(excluded: Set<string> | null): string {
 }
 
 /**
- * Catalogs report no total, so one page of lookahead keeps the client asking and collapses to the truth once the
- * catalog runs out. A filtered page the budget cut short stays open even when empty, since the next ask reads on.
+ * A list whose length is known, from its source or from a walk that reached its end, counts that length while it is
+ * still ahead of what was served, as a client may read the total once. Otherwise one page of lookahead keeps the client
+ * asking and collapses to the truth once the catalog runs out. A filtered page the budget cut short stays open even when
+ * empty, since the next ask reads on.
  */
-export function listTotal(startIndex: number, shown: number, pageLimit: number, window: { hasMore: boolean; truncated?: boolean }): number {
-  return window.hasMore && (shown > 0 || window.truncated) ? startIndex + shown + pageLimit : startIndex + shown;
+export function listTotal(startIndex: number, shown: number, pageLimit: number, window: { hasMore: boolean; truncated?: boolean; length?: number; listed?: number }): number {
+  const reached = startIndex + shown;
+  if (window.hasMore && (shown > 0 || window.truncated)) return window.listed !== undefined && window.listed > reached ? window.listed : reached + pageLimit;
+  // Asked past the end of a list that has run out, the total is the list's own length.
+  return window.length !== undefined ? Math.min(window.length, reached) : reached;
 }
 
 export function chainPicks(...picks: Array<Pick | undefined>): Pick | undefined {
@@ -137,16 +142,31 @@ export function providerIdsAsked(query: Record<string, unknown>): ProviderId[] |
   return asked;
 }
 
-/** The title ids to build for the pairs asked: a TMDB or TVDB number names a film and a show apart, so both kinds are tried unless one was asked. */
-export function titleIdsFor(asked: ProviderId[], includeItemTypes: unknown): Array<{ kind: 'movie' | 'series'; id: string }> {
+/**
+ * The title ids to build for the pairs asked: a TMDB or TVDB number names a film and a show apart, so both kinds are
+ * tried unless one was asked. An IMDb id is built only as the kinds `imdbKinds` names for it, where it names any.
+ */
+export function titleIdsFor(asked: ProviderId[], includeItemTypes: unknown, imdbKinds: Map<string, Kind[]> = new Map()): Array<{ kind: Kind; id: string }> {
   const wanted = new Set(String(includeItemTypes ?? '').split(',').map((t) => t.trim()).filter(Boolean));
   const kinds = (['movie', 'series'] as const).filter((kind) => !wanted.size || wanted.has(kind === 'movie' ? 'Movie' : 'Series'));
-  const out: Array<{ kind: 'movie' | 'series'; id: string }> = [];
+  const out: Array<{ kind: Kind; id: string }> = [];
   for (const { provider, id } of asked) {
     const titleId = provider === 'imdb' ? id : `${provider}:${id}`;
-    for (const kind of kinds) out.push({ kind, id: titleId });
+    const listed = provider === 'imdb' ? imdbKinds.get(id) : undefined;
+    for (const kind of kinds) if (!listed || listed.includes(kind)) out.push({ kind, id: titleId });
   }
   return out;
+}
+
+type Kind = 'movie' | 'series';
+
+/**
+ * The kinds TMDB lists an IMDb id under, or none when it lists it under neither. Cinemeta answers an IMDb id asked as
+ * the other kind with a title of that kind, so the kind is not left to the title built.
+ */
+export async function imdbKindsOf(imdbId: string, find: (id: string) => Promise<any>): Promise<Kind[]> {
+  const found = await find(imdbId);
+  return [...(found?.movie_results?.length ? ['movie' as const] : []), ...(found?.tv_results?.length ? ['series' as const] : [])];
 }
 
 const heldIds = (item: any): Map<string, string> =>

@@ -4,7 +4,7 @@ import { countryName } from '../metaDetails';
 import { imageTag, wideTag } from './imageTags';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
-import { encodeJellyfinId, parseStremioId } from './ids';
+import { encodeJellyfinId, jellyfinIdQueued, parseStremioId } from './ids';
 import { normaliseJellyfinId } from './idsCodec';
 import { rememberSeriesRatingIds } from './seriesRatingIds';
 import { EMPTY_USER_DATA } from './dto';
@@ -266,6 +266,7 @@ export async function fetchCatalogPage(
     const metas = Array.isArray(body?.metas) ? body.metas : [];
     if (typeof body?.rawLength === 'number') rawLengths.set(metas, body.rawLength);
     if (typeof body?.pageSize === 'number' && body.pageSize > 0) pageSizes.set(metas, body.pageSize);
+    if (typeof body?.listed === 'number' && body.listed >= 0) listedCounts.set(metas, body.listed);
     if (body?.served === true) servedPages.add(metas);
     if (body?.randomize === true) randomizedPages.add(metas);
     return metas;
@@ -278,6 +279,7 @@ export async function fetchCatalogPage(
 
 const rawLengths = new WeakMap<any[], number>();
 const pageSizes = new WeakMap<any[], number>();
+const listedCounts = new WeakMap<any[], number>();
 const servedPages = new WeakSet<any[]>();
 const randomizedPages = new WeakSet<any[]>();
 const servedCatalogs = new LRUCache<string, true>({
@@ -304,6 +306,10 @@ export interface Window {
   truncated?: boolean;
   /** A filtered walk that reached its page ceiling and was taken as the end of the list. */
   capped?: boolean;
+  /** How long the list is, once a walk has reached its end. */
+  length?: number;
+  /** How long the list is known to be before the walk reaches its end. */
+  listed?: number;
 }
 
 export function servedOrder(items: any[], window: Partial<Window>): any[] {
@@ -357,6 +363,55 @@ function lengthKeyFor(userUUID: string, catalog: CatalogRef, extras: Record<stri
 
 export function knownCatalogLength(userUUID: string, catalog: CatalogRef, extras: Record<string, string> = {}, tags: string[] = [], keepKey = ''): number | undefined {
   return catalogLengths.get(lengthKeyFor(userUUID, catalog, extras, tags, keepKey));
+}
+
+// How many entries each catalog's source says it lists, from the last page that said so.
+const listedOf = (listed: number | undefined): { listed?: number } => (listed !== undefined ? { listed } : {});
+
+const sourceLengths = new LRUCache<string, number>({
+  max: envInt('JELLYFIN_PAGE_LENGTH_CACHE_MAX', 2000, 1),
+  ttl: envInt('JELLYFIN_CATALOG_LENGTH_TTL', 3600, 60) * 1000,
+});
+
+// Catalogs whose first page gave no count of their list, so a folder does not read them again only to learn one.
+const uncountedSources = new LRUCache<string, true>({
+  max: envInt('JELLYFIN_PAGE_LENGTH_CACHE_MAX', 2000, 1),
+  ttl: envInt('JELLYFIN_CATALOG_LENGTH_TTL', 3600, 60) * 1000,
+});
+
+/**
+ * Whether the filter a list is keyed by keeps every title of the catalog, so its source's count is the list's length:
+ * no filter, or one on item types alone that asks for every kind the catalog holds. Box sets come only from TVDB
+ * collection catalogs, whose source gives no count.
+ */
+function sourceCountStands(catalog: CatalogRef, keepKey: string): boolean {
+  if (!keepKey) return true;
+  if (/[|#]/.test(keepKey)) return false;
+  const wanted = wantedTypes(keepKey);
+  if (!wanted) return true;
+  const holds = EXTERNAL_CATALOG.test(catalog.id) ? undefined : CATALOG_SERVES[catalog.type];
+  return (holds ?? ['Movie', 'Series']).every((type) => type === 'BoxSet' || wanted.has(type));
+}
+
+/**
+ * How long a list is: its length once walked to its end, or the count its source gives where the list's filter keeps
+ * the whole catalog.
+ */
+export function knownListLength(userUUID: string, catalog: CatalogRef, extras: Record<string, string> = {}, tags: string[] = [], keepKey = ''): number | undefined {
+  return catalogLengths.get(lengthKeyFor(userUUID, catalog, extras, tags, keepKey))
+    ?? (sourceCountStands(catalog, keepKey) ? sourceLengths.get(lengthKeyFor(userUUID, catalog, extras, tags)) : undefined);
+}
+
+/** knownListLength, reading the catalog's first page to learn its source's count where that count would stand for the list. */
+export async function learnListLength(userUUID: string, catalog: CatalogRef, extras: Record<string, string> = {}, tags: string[] = [], keepKey = ''): Promise<number | undefined> {
+  const known = knownListLength(userUUID, catalog, extras, tags, keepKey);
+  if (known !== undefined || !sourceCountStands(catalog, keepKey)) return known;
+  const pageKey = lengthKeyFor(userUUID, catalog, extras, tags);
+  if (uncountedSources.has(pageKey)) return undefined;
+  const read = await fetchWindow(userUUID, catalog, 0, 1, extras, undefined, tags).catch(() => null);
+  const learned = knownListLength(userUUID, catalog, extras, tags, keepKey);
+  if (learned === undefined && read && !read.failed) uncountedSources.set(pageKey, true);
+  return learned;
 }
 
 /** How many titles one page of the catalog holds, once a window has read one. */
@@ -527,6 +582,10 @@ export async function fetchWindow(
         break;
       }
       if (randomizedPages.has(page)) randomize = true;
+      if (listedCounts.has(page)) {
+        sourceLengths.set(pageKey, listedCounts.get(page)!);
+        uncountedSources.delete(pageKey);
+      }
       if (servedPages.has(page) && !sequential) {
         sequential = true;
         servedCatalogs.set(pageKey, true);
@@ -581,7 +640,10 @@ export async function fetchWindow(
   }
 
   const reached = startIndex - offset + collected.length;
-  if (exhausted && !failed) rememberLength('catalog', lengthKey, reached);
+  // Only a window placed exactly may leave a cursor or a length: one mapped from a page number
+  // is off by the repeats before it, and would carry that into every later page.
+  const exact = filtering || startIndex === 0 || !!cursor;
+  if (exhausted && !failed && exact) rememberLength('catalog', lengthKey, reached);
 
   // Duplicates are dropped above, so trimming by count would cut into the window
   // itself; the offset only ever covers items that came before startIndex.
@@ -609,9 +671,6 @@ export async function fetchWindow(
     }
   }
 
-  // Only a window placed exactly may leave a cursor: one mapped from a page number
-  // is off by the repeats before it, and would carry that into every later page.
-  const exact = filtering || startIndex === 0 || !!cursor;
   if (exact && items.length > 0) {
     const shown = collected.slice(0, offset + items.length).map((meta) => String(meta.id));
     const raw = scannedToSkip ? skip : rawAt[offset + items.length - 1] + 1;
@@ -632,6 +691,8 @@ export async function fetchWindow(
     ...(randomize ? { randomize: true } : {}),
     ...(truncated ? { truncated: true } : {}),
     ...(capped ? { capped: true } : {}),
+    ...(exhausted && !failed ? { length: exact ? reached : catalogLengths.get(lengthKey) ?? reached } : {}),
+    ...(!exhausted ? listedOf(knownListLength(userUUID, catalog, extras, tags, keepKey)) : {}),
   };
 }
 
@@ -882,8 +943,23 @@ export function legacyStudioId(name: string): string {
   return createHash('md5').update(`studio:${name}`).digest('hex');
 }
 
+// A page names the same few studios on many titles; each Id is worked out once, as encoding one costs several cache writes.
+const studioIds = new Map<string, string>();
+const STUDIO_IDS_MAX = 20000;
+
+function studioIdOf(descriptor: ReturnType<typeof studioDescriptorsOf>[number]): string {
+  const key = `${descriptor.n}\u0000${descriptor.s ?? ''}\u0000${descriptor.x ?? ''}`;
+  const known = studioIds.get(key);
+  // An Id whose save failed is encoded again, which queues it to be saved once more.
+  if (known && jellyfinIdQueued(known)) return known;
+  if (!known && studioIds.size >= STUDIO_IDS_MAX) studioIds.clear();
+  const id = encodeJellyfinId(descriptor);
+  studioIds.set(key, id);
+  return id;
+}
+
 function studiosOf(meta: any): any[] {
-  return studioDescriptorsOf(meta).map((descriptor) => ({ Name: descriptor.n, Id: encodeJellyfinId(descriptor) }));
+  return studioDescriptorsOf(meta).map((descriptor) => ({ Name: descriptor.n, Id: studioIdOf(descriptor) }));
 }
 
 function countriesOf(meta: any): string[] {

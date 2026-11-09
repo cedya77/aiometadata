@@ -206,6 +206,14 @@ async function listingFrom(source: Source, options: Listing): Promise<{ items: a
   let kept = 0;
   let examined = 0;
   let dropped = false;
+  // A provider can list a title on more than one of its pages; it is shown where it first appears.
+  const listed = new Set<string>();
+  const firstListing = ({ row, type }: { row: any; type: Kind }): boolean => {
+    const key = `${type}:${row?.id ?? row?.mal_id}`;
+    if (listed.has(key)) return false;
+    listed.add(key);
+    return true;
+  };
   await readTo(wanted);
   let rows = merged();
   while (kept < wanted) {
@@ -218,12 +226,13 @@ async function listingFrom(source: Source, options: Listing): Promise<{ items: a
     const before = kept < startIndex;
     const batch = rows.slice(examined, Math.min(settled(rows.length), examined + (before ? startIndex - kept : wanted - kept)));
     examined += batch.length;
+    const fresh = batch.filter(firstListing);
     if (before) {
-      const shown = (await counts(batch)).filter(Boolean).length;
+      const shown = (await counts(fresh)).filter(Boolean).length;
       kept += shown;
       if (shown < batch.length) dropped = true;
     } else {
-      const built = (await build(batch)).filter(Boolean);
+      const built = (await build(fresh)).filter(Boolean);
       items.push(...built);
       kept += built.length;
       if (built.length < batch.length) dropped = true;
@@ -286,10 +295,28 @@ const resolved = new LRUCache<string, { ref: StudioRef | null }>({
   ttl: envInt('JELLYFIN_STUDIO_LOOKUP_TTL', 86400, 60) * 1000,
 });
 
-async function companyNamed(name: string, wanted: string, config: any): Promise<StudioRef | null> {
-  const found = await require('../getTmdb').searchCompany({ query: name }, config);
-  const company = (Array.isArray(found?.results) ? found.results : []).find((entry: any) => String(entry?.name ?? '').trim().toLowerCase() === wanted);
-  return company?.id ? { name, source: 'tmdb-company', id: Number(company.id) } : null;
+/** `unsure` is told when a title count failed, so the pick may not be the company meant and is not held. */
+async function companyNamed(name: string, wanted: string, config: any, unsure: () => void): Promise<StudioRef | null> {
+  const moviedb: any = require('../getTmdb');
+  const found = await moviedb.searchCompany({ query: name }, config);
+  const named = (Array.isArray(found?.results) ? found.results : []).filter((entry: any) => entry?.id && String(entry?.name ?? '').trim().toLowerCase() === wanted);
+  if (named.length <= 1) return named[0] ? { name, source: 'tmdb-company', id: Number(named[0].id) } : null;
+  // Companies can share a name; the one meant is the one with the most titles.
+  // A count that fails leaves that company out of the choice; with none counted, TMDB's first match stands.
+  const titles = async (id: number): Promise<number | null> => {
+    try {
+      const [films, shows] = await Promise.all([moviedb.discoverMovie({ with_companies: id }, config), moviedb.discoverTv({ with_companies: id }, config)]);
+      return (Number(films?.total_results) || 0) + (Number(shows?.total_results) || 0);
+    } catch {
+      unsure();
+      return null;
+    }
+  };
+  const counted = await Promise.all(named.map(async (entry: any) => ({ id: Number(entry.id), titles: await titles(Number(entry.id)) })));
+  const known = counted.filter((entry): entry is { id: number; titles: number } => entry.titles !== null);
+  if (known.length === 0) return { name, source: 'tmdb-company', id: Number(named[0].id) };
+  const best = known.reduce((a, b) => (b.titles > a.titles ? b : a));
+  return { name, source: 'tmdb-company', id: best.id };
 }
 
 async function networkNamed(name: string, wanted: string): Promise<StudioRef | null> {
@@ -310,15 +337,18 @@ async function resolveStudio(name: string, config: any, networkFirst: boolean): 
   const held = resolved.get(key);
   if (held) return held.ref;
   let failed = false;
+  const unsure = (): void => { failed = true; };
   const asked = (lookup: Promise<StudioRef | null>): Promise<StudioRef | null> => lookup.catch(() => {
     failed = true;
     return null;
   });
   const ref = networkFirst
-    ? (await asked(networkNamed(name, wanted))) ?? (await asked(companyNamed(name, wanted, config)))
-    : (await asked(companyNamed(name, wanted, config))) ?? (await asked(networkNamed(name, wanted)));
-  // A lookup that failed, for a bad key or a provider that is down, is no answer to hold for everyone.
-  if (ref || !failed) resolved.set(key, { ref });
+    ? (await asked(networkNamed(name, wanted))) ?? (await asked(companyNamed(name, wanted, config, unsure)))
+    : (await asked(companyNamed(name, wanted, config, unsure))) ?? (await asked(networkNamed(name, wanted)));
+  // A lookup that failed, for a bad key or a provider that is down, is no answer to hold for everyone. One found only
+  // because the lookup before it failed, or picked without every count, is held just until it is worth asking again.
+  if (!failed) resolved.set(key, { ref });
+  else if (ref) resolved.set(key, { ref }, { ttl: envInt('JELLYFIN_STUDIO_LOOKUP_RETRY', 300, 1) * 1000 });
   return ref;
 }
 

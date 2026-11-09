@@ -354,7 +354,8 @@ async function fetchListBlock(apiKey: string, listId: string, blockOffset: numbe
   }, ttl, { upstream: true, sourceList: true });
 }
 
-async function fetchListPage(apiKey: string, listId: string, page: number, pageSize: number, newestFirst: boolean, ttl: number): Promise<{ items: any[] }> {
+/** A page of a list, with how many rows the list holds once a block read reaches its end. */
+async function fetchListPage(apiKey: string, listId: string, page: number, pageSize: number, newestFirst: boolean, ttl: number): Promise<{ items: any[]; total?: number }> {
   const blockSize = listBlockSize(pageSize);
   const start = (page - 1) * pageSize;
   const end = start + pageSize;
@@ -362,7 +363,7 @@ async function fetchListPage(apiKey: string, listId: string, page: number, pageS
   for (let at = Math.floor(start / blockSize) * blockSize; at < end; at += blockSize) {
     const items = await fetchListBlock(apiKey, listId, at, blockSize, newestFirst, ttl);
     rows.push(...items.slice(Math.max(0, start - at), end - at));
-    if (items.length < blockSize) break;
+    if (items.length < blockSize) return { items: rows, total: at + items.length };
   }
   return { items: rows };
 }

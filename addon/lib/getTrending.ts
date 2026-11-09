@@ -1,6 +1,7 @@
 require("dotenv").config();
 import * as moviedb from "./getTmdb.js";
 import { getMeta } from './getMeta.js';
+import { withListed } from './catalogPagination';
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
 import { allowsUnrated, hasAgeRatingCap, passesAgeRating } from '../utils/ageRating.js';
@@ -80,7 +81,7 @@ async function getTrending(type: string, language: string, page: number, genre: 
     const totalTime = performance.now() - startTime;
     logger.debug(`[getTrending] Total function execution took ${totalTime.toFixed(2)}ms`);
     
-    return { metas: filteredMetas };
+    return { metas: withListed(filteredMetas, Math.min(Number(res?.total_results) || 0, 500 * 20)) };
 
   } catch (error: any) {
     console.error(`Error fetching trending for type=${type}:`, error.message);

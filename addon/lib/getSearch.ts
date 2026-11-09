@@ -26,6 +26,7 @@ import { fetchImdbSuggestions, type ImdbSuggestion } from '../utils/imdbSuggesti
 import { fetchLumiereSearch, fetchLumierePeopleSearch, type LumiereResult } from '../utils/lumiereSearch.js';
 import { lumiereApiBase } from '../utils/lumiereLists.js';
 import { mapWithLimit } from '../utils/concurrency.js';
+import { seriesRuntime } from './seriesRuntime';
 const idMappings: any = require('./id-mappings');
 
 
@@ -651,7 +652,7 @@ async function performTmdbSearch(type: string, query: string, language: string, 
         if(allIds.tvdbId) parsed._tvdbId = String(allIds.tvdbId);
         parsed.keywords = moviedb.keywordNamesOf(details) ?? [];
         parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
-        if(type === 'series') parsed.runtime  = Utils.parseRunTime(details.episode_run_time?.[0] ?? details.last_episode_to_air?.runtime ?? details.next_episode_to_air?.runtime ?? null);
+        if(type === 'series') parsed.runtime  = Utils.parseRunTime(await seriesRuntime(media.id, details));
         parsed.app_extras = { releaseDates: details.release_dates, certification, certifications };
         return { parsed, details };
     } catch (error: any) {
@@ -1424,14 +1425,7 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
     if (allIds.tvdbId) parsed._tvdbId = String(allIds.tvdbId);
     parsed.keywords = moviedb.keywordNamesOf(details) ?? [];
     parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
-    if (type === 'series') {
-      parsed.runtime = Utils.parseRunTime(
-        details.episode_run_time?.[0] ??
-        details.last_episode_to_air?.runtime ??
-        details.next_episode_to_air?.runtime ??
-        null
-      );
-    }
+    if (type === 'series') parsed.runtime = Utils.parseRunTime(await seriesRuntime(tmdbId, details));
 
     parsed.app_extras = { releaseDates: details.release_dates, certification, certifications };
 
