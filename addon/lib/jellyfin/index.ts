@@ -71,7 +71,7 @@ import { registerStubs } from './stubs';
 import { answerPlaylistListing, hasPlaylists, playlistAsItem, playlistConcurrency, playlistImages, playlistsFolder, registerPlaylistRoutes, type PlaylistRouteDeps } from './playlists';
 import { noteWantsPeople } from './viewer';
 import { decodeCursor, exportRow, findUser, historyPage, historyUsers, isEpisodeVideo, itemIdForVideo, userByKey, videoIdsOf } from './history';
-import { forgetUserSettings, liveSessionsFor, recordPlayed, recordPlayedUpTo, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData, sessionTouchDue, touchSessions, type LiveSession } from './playstate';
+import { clientPlayedAt, forgetUserSettings, liveSessionsFor, recordPlayed, recordPlayedUpTo, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData, sessionTouchDue, touchSessions, type LiveSession } from './playstate';
 
 const database: any = require('../database');
 
@@ -4558,7 +4558,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   // A client reads the new state back out of the response here rather than
   // trusting a bare acknowledgement, and reports the server as not supporting
   // the operation when the body is empty.
-  const playedState = (itemId: string, played: boolean): any => {
+  const playedState = (itemId: string, played: boolean, at: number | null = null): any => {
     const id = normaliseJellyfinId(itemId);
     return {
       ...EMPTY_USER_DATA,
@@ -4568,17 +4568,19 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       PlayCount: played ? 1 : 0,
       PlaybackPositionTicks: 0,
       PlayedPercentage: played ? 100 : 0,
-      LastPlayedDate: played ? new Date().toISOString() : null,
+      LastPlayedDate: played ? new Date(at ?? Date.now()).toISOString() : null,
     };
   };
 
   // Answered once the table holds the mark: the client reads the item back
   // straight after and would otherwise see the state from before.
   router.post(['/Users/:userId/PlayedItems/:itemId', '/UserPlayedItems/:itemId'], async (req: any, res: any) => {
-    await recordPlayed(req, { ItemId: req.params.itemId }).catch((error: any) =>
+    // A sync tool sends when the title was watched, so its history keeps that order.
+    const at = clientPlayedAt(req.query.DatePlayed ?? req.query.datePlayed);
+    await recordPlayed(req, { ItemId: req.params.itemId }, 'jellyfin', at).catch((error: any) =>
       logger.debug(`Played report failed: ${error.message}`)
     );
-    res.json(playedState(String(req.params.itemId), true));
+    res.json(playedState(String(req.params.itemId), true, at));
   });
 
   router.post('/AIOStreams/PlayedUpTo/:itemId', async (req: any, res: any) => {
@@ -4645,7 +4647,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
       const id = normaliseJellyfinId(String(req.params.itemId));
       res.json({
-        ...playedState(id, state.played),
+        ...playedState(id, state.played, state.at ?? null),
+        ...(!state.played && state.at ? { LastPlayedDate: new Date(state.at).toISOString() } : {}),
         PlaybackPositionTicks: Math.round(state.positionMs * 10000),
         PlayedPercentage: state.played ? 100 : 0,
         ...(state.rating !== undefined ? { Rating: state.rating } : {}),
