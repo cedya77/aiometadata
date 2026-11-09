@@ -67,6 +67,11 @@ export function encodeJellyfinId(raw: Descriptor): string {
   return id;
 }
 
+/** Whether a hashed Id is saved or on its way to being saved; one whose save failed is not, until it is encoded again. */
+export function jellyfinIdQueued(id: string): boolean {
+  return persisted.has(id);
+}
+
 export async function decodeJellyfinId(raw: string): Promise<Descriptor | null> {
   const id = normaliseJellyfinId(raw);
   if (!/^[0-9a-f]{32}$/.test(id)) return null;

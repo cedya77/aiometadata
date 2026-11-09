@@ -4,7 +4,7 @@ import { countryName } from '../metaDetails';
 import { imageTag, wideTag } from './imageTags';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
-import { encodeJellyfinId, parseStremioId } from './ids';
+import { encodeJellyfinId, jellyfinIdQueued, parseStremioId } from './ids';
 import { normaliseJellyfinId } from './idsCodec';
 import { rememberSeriesRatingIds } from './seriesRatingIds';
 import { EMPTY_USER_DATA } from './dto';
@@ -882,8 +882,23 @@ export function legacyStudioId(name: string): string {
   return createHash('md5').update(`studio:${name}`).digest('hex');
 }
 
+// A page names the same few studios on many titles; each Id is worked out once, as encoding one costs several cache writes.
+const studioIds = new Map<string, string>();
+const STUDIO_IDS_MAX = 20000;
+
+function studioIdOf(descriptor: ReturnType<typeof studioDescriptorsOf>[number]): string {
+  const key = `${descriptor.n}\u0000${descriptor.s ?? ''}\u0000${descriptor.x ?? ''}`;
+  const known = studioIds.get(key);
+  // An Id whose save failed is encoded again, which queues it to be saved once more.
+  if (known && jellyfinIdQueued(known)) return known;
+  if (!known && studioIds.size >= STUDIO_IDS_MAX) studioIds.clear();
+  const id = encodeJellyfinId(descriptor);
+  studioIds.set(key, id);
+  return id;
+}
+
 function studiosOf(meta: any): any[] {
-  return studioDescriptorsOf(meta).map((descriptor) => ({ Name: descriptor.n, Id: encodeJellyfinId(descriptor) }));
+  return studioDescriptorsOf(meta).map((descriptor) => ({ Name: descriptor.n, Id: studioIdOf(descriptor) }));
 }
 
 function countriesOf(meta: any): string[] {
