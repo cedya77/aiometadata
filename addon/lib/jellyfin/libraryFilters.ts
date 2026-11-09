@@ -118,3 +118,58 @@ export function chainPicks(...picks: Array<Pick | undefined>): Pick | undefined 
     return kept;
   };
 }
+
+export type ProviderId = { provider: 'imdb' | 'tmdb' | 'tvdb'; id: string };
+
+/** The `provider.id` pairs of AnyProviderIdEquals that name a title this server can build, or null when none was asked. */
+export function providerIdsAsked(query: Record<string, unknown>): ProviderId[] | null {
+  const raw = query.AnyProviderIdEquals ?? query.anyProviderIdEquals;
+  if (raw === undefined || raw === null || raw === '') return null;
+  const asked: ProviderId[] = [];
+  for (const entry of String(raw).split(',')) {
+    const dot = entry.indexOf('.');
+    if (dot < 0) continue;
+    const provider = entry.slice(0, dot).trim().toLowerCase();
+    const id = entry.slice(dot + 1).trim().toLowerCase();
+    if (provider === 'imdb' && /^tt\d+$/.test(id)) asked.push({ provider, id });
+    else if ((provider === 'tmdb' || provider === 'tvdb') && /^\d+$/.test(id)) asked.push({ provider, id });
+  }
+  return asked;
+}
+
+/** The title ids to build for the pairs asked: a TMDB or TVDB number names a film and a show apart, so both kinds are tried unless one was asked. */
+export function titleIdsFor(asked: ProviderId[], includeItemTypes: unknown): Array<{ kind: 'movie' | 'series'; id: string }> {
+  const wanted = new Set(String(includeItemTypes ?? '').split(',').map((t) => t.trim()).filter(Boolean));
+  const kinds = (['movie', 'series'] as const).filter((kind) => !wanted.size || wanted.has(kind === 'movie' ? 'Movie' : 'Series'));
+  const out: Array<{ kind: 'movie' | 'series'; id: string }> = [];
+  for (const { provider, id } of asked) {
+    const titleId = provider === 'imdb' ? id : `${provider}:${id}`;
+    for (const kind of kinds) out.push({ kind, id: titleId });
+  }
+  return out;
+}
+
+const heldIds = (item: any): Map<string, string> =>
+  new Map(Object.entries(item?.ProviderIds ?? {}).map(([provider, id]) => [provider.toLowerCase(), String(id).toLowerCase()]));
+
+/** Whether a built item carries one of the asked ids, so a title of the other kind under the same number is left out. */
+export function carriesProviderId(item: any, asked: ProviderId[]): boolean {
+  const held = heldIds(item);
+  return asked.some(({ provider, id }) => held.get(provider) === id);
+}
+
+/**
+ * A TMDB or TVDB number asked with no type names a film and an unrelated show alike, so one title is kept for it:
+ * the film for TMDB and the show for TVDB, or the other kind where that one is missing.
+ */
+export function oneTitlePerNumber(items: any[], asked: ProviderId[]): any[] {
+  const dropped = new Set<any>();
+  for (const { provider, id } of asked) {
+    if (provider === 'imdb') continue;
+    const named = items.filter((item) => heldIds(item).get(provider) === id);
+    const preferred = provider === 'tmdb' ? 'Movie' : 'Series';
+    const kept = named.find((item) => item.Type === preferred) ?? named[0];
+    for (const item of named) if (item !== kept) dropped.add(item);
+  }
+  return dropped.size ? items.filter((item) => !dropped.has(item)) : items;
+}

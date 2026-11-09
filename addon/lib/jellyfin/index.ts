@@ -59,7 +59,7 @@ import { hasCreditDate, personByName, personCredits, resolvePerson, similarTitle
 import { titleCards } from '../titleCards';
 import { allBoxSets, boxSetGenres, boxSetMembers, boxSetsDeep, boxSetsFor, boxSetsUnder, collectionById, collectionView, folderById } from './collections';
 import { applyWatchlistState, entryItemType, setWatchlisted, watchlistEntries, watchlistItems } from './watchlist';
-import { asksForFavourites, asksForResumable, chainPicks, excludedKey, excludedTitles, facetsOf, listTotal, studioFilterOf, withoutTitles, yearItems } from './libraryFilters';
+import { asksForFavourites, asksForResumable, carriesProviderId, chainPicks, excludedKey, excludedTitles, facetsOf, listTotal, oneTitlePerNumber, providerIdsAsked, studioFilterOf, titleIdsFor, withoutTitles, yearItems } from './libraryFilters';
 import { studioListing, yearListing } from './discoverPages';
 import { hasTmdbKey } from '../getTmdb';
 import { applyRatings, applyWatchedState, finishedSeries, ownNextUpRows, seriesCountsAmong, upcomingFollowed, watchedAmong, watchedHistory, watchedSnapshot, type NextUpRow, type UpcomingRow } from './watched';
@@ -1113,6 +1113,27 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
 
     const serverId = serverIdFor(userUUID);
+
+    // A title by its IMDb, TMDB or TVDB id is built from that id, as sync tools look a title up, rather than found in a catalog.
+    const providerIds = providerIdsAsked(req.query);
+    if (providerIds) {
+      const wanted = new Set(String(includeItemTypes ?? '').split(',').map((t) => t.trim()).filter(Boolean));
+      const ids = titleIdsFor(providerIds, includeItemTypes).map(({ kind, id }) => encodeJellyfinId({ k: kind, t: kind, i: id }));
+      const built = ids.length ? await itemsForIds(req, ids, false, shelfConcurrency()) : [];
+      const seen = new Set<string>();
+      // Tried as a film and as a show, a number is kept only where it is that title's own.
+      const bothKinds = wanted.has('Movie') === wanted.has('Series');
+      const asked = new Set(filters.split(',').map((f) => f.trim()));
+      const carried = built
+        .filter((item: any) => (!wanted.size || wanted.has(item.Type)) && (!bothKinds || carriesProviderId(item, providerIds)) && !seen.has(item.Id) && seen.add(item.Id));
+      const items = (bothKinds ? oneTitlePerNumber(carried, providerIds) : carried)
+        .filter((item: any) => (!asked.has('IsPlayed') || item.UserData?.Played === true)
+          && (!asked.has('IsUnplayed') || item.UserData?.Played !== true)
+          && (!asked.has('IsResumable') || Number(item.UserData?.PlaybackPositionTicks) > 0))
+        .filter(keepsUnderProfileCap(config));
+      res.json(itemList(items.slice(startIndex, startIndex + limit), items.length, startIndex));
+      return;
+    }
 
     // The playlist listing reads ParentId itself, so under the root it is handed a query without one.
     const playlistReq = rootParent
