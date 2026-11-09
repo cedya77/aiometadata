@@ -345,26 +345,31 @@ function listBlockSize(pageSize: number): number {
   return Math.max(pageSize, Math.min(size, 500));
 }
 
-async function fetchListBlock(apiKey: string, listId: string, blockOffset: number, blockSize: number, newestFirst: boolean, ttl: number): Promise<any[]> {
+async function fetchListBlock(apiKey: string, listId: string, blockOffset: number, blockSize: number, newestFirst: boolean, ttl: number): Promise<{ items: any[]; total?: number }> {
   const keyHash = createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
   const sort = newestFirst ? '&sort=created&order=desc' : '';
-  return cacheWrapGlobal(`publicmetadb-api:block:${keyHash}:${listId}:${newestFirst ? 'newest' : 'listed'}:${blockOffset}:${blockSize}:ttl:${ttl}`, async () => {
+  const block: any = await cacheWrapGlobal(`publicmetadb-api:block:${keyHash}:${listId}:${newestFirst ? 'newest' : 'listed'}:${blockOffset}:${blockSize}:ttl:${ttl}`, async () => {
     const data = await fetchListItems(apiKey, listId, blockOffset / blockSize + 1, blockSize, sort);
-    return data?.items || [];
+    const total = Number(data?.total);
+    return { items: data?.items || [], ...(Number.isFinite(total) && total >= 0 ? { total } : {}) };
   }, ttl, { upstream: true, sourceList: true });
+  // A block cached before the list's total was kept is the bare items array.
+  return Array.isArray(block) ? { items: block } : { items: block?.items || [], total: block?.total };
 }
 
-async function fetchListPage(apiKey: string, listId: string, page: number, pageSize: number, newestFirst: boolean, ttl: number): Promise<{ items: any[] }> {
+async function fetchListPage(apiKey: string, listId: string, page: number, pageSize: number, newestFirst: boolean, ttl: number): Promise<{ items: any[]; total?: number }> {
   const blockSize = listBlockSize(pageSize);
   const start = (page - 1) * pageSize;
   const end = start + pageSize;
   const rows: any[] = [];
+  let total: number | undefined;
   for (let at = Math.floor(start / blockSize) * blockSize; at < end; at += blockSize) {
-    const items = await fetchListBlock(apiKey, listId, at, blockSize, newestFirst, ttl);
-    rows.push(...items.slice(Math.max(0, start - at), end - at));
-    if (items.length < blockSize) break;
+    const block = await fetchListBlock(apiKey, listId, at, blockSize, newestFirst, ttl);
+    if (typeof block.total === 'number') total = block.total;
+    rows.push(...block.items.slice(Math.max(0, start - at), end - at));
+    if (block.items.length < blockSize) break;
   }
-  return { items: rows };
+  return { items: rows, ...(total !== undefined ? { total } : {}) };
 }
 
 async function fetchPublicListByLink(apiKey: string, user: string, slug: string, page: number = 1, perPage: number = 20): Promise<any> {

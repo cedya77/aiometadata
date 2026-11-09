@@ -56,6 +56,7 @@ import { IMAGE_CSP } from '../posterCache/proxyResponse';
 import { registerStubs } from './stubs';
 import { answerPlaylistListing, hasPlaylists, playlistAsItem, playlistConcurrency, playlistImages, playlistsFolder, registerPlaylistRoutes, type PlaylistRouteDeps } from './playlists';
 import { noteWantsPeople } from './viewer';
+import { listTotal, sourceCountApplies } from '../../utils/catalogTotals';
 import { decodeCursor, exportRow, findUser, historyPage, historyUsers, isEpisodeVideo, itemIdForVideo, userByKey, videoIdsOf } from './history';
 import { forgetUserSettings, liveSessionsFor, recordPlayed, recordPlayedUpTo, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData, sessionTouchDue, touchSessions, type LiveSession } from './playstate';
 
@@ -1461,9 +1462,16 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           : { items: [], hasMore: true };
         await applyWatchedState(page.items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
         const items = [...ahead, ...page.items];
+        const knownTitles = foldersOnly ? 0 : (page as { total?: number }).total;
         res.json(itemList(
           items,
-          page.hasMore && items.length > 0 ? startIndex + items.length + folderLimit : startIndex + items.length,
+          listTotal({
+            startIndex,
+            served: items.length,
+            pageLimit: folderLimit,
+            hasMore: page.hasMore,
+            known: knownTitles !== undefined ? children.length + knownTitles : undefined,
+          }),
           startIndex
         ));
         return;
@@ -1535,11 +1543,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const filtered = filterByIncludeTypes(items, includeItemTypes ? String(includeItemTypes) : undefined)
       .slice(0, pageLimit);
 
-    // Catalogs report no total, so one page of lookahead keeps the client asking
-    // and collapses to the truth once the catalog runs out.
-    const total = hasMore && filtered.length > 0
-      ? startIndex + filtered.length + pageLimit
-      : startIndex + filtered.length;
+    // A Stremio catalog page carries no total. When the source told us its size
+    // that is reported; otherwise one page of lookahead keeps the client asking.
+    // Either way the count settles on the truth once the catalog runs out.
+    const sourceApplies = sourceCountApplies(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, !!officialRatings || !!played.pick);
+    const total = listTotal({ startIndex, served: filtered.length, pageLimit, hasMore, known: window.total ?? (sourceApplies ? window.sourceTotal : undefined) });
 
     await applyWatchedState(filtered, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
     res.json(itemList(filtered, total, startIndex));

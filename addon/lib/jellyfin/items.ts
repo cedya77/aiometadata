@@ -261,6 +261,7 @@ export async function fetchCatalogPage(
     const metas = Array.isArray(body?.metas) ? body.metas : [];
     if (typeof body?.rawLength === 'number') rawLengths.set(metas, body.rawLength);
     if (typeof body?.pageSize === 'number' && body.pageSize > 0) pageSizes.set(metas, body.pageSize);
+    if (typeof body?.total === 'number' && body.total >= 0) pageTotals.set(metas, body.total);
     if (body?.served === true) servedPages.add(metas);
     if (body?.randomize === true) randomizedPages.add(metas);
     return metas;
@@ -273,6 +274,8 @@ export async function fetchCatalogPage(
 
 const rawLengths = new WeakMap<any[], number>();
 const pageSizes = new WeakMap<any[], number>();
+// The catalog's size as its source reported it with this page (PublicMetaDB, TMDB).
+const pageTotals = new WeakMap<any[], number>();
 const servedPages = new WeakSet<any[]>();
 const randomizedPages = new WeakSet<any[]>();
 const servedCatalogs = new LRUCache<string, true>({
@@ -293,6 +296,10 @@ const failedPages = new LRUCache<string, true>({
 export interface Window {
   items: any[];
   hasMore: boolean;
+  /** How many titles this list holds: the count a walk to its end made under the same filter. */
+  total?: number;
+  /** How many titles the catalog's source says it holds, before any filter (see sourceCountApplies). */
+  sourceTotal?: number;
   failed?: boolean;
   randomize?: boolean;
 }
@@ -324,6 +331,13 @@ const catalogLengths = new LRUCache<string, number>({
   ttl: envInt('JELLYFIN_CATALOG_LENGTH_TTL', 3600, 60) * 1000,
 });
 
+// What a catalog's source says it holds, before any filter; keyed without the
+// client's filter, since the source's count doesn't depend on it.
+const sourceSizes = new LRUCache<string, number>({
+  max: envInt('JELLYFIN_PAGE_LENGTH_CACHE_MAX', 2000, 1),
+  ttl: envInt('JELLYFIN_CATALOG_LENGTH_TTL', 3600, 60) * 1000,
+});
+
 // A rebuilt recommendation row can change length and order, so its lengths and
 // walk positions are keyed by the rebuild it was served from. Read before the
 // keys are built, so every process moves to a rebuild on its next request.
@@ -348,6 +362,17 @@ function lengthKeyFor(userUUID: string, catalog: CatalogRef, extras: Record<stri
 
 export function knownCatalogLength(userUUID: string, catalog: CatalogRef, extras: Record<string, string> = {}, tags: string[] = [], keepKey = ''): number | undefined {
   return catalogLengths.get(lengthKeyFor(userUUID, catalog, extras, tags, keepKey));
+}
+
+/**
+ * How many titles a list of this catalog holds: the count a walk to its end made
+ * under the same filter (exact; kept per filter, S3-70), else, when the caller
+ * says the source's count applies to that filter, the source's own count (an
+ * upper bound once titles are filtered out).
+ */
+export function knownCatalogSize(userUUID: string, catalog: CatalogRef, extras: Record<string, string> = {}, tags: string[] = [], keepKey = '', sourceApplies = false): number | undefined {
+  return catalogLengths.get(lengthKeyFor(userUUID, catalog, extras, tags, keepKey))
+    ?? (sourceApplies ? sourceSizes.get(lengthKeyFor(userUUID, catalog, extras, tags)) : undefined);
 }
 
 /** How many titles one page of the catalog holds, once a window has read one. */
@@ -494,6 +519,7 @@ export async function fetchWindow(
         break;
       }
       if (randomizedPages.has(page)) randomize = true;
+      if (pageTotals.has(page)) sourceSizes.set(pageKey, pageTotals.get(page)!);
       if (servedPages.has(page) && !sequential) {
         sequential = true;
         servedCatalogs.set(pageKey, true);
@@ -564,10 +590,14 @@ export async function fetchWindow(
     }
   }
 
+  const total = knownCatalogSize(userUUID, catalog, extras, tags, keepKey);
+  const sourceTotal = sourceSizes.get(pageKey);
   return {
     items,
     // A walk cut short by its page budget has more behind it, even if the window is short.
     hasMore: collected.length > offset + limit || (!exhausted && !failed),
+    ...(total !== undefined ? { total } : {}),
+    ...(sourceTotal !== undefined ? { sourceTotal } : {}),
     ...(failed ? { failed: true } : {}),
     ...(randomize ? { randomize: true } : {}),
   };

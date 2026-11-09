@@ -5316,19 +5316,20 @@ const catalogRoute = async function (req, res) {
       const { genre: genreName } = extraArgs;
       const skipValue = extraArgs.skip !== undefined ? parseInt(extraArgs.skip) : 0;
       const result = await getCatalog(actualType, language, catalogPage, cleanId, genreName, config, userUUID, false, skipValue);
-      responseData = { metas: result.metas || [], ...(req.params.forJellyfin === '1' ? { served: true } : {}) };
+      responseData = { metas: result.metas || [], ...(req.params.forJellyfin === '1' ? { served: true } : {}), ...(typeof result.total === 'number' ? { total: result.total } : {}) };
       filtersAlreadyApplied = true;
       } else if (cleanId.startsWith('merged.')) {
       const { genre: genreName } = extraArgs;
       const skipValue = extraArgs.skip !== undefined ? parseInt(extraArgs.skip) : 0;
       const result = await getCatalog(actualType, language, catalogPage, cleanId, genreName, config, userUUID, false, skipValue);
-      responseData = { metas: result.metas || [], ...(req.params.forJellyfin === '1' ? { served: true } : {}) };
+      responseData = { metas: result.metas || [], ...(req.params.forJellyfin === '1' ? { served: true } : {}), ...(typeof result.total === 'number' ? { total: result.total } : {}) };
       filtersAlreadyApplied = true;
       } else {
       const { genre: genreName, type_filter } = extraArgs;
       const runCatalogPage = async (page, skipOverride) => {
         let metas = [];
         let ended = false;
+        let total;
         const args = [actualType, language, page];
         switch (cleanId) {
           case "tmdb.trending":
@@ -5376,12 +5377,15 @@ const catalogRoute = async function (req, res) {
             break;
           }
           default: {
-            metas = (await getCatalog(actualType, language, page, cleanId, genreName, config, userUUID, false, skipOverride)).metas;
+            const result = await getCatalog(actualType, language, page, cleanId, genreName, config, userUUID, false, skipOverride);
+            metas = result.metas;
+            total = result.total;
             ended = isEndOfList(metas);
             break;
           }
       }
-      return { metas: metas || [], ...(ended ? { endOfList: true } : {}) };
+      // The source's own count of the catalog, cached with the page; only the Jellyfin layer reads it.
+      return { metas: metas || [], ...(ended ? { endOfList: true } : {}), ...(typeof total === 'number' ? { total } : {}) };
     };
 
     const keyForPage = (page) => {
@@ -5395,8 +5399,13 @@ const catalogRoute = async function (req, res) {
       cacheWrapper(userUUID, keyForPage(page), () => runCatalogPage(page, skipOverride), cacheOptions);
 
     if (catalogFiltersActive({ config, catalogConfig, cleanId }) && req.params.forJellyfin === '1') {
-      const raw = (await readPage(catalogPage, legacySkip))?.metas || [];
-      responseData = { metas: await applyCatalogFilters(raw, { type: actualType, config, catalogConfig, cleanId }), rawLength: raw.length };
+      const read = await readPage(catalogPage, legacySkip);
+      const raw = read?.metas || [];
+      responseData = {
+        metas: await applyCatalogFilters(raw, { type: actualType, config, catalogConfig, cleanId }),
+        rawLength: raw.length,
+        ...(typeof read?.total === 'number' ? { total: read.total } : {}),
+      };
       filtersAlreadyApplied = true;
     } else if (catalogFiltersActive({ config, catalogConfig, cleanId })) {
       const { accountOwner } = require('./lib/accounts');
@@ -5583,6 +5592,10 @@ const catalogRoute = async function (req, res) {
     }
 
     if (req.params.forJellyfin === '1' && Array.isArray(responseData?.metas)) responseData.pageSize = catalogPageSize;
+    if (req.params.forJellyfin !== '1' && responseData && 'total' in responseData) {
+      const { total: _total, ...stremioReply } = responseData;
+      responseData = stremioReply;
+    }
 
     if (config.trailerProvider === 'addon' && req.params.forJellyfin !== '1' && Array.isArray(responseData?.metas)) {
       const { applyTrailerAddonWithin } = require('./lib/trailerProjection');

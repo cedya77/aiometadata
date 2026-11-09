@@ -3,13 +3,14 @@ import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId } from './ids';
 import { collectionFolder, EMPTY_USER_DATA } from './dto';
-import { catalogCannotServe, fetchWindow, includeTypesFilter, listFilterKey, isLandscapeCatalog, knownCatalogLength, knownPageLength, metaToBaseItem, rememberImages, servedOrder, showLandscape, warmCatalogLengths } from './items';
+import { catalogCannotServe, fetchWindow, includeTypesFilter, listFilterKey, isLandscapeCatalog, knownCatalogLength, knownCatalogSize, knownPageLength, metaToBaseItem, rememberImages, servedOrder, showLandscape, warmCatalogLengths } from './items';
 import { getCatalogs, requiresGenre, viewIdFor, viewTypeFor, type CatalogRef } from './views';
 import { viewerAccountOwner, viewerReadsExtensions } from './viewer';
 import { profileTags } from './profiles';
 import { findFolder, subFolders, type CollectionDraft, type FolderDraft, type SourceDraft } from '../collectionBuilder/types';
 import { FOLDER_MERGE_MODE, mergeModeOf, type MergeMode } from '../collectionBuilder/mergeModes';
 import { shuffleMetas } from '../../utils/mergedCatalog';
+import { sourceCountApplies, sumCatalogTotals } from '../../utils/catalogTotals';
 
 // A builder collection is a library of box sets; a folder is one box set whose sources are its members.
 
@@ -245,6 +246,22 @@ export async function collectionViews(userUUID: string, config: any, serverId: s
 export interface MembersPage {
   items: any[];
   hasMore: boolean;
+  /** The folder's size when every source's size is known (see knownCatalogSize). */
+  total?: number;
+}
+
+/** A folder holds what its sources hold; a source that can't serve the asked types holds nothing. */
+function folderSize(
+  userUUID: string,
+  sources: Array<{ catalog: CatalogRef; genre: string | null }>,
+  includeItemTypes: string | undefined,
+  officialRatings: string | undefined,
+  tags: string[],
+  filterKey: string
+): number | undefined {
+  return sumCatalogTotals(sources.map(({ catalog, genre }) =>
+    catalogCannotServe(catalog, includeItemTypes) ? 0 : knownCatalogSize(userUUID, catalog, genre ? { genre } : {}, tags, filterKey,
+      sourceCountApplies(catalog.type, includeItemTypes, !!officialRatings))));
 }
 
 interface MemberCursor {
@@ -401,7 +418,8 @@ export async function boxSetMembers(
     memberCursors.delete(cursorKey);
   }
 
-  return { items: folder.randomizePerPage ? shuffleMetas(collected) : collected, hasMore: more };
+  const total = folderSize(userUUID, sources, includeItemTypes, officialRatings, tags, filterKey);
+  return { items: folder.randomizePerPage ? shuffleMetas(collected) : collected, hasMore: more, ...(total !== undefined ? { total } : {}) };
 }
 
 // Where a mixed walk stopped: each source's position, whose turn is next, and
@@ -517,5 +535,6 @@ async function mixedMembers(args: {
   } else {
     mixCursors.delete(cursorKey);
   }
-  return { items: collected, hasMore: more };
+  const total = folderSize(userUUID, sources, includeItemTypes, officialRatings, tags, filterKey);
+  return { items: collected, hasMore: more, ...(total !== undefined ? { total } : {}) };
 }

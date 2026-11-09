@@ -8,6 +8,7 @@ import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommend
 import { fetchSimklTrendingItems, fetchSimklRecipeItems, fetchSimklWatchlistItems, sortSimklItemsByRelease, sortSimklItemsByActivity, fetchSimklUpNextItems, parseSimklItems, parseSimklUpNextItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases, fetchSimklListPage } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
+import { catalogTotalOf, sumCatalogTotals, withCatalogTotal } from "../utils/catalogTotals.js";
 import { fetchResume, parseResumeItems, fetchListPage, parseListItems, fetchPickItems, parsePickItems, publicMetaDBListType, publicMetaDBListId, WATCHLIST_CATALOG_ID } from "../utils/publicmetadbUtils.js";
 import { mapWithLimit } from "../utils/concurrency.js";
 import { envInt } from '../utils/envNumber';
@@ -53,7 +54,13 @@ const host = process.env.HOST_NAME?.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
-async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false, skip?: number): Promise<{ metas: any[] }> {
+async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false, skip?: number): Promise<{ metas: any[]; total?: number }> {
+  const result = await routeCatalog(type, language, page, id, genre, config, userUUID, includeVideos, skip);
+  const total = catalogTotalOf(result.metas);
+  return total !== undefined ? { ...result, total } : result;
+}
+
+async function routeCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false, skip?: number): Promise<{ metas: any[] }> {
   try {
     if (id === 'tvdb.collections') {
       logger.debug(`Fetching TVDB collections catalog: ${id}`);
@@ -1136,6 +1143,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
     try {
       let results: any[];
+      let sourceTotal: number | undefined;
       if (runtimeGte === null && runtimeLte === null) {
         const response = mediaType === 'movie'
           ? await moviedb.discoverMovie(parameters, config)
@@ -1146,6 +1154,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
           return Array.isArray(response?.results) && discoverPage > (response.total_pages ?? 0) ? endOfList() : [];
         }
         results = response.results;
+        sourceTotal = tmdbDiscoverTotal(response);
       } else {
         const filtered = await runtimeFilteredDiscoverPage({
           parameters, page: discoverPage, runtimeGte, runtimeLte, language, config,
@@ -1179,7 +1188,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
       const validMetas = metas.filter(meta => meta !== null);
       logger.success(`[TMDB Discover] Processed ${validMetas.length} items for ${id}`);
-      return validMetas;
+      return withCatalogTotal(validMetas, sourceTotal);
     } catch (error: any) {
       logger.error(`[TMDB Discover] Error fetching catalog ${id}: ${error.message}`);
       return [];
@@ -1427,7 +1436,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
   let validMetas = metas.filter(meta => meta !== null);
   
-  return validMetas;
+  return withCatalogTotal(validMetas, tmdbDiscoverTotal(res));
   } else {
     return [];
   }
@@ -3541,7 +3550,7 @@ async function getPublicMetaDBCatalog(
       let metas = await parseListItems(data.items || [], type, language, config);
       metas = stampListedAt(metas, data.items || [], (item: any) => ({ tmdb: item?.tmdb_id }), (item: any) => item?.created);
       logger.success(`[PublicMetaDB] ${listType === 'watchlist' ? 'Watchlist' : 'List'} ${listId}: ${metas.length} items (page ${page})`);
-      return metas;
+      return withCatalogTotal(metas, (data as { total?: number }).total);
     }
 
     if (catalogId.startsWith('publicmetadb.public.')) {
@@ -3551,7 +3560,7 @@ async function getPublicMetaDBCatalog(
       let metas = await parseListItems(data.items || [], type, language, config);
       metas = stampListedAt(metas, data.items || [], (item: any) => ({ tmdb: item?.tmdb_id }), (item: any) => item?.created);
       logger.success(`[PublicMetaDB] Public list ${listId}: ${metas.length} items (page ${page})`);
-      return metas;
+      return withCatalogTotal(metas, data.total);
     }
 
     if (catalogId.startsWith('publicmetadb.pick.')) {
@@ -3584,6 +3593,12 @@ async function buildCatalogCacheArgs(
   applyCatalogKeyArgs(args, catalogId, catCfg, config);
   if (page > 1) args.page = page;
   return applyCatalogKeyStamps(args, catalogId, catCfg, config);
+}
+
+/** What TMDB says a discover query holds, within the 500 pages it will serve. */
+function tmdbDiscoverTotal(response: any): number | undefined {
+  const total = Number(response?.total_results);
+  return Number.isFinite(total) && total >= 0 ? Math.min(total, 500 * TMDB_DISCOVER_PAGE_SIZE) : undefined;
 }
 
 async function getMergedCatalog(
@@ -3664,6 +3679,7 @@ async function getMergedCatalog(
   }
 
   const seenIds = new Set<string>(cursor?.seenIds || []);
+  const sourceTotals = new Map<string, number | undefined>();
 
   const fetchSourcePage = async (src: any, srcPage: number): Promise<{ items: any[]; rawLength: number }> => {
     try {
@@ -3679,6 +3695,7 @@ async function getMergedCatalog(
       }, { config: srcConfig });
 
       const raw = result?.metas || [];
+      sourceTotals.set(`${src.catalogId}:${src.catalogType}`, typeof (result as any)?.total === 'number' ? (result as any).total : catalogTotalOf(raw));
       let items = raw;
 
       if (hasGenreFilter) {
@@ -3873,7 +3890,9 @@ async function getMergedCatalog(
     `(skip=${stremioSkip}, seen=${seenIds.size}, mode=${mergeMode}` +
     `${hasGenreFilter ? `, genre="${genre}"` : ''})`
   );
-  return collected;
+  // A genre narrows each source well below its own count, so no size is claimed then.
+  const total = hasGenreFilter ? undefined : sumCatalogTotals(validSources.map((s: any) => sourceTotals.get(`${s.catalogId}:${s.catalogType}`)));
+  return withCatalogTotal(collected, total);
 }
 
 export { getCatalog };
