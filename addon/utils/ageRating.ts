@@ -36,6 +36,18 @@ export function isUnratedCertification(certification: unknown): boolean {
   return value === '' || UNRATED_CERTIFICATIONS.has(value.toUpperCase());
 }
 
+/**
+ * The US certifications a cap lets through, as TMDB discover's certification filter: the film scale up to the cap,
+ * or the TV scale up to its TV equivalent. NC-17, no cap and anything unknown filter nothing.
+ */
+export function tmdbCertificationFilter(ageRating: unknown, type: 'movie' | 'tv'): { certification_country: string; certification: string } | null {
+  const cap = String(ageRating ?? '').toUpperCase();
+  if (cap === 'NC-17' || !MOVIE_RATING_HIERARCHY.includes(cap)) return null;
+  const hierarchy = type === 'movie' ? MOVIE_RATING_HIERARCHY : TV_RATING_HIERARCHY;
+  const top = type === 'movie' ? cap : MOVIE_TO_TV_RATING[cap];
+  return { certification_country: 'US', certification: hierarchy.slice(0, hierarchy.indexOf(top) + 1).join('|') };
+}
+
 export function hasAgeRatingCap(config: { ageRating?: unknown } | null | undefined): boolean {
   const cap = config?.ageRating;
   return typeof cap === 'string' && cap !== '' && cap.toLowerCase() !== 'none';

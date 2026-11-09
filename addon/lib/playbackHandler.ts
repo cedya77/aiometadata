@@ -159,6 +159,8 @@ export async function handleBulkPlaybackReport(
   const method = event === 'played' ? 'addToHistory' : 'removeFromHistory';
   const scope = body?.scope === 'season' ? 'season' : 'series';
   const item = String(body?.metaId || id);
+  const at = event === 'played' ? num(body?.at) : null;
+  const dated = at ? { at: at * 1000 } : {};
   const jobs: OutboxJob[] = [];
   // An episode a tracker has as a film goes on its own, delivered as that film, so its retries never repeat the rest.
   const { filmFor } = require('./jellyfin/trackerMatch');
@@ -177,7 +179,7 @@ export async function handleBulkPlaybackReport(
   const filmJobs = (service: WatchTrackingService, films: string[]): OutboxJob[] => films.map((video) => {
     const parsed = parseVideo(video);
     const report: PlaybackReport = {
-      id: null, event, at: null, metaId: body?.metaId ?? null, videoId: video,
+      id: null, event, at, metaId: body?.metaId ?? null, videoId: video,
       positionMs: null, durationMs: null, played: event === 'played',
       season: parsed?.season ?? null, episode: parsed?.episode ?? null, ids: body?.ids ?? {},
     };
@@ -189,7 +191,7 @@ export async function handleBulkPlaybackReport(
     const movies = shouldTrackServiceMediaType(config, service, 'movie');
     if (!shows && !movies) continue;
     const { films, rest } = await apart(service);
-    if (shows && rest.length) jobs.push({ service, op: 'episodes', item, payload: { videos: rest, method, scope } });
+    if (shows && rest.length) jobs.push({ service, op: 'episodes', item, payload: { videos: rest, method, scope, ...dated } });
     if (movies) jobs.push(...filmJobs(service, [...films.keys()]));
   }
   // PublicMetaDB clears a season in one call but records a watch one episode at a time,
@@ -203,7 +205,7 @@ export async function handleBulkPlaybackReport(
     } else if (pmdbShows) {
       const listed = await pmdbListed(config, rest);
       for (const video of rest) {
-        if (!listed.has(video)) jobs.push({ service: 'publicmetadb', op: 'episodes', item, coalesce: `history:${video}`, payload: { videos: [video], method, scope } });
+        if (!listed.has(video)) jobs.push({ service: 'publicmetadb', op: 'episodes', item, coalesce: `history:${video}`, payload: { videos: [video], method, scope, ...dated } });
       }
     }
     if (pmdbMovies) {
@@ -219,7 +221,7 @@ export async function handleBulkPlaybackReport(
   const parsedEdge = parseMediaId(edge);
   if (parsedEdge) {
     const report: PlaybackReport = {
-      id: null, event, at: null, metaId: body?.metaId ?? null, videoId: edge,
+      id: null, event, at, metaId: body?.metaId ?? null, videoId: edge,
       positionMs: null, durationMs: null, played: event === 'played',
       season: parsedEdge.season ?? null, episode: parsedEdge.episode ?? null, ids: body?.ids ?? {},
     };
@@ -456,8 +458,11 @@ function trackedMediaId(p: Pick<ReportPayload, 'type' | 'id'>): any | null {
 }
 
 export async function deliverCredit(service: WatchTrackingService, sent: ReportPayload, config: any): Promise<void> {
-  const parsedId = trackedMediaId(await onTracker(service, sent, config));
-  if (parsedId) await require('./subtitleHandler').creditHistory(parsedId, config, service);
+  const p = await onTracker(service, sent, config);
+  const parsedId = trackedMediaId(p);
+  // Dated by the mark, so a retry or a date the client sent is not recorded as the time it was delivered.
+  const at = Number(p.report?.at) > 0 ? Number(p.report.at) * 1000 : undefined;
+  if (parsedId) await require('./subtitleHandler').creditHistory(parsedId, config, service, at);
 }
 
 export async function deliverUnwatch(service: WatchTrackingService, sent: ReportPayload, config: any): Promise<void> {

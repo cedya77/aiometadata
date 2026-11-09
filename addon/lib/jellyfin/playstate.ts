@@ -357,7 +357,8 @@ function reportFor(
   event: 'start' | 'pause' | 'stop' | 'played' | 'unplayed',
   positionMs: number | null,
   played: boolean | null,
-  edgeAt: number | null = null
+  edgeAt: number | null = null,
+  at: number | null = null
 ): any {
   const d = session.descriptor;
   return {
@@ -372,7 +373,7 @@ function reportFor(
         ? `jellyfin|${session.videoId}|${event}|${Date.now()}`
         : `jellyfin|${session.videoId}|${event}|${positionMs ?? 0}${edgeAt ? `|r${edgeAt}` : ''}`,
     event,
-    at: Math.floor(Date.now() / 1000),
+    at: Math.floor((at ?? Date.now()) / 1000),
     metaId: d.i,
     videoId: session.videoId,
     positionMs: positionMs ?? 0,
@@ -440,7 +441,8 @@ async function writePlaystate(
   positionMs: number,
   played: boolean | null,
   finished = false,
-  viewed = false
+  viewed = false,
+  at: number | null = null
 ): Promise<void> {
   const database: any = require('../database');
   const videoId = session.videoId;
@@ -453,7 +455,11 @@ async function writePlaystate(
     }
     const now = Date.now();
     if (event === 'played') {
-      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: now, lastPlayedKind: viewed ? 'viewing' : 'mark', origin: 'server', watch: { at: now, kind: 'first' } }, profile, session.aliases);
+      const playedAt = at ?? now;
+      // A date a client sent for an earlier viewing is logged as that viewing, and leaves a later one as the last.
+      const held = at !== null ? await database.getPlaystate(userUUID, videoId, profile).catch(() => null) : null;
+      const dated = Number(held?.last_played_at) > playedAt ? {} : { lastPlayedAt: playedAt, lastPlayedKind: viewed ? 'viewing' : 'mark' };
+      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, ...dated, origin: 'server', watch: { at: playedAt, kind: 'first' } }, profile, session.aliases);
       return;
     }
     if (event === 'stop' && played === true) {
@@ -589,13 +595,14 @@ async function tellTrackers(
   positionMs: number,
   played: boolean | null,
   refreshWatched = true,
-  edgeAt: number | null = null
+  edgeAt: number | null = null,
+  at: number | null = null
 ): Promise<void> {
   const { handlePlaybackReport } = require('../playbackHandler');
   await handlePlaybackReport(
     session.stremioType,
     session.videoId,
-    reportFor(session, event, positionMs, played, edgeAt),
+    reportFor(session, event, positionMs, played, edgeAt, at),
     config,
     userUUID
   );
@@ -626,7 +633,7 @@ export async function recordStopped(req: any, body: any, source: PlaySourceId = 
 // the mark applies to each aired episode in it. The table is written for all
 // of them before this returns, since the client reads the item back straight
 // after and a half-marked season shows no tick; the trackers are told after.
-async function markEach(req: any, body: any, event: 'played' | 'unplayed', upTo = false, source: PlaySourceId = 'jellyfin'): Promise<void> {
+async function markEach(req: any, body: any, event: 'played' | 'unplayed', upTo = false, source: PlaySourceId = 'jellyfin', at: number | null = null): Promise<void> {
   const userUUID = req.params?.userUUID;
   const itemId = bodyItemId(req, body);
   if (!userUUID || !itemId) return;
@@ -642,7 +649,7 @@ async function markEach(req: any, body: any, event: 'played' | 'unplayed', upTo 
 
   const marked = await markedItemIds(userUUID, itemId, upTo);
   if (upTo) marked.ids = await unplayedAmong(userUUID, config, profile, marked.ids);
-  await markItems(userUUID, config, profile, marked, event, source);
+  await markItems(userUUID, config, profile, marked, event, source, at);
 }
 
 // A mark on a title the server still holds as playing is the stop that never arrived.
@@ -677,7 +684,8 @@ async function markItems(
   profile: string,
   marked: MarkTarget,
   event: 'played' | 'unplayed',
-  source: PlaySourceId
+  source: PlaySourceId,
+  at: number | null = null
 ): Promise<void> {
   const played = event === 'played';
   const itemId = marked.metaId ?? marked.ids[0];
@@ -692,7 +700,7 @@ async function markItems(
     // A session still open when the title is marked was watched to here, so the mark dates a viewing.
     const viewed = played && Boolean((await getPosition(key))?.marked);
     if (!viewed) deletePosition(key);
-    await writePlaystate(userUUID, profile, session, event, 0, played, false, viewed);
+    await writePlaystate(userUUID, profile, session, event, 0, played, false, viewed, at);
     return session;
   })).filter((s): s is ResolvedSession => s !== null);
 
@@ -720,11 +728,12 @@ async function markItems(
       event,
       metaId: marked.metaId,
       videos: sessions.map((session) => ({ videoId: session.videoId })),
+      ...(at ? { at: Math.floor(at / 1000) } : {}),
     }, config, userUUID).catch((error: any) => logger.debug(`Mark report failed for ${itemId}: ${error?.message || error}`));
     return;
   }
   const { applyLocalWatch } = require('./watched');
-  mapWithConcurrency(sessions, 3, (session: ResolvedSession) => tellTrackers(userUUID, config, session, event, 0, played, false))
+  mapWithConcurrency(sessions, 3, (session: ResolvedSession) => tellTrackers(userUUID, config, session, event, 0, played, false, null, at))
     .then(async () => {
       for (const session of sessions) {
         await applyLocalWatch(config, {
@@ -851,8 +860,16 @@ export async function recordClientMark(req: any, mark: ClientMark, source: PlayS
   await markItems(userUUID, config, profile, marked, mark.played ? 'played' : 'unplayed', source);
 }
 
-export async function recordPlayed(req: any, body: any, source: PlaySourceId = 'jellyfin'): Promise<void> {
-  await markEach(req, body, 'played', false, source);
+export async function recordPlayed(req: any, body: any, source: PlaySourceId = 'jellyfin', at: number | null = null): Promise<void> {
+  await markEach(req, body, 'played', false, source, at);
+}
+
+/** A played date a client sent, read as ISO time; one still to come is now, and one that is no date is none. */
+export function clientPlayedAt(value: unknown): number | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const at = Date.parse(value);
+  if (!Number.isFinite(at) || at <= 0) return null;
+  return Math.min(at, Date.now());
 }
 
 export async function recordUnplayed(req: any, body: any, source: PlaySourceId = 'jellyfin'): Promise<void> {
@@ -999,10 +1016,11 @@ export async function recordProgress(req: any, body: any, source: PlaySourceId =
  * played flag, or a resume position, which cleared is what drops the item from
  * continue watching. Answers the state the item is now in.
  */
-export async function recordUserData(req: any, body: any, source: PlaySourceId = 'jellyfin'): Promise<{ played: boolean; positionMs: number; rating?: number | null } | null> {
+export async function recordUserData(req: any, body: any, source: PlaySourceId = 'jellyfin'): Promise<{ played: boolean; positionMs: number; rating?: number | null; at?: number } | null> {
   const userUUID = req.params?.userUUID;
   const itemId = bodyItemId(req, body);
   if (!userUUID || !itemId) return null;
+  const at = clientPlayedAt(body?.LastPlayedDate ?? body?.lastPlayedDate);
 
   const rated = body && ('Rating' in body || 'rating' in body);
   if (rated) {
@@ -1023,8 +1041,8 @@ export async function recordUserData(req: any, body: any, source: PlaySourceId =
 
   const played = body?.Played ?? body?.played;
   if (played === true || played === false) {
-    await markEach(req, { ItemId: itemId }, played ? 'played' : 'unplayed', false, source);
-    return { played, positionMs: 0 };
+    await markEach(req, { ItemId: itemId }, played ? 'played' : 'unplayed', false, source, played ? at : null);
+    return { played, positionMs: 0, ...(played && at !== null ? { at } : {}) };
   }
 
   const asked = ticksToMs(body?.PlaybackPositionTicks ?? body?.playbackPositionTicks);
@@ -1047,7 +1065,7 @@ export async function recordUserData(req: any, body: any, source: PlaySourceId =
   const { profileKey } = require('./profiles');
   const profile = profileKey(config);
   deletePosition(`${userUUID}:${profile}:${itemId}`);
-  await upsertPlaystateEverywhere(userUUID, session.videoId, { positionMs, runtimeMs: session.runtimeMs ?? 0, ...(positionMs > 0 ? { lastPlayedAt: Date.now() } : {}), origin: 'server' }, profile, session.aliases);
+  await upsertPlaystateEverywhere(userUUID, session.videoId, { positionMs, runtimeMs: session.runtimeMs ?? 0, ...(positionMs > 0 ? { lastPlayedAt: at ?? Date.now() } : {}), origin: 'server' }, profile, session.aliases);
   announce(userUUID, config, profile, session).catch((error: any) =>
     logger.debug(`User data push failed for ${session.videoId}: ${error?.message || error}`)
   );
@@ -1068,5 +1086,5 @@ export async function recordUserData(req: any, body: any, source: PlaySourceId =
 
   const database: any = require('../database');
   const row = await database.getPlaystate(userUUID, session.videoId, profile);
-  return { played: Boolean(row?.played), positionMs };
+  return { played: Boolean(row?.played), positionMs, ...(positionMs > 0 && at !== null ? { at } : {}) };
 }

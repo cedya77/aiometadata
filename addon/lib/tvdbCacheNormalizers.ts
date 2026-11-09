@@ -41,7 +41,7 @@ const SERIES_EXTENDED_KEYS = [
   'nameTranslations',
   'overviewTranslations',
 ];
-const COMPANY_KEYS = ['name'];
+const COMPANY_KEYS = ['id', 'name'];
 const MOVIE_COMPANY_KINDS = ['studio', 'production'];
 
 function normalizeTvdbCompanyForCache(company: any) {

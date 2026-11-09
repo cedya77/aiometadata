@@ -300,6 +300,10 @@ export interface Window {
   hasMore: boolean;
   failed?: boolean;
   randomize?: boolean;
+  /** A filtered walk that ran out of page budget before filling the window; more may follow. */
+  truncated?: boolean;
+  /** A filtered walk that reached its page ceiling and was taken as the end of the list. */
+  capped?: boolean;
 }
 
 export function servedOrder(items: any[], window: Partial<Window>): any[] {
@@ -408,6 +412,12 @@ const walks = walkRecords<{ raw: number }>({
   seenCap: WALK_CURSOR_MAX_IDS,
 });
 
+const EMPTY_RESTARTS_MAX = 3;
+const emptyRestarts = new LRUCache<string, number>({
+  max: envInt('JELLYFIN_PAGE_LENGTH_CACHE_MAX', 2000, 1),
+  ttl: envInt('JELLYFIN_WALK_CURSOR_TTL', 600, 60) * 1000,
+});
+
 /**
  * `skip` is an absolute offset, but the catalog route rounds it up to a whole
  * page for a stable cache key, so an offset landing mid-page silently loses the
@@ -443,8 +453,9 @@ export async function fetchWindow(
   }
 
   // A window resumes where a walk stopped. Short of that place, only a filtered one reads on from an earlier place,
-  // as it has to count its way there anyway; any other jump goes straight to its page.
-  const found = pageLength && startIndex > 0 ? walks.resume(lengthKey, startIndex) : null;
+  // as it has to count its way there anyway; any other jump goes straight to its page. A filtered walk that found
+  // nothing leaves a place at its own start, so asking again reads on instead of over the same pages.
+  const found = pageLength && (startIndex > 0 || filtering) ? walks.resume(lengthKey, startIndex) : null;
   const resumed = found && (filtering || found.place.at === startIndex) ? found : null;
   const cursor = resumed ? { raw: resumed.place.state.raw, seen: resumed.seen } : undefined;
   const minRaw = cursor ? cursor.raw : 0;
@@ -463,17 +474,33 @@ export async function fetchWindow(
   let exhausted = false;
   let failed = false;
   let randomize = false;
-  let budget = maxPages((offset + limit) * (filtering ? 2 : 1), pageLength || 0);
 
   // A length counts what a client was shown, which runs behind the catalog's own
   // positions a cursor walks by, so it would end that walk early.
   const knownLength = filtering || cursor ? undefined : catalogLengths.get(lengthKey);
   const minPage = envInt('JELLYFIN_CATALOG_MIN_PAGE', 10, 1);
+  const ceilingPages = envInt('JELLYFIN_FILTER_SCAN_MAX_PAGES', 50, 1);
+  // A filter on item types alone keeps most of a catalog, as a plain browse does, so only the others stop at the ceiling.
+  const sparse = !!pick || keepKey.includes('|');
+  // One request reads only so many pages of such a filter, so a jump deep into one fills over a few requests rather
+  // than reading to the ceiling at once.
+  const perRequest = envInt('JELLYFIN_FILTER_PAGES_PER_REQUEST', 10, 1);
+  const budgetFor = (length: number): number => {
+    const wanted = maxPages((offset + limit) * (filtering ? 2 : 1), length);
+    return sparse ? Math.min(wanted, perRequest) : wanted;
+  };
+  let budget = budgetFor(pageLength || 0);
+  let capped = false;
   let stop = false;
   let staleRun = 0;
 
   while (!stop && collected.length < offset + limit && pages < budget) {
     if (knownLength !== undefined && skip >= knownLength) {
+      exhausted = true;
+      break;
+    }
+    if (sparse && pageLength && skip >= ceilingPages * pageLength) {
+      capped = true;
       exhausted = true;
       break;
     }
@@ -514,7 +541,7 @@ export async function fetchWindow(
       if (first && i === 0 && !pageLength && (pageSizes.has(page) || advance >= minPage)) {
         pageLength = pageSizes.get(page) ?? advance;
         rememberLength('page', pageKey, pageLength);
-        budget = maxPages((offset + limit) * (filtering ? 2 : 1), pageLength);
+        budget = budgetFor(pageLength);
       }
 
       const candidates: Array<{ meta: any; at: number }> = [];
@@ -553,27 +580,58 @@ export async function fetchWindow(
     }
   }
 
-  if (exhausted && !failed) rememberLength('catalog', lengthKey, startIndex - offset + collected.length);
+  const reached = startIndex - offset + collected.length;
+  if (exhausted && !failed) rememberLength('catalog', lengthKey, reached);
 
   // Duplicates are dropped above, so trimming by count would cut into the window
   // itself; the offset only ever covers items that came before startIndex.
   if (offset > collected.length) offset = collected.length;
   const items = collected.slice(offset, offset + limit);
 
+  // A filtered walk that stopped without overfilling read everything before `skip`: what it did not keep there was
+  // filtered out. Stopping short of the window means the budget ran out first.
+  const scannedToSkip = filtering && !exhausted && !failed && collected.length <= offset + limit;
+  let truncated = scannedToSkip && collected.length < offset + limit;
+
+  // A filtered window that found nothing and leaves no place to read on from starts over each time, and a client told
+  // there is more keeps asking. After a few starts over at the same place, the list ends there instead.
+  let closed = false;
+  if (truncated && items.length === 0 && (!resumed || pick)) {
+    const restartKey = `${lengthKey}#${startIndex}`;
+    const restarts = (emptyRestarts.get(restartKey) ?? 0) + 1;
+    if (restarts >= EMPTY_RESTARTS_MAX) {
+      closed = true;
+      truncated = false;
+      capped = true;
+      emptyRestarts.delete(restartKey);
+    } else {
+      emptyRestarts.set(restartKey, restarts);
+    }
+  }
+
   // Only a window placed exactly may leave a cursor: one mapped from a page number
   // is off by the repeats before it, and would carry that into every later page.
   const exact = filtering || startIndex === 0 || !!cursor;
   if (exact && items.length > 0) {
     const shown = collected.slice(0, offset + items.length).map((meta) => String(meta.id));
-    walks.save(lengthKey, resumed, shown, startIndex + items.length, { raw: rawAt[offset + items.length - 1] + 1 });
+    const raw = scannedToSkip ? skip : rawAt[offset + items.length - 1] + 1;
+    walks.save(lengthKey, resumed, shown, startIndex + items.length, { raw });
+  } else if (truncated && !pick) {
+    // Not for a pick on the viewer's own state: a title marked after this read would sit before the place, unseen.
+    walks.save(lengthKey, resumed, collected.slice(0, offset).map((meta) => String(meta.id)), reached, { raw: skip });
   }
+
+  if (closed) logger.debug(`Filtered walk of ${catalog.type}/${catalog.id} ended with nothing found and no place to read on from (${keepKey || 'no key'})`);
+  else if (capped) logger.debug(`Filtered walk of ${catalog.type}/${catalog.id} stopped at its ${ceilingPages}-page ceiling (${keepKey || 'no key'})`);
 
   return {
     items,
     // A walk cut short by its page budget has more behind it, even if the window is short.
-    hasMore: collected.length > offset + limit || (!exhausted && !failed),
+    hasMore: !closed && (collected.length > offset + limit || (!exhausted && !failed)),
     ...(failed ? { failed: true } : {}),
     ...(randomize ? { randomize: true } : {}),
+    ...(truncated ? { truncated: true } : {}),
+    ...(capped ? { capped: true } : {}),
   };
 }
 
@@ -706,7 +764,7 @@ function premiereDate(meta: any): string | null {
   return Number.isFinite(year) ? new Date(Date.UTC(year, 0, 1)).toISOString() : null;
 }
 
-function productionYear(meta: any): number | null {
+export function productionYear(meta: any): number | null {
   const raw = String(meta.year || meta.releaseInfo || '').slice(0, 4);
   const year = parseInt(raw, 10);
   return Number.isFinite(year) ? year : null;
@@ -806,9 +864,26 @@ export function metaToBaseItem(
   };
 }
 
+export function studioNamesOf(meta: any): string[] {
+  return [...new Set([...(Array.isArray(meta?.studios) ? meta.studios : []), ...(Array.isArray(meta?.networks) ? meta.networks : [])].filter((name) => typeof name === 'string' && name))];
+}
+
+/** A title's studios as Id descriptors, carrying the provider and its id where the title's metadata named them. */
+export function studioDescriptorsOf(meta: any): Array<{ k: 'studio'; n: string; s?: 'tmdb-company' | 'tmdb-network' | 'tvdb' | 'mal'; x?: number }> {
+  const refs: any[] = Array.isArray(meta?._studioRefs) ? meta._studioRefs : [];
+  return studioNamesOf(meta).map((name) => {
+    const ref = refs.find((candidate) => candidate?.name === name);
+    return ref ? { k: 'studio' as const, n: name, s: ref.source, x: Number(ref.id) } : { k: 'studio' as const, n: name };
+  });
+}
+
+/** The Id titles carried for a studio before studio Ids could be decoded; still matched for links clients kept. */
+export function legacyStudioId(name: string): string {
+  return createHash('md5').update(`studio:${name}`).digest('hex');
+}
+
 function studiosOf(meta: any): any[] {
-  const names = [...new Set([...(Array.isArray(meta.studios) ? meta.studios : []), ...(Array.isArray(meta.networks) ? meta.networks : [])].filter((name) => typeof name === 'string' && name))];
-  return names.map((name) => ({ Name: name, Id: createHash('md5').update(`studio:${name}`).digest('hex') }));
+  return studioDescriptorsOf(meta).map((descriptor) => ({ Name: descriptor.n, Id: encodeJellyfinId(descriptor) }));
 }
 
 function countriesOf(meta: any): string[] {
@@ -967,25 +1042,102 @@ export function officialRatingOf(meta: any): string | null {
   return ratingFields(meta).OfficialRating;
 }
 
-/** Keeps the titles of the asked types and, when asked, ratings; a title with no rating matches no rating. */
+/** The years a request keeps, from Jellyfin's comma or pipe separated Years; null keeps every title. */
+export function wantedYears(years: unknown): Set<number> | null {
+  const list = String(years ?? '').split(/[|,]/).map((year) => Number(year.trim())).filter((year) => Number.isInteger(year) && year > 0);
+  return list.length ? new Set(list) : null;
+}
+
+/** The studios a request keeps: lowercased names, Ids titles carried before studio Ids decoded, and provider ids where known. */
+export interface StudioFilter {
+  names: Set<string>;
+  legacy: Set<string>;
+  refs: Array<{ name: string; source: 'tmdb-company' | 'tmdb-network' | 'tvdb' | 'mal'; id: number }>;
+}
+
+function fromStudio(meta: any, studios: StudioFilter): boolean {
+  return studioNamesOf(meta).some((name) => studios.names.has(name.toLowerCase()) || studios.legacy.has(legacyStudioId(name)));
+}
+
+/** The keyword, rating, series status and folder filters a request names; each is null when it names none. */
+export interface ExtraFilters {
+  tags: Set<string> | null;
+  minRating: number | null;
+  statuses: Set<string> | null;
+  folders: 'folder' | 'item' | null;
+}
+
+// Jellyfin's series statuses as titles here carry them; one no title carries, such as Unreleased, matches none.
+const SERIES_STATUSES: Record<string, string> = { continuing: 'Continuing', ended: 'Ended', unreleased: 'Unreleased' };
+
+export function extraFiltersOf(query: Record<string, unknown>): ExtraFilters {
+  const rating = parseRating(query.MinCommunityRating ?? query.minCommunityRating);
+  const statuses = String(query.SeriesStatus ?? query.seriesStatus ?? '').split(',').map((s) => s.trim()).filter(Boolean).map((s) => SERIES_STATUSES[s.toLowerCase()] ?? s);
+  const filters = String(query.Filters ?? query.filters ?? '').split(',').map((f) => f.trim());
+  return {
+    tags: wantedTags(query.Tags ?? query.tags),
+    minRating: rating,
+    statuses: statuses.length ? new Set(statuses) : null,
+    folders: filters.includes('IsFolder') ? 'folder' : filters.includes('IsNotFolder') ? 'item' : null,
+  };
+}
+
+function passesExtra(meta: any, mediaType: string, extra: ExtraFilters): boolean {
+  if (extra.tags) {
+    const anime = extra.tags.has(ANIME_TAG) && (isAnimeCatalogType(mediaType) || PER_ENTRY_ANIME.test(String(meta?.id ?? '')));
+    const keywords = (Array.isArray(meta?.keywords) ? meta.keywords : []).map((k: unknown) => String(k).toLowerCase());
+    if (!anime && !keywords.some((k: string) => extra.tags!.has(k))) return false;
+  }
+  if (extra.minRating !== null && (parseRating(meta?.imdbRating) ?? -1) < extra.minRating) return false;
+  const type = itemTypeOf(meta, mediaType);
+  if (extra.statuses && !(type === 'Series' && extra.statuses.has(seriesStatus(meta) ?? ''))) return false;
+  if (extra.folders === 'folder' && type === 'Movie') return false;
+  if (extra.folders === 'item' && type !== 'Movie') return false;
+  return true;
+}
+
+const hasExtra = (extra?: ExtraFilters | null): extra is ExtraFilters =>
+  Boolean(extra && (extra.tags || extra.minRating !== null || extra.statuses || extra.folders));
+
+/** Keeps the titles of the asked types and, when asked, ratings, years, studios and the extra filters; a title lacking the field matches none. */
 export function includeTypesFilter(
   mediaType: string,
   includeItemTypes: string | undefined,
-  officialRatings?: unknown
+  officialRatings?: unknown,
+  years?: unknown,
+  studios?: StudioFilter | null,
+  extra?: ExtraFilters | null
 ): ((meta: any) => boolean) | undefined {
   const wanted = wantedTypes(includeItemTypes);
   const ratings = wantedRatings(officialRatings);
-  if (!wanted && !ratings) return undefined;
+  const yearSet = wantedYears(years);
+  const extras = hasExtra(extra) ? extra : null;
+  if (!wanted && !ratings && !yearSet && !studios && !extras) return undefined;
 
   return (meta: any) =>
     (!wanted || wanted.has(itemTypeOf(meta, mediaType)))
-    && (!ratings || ratings.has(String(officialRatingOf(meta) ?? '').toUpperCase()));
+    && (!ratings || ratings.has(String(officialRatingOf(meta) ?? '').toUpperCase()))
+    && (!yearSet || yearSet.has(productionYear(meta) ?? -1))
+    && (!studios || fromStudio(meta, studios))
+    && (!extras || passesExtra(meta, mediaType, extras));
 }
 
-/** What a filtered list's lengths and cursors are held under: its types, and its ratings when it names any. */
-export function listFilterKey(includeItemTypes: unknown, officialRatings?: unknown): string {
+function extraKey(extra?: ExtraFilters | null): string {
+  if (!hasExtra(extra)) return '';
+  return [
+    extra.tags ? `|tags:${[...extra.tags].sort().join('|')}` : '',
+    extra.minRating !== null ? `|minrating:${extra.minRating}` : '',
+    extra.statuses ? `|status:${[...extra.statuses].sort().join('|')}` : '',
+    extra.folders ? `|folders:${extra.folders}` : '',
+  ].join('');
+}
+
+/** What a filtered list's lengths and cursors are held under: its types, and each other filter only when it names one. */
+export function listFilterKey(includeItemTypes: unknown, officialRatings?: unknown, years?: unknown, studios?: StudioFilter | null, extra?: ExtraFilters | null): string {
   const ratings = wantedRatings(officialRatings);
-  return `${includeItemTypes ? String(includeItemTypes) : ''}${ratings ? `|ratings:${[...ratings].sort().join('|')}` : ''}`;
+  const yearSet = wantedYears(years);
+  const studioKey = studios ? `|studios:${[...[...studios.names].sort(), ...[...studios.legacy].sort()].join('|')}` : '';
+  return `${includeItemTypes ? String(includeItemTypes) : ''}${ratings ? `|ratings:${[...ratings].sort().join('|')}` : ''}${yearSet ? `|years:${[...yearSet].sort((a, b) => a - b).join('|')}` : ''}${studioKey}${extraKey(extra)}`;
 }
 
 // A catalog built here holds only its declared type: films and TVDB collections in a movie one, shows in a

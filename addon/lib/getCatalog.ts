@@ -27,6 +27,7 @@ import { cacheWrapTvdbApi, cacheWrap, cacheWrapCatalog, cacheWrapAniListCatalog,
 import { applyCatalogKeyArgs, applyCatalogKeyStamps, hiddenCatalogGenre } from './catalogKeyArgs.js';
 import { endOfList } from './catalogPagination';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
+import { tmdbCertificationFilter } from '../utils/ageRating';
 import { getMeta } from './getMeta.js';
 import { fetchLumiereList, lumiereApiBase, lumiereListOf } from '../utils/lumiereLists.js';
 const { getSetting }: any = require('./settingsService');
@@ -1504,28 +1505,8 @@ async function buildParameters(type: string, language: string, page: number, id:
   }*/
   parameters.include_adult = config.includeAdult;
 
-  if (config.ageRating) {
-    switch (config.ageRating) {
-      case "G":
-        parameters.certification_country = "US";
-        parameters.certification = type === "movie" ? "G" : ["TV-Y", "TV-Y7", "TV-G"].join("|");
-        break;
-      case "PG":
-        parameters.certification_country = "US";
-        parameters.certification = type === "movie" ? ["G", "PG"].join("|") : ["TV-Y", "TV-Y7", "TV-G", "TV-PG"].join("|");
-        break;
-      case "PG-13":
-        parameters.certification_country = "US";
-        parameters.certification = type === "movie" ? ["G", "PG", "PG-13"].join("|") : ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14"].join("|");
-        break;
-      case "R":
-        parameters.certification_country = "US";
-        parameters.certification = type === "movie" ? ["G", "PG", "PG-13", "R"].join("|") : ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"].join("|");
-        break;
-      case "NC-17":
-        break;
-    }
-  }
+  const certificationFilter = tmdbCertificationFilter(config.ageRating, type === "movie" ? "movie" : "tv");
+  if (certificationFilter) Object.assign(parameters, certificationFilter);
 
   if (id.includes("streaming")) {
     const provider = findProvider(id.split(".")[1]);
