@@ -1109,6 +1109,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       }
     }
     const discoverPage = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
+    // TMDB discover serves no page past its 500th.
+    if (discoverPage > 500) return endOfList();
     const resolvedParams = resolveDynamicTmdbDiscoverParams(rawParams, { timezone: config.timezone });
     const parameters = sanitizeTmdbDiscoverParams(
       resolvedParams,
@@ -1375,6 +1377,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     }
   }
 
+  // TMDB discover serves no page past its 500th.
+  if (page > 500) return endOfList();
   const genreList = await getGenreList('tmdb', language, type as "movie" | "series", config);
   const parameters = await buildParameters(type, language, page, id, genre, genreList, config);
 
@@ -1454,7 +1458,8 @@ async function runtimeFilteredDiscoverPage(opts: {
 
   const kept: number[] = [];
   let ended = false;
-  for (let tmdbPage = 1; kept.length < wanted && tmdbPage <= lastScanned; tmdbPage++) {
+  // TMDB discover serves no page past its 500th, so the scan ends there however many pages TMDB says it has.
+  for (let tmdbPage = 1; kept.length < wanted && tmdbPage <= Math.min(lastScanned, 500); tmdbPage++) {
     const chunk = await cacheWrapGlobal(`tmdb-discover-runtime:v1:${signature}:${tmdbPage}`, async () => {
       const response = await moviedb.discoverTv({ ...parameters, page: tmdbPage }, config);
       if (!response || !Array.isArray(response.results)) throw new Error(`TMDB discover page ${tmdbPage} came back without results`);
@@ -1477,7 +1482,7 @@ async function runtimeFilteredDiscoverPage(opts: {
       return { ids: checked.filter((tmdbId: any) => tmdbId !== null), totalPages: Number(response.total_pages) || 0 };
     }, ttl, { resultClassifier: classifyResultAllowEmpty });
     kept.push(...(chunk?.ids || []));
-    if (tmdbPage >= (chunk?.totalPages || 0)) {
+    if (tmdbPage >= Math.min(chunk?.totalPages || 0, 500)) {
       ended = true;
       break;
     }
