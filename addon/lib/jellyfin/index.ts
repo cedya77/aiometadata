@@ -1636,7 +1636,13 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           : { items: [], hasMore: true };
         await applyWatchedState(page.items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
         const items = [...ahead, ...page.items];
-        res.json(itemList(items, listTotal(startIndex, items.length, folderLimit, page), startIndex));
+        // The folder lists its own folders before the titles its sources hold.
+        const counted = {
+          ...page,
+          ...(page.listed !== undefined ? { listed: page.listed + children.length } : {}),
+          ...(page.length !== undefined ? { length: page.length + children.length } : {}),
+        };
+        res.json(itemList(items, listTotal(startIndex, items.length, folderLimit, counted), startIndex));
         return;
       }
 

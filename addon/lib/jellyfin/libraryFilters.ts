@@ -99,13 +99,16 @@ export function excludedKey(excluded: Set<string> | null): string {
 }
 
 /**
- * Catalogs report no total, so one page of lookahead keeps the client asking and collapses to the truth once the
- * catalog runs out. A filtered page the budget cut short stays open even when empty, since the next ask reads on.
+ * A list whose length is known, from its source or from a walk that reached its end, counts that length while it is
+ * still ahead of what was served, as a client may read the total once. Otherwise one page of lookahead keeps the client
+ * asking and collapses to the truth once the catalog runs out. A filtered page the budget cut short stays open even when
+ * empty, since the next ask reads on.
  */
-export function listTotal(startIndex: number, shown: number, pageLimit: number, window: { hasMore: boolean; truncated?: boolean; length?: number }): number {
-  if (window.hasMore && (shown > 0 || window.truncated)) return startIndex + shown + pageLimit;
+export function listTotal(startIndex: number, shown: number, pageLimit: number, window: { hasMore: boolean; truncated?: boolean; length?: number; listed?: number }): number {
+  const reached = startIndex + shown;
+  if (window.hasMore && (shown > 0 || window.truncated)) return window.listed !== undefined && window.listed > reached ? window.listed : reached + pageLimit;
   // Asked past the end of a list that has run out, the total is the list's own length.
-  return window.length !== undefined ? Math.min(window.length, startIndex + shown) : startIndex + shown;
+  return window.length !== undefined ? Math.min(window.length, reached) : reached;
 }
 
 export function chainPicks(...picks: Array<Pick | undefined>): Pick | undefined {

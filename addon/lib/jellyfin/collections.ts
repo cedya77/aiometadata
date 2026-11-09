@@ -2,7 +2,7 @@ import { imageTag } from './imageTags';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId } from './ids';
 import { collectionFolder, EMPTY_USER_DATA } from './dto';
-import { catalogCannotServe, fetchWindow, includeTypesFilter, listFilterKey, type ExtraFilters, type StudioFilter, type Window, isLandscapeCatalog, knownCatalogLength, knownPageLength, metaToBaseItem, rememberImages, servedOrder, showLandscape, warmCatalogLengths } from './items';
+import { catalogCannotServe, fetchWindow, includeTypesFilter, listFilterKey, type ExtraFilters, type StudioFilter, type Window, isLandscapeCatalog, knownCatalogLength, knownPageLength, learnListLength, metaToBaseItem, rememberImages, servedOrder, showLandscape, warmCatalogLengths } from './items';
 import { getCatalogs, requiresGenre, viewIdFor, viewTypeFor, type CatalogRef } from './views';
 import { viewerAccountOwner, viewerReadsExtensions } from './viewer';
 import { profileTags } from './profiles';
@@ -246,6 +246,27 @@ export interface MembersPage {
   items: any[];
   hasMore: boolean;
   truncated?: boolean;
+  /** How many titles the folder's sources hold together, where each is known. */
+  listed?: number;
+  /** The folder's length, for a page asked past its end. */
+  length?: number;
+}
+
+/**
+ * At most how many titles the folder's sources hold together, or undefined while one is unknown. A title several
+ * sources share is served once, so the sum is the folder's length only when a single source can serve it.
+ */
+async function folderLength(userUUID: string, sources: Array<{ catalog: CatalogRef; genre: string | null }>, includeItemTypes: string | undefined, tags: string[], filterKey: string): Promise<{ bound: number; exact: boolean } | undefined> {
+  let total = 0;
+  let counted = 0;
+  for (const { catalog, genre } of sources) {
+    if (catalogCannotServe(catalog, includeItemTypes)) continue;
+    const known = await learnListLength(userUUID, catalog, genre ? { genre } : {}, tags, filterKey);
+    if (known === undefined) return undefined;
+    total += known;
+    counted += 1;
+  }
+  return { bound: total, exact: counted <= 1 };
 }
 
 interface MemberCursor {
@@ -354,11 +375,24 @@ export async function boxSetMembers(
   ]);
   const mode = mergeModeOf(folder.mergeMode, FOLDER_MERGE_MODE);
   const shuffled = Boolean(folder.randomizePerPage) && folder.sources.length > 1;
+  // The sum of the sources' lengths bounds the folder; it is worked out once a request.
+  let lengthRead: { bound: number; exact: boolean } | undefined;
+  const length = async () => (lengthRead ??= await folderLength(userUUID, sources, includeItemTypes, tags, filterKey));
+  // Asked past where its sources end together, the folder has nothing more, however its sources would be read.
+  if (startIndex > 0) {
+    const known = await length();
+    if (known && startIndex >= known.bound) return { items: [], hasMore: false, length: known.bound };
+  }
+  // Only a folder's single source gives its length outright: shared titles leave a sum of several above what it serves.
+  const withLength = async (page: MembersPage): Promise<MembersPage> => {
+    const known = page.hasMore ? await length() : undefined;
+    return known?.exact ? { ...page, listed: known.bound } : page;
+  };
   if (sources.length > 1 && mode !== 'sequential') {
-    const page = await mixedMembers({
+    const page = await withLength(await mixedMembers({
       userUUID, config, serverId, parentId, sources, mode, startIndex, limit, includeItemTypes, officialRatings, filters, tags, filterKey,
       cursorKey: `${mode}:${cursorKey}`,
-    });
+    }));
     return shuffled ? { ...page, items: shuffleMetas(page.items) } : page;
   }
   // Each page resumes only at the place a walk stopped, so a read elsewhere in the folder leaves it be.
@@ -449,7 +483,7 @@ export async function boxSetMembers(
     walks.save(cursorKey, resumed, added, nextIndex, { sourceIndex, sourceOffset: from, failures });
   }
 
-  return { items: shuffled ? shuffleMetas(collected) : collected, hasMore: more, ...(truncated ? { truncated: true } : {}) };
+  return withLength({ items: shuffled ? shuffleMetas(collected) : collected, hasMore: more, ...(truncated ? { truncated: true } : {}) });
 }
 
 // Where a mixed walk stopped: each source's position, whose turn is next, and
