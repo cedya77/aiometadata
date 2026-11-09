@@ -304,6 +304,8 @@ export interface Window {
   truncated?: boolean;
   /** A filtered walk that reached its page ceiling and was taken as the end of the list. */
   capped?: boolean;
+  /** How long the list is, once a walk has reached its end. */
+  length?: number;
 }
 
 export function servedOrder(items: any[], window: Partial<Window>): any[] {
@@ -632,6 +634,7 @@ export async function fetchWindow(
     ...(randomize ? { randomize: true } : {}),
     ...(truncated ? { truncated: true } : {}),
     ...(capped ? { capped: true } : {}),
+    ...(exhausted && !failed ? { length: knownLength !== undefined ? Math.min(reached, knownLength) : reached } : {}),
   };
 }
 

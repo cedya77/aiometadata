@@ -102,8 +102,10 @@ export function excludedKey(excluded: Set<string> | null): string {
  * Catalogs report no total, so one page of lookahead keeps the client asking and collapses to the truth once the
  * catalog runs out. A filtered page the budget cut short stays open even when empty, since the next ask reads on.
  */
-export function listTotal(startIndex: number, shown: number, pageLimit: number, window: { hasMore: boolean; truncated?: boolean }): number {
-  return window.hasMore && (shown > 0 || window.truncated) ? startIndex + shown + pageLimit : startIndex + shown;
+export function listTotal(startIndex: number, shown: number, pageLimit: number, window: { hasMore: boolean; truncated?: boolean; length?: number }): number {
+  if (window.hasMore && (shown > 0 || window.truncated)) return startIndex + shown + pageLimit;
+  // Asked past the end of a list that has run out, the total is the list's own length.
+  return window.length !== undefined ? Math.min(window.length, startIndex + shown) : startIndex + shown;
 }
 
 export function chainPicks(...picks: Array<Pick | undefined>): Pick | undefined {
