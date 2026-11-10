@@ -42,7 +42,7 @@ import { decodeJellyfinId } from './ids';
 import { liveDevices, onDeviceBack, onDeviceGone, pushToDevice, rememberTokenDevice, saveCapabilities, sendToDevice } from './socket';
 import redis from '../redisClient';
 import { createRedisStore } from './syncplay/store';
-import { noteDefaultSource, noteGroupPlaying, preferGroupRelease } from './syncplay/releases';
+import { noteDefaultSource, noteGroupPlaying, preferGroupRelease, recordedDefaultFirst } from './syncplay/releases';
 import { deviceBack, deviceGone, leaveOnLogout, memberFor, registerSyncPlay, registerSyncPlayPublic, startSweep, type SyncPlayDeps } from './syncplay/routes';
 import { artTag, imageTag, isWideTag } from './imageTags';
 import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, productionYear, studioDescriptorsOf, wantedYears, extraFiltersOf, type Window } from './items';
@@ -522,6 +522,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return live ? { itemId: live.itemId, positionTicks: live.positionMs * 10000, paused: live.paused } : null;
     },
     decode: decodeJellyfinId,
+    restricted: hasAgeRatingCap,
     store: createRedisStore(redis),
     push: pushToDevice,
     liveDevices,
@@ -2044,6 +2045,13 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
   };
 
+  // A request naming the item by its own id gets the file PlaybackInfo gave that id,
+  // not one picked again from group state that may have moved on since.
+  const sameDefault = async (req: any, itemId: string, sources: any[]): Promise<any[]> => {
+    const config = await loadConfig(req).catch(() => null);
+    return recordedDefaultFirst(normaliseJellyfinId(itemId), req.params.userUUID, profileKey(config), sources).catch(() => sources);
+  };
+
   const unwrapMarker = async (itemId: string): Promise<{ itemId: string; descriptor: any }> => {
     const descriptor = await decodeJellyfinId(itemId);
     if (descriptor?.k === 'marker') return { itemId: descriptor.i, descriptor: await decodeJellyfinId(descriptor.i) };
@@ -2120,7 +2128,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const key = subtitleKey(userUUID, itemId, sourceId);
     let sent = recallOffered(key);
     if (!sent) {
-      const sources = await withDefaultSourceId(await groupOrdered(req, itemId, await resolveMediaSources(req, descriptor, null, false, true)), itemId);
+      const sources = await withDefaultSourceId(await sameDefault(req, itemId, await resolveMediaSources(req, descriptor, null, false, true)), itemId);
       const source = sources.find((s: any) => normaliseJellyfinId(s.Id) === normaliseJellyfinId(sourceId));
       if (!source) {
         res.status(404).end();
@@ -2194,7 +2202,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     // No pin for it, so it is resolved: a client that never called PlaybackInfo
     // or has outlived the pin gets the source matched from a fresh list.
-    const sources = await withDefaultSourceId(await groupOrdered(req, itemId, await resolveMediaSources(req, descriptor, null)), itemId);
+    const sources = await withDefaultSourceId(await sameDefault(req, itemId, await resolveMediaSources(req, descriptor, null)), itemId);
     if (!sources.length) {
       res.status(404).json({ Message: 'No playable stream' });
       return;

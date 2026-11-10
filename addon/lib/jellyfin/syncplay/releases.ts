@@ -36,14 +36,30 @@ export async function noteGroupPlaying(deps: ReleaseDeps, who: Who, itemId: stri
   if (identity) await setRelease(deps, g.id, item, identity);
 }
 
-/** Only while the current entry has none: the first member to open or play it decides. */
-async function setRelease(deps: ReleaseDeps, groupId: string, itemId: string, identity: string): Promise<void> {
+/** Only while the current entry has none: the first member to open or play it decides. Returns what is stored. */
+async function setRelease(deps: ReleaseDeps, groupId: string, itemId: string, identity: string): Promise<string | null> {
+  let stored: string | null = null;
   await deps.store.update(groupId, (fresh) => {
     const entry = currentEntry(fresh, itemId);
-    if (!fresh || !entry || fresh.release?.playlistItemId === entry.playlistItemId) return { group: fresh, out: [] };
-    fresh.release = { playlistItemId: entry.playlistItemId, identity };
+    if (!fresh || !entry) return { group: fresh, out: [] };
+    if (fresh.release?.playlistItemId !== entry.playlistItemId) fresh.release = { playlistItemId: entry.playlistItemId, identity };
+    stored = fresh.release!.identity;
     return { group: fresh, out: [] };
   });
+  return stored;
+}
+
+const toFront = (sources: any[], index: number): any[] =>
+  index <= 0 ? sources : [sources[index], ...sources.slice(0, index), ...sources.slice(index + 1)];
+
+const identitiesOf = (sources: any[]) => recallReleases(sources.map((s) => normaliseJellyfinId(String(s?.Id ?? ''))));
+
+/** The source PlaybackInfo gave the item's own id, so a later request naming the item gets the same file. */
+export async function recordedDefaultFirst(itemId: string, userUUID: string, profile: string, sources: any[]): Promise<any[]> {
+  if (sources.length < 2 || !syncPlayEnabled()) return sources;
+  const recorded = await recallRelease(defaultSourceKey(itemId, userUUID, profile));
+  if (!recorded) return sources;
+  return toFront(sources, (await identitiesOf(sources)).indexOf(recorded));
 }
 
 /** The source given the item's own id, which is what a play report naming the item means. */
@@ -59,13 +75,12 @@ export async function preferGroupRelease(deps: ReleaseDeps, who: Who | null, con
   const g = await groupFor(deps, who);
   const cur = currentEntry(g, item);
   if (!g || !cur) return sources;
-  const identities = await recallReleases(sources.map((s) => normaliseJellyfinId(String(s?.Id ?? ''))));
-  if (g.release?.playlistItemId !== cur.playlistItemId) {
+  const identities = await identitiesOf(sources);
+  let wanted = g.release?.playlistItemId === cur.playlistItemId ? g.release.identity : null;
+  if (!wanted) {
     const first = identities.find(Boolean);
-    if (first) await setRelease(deps, g.id, item, first);
-    return sources;
+    // Another member may have stored a different one since the group was read.
+    if (first) wanted = await setRelease(deps, g.id, item, first);
   }
-  const index = identities.indexOf(g.release.identity);
-  if (index <= 0) return sources;
-  return [sources[index], ...sources.slice(0, index), ...sources.slice(index + 1)];
+  return wanted ? toFront(sources, identities.indexOf(wanted)) : sources;
 }

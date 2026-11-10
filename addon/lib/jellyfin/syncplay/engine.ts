@@ -171,6 +171,8 @@ class Turn {
 
   resume(reason: string): void {
     const g = this.g;
+    // Everyone is sent the same command, including members the wait ignored.
+    for (const m of g.members) m.buffering = false;
     if (g.wanted === 'Playing') {
       g.lastActivity = this.now + this.delay();
       this.setState('Playing');
@@ -374,6 +376,7 @@ function ready(t: Turn, m: Member, r: Report): void {
   const elapsed = r.isPlaying ? Math.max(now - at, 0) : 0;
   const clientTicks = Math.max(r.ticks, 0) + elapsed * TICKS_PER_MS;
   if (Math.abs(clientTicks - g.positionTicks) > MAX_OFFSET_MS * TICKS_PER_MS) {
+    m.buffering = true;
     t.command([m], 'Seek');
     return;
   }
@@ -484,6 +487,7 @@ export function handle(group: Group, key: string, request: Request, ctx: Ctx): R
         t.command(t.readyMembers(), 'Pause');
         t.stateUpdate(t.all(), 'Buffer');
       } else {
+        if (request.type === 'Ready') m.buffering = false;
         t.command([m], 'Unpause');
       }
       return t.done();

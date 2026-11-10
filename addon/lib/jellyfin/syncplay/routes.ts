@@ -14,6 +14,8 @@ export interface SyncPlayDeps {
   clientInfo(req: any): { deviceId: string };
   nowPlaying(req: any, config: any): Promise<{ itemId: string; positionTicks: number; paused: boolean } | null>;
   decode(id: string): Promise<{ k: string } | null>;
+  /** A profile held to an age rating, which a shared queue cannot respect. */
+  restricted?(config: any): boolean;
   store: GroupStore;
   push(userUUID: string, profile: string, deviceId: string, type: string, data: any): void;
   liveDevices(userUUID: string, profile: string): Promise<Array<{ deviceId: string }>>;
@@ -163,9 +165,19 @@ export async function leaveOnLogout(req: any, deps: SyncPlayDeps): Promise<void>
   if (member) await leaveGroup(deps, member);
 }
 
-async function playable(deps: SyncPlayDeps, ids: string[]): Promise<string[]> {
+async function playableIndexes(deps: SyncPlayDeps, ids: string[]): Promise<number[]> {
   const kinds = await Promise.all(ids.map((id) => deps.decode(id).catch(() => null)));
-  return ids.filter((_, i) => PLAYABLE.has(String(kinds[i]?.k)));
+  return ids.map((_, i) => i).filter((i) => PLAYABLE.has(String(kinds[i]?.k)));
+}
+
+async function playable(deps: SyncPlayDeps, ids: string[]): Promise<string[]> {
+  return (await playableIndexes(deps, ids)).map((i) => ids[i]);
+}
+
+/** Where the asked-for item, or the next playable one after it, sits once unplayable ones are dropped. */
+function keptPosition(kept: number[], asked: number): number {
+  const at = kept.findIndex((i) => i >= asked);
+  return at >= 0 ? at : Math.max(kept.length - 1, 0);
 }
 
 export function registerSyncPlayPublic(router: any): void {
@@ -177,6 +189,7 @@ export function registerSyncPlayPublic(router: any): void {
 
 export function registerSyncPlay(router: any, deps: SyncPlayDeps): void {
   const busy = (res: any) => res.status(503).json({ Message: 'SyncPlay is busy' });
+  const refused = (res: any) => res.status(403).json({ Message: 'SyncPlay is not available for a user with an age rating limit' });
   const handler = (fn: (req: any, res: any) => Promise<void>) => async (req: any, res: any, next: any) => {
     if (!syncPlayEnabled()) {
       res.status(403).json({ Message: 'SyncPlay is disabled' });
@@ -206,6 +219,7 @@ export function registerSyncPlay(router: any, deps: SyncPlayDeps): void {
 
   router.post('/SyncPlay/New', handler(async (req, res) => {
     const { config, member } = await resolve(req, deps);
+    if (deps.restricted?.(config)) return refused(res);
     if (!member) {
       res.status(400).json({ Message: 'A device id is required' });
       return;
@@ -228,7 +242,8 @@ export function registerSyncPlay(router: any, deps: SyncPlayDeps): void {
   }));
 
   router.post('/SyncPlay/Join', handler(async (req, res) => {
-    const member = await memberFor(req, deps);
+    const { config, member } = await resolve(req, deps);
+    if (deps.restricted?.(config)) return refused(res);
     if (!member) {
       res.status(204).end();
       return;
@@ -275,7 +290,9 @@ export function registerSyncPlay(router: any, deps: SyncPlayDeps): void {
       return;
     }
     if (request.type === 'SetNewQueue' || request.type === 'Queue') {
-      request.items = await playable(deps, request.items);
+      const kept = await playableIndexes(deps, request.items);
+      if (request.type === 'SetNewQueue') request.index = keptPosition(kept, Math.floor(request.index) || 0);
+      request.items = kept.map((i) => request.items[i]);
       if (!request.items.length) {
         notice(deps, member, 'LibraryAccessDenied');
         res.status(204).end();

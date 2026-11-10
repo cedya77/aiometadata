@@ -226,9 +226,11 @@ SyncPlay lets devices watch together: one creates a group, others join it, and a
 
 Open the SyncPlay menu in the app's header to create or join a group. A group started while something is playing starts from that title, at that position. When one member buffers, the others pause until it is ready; a member that is still not ready after 30 seconds is left behind and the group carries on. A device that loses its connection keeps its place for a minute, so a TV that drops off briefly stays in the group.
 
+A user held to an age rating cannot create or join a group, since the group's queue is shared and would play titles their limit hides.
+
 **Who sees a group.** By default, only the users and devices of the configuration that started it. With `JELLYFIN_SYNCPLAY_SCOPE` set to `instance`, every configuration on this instance sees every group, and the names of the profiles in it. That is for a private instance shared with friends; on a public one it shows strangers what others watch.
 
-**The same release.** Each member gets its streams from its own stream addon, so two members can be offered different releases of a title. A release with a longer intro, an extended cut or a 25 fps file plays out of step with the others, however well the group is kept in time. So in a group, the release the first member started playing is listed first for the others when their addon offers it. **Try to match releases across users** in the Jellyfin dialog turns this off for a configuration. Nothing is hidden: a member can still pick another version, at the cost of drifting from the group.
+**The same release.** Each member gets its streams from its own stream addon, so two members can be offered different releases of a title. A release with a longer intro, an extended cut or a 25 fps file plays out of step with the others, however well the group is kept in time. So in a group, the release of the first member to open or play the title is listed first for the others when their addon offers it. **Try to match releases across users** in the Jellyfin dialog turns this off for a configuration. Nothing is hidden: a member can still pick another version, at the cost of drifting from the group.
 
 ## AIOMetadata inside AIOStreams' Jellyfin server
 
