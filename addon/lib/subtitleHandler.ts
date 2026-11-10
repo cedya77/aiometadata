@@ -348,6 +348,17 @@ async function movieTarget(parsedId: ParsedMediaId, config: any, service: Tracke
   return ids ? withTmdbId(ids, 'movie') : null;
 }
 
+// Simkl may not know an anime by its IMDb id; its own and the MAL id of the episode's AniDB entry are tried after a 404.
+async function simklAnimeFallback(tvdbId: any, season: number, episode: any): Promise<{ ids: Record<string, number>; season: number; episode: number } | null> {
+  const anidbInfo = await resolveTrackedAnidbEpisode(tvdbId, season, episode).catch(() => null);
+  if (!anidbInfo || (anidbInfo.anidbSeason != null && Number(anidbInfo.anidbSeason) !== 1)) return null;
+  const entry = idMapper.getMappingByAnidbId(anidbInfo.anidbId);
+  const ids: Record<string, number> = {};
+  if (entry?.simkl_id) ids.simkl = Number(entry.simkl_id);
+  if (entry?.mal_id) ids.mal = Number(entry.mal_id);
+  return Object.keys(ids).length ? { ids, season: 1, episode: Number(anidbInfo.anidbEpisode) } : null;
+}
+
 async function resolveSeriesIds(parsedId: ParsedMediaId, config: any = {}, isSimkl: boolean = false): Promise<ResolvedSeriesIds | null> {
   switch (parsedId.provider) {
     case 'imdb': {
@@ -391,7 +402,9 @@ async function resolveSeriesIds(parsedId: ParsedMediaId, config: any = {}, isSim
         }
       }
       const byImdb = { ids: { imdb: parsedId.id }, season: parsedId.season!, episode: parsedId.episode! };
-      return isSimkl ? byImdb : inTmdbNumbers(byImdb, config, 'imdb');
+      if (!isSimkl) return inTmdbNumbers(byImdb, config, 'imdb');
+      const fallbackData = animeMapping?.tvdb_id ? await simklAnimeFallback(animeMapping.tvdb_id, parsedId.season ?? 1, parsedId.episode) : null;
+      return fallbackData ? { ...byImdb, fallbackData } : byImdb;
     }
     case 'tvdb': {
       const byTvdb = { ids: { tvdb: parseInt(parsedId.id, 10) }, season: parsedId.season!, episode: parsedId.episode! };
