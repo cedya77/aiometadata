@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import consola from 'consola';
 import { dashedGuid, normaliseJellyfinId } from '../idsCodec';
 import * as E from './engine';
+import { MAX_QUEUE } from './queue';
 import type { GroupStore } from './store';
 import { graceMs, syncPlayActive, syncPlayEnabled, syncPlayScope } from './settings';
 
@@ -12,7 +13,8 @@ export interface SyncPlayDeps {
   profileFor(req: any, config: any): { name: string };
   profileKey(config: any): string;
   clientInfo(req: any): { deviceId: string };
-  nowPlaying(req: any, config: any): Promise<{ itemId: string; positionTicks: number; paused: boolean } | null>;
+  /** `at`: when that position was reported. */
+  nowPlaying(req: any, config: any): Promise<{ itemId: string; positionTicks: number; paused: boolean; at?: number } | null>;
   decode(id: string): Promise<{ k: string } | null>;
   /** A profile held to an age rating, which a shared queue cannot respect. */
   restricted?(config: any): boolean;
@@ -202,7 +204,14 @@ export function registerSyncPlay(router: any, deps: SyncPlayDeps): void {
     }
   };
 
-  router.get('/SyncPlay/List', handler(async (req, res) => {
+  // Answered even when off, as an empty list, for clients that ask regardless of policy.
+  router.get('/SyncPlay/List', async (req: any, res: any, next: any) => {
+    if (!syncPlayEnabled()) {
+      res.json([]);
+      return;
+    }
+    next();
+  }, handler(async (req, res) => {
     const now = Date.now();
     const groups = await deps.store.list();
     res.json(groups.filter((g) => visible(g, req.params.userUUID)).map((g) => E.info(g, now)));
@@ -225,15 +234,17 @@ export function registerSyncPlay(router: any, deps: SyncPlayDeps): void {
       return;
     }
     if ((await leaveGroup(deps, member)) === 'busy') return busy(res);
+    const now = Date.now();
     let playing = await deps.nowPlaying(req, config).catch(() => null);
     if (playing) {
       const itemId = guid(playing.itemId);
-      playing = (await playable(deps, [itemId])).length ? { ...playing, itemId } : null;
+      // The report is from a while ago; while playing, the position has moved on since.
+      const since = !playing.paused && playing.at ? Math.max(now - playing.at, 0) * 10000 : 0;
+      playing = (await playable(deps, [itemId])).length ? { ...playing, itemId, positionTicks: playing.positionTicks + since } : null;
     }
     const raw = param(req.body, 'GroupName');
     const name = (typeof raw === 'string' && raw.trim().slice(0, MAX_NAME)) || `${member.name}'s group`;
     const id = randomUUID().replace(/-/g, '');
-    const now = Date.now();
     const result = await deps.store.update(id, () => E.create(id, name, member.userUUID, member, ctxAt(now), playing ?? undefined));
     if (!result?.group) return busy(res);
     deliver(deps, id, result.out);
@@ -289,7 +300,16 @@ export function registerSyncPlay(router: any, deps: SyncPlayDeps): void {
       res.status(204).end();
       return;
     }
+    if (request.type === 'Ping') {
+      const g = await deps.store.get(id);
+      const ms = Math.min(Math.max(Math.floor(Number(request.ms) || 0), 0), 10000);
+      if (g?.members.find((m) => m.key === member.key)?.ping === ms) {
+        res.status(204).end();
+        return;
+      }
+    }
     if (request.type === 'SetNewQueue' || request.type === 'Queue') {
+      request.items = request.items.slice(0, MAX_QUEUE);
       const kept = await playableIndexes(deps, request.items);
       if (request.type === 'SetNewQueue') request.index = keptPosition(kept, Math.floor(request.index) || 0);
       request.items = kept.map((i) => request.items[i]);
@@ -321,17 +341,23 @@ export async function sweepOnce(deps: SyncPlayDeps, now: number): Promise<void> 
       await deps.store.forget(id);
       continue;
     }
-    const checking = g.presenceCheckAt <= now ? g.members : g.members.filter((m) => m.awayUntil !== undefined && m.awayUntil <= now);
+    // A slow group ahead of this one must not leave it ticked at a time already past.
+    const at = Math.max(now, Date.now());
+    const checking = g.presenceCheckAt <= at ? g.members : g.members.filter((m) => m.awayUntil !== undefined && m.awayUntil <= at);
     const offline = new Set<string>();
+    const unknown = new Set<string>();
     const scopes = new Map<string, E.Member[]>();
     for (const m of checking) scopes.set(`${m.userUUID}\u0000${m.profile}`, [...(scopes.get(`${m.userUUID}\u0000${m.profile}`) ?? []), m]);
     for (const list of scopes.values()) {
       const devices = await deps.liveDevices(list[0].userUUID, list[0].profile).catch(() => null);
-      if (!devices) continue;
+      if (!devices) {
+        for (const m of list) unknown.add(m.key);
+        continue;
+      }
       const live = new Set(devices.map((d) => d.deviceId));
       for (const m of list) if (!live.has(m.deviceId)) offline.add(m.key);
     }
-    await change(deps, id, (fresh) => E.tick(fresh, ctxAt(now), offline));
+    await change(deps, id, (fresh) => E.tick(fresh, ctxAt(Math.max(at, Date.now())), offline, unknown));
   }
 }
 

@@ -93,7 +93,7 @@ export function userConfiguration(): any {
   };
 }
 
-export function userPolicy(): any {
+export function userPolicy(options: { syncPlay?: boolean } = {}): any {
   return {
     IsAdministrator: false,
     IsHidden: true,
@@ -137,7 +137,7 @@ export function userPolicy(): any {
       'Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider',
     PasswordResetProviderId:
       'Jellyfin.Server.Implementations.Users.DefaultPasswordResetProvider',
-    SyncPlayAccess: require('./syncplay/settings').syncPlayEnabled() ? 'CreateAndJoinGroups' : 'None',
+    SyncPlayAccess: options.syncPlay !== false && require('./syncplay/settings').syncPlayEnabled() ? 'CreateAndJoinGroups' : 'None',
   };
 }
 

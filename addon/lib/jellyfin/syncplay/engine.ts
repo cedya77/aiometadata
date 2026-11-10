@@ -134,7 +134,7 @@ class Turn {
   }
 
   queue(to: Member[], reason: Q.QueueReason): void {
-    this.update(to, 'PlayQueue', Q.snapshot(this.g.queue, reason, this.g.positionTicks, this.g.state === 'Playing'));
+    this.update(to, 'PlayQueue', Q.snapshot(this.g.queue, reason, livePosition(this.g, this.now), this.g.state === 'Playing'));
   }
 
   stateUpdate(to: Member[], reason: string): void {
@@ -235,7 +235,7 @@ export function info(g: Group, nowMs: number): any {
     GroupId: dashedGuid(g.id),
     GroupName: g.name,
     State: g.state,
-    Participants: g.members.map((m) => m.name),
+    Participants: [...new Set(g.members.map((m) => m.name))],
     LastUpdatedAt: new Date(nowMs).toISOString(),
   };
 }
@@ -271,14 +271,15 @@ export function create(
     presenceCheckAt: ctx.now + PRESENCE_MS,
   };
   const t = new Turn(g, ctx);
-  t.update([m], 'GroupJoined', info(g, ctx.now));
   if (!playing) {
+    t.update([m], 'GroupJoined', info(g, ctx.now));
     t.command([m], 'Stop');
     return t.done();
   }
   Q.setQueue(g.queue, [playing.itemId], 0, ctx, ctx.now);
   g.positionTicks = Math.max(playing.positionTicks, 0);
   t.restartWait(playing.paused ? 'Paused' : 'Playing');
+  t.update([m], 'GroupJoined', info(g, ctx.now));
   t.queue([m], 'NewPlaylist');
   return t.done();
 }
@@ -290,7 +291,8 @@ export function join(group: Group, member: Member, ctx: Ctx): Result {
   if (existing) {
     Object.assign(existing, { ...member, ignoreWait: existing.ignoreWait, buffering: existing.buffering, ping: existing.ping, awayUntil: undefined });
     t.update([existing], 'GroupJoined', info(g, ctx.now));
-    t.queue([existing], 'NewPlaylist');
+    // A stopped group's old queue would start that member playing alone.
+    if (g.state !== 'Idle') t.queue([existing], 'NewPlaylist');
     if (g.state !== 'Waiting') t.stateCommand(existing, 'Ready');
     return t.done();
   }
@@ -345,7 +347,8 @@ export function back(group: Group, key: string): Group {
   return g;
 }
 
-export function tick(group: Group, ctx: Ctx, offline: Set<string>): Result {
+/** `unknown`: members whose liveness could not be read, who keep any away mark as it is. */
+export function tick(group: Group, ctx: Ctx, offline: Set<string>, unknown: Set<string> = new Set()): Result {
   const t = new Turn(clone(group), ctx);
   const g = t.g;
   const now = ctx.now;
@@ -354,7 +357,7 @@ export function tick(group: Group, ctx: Ctx, offline: Set<string>): Result {
     t.resume('Ready');
   }
   for (const m of [...g.members]) {
-    if (m.awayUntil === undefined || m.awayUntil > now) continue;
+    if (m.awayUntil === undefined || m.awayUntil > now || unknown.has(m.key)) continue;
     if (offline.has(m.key)) leaveIn(t, m.key);
     else delete m.awayUntil;
   }

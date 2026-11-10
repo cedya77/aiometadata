@@ -28,7 +28,7 @@ async function groupFor(deps: ReleaseDeps, who: Who): Promise<Group | null> {
 export async function noteGroupPlaying(deps: ReleaseDeps, who: Who, itemId: string, mediaSourceId: string): Promise<void> {
   const item = normaliseJellyfinId(itemId);
   const source = normaliseJellyfinId(mediaSourceId);
-  if (!item || !source) return;
+  if (!item || !source || !syncPlayEnabled()) return;
   const g = await groupFor(deps, who);
   const cur = currentEntry(g, item);
   if (!g || !cur || g.release?.playlistItemId === cur.playlistItemId) return;
@@ -69,13 +69,21 @@ export async function noteDefaultSource(itemId: string, userUUID: string, profil
   if (identity) rememberRelease(defaultSourceKey(itemId, userUUID, profile), identity);
 }
 
-export async function preferGroupRelease(deps: ReleaseDeps, who: Who | null, config: any, itemId: string, sources: any[]): Promise<any[]> {
+/** `eligible`: whether a source can become the default one the client plays. */
+export async function preferGroupRelease(
+  deps: ReleaseDeps,
+  who: Who | null,
+  config: any,
+  itemId: string,
+  sources: any[],
+  eligible: (source: any) => boolean = () => true
+): Promise<any[]> {
   if (!who || config?.jellyfinMatchReleases === false || !sources.length || !syncPlayEnabled()) return sources;
   const item = normaliseJellyfinId(itemId);
   const g = await groupFor(deps, who);
   const cur = currentEntry(g, item);
   if (!g || !cur) return sources;
-  const identities = await identitiesOf(sources);
+  const identities = (await identitiesOf(sources)).map((identity, i) => (eligible(sources[i]) ? identity : null));
   let wanted = g.release?.playlistItemId === cur.playlistItemId ? g.release.identity : null;
   if (!wanted) {
     const first = identities.find(Boolean);

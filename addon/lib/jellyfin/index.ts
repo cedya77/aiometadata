@@ -387,10 +387,14 @@ async function resumablePick(req: any, userUUID: string, config: any, type: stri
   };
 }
 
-function userFor(profile: Profile, serverId: string, configuration?: any): any {
+function userFor(profile: Profile, serverId: string, configuration?: any, owner?: { config: any; userUUID: string }): any {
   const user = userDto(profile.userId, serverId, profile.name, avatarTag(profile));
   if (configuration && typeof configuration === 'object') user.Configuration = { ...user.Configuration, ...configuration };
   if (profile.downloads === false) user.Policy = { ...user.Policy, EnableContentDownloading: false };
+  // SyncPlay refuses a user held to an age rating, so the app is told not to offer it.
+  if (owner?.config && hasAgeRatingCap(scopeConfigToProfile({ ...owner.config }, owner.userUUID, profile.id ?? null))) {
+    user.Policy = { ...user.Policy, SyncPlayAccess: 'None' };
+  }
   return user;
 }
 
@@ -519,7 +523,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       const window = envInt('JELLYFIN_DASHBOARD_LIVE_SECONDS', 120, 10) * 1000;
       const now = Date.now();
       const live = (await liveSessionsFor(req.params.userUUID)).find((s) => s.profile === profile && s.device === deviceId && now - s.at <= window);
-      return live ? { itemId: live.itemId, positionTicks: live.positionMs * 10000, paused: live.paused } : null;
+      return live ? { itemId: live.itemId, positionTicks: live.positionMs * 10000, paused: live.paused, at: live.at } : null;
     },
     decode: decodeJellyfinId,
     restricted: hasAgeRatingCap,
@@ -691,7 +695,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return;
     }
     const serverId = serverIdFor(userUUID);
-    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId)));
+    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId, undefined, { config, userUUID })));
   });
 
   // Anonymous, like item art: a client renders it with a plain image tag.
@@ -720,7 +724,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     rememberTokenDevice(userUUID, token, clientInfo(req));
 
     res.json({
-      User: userFor(profile, serverId),
+      User: userFor(profile, serverId, undefined, { config, userUUID }),
       SessionInfo: sessionInfo(profile.userId, serverId, profile.name, clientInfo(req)),
       AccessToken: token,
       ServerId: serverId,
@@ -832,7 +836,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
     const serverId = serverIdFor(userUUID);
     res.json(listProfiles(config, userUUID).map((profile) => ({
-      user: userFor(profile, serverId),
+      user: userFor(profile, serverId, undefined, { config, userUUID }),
       avatar: profile.avatar,
       hidden: false,
       needs: switchNeeds(req, profile),
@@ -874,7 +878,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       users: users.map((user) => {
         const row: any = byKey.get(user.key);
         return {
-          user: userFor(user.profile, serverId),
+          user: userFor(user.profile, serverId, undefined, { config, userUUID }),
           avatar: user.profile.avatar,
           hidden: false,
           locked: Boolean(user.profile.pin),
@@ -1034,7 +1038,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const serverId = serverIdFor(userUUID);
     const config = await database.getUserConfig(userUUID);
     const profile = (req.params.userId && profileByUserId(config, userUUID, req.params.userId)) || sessionProfile(req, config);
-    res.json(userFor(profile, serverId, await storedConfiguration(req, profile)));
+    res.json(userFor(profile, serverId, await storedConfiguration(req, profile), { config, userUUID }));
   };
   router.get('/Users/Me', meHandler);
 
@@ -1054,7 +1058,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const userUUID = req.params.userUUID;
     const config = await database.getUserConfig(userUUID);
     const serverId = serverIdFor(userUUID);
-    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId)));
+    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId, undefined, { config, userUUID })));
   });
   router.get('/Users/:userId', meHandler);
 
@@ -2039,7 +2043,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const config = await loadConfig(req).catch(() => null);
     if (!config || config.jellyfinMatchReleases === false || !sources.length) return sources;
     try {
-      return await preferGroupRelease(syncPlay, await memberFor(req, syncPlay), config, itemId, sources);
+      // Same rule withDefaultSourceId uses to pick the source given the item's id.
+      return await preferGroupRelease(syncPlay, await memberFor(req, syncPlay), config, itemId, sources, (s) => !headerSources.has(s));
     } catch {
       return sources;
     }

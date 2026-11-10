@@ -222,7 +222,7 @@ The watch history export carries playlists, and an import puts each one in the u
 
 ## SyncPlay
 
-SyncPlay lets devices watch together: one creates a group, others join it, and a pause, seek or skip on any of them applies to all. It works in the apps that have Jellyfin's SyncPlay, which are Jellyfin Web and the desktop and Android apps built on it, and recent Android TV versions. Swiftfin, Infuse, Streamyfin and Findroid do not have it.
+SyncPlay lets devices watch together: one creates a group, others join it, and a pause, seek or skip on any of them applies to all. It works in the apps that have Jellyfin's SyncPlay: Jellyfin Web and the desktop and Android apps built on it. Recent Android TV versions have SyncPlay too, though they are untested with this server. Swiftfin, Infuse, Streamyfin and Findroid do not have it, as far as is known.
 
 Open the SyncPlay menu in the app's header to create or join a group. A group started while something is playing starts from that title, at that position. When one member buffers, the others pause until it is ready; a member that is still not ready after 30 seconds is left behind and the group carries on. A device that loses its connection keeps its place for a minute, so a TV that drops off briefly stays in the group.
 

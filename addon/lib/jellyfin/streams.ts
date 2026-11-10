@@ -226,6 +226,7 @@ const releases = new LRUCache<string, string>({
 
 export function rememberRelease(key: string, identity: string | null): void {
   if (!key || !identity || releases.get(key) === identity) return;
+  if (!require('./syncplay/settings').syncPlayEnabled()) return;
   releases.set(key, identity);
   if (redis) redis.set(`jf:sp:rel:${key}`, identity, 'EX', issuedTtlSeconds()).catch(() => undefined);
 }
