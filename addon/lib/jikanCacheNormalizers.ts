@@ -137,7 +137,7 @@ export function normalizeJikanAnimeDetailsForCache(detail: any) {
   }
 
   if (Array.isArray(detail.studios)) {
-    normalized.studios = mapIfArray(detail.studios, (studio: any) => pickDefined(studio, ['name']));
+    normalized.studios = mapIfArray(detail.studios, (studio: any) => pickDefined(studio, ['mal_id', 'name']));
   }
 
   // genres - only keep name

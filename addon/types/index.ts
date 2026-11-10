@@ -6,6 +6,8 @@ export interface UserConfig {
   jellyfinStreamUrl?: string;
   jellyfinLatestRows?: boolean;
   jellyfinMarkUnaired?: boolean;
+  /** SyncPlay lists the release another member is playing first. On when unset. */
+  jellyfinMatchReleases?: boolean;
   jellyfinUpcomingMode?: 'airing';
   /** Where a title's similar titles come from. TMDB when unset. */
   jellyfinSimilarSource?: 'simkl';

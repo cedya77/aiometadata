@@ -26,6 +26,7 @@ const { cp } = require("fs");
 const idMappings = require('./id-mappings.js');
 const { withEpisodeOrder } = require('../utils/episodeOrder');
 const { buildCertificationMap } = require('../utils/contentRating');
+const { runtimeFromEpisodes, rememberSeriesRuntime, seriesRuntime } = require('./seriesRuntime');
 const { tmdbDetails, tvdbSeriesDetails, tvdbMovieDetails, tvmazeDetails, jikanDetails } = require('./metaDetails');
 
 
@@ -1673,6 +1674,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     if (season.poster_path) tmdbSeasonPosters[season.season_number] = tmdbImageUrl(tmdbPosterSize(), season.poster_path);
   });
 
+  let episodeRuntime = null;
   if(includeVideos) {
     const seasonToKitsuIdMap = new Map();
     const seasonToImdbIdMap = new Map();
@@ -1721,6 +1723,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           seasonDetails.push(seasonData);
         });
     });
+    episodeRuntime = runtimeFromEpisodes(seasonDetails.flatMap((season) => season?.episodes || []));
     const isAnimeContent = isAnimeFunc(seriesData, seriesData.genres) || kitsuId || malId;
     logger.debug(`[TmdbSeriesMeta] isAnimeContent: ${isAnimeContent}`);
     
@@ -1959,7 +1962,8 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     
     videos = (await Promise.all(videosPromises)).filter(Boolean);
   }
-  const runtime = seriesData.episode_run_time?.[0] ?? seriesData.last_episode_to_air?.runtime ?? seriesData.next_episode_to_air?.runtime ?? null;
+  if (episodeRuntime !== null) rememberSeriesRuntime(tmdbId, episodeRuntime).catch(() => undefined);
+  const runtime = episodeRuntime ?? await seriesRuntime(tmdbId, seriesData);
   let overview = seriesData.overview;
   overview = Utils.processOverviewTranslations(seriesData.translations, language, overview);
   let finalName = seriesData.name;

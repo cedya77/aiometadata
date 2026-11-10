@@ -209,14 +209,14 @@ async function itemIdentities(item: any, descriptor: any, config: any, resolve: 
   return [...new Set([...(known ? [known] : []), resolved])];
 }
 
-export async function applyWatchlistState(items: any[], userUUID: string, config: any, descriptors: Map<string, any>): Promise<void> {
+export async function applyWatchlistState(items: any[], userUUID: string, config: any, descriptors: Map<string, any>, held?: WatchlistEntry[]): Promise<void> {
   const titles = items.filter((item: any) => {
     const kind = descriptors.get(String(item?.Id))?.k;
     return item?.UserData && (kind === 'movie' || kind === 'series');
   });
   if (!titles.length) return;
 
-  const entries = (await watchlistEntries(userUUID, config, Number.MAX_SAFE_INTEGER, true)).entries;
+  const entries = held ?? (await watchlistEntries(userUUID, config, Number.MAX_SAFE_INTEGER, true)).entries;
   const listed = new Set(entries.map((entry) => entry.metaId));
   const identities = new Set(entries.flatMap((entry) => (entry.identity ? [entry.identity] : [])));
   const shows = new Set([...identities].map(showOf));

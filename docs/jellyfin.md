@@ -220,6 +220,18 @@ Clients keep playlists with Jellyfin's standard `/Playlists` API, and each user 
 
 The watch history export carries playlists, and an import puts each one in the user its profile is mapped to. A playlist of the same name there gains the titles it lacks, in order; any other is made.
 
+## SyncPlay
+
+SyncPlay lets devices watch together: one creates a group, others join it, and a pause, seek or skip on any of them applies to all. It works in the apps that have Jellyfin's SyncPlay: Jellyfin Web and the desktop and Android apps built on it. Recent Android TV versions have SyncPlay too, though they are untested with this server. Swiftfin, Infuse, Streamyfin and Findroid do not have it, as far as is known.
+
+Open the SyncPlay menu in the app's header to create or join a group. A group started while something is playing starts from that title, at that position. When one member buffers mid-play, the others pause until it is ready. If it fell a little behind, it plays on and the others start again as it reaches them, rather than everyone jumping to one position. A member still not ready after 10 seconds is left behind and the group carries on; opening a title or seeking gets 30 seconds, as loading takes longer. Pressing play while the group waits starts it at once, without the members still loading. A device that loses its connection keeps its place for a minute, so a TV that drops off briefly stays in the group, and the group does not wait for it when it comes back.
+
+A user held to an age rating cannot create or join a group, since the group's queue is shared and would play titles their limit hides.
+
+**Who sees a group.** By default, only the users and devices of the configuration that started it. With `JELLYFIN_SYNCPLAY_SCOPE` set to `instance`, every configuration on this instance sees every group, and the names of the profiles in it. That is for a private instance shared with friends; on a public one it shows strangers what others watch.
+
+**The same release.** Each member gets its streams from its own stream addon, so two members can be offered different releases of a title. A release with a longer intro, an extended cut or a 25 fps file plays out of step with the others, however well the group is kept in time. So in a group, the release of the first member to open or play the title is listed first for the others when their addon offers it. **Try to match releases across users** in the Jellyfin dialog turns this off for a configuration. Nothing is hidden: a member can still pick another version, at the cost of drifting from the group.
+
 ## AIOMetadata inside AIOStreams' Jellyfin server
 
 AIOStreams has a Jellyfin server of its own. In that setup the client signs in to AIOStreams, not to this addon, and AIOMetadata is one of the addons installed in it, supplying the catalogs and title pages. Nothing in this guide's sign-in, users or shelves sections applies then; AIOStreams builds those. What AIOMetadata still does is the tracking, through two resources it declares in its manifest once **When to record** in the **Watch Tracking** tab is set to **When playback starts and stops**, with **Jellyfin** on:
@@ -273,6 +285,9 @@ All of these are in the dashboard under **Server**, or as environment variables,
 | `JELLYFIN_QUICK_CONNECT_TTL` (env) | `600` | How long a Quick Connect code is valid. |
 | `JELLYFIN_CATALOG_MIN_PAGE` | `10` | A catalog page shorter than this is the last one, so short lists are not asked for pages they do not have. |
 | `JELLYFIN_SHELF_META_CONCURRENCY` | `4` | Titles the Continue Watching and Next Up shelves fetch metadata for at once. A cold anime title costs several requests, and MyAnimeList blocks a burst. |
+| `JELLYFIN_SYNCPLAY_ENABLED` | `true` | Offer SyncPlay to the apps that support it. Off hides it in those apps. |
+| `JELLYFIN_SYNCPLAY_SCOPE` | `configuration` | Who sees a SyncPlay group: the users of the configuration that started it, or with `instance` everyone on this instance. |
+| `JELLYFIN_SYNCPLAY_MAX_GROUPS` | `1000` | The most SyncPlay groups held at once; creating one past it is refused until another ends. |
 
 ### Playback
 

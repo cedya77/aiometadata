@@ -28,12 +28,24 @@ import {
   systemInfo,
   userDto,
   SERVER_NAME,
+  namedItem,
+  rootFolder,
+  rootFolderId,
+  isRootParent,
+  yearItemId,
+  imageInfos,
+  parseYear,
+  lookupByName,
 } from './dto';
 import { buildViews, catalogView, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBoxSetCatalog, isBrowsable, requiresGenre, rowFor } from './views';
 import { decodeJellyfinId } from './ids';
-import { liveDevices, rememberTokenDevice, saveCapabilities, sendToDevice } from './socket';
+import { liveDevices, onDeviceBack, onDeviceGone, pushToDevice, rememberTokenDevice, saveCapabilities, sendToDevice } from './socket';
+import redis from '../redisClient';
+import { createRedisStore } from './syncplay/store';
+import { noteDefaultSource, noteGroupPlaying, preferGroupRelease, recordedDefaultFirst } from './syncplay/releases';
+import { deviceBack, deviceGone, leaveOnLogout, memberFor, registerSyncPlay, registerSyncPlayPublic, startSweep, type SyncPlayDeps } from './syncplay/routes';
 import { artTag, imageTag, isWideTag } from './imageTags';
-import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape } from './items';
+import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, productionYear, studioDescriptorsOf, wantedYears, extraFiltersOf, type Window } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { canPlay, coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberIssued, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
@@ -50,7 +62,10 @@ import { malEpisodeFor, segmentId, segmentsFor, type SegmentType } from './segme
 import { hasCreditDate, personByName, personCredits, resolvePerson, similarTitles } from './people';
 import { titleCards } from '../titleCards';
 import { allBoxSets, boxSetGenres, boxSetMembers, boxSetsDeep, boxSetsFor, boxSetsUnder, collectionById, collectionView, folderById } from './collections';
-import { entryItemType, setWatchlisted, watchlistEntries, watchlistItems } from './watchlist';
+import { applyWatchlistState, entryItemType, setWatchlisted, watchlistEntries, watchlistItems } from './watchlist';
+import { asksForFavourites, asksForResumable, carriesProviderId, chainPicks, excludedKey, excludedTitles, facetsOf, imdbKindsOf, listTotal, oneTitlePerNumber, providerIdsAsked, studioFilterOf, titleIdsFor, withoutTitles, yearItems } from './libraryFilters';
+import { studioListing, yearListing } from './discoverPages';
+import { hasTmdbKey } from '../getTmdb';
 import { applyRatings, applyWatchedState, finishedSeries, ownNextUpRows, seriesCountsAmong, upcomingFollowed, watchedAmong, watchedHistory, watchedSnapshot, type NextUpRow, type UpcomingRow } from './watched';
 import { cachedArtwork } from './artwork';
 import { oneIdAsked, withCriticRatings } from './criticRatings';
@@ -60,7 +75,7 @@ import { registerStubs } from './stubs';
 import { answerPlaylistListing, hasPlaylists, playlistAsItem, playlistConcurrency, playlistImages, playlistsFolder, registerPlaylistRoutes, type PlaylistRouteDeps } from './playlists';
 import { noteWantsPeople } from './viewer';
 import { decodeCursor, exportRow, findUser, historyPage, historyUsers, isEpisodeVideo, itemIdForVideo, userByKey, videoIdsOf } from './history';
-import { forgetUserSettings, liveSessionsFor, recordPlayed, recordPlayedUpTo, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData, sessionTouchDue, touchSessions, type LiveSession } from './playstate';
+import { clientPlayedAt, forgetUserSettings, liveSessionsFor, recordPlayed, recordPlayedUpTo, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData, sessionTouchDue, touchSessions, type LiveSession } from './playstate';
 
 const database: any = require('../database');
 
@@ -339,17 +354,54 @@ async function playedPick(req: any, userUUID: string, config: any, type: string,
   };
 }
 
-function userFor(profile: Profile, serverId: string, configuration?: any): any {
+function favouritePick(req: any, userUUID: string, config: any, type: string, serverId: string, parentId: string): { pick?: (metas: any[]) => Promise<any[]>; key: string } {
+  if (!asksForFavourites(req.query, clientHasOwnWatchlist())) return { key: '' };
+  // Read once for the request, not once for every page the walk judges.
+  let entries: Promise<any[]> | undefined;
+  return {
+    key: '|favourite',
+    pick: async (metas: any[]) => {
+      entries ??= watchlistEntries(userUUID, config, Number.MAX_SAFE_INTEGER, true).then((read) => read.entries);
+      const built = metas.map((meta: any) => metaToBaseItem(meta, type, serverId, parentId));
+      const descriptors = new Map<string, any>();
+      await Promise.all(built.map(async (item: any) => {
+        const descriptor = await decodeJellyfinId(String(item.Id));
+        if (descriptor) descriptors.set(String(item.Id), descriptor);
+      }));
+      await applyWatchlistState(built, userUUID, config, descriptors, await entries);
+      return metas.filter((_: any, i: number) => built[i].UserData?.IsFavorite === true);
+    },
+  };
+}
+
+async function resumablePick(req: any, userUUID: string, config: any, type: string, serverId: string, parentId: string): Promise<{ pick?: (metas: any[]) => Promise<any[]>; key: string }> {
+  if (!asksForResumable(req.query)) return { key: '' };
+  const snapshot = await watchedSnapshot(userUUID, config);
+  return {
+    key: '|resumable',
+    pick: async (metas: any[]) => {
+      const built = metas.map((meta: any) => metaToBaseItem(meta, type, serverId, parentId));
+      await applyWatchedState(built, snapshot, userUUID, profileKey(config), config);
+      return metas.filter((_: any, i: number) => Number(built[i].UserData?.PlaybackPositionTicks) > 0);
+    },
+  };
+}
+
+function userFor(profile: Profile, serverId: string, configuration?: any, owner?: { config: any; userUUID: string }): any {
   const user = userDto(profile.userId, serverId, profile.name, avatarTag(profile));
   if (configuration && typeof configuration === 'object') user.Configuration = { ...user.Configuration, ...configuration };
   if (profile.downloads === false) user.Policy = { ...user.Policy, EnableContentDownloading: false };
+  // SyncPlay refuses a user held to an age rating, so the app is told not to offer it.
+  if (owner?.config && hasAgeRatingCap(scopeConfigToProfile({ ...owner.config }, owner.userUUID, profile.id ?? null))) {
+    user.Policy = { ...user.Policy, SyncPlayAccess: 'None' };
+  }
   return user;
 }
 
 const USER_CONFIGURATION_ID = 'user-configuration';
 
 const CACHEABLE_PATH =
-  /^\/(items\/[^/]+\/images|persons\/[^/]+\/images|userimage|users\/[^/]+\/images|images\/general|videos\/)/i;
+  /^\/(items\/[^/]+\/images\/|persons\/[^/]+\/images|userimage|users\/[^/]+\/images|images\/general|videos\/)/i;
 
 function landingPage(req: any): string {
   const origin = `${req.protocol}://${req.get('host')}`;
@@ -459,6 +511,28 @@ export async function explainNextUp(userUUID: string, config: any, trace: NextUp
 export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): any {
   const loginRateLimit = options.loginRateLimit || ((_req: any, _res: any, next: any) => next());
   const router = express.Router({ mergeParams: true, caseSensitive: false });
+
+  const syncPlay: SyncPlayDeps = {
+    loadConfig,
+    profileFor: sessionProfile,
+    profileKey,
+    clientInfo,
+    nowPlaying: async (req, config) => {
+      const deviceId = clientInfo(req).deviceId;
+      const profile = profileKey(config);
+      const window = envInt('JELLYFIN_DASHBOARD_LIVE_SECONDS', 120, 10) * 1000;
+      const now = Date.now();
+      const live = (await liveSessionsFor(req.params.userUUID)).find((s) => s.profile === profile && s.device === deviceId && now - s.at <= window);
+      return live ? { itemId: live.itemId, positionTicks: live.positionMs * 10000, paused: live.paused, at: live.at } : null;
+    },
+    decode: decodeJellyfinId,
+    restricted: hasAgeRatingCap,
+    store: createRedisStore(redis),
+    push: pushToDevice,
+    liveDevices,
+  };
+  onDeviceGone((userUUID, profile, deviceId) => deviceGone(syncPlay, userUUID, profile, deviceId));
+  onDeviceBack((userUUID, profile, deviceId) => deviceBack(syncPlay, userUUID, profile, deviceId));
 
   router.use(express.json({ limit: '1mb', type: ['application/json', 'text/json', 'application/*+json'] }));
   router.use(express.urlencoded({ extended: false }));
@@ -572,6 +646,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.json({ ...publicSystemInfo(serverIdFor(req.params.userUUID), baseFor(req)), aiostreams: extensionInfo(localAddress(req)) });
   });
 
+  registerSyncPlayPublic(router);
+
   router.all('/System/Ping', (_req: any, res: any) => {
     res.json(SERVER_NAME);
   });
@@ -619,7 +695,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return;
     }
     const serverId = serverIdFor(userUUID);
-    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId)));
+    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId, undefined, { config, userUUID })));
   });
 
   // Anonymous, like item art: a client renders it with a plain image tag.
@@ -648,7 +724,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     rememberTokenDevice(userUUID, token, clientInfo(req));
 
     res.json({
-      User: userFor(profile, serverId),
+      User: userFor(profile, serverId, undefined, { config, userUUID }),
       SessionInfo: sessionInfo(profile.userId, serverId, profile.name, clientInfo(req)),
       AccessToken: token,
       ServerId: serverId,
@@ -717,6 +793,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   });
 
   router.post('/Sessions/Logout', async (req: any, res: any) => {
+    if (req.jellyfin?.authenticated) {
+      await leaveOnLogout(req, syncPlay).catch((error: any) => logger.debug(`SyncPlay leave on sign-out failed: ${error?.message || error}`));
+    }
     await revokeToken(req.jellyfin?.token);
     res.status(204).end();
   });
@@ -757,7 +836,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
     const serverId = serverIdFor(userUUID);
     res.json(listProfiles(config, userUUID).map((profile) => ({
-      user: userFor(profile, serverId),
+      user: userFor(profile, serverId, undefined, { config, userUUID }),
       avatar: profile.avatar,
       hidden: false,
       needs: switchNeeds(req, profile),
@@ -799,7 +878,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       users: users.map((user) => {
         const row: any = byKey.get(user.key);
         return {
-          user: userFor(user.profile, serverId),
+          user: userFor(user.profile, serverId, undefined, { config, userUUID }),
           avatar: user.profile.avatar,
           hidden: false,
           locked: Boolean(user.profile.pin),
@@ -959,7 +1038,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const serverId = serverIdFor(userUUID);
     const config = await database.getUserConfig(userUUID);
     const profile = (req.params.userId && profileByUserId(config, userUUID, req.params.userId)) || sessionProfile(req, config);
-    res.json(userFor(profile, serverId, await storedConfiguration(req, profile)));
+    res.json(userFor(profile, serverId, await storedConfiguration(req, profile), { config, userUUID }));
   };
   router.get('/Users/Me', meHandler);
 
@@ -979,7 +1058,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const userUUID = req.params.userUUID;
     const config = await database.getUserConfig(userUUID);
     const serverId = serverIdFor(userUUID);
-    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId)));
+    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId, undefined, { config, userUUID })));
   });
   router.get('/Users/:userId', meHandler);
 
@@ -1052,9 +1131,15 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const limit = Math.min(Math.max(1, qInt(req, 'Limit', 100)), 500);
     const includeItemTypes = req.query.IncludeItemTypes ?? req.query.includeItemTypes;
     const officialRatings = req.query.OfficialRatings ?? req.query.officialRatings;
-    const parentId = req.query.ParentId ?? req.query.parentId;
+    const years = req.query.Years ?? req.query.years;
+    const studios = await studioFilterOf(req.query, decodeJellyfinId);
+    const extra = extraFiltersOf(req.query);
+    const walkedExtra = { ...extra, tags: null };
+    const excludedTitleIds = await excludedTitles(req.query, decodeJellyfinId);
+    const recursive = String(req.query.Recursive ?? req.query.recursive ?? '').toLowerCase() === 'true';
+    const rootParent = isRootParent(req.query.ParentId ?? req.query.parentId, userUUID);
+    const parentId = rootParent ? undefined : req.query.ParentId ?? req.query.parentId;
     const filters = String(req.query.Filters ?? req.query.filters ?? '');
-    const favouriteFlag = String(req.query.IsFavorite ?? req.query.isFavorite ?? '').toLowerCase() === 'true';
 
     const config = await loadConfig(req);
     if (!config) {
@@ -1064,12 +1149,42 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     const serverId = serverIdFor(userUUID);
 
-    if (await answerPlaylistListing(req, res, playlistDeps, config)) return;
+    // A title by its IMDb, TMDB or TVDB id is built from that id, as sync tools look a title up, rather than found in a catalog.
+    const providerIds = providerIdsAsked(req.query);
+    if (providerIds) {
+      const wanted = new Set(String(includeItemTypes ?? '').split(',').map((t) => t.trim()).filter(Boolean));
+      const { cacheWrapGlobal } = require('../getCache');
+      const { find } = require('../getTmdb');
+      const kindsOf = (imdbId: string) => cacheWrapGlobal(`jf-imdb-kinds:${imdbId}`, () => imdbKindsOf(imdbId, (id) => find({ id, external_source: 'imdb_id' }, config)), 86400)
+        .catch(() => [] as Array<'movie' | 'series'>);
+      const imdbKinds = new Map(await Promise.all(providerIds.filter(({ provider }) => provider === 'imdb').map(async ({ id }) => [id, await kindsOf(id)] as const)));
+      const ids = titleIdsFor(providerIds, includeItemTypes, new Map([...imdbKinds].filter(([, kinds]) => kinds.length))).map(({ kind, id }) => encodeJellyfinId({ k: kind, t: kind, i: id }));
+      const built = ids.length ? await itemsForIds(req, ids, false, shelfConcurrency()) : [];
+      const seen = new Set<string>();
+      // Tried as a film and as a show, a number is kept only where it is that title's own.
+      const bothKinds = wanted.has('Movie') === wanted.has('Series');
+      const asked = new Set(filters.split(',').map((f) => f.trim()));
+      const carried = built
+        .filter((item: any) => (!wanted.size || wanted.has(item.Type)) && (!bothKinds || carriesProviderId(item, providerIds)) && !seen.has(item.Id) && seen.add(item.Id));
+      const items = (bothKinds ? oneTitlePerNumber(carried, providerIds) : carried)
+        .filter((item: any) => (!asked.has('IsPlayed') || item.UserData?.Played === true)
+          && (!asked.has('IsUnplayed') || item.UserData?.Played !== true)
+          && (!asked.has('IsResumable') || Number(item.UserData?.PlaybackPositionTicks) > 0))
+        .filter(keepsUnderProfileCap(config));
+      res.json(itemList(items.slice(startIndex, startIndex + limit), items.length, startIndex));
+      return;
+    }
+
+    // The playlist listing reads ParentId itself, so under the root it is handed a query without one.
+    const playlistReq = rootParent
+      ? Object.create(req, { query: { value: Object.fromEntries(Object.entries(req.query).filter(([key]) => key.toLowerCase() !== 'parentid')), enumerable: true } })
+      : req;
+    if (await answerPlaylistListing(playlistReq, res, playlistDeps, config)) return;
 
     // The watchlist, newest first, is every client's favourites; older clients ask for it by likes.
-    const ownWatchlist = clientHasOwnWatchlist();
-    const likesFilter = filters.split(',').map((f) => f.trim()).includes('Likes');
-    if (filters.includes('IsFavorite') || favouriteFlag || (ownWatchlist && likesFilter)) {
+    // Inside a catalog library it is that catalog's titles on the watchlist, filtered further down.
+    const inCatalogLibrary = parentId ? (await decodeJellyfinId(String(parentId)))?.k === 'view' : false;
+    if (asksForFavourites(req.query, clientHasOwnWatchlist()) && !inCatalogLibrary) {
       const started = Date.now();
       const wanted = includeItemTypes
         ? new Set(String(includeItemTypes).split(',').map((t) => t.trim()).filter(Boolean))
@@ -1333,8 +1448,50 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
 
     if (!parentId) {
-      const recursive = String(req.query.Recursive ?? req.query.recursive ?? '')
-        .toLowerCase() === 'true';
+      // Resumable titles across every library are the resume shelf.
+      if (asksForResumable(req.query)) {
+        await resumeHandler(req, res);
+        return;
+      }
+
+      // A year asked across every library is TMDB's whole year, as a person is their whole filmography. A provider
+      // applies only the year or studio, so a request naming anything else as well is left to the walk, which applies
+      // it all. A provider that fails is reported rather than walked around, as the walk reads every catalog; without
+      // a TMDB key the walk is all there is.
+      const yearSet = wantedYears(years);
+      const onlyLink = !extras.genre && !officialRatings && !wantedTags(req.query.Tags ?? req.query.tags)
+        && extra.minRating === null && !extra.statuses && !extra.folders && !excludedTitleIds;
+      const linkLimit = limit > envInt('JELLYFIN_LIST_PAGE_MAX', 50, 20) * 2 ? envInt('JELLYFIN_LIST_PAGE_MAX', 50, 20) : limit;
+      const linkOptions = {
+        config,
+        userUUID,
+        serverId,
+        includeItemTypes,
+        sortBy: req.query.SortBy ?? req.query.sortBy,
+        sortOrder: req.query.SortOrder ?? req.query.sortOrder,
+        startIndex,
+        limit: linkLimit,
+      };
+      const answeredFromProvider = async (what: string, list: () => Promise<{ items: any[]; total: number } | null>): Promise<boolean> => {
+        let listed: { items: any[]; total: number } | null;
+        try {
+          listed = await list();
+        } catch (error: any) {
+          if (!hasTmdbKey(config)) {
+            logger.debug(`${what} fell back to the catalogs: ${error?.message || error}`);
+            return false;
+          }
+          logger.debug(`${what} failed: ${error?.message || error}`);
+          res.status(503).json({ Message: 'Service Unavailable' });
+          return true;
+        }
+        if (!listed) return false;
+        await applyWatchedState(listed.items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
+        res.json(itemList(listed.items, listed.total, startIndex));
+        return true;
+      };
+      if (studios && !yearSet && onlyLink && (await answeredFromProvider('Studio listing', () => studioListing({ ...linkOptions, filter: studios })))) return;
+      if (yearSet && !studios && onlyLink && (await answeredFromProvider(`Year listing for ${[...yearSet].join(',')}`, () => yearListing({ ...linkOptions, years: [...yearSet] })))) return;
 
       if (!recursive) {
         const views = await userViews(req, userUUID, serverId, config);
@@ -1373,8 +1530,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       let passed = 0;
       const tags = profileTags(config);
 
-      const typesKey = listFilterKey(includeItemTypes, officialRatings);
+      const typesKey = `${listFilterKey(includeItemTypes, officialRatings, years, studios, walkedExtra)}${excludedKey(excludedTitleIds)}`;
       await warmCatalogLengths(userUUID, pool, extras, tags, typesKey);
+      // A filtered read its budget cut short, so titles may follow this page.
+      let truncated = false;
       for (const catalog of pool) {
         if (collected.length >= limit) break;
 
@@ -1391,10 +1550,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           skip,
           limit - collected.length,
           extras,
-          includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings),
+          withoutTitles(includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings, years, studios, walkedExtra), excludedTitleIds),
           tags,
           typesKey
-        ).catch(() => ({ items: [] as any[], hasMore: false }));
+        ).catch((): Window => ({ items: [], hasMore: false }));
 
         const viewId = encodeJellyfinId({ k: 'view', t: catalog.type, c: catalog.id });
         for (const meta of servedOrder(page.items, page)) {
@@ -1404,7 +1563,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           collected.push(item);
         }
 
-        if (page.hasMore) break;
+        if (page.hasMore) {
+          truncated = page.truncated === true;
+          break;
+        }
         passed += knownCatalogLength(userUUID, catalog, extras, tags, typesKey) ?? skip + page.items.length;
       }
 
@@ -1413,10 +1575,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
           .filter((item: any) => !tagged || hasWantedTag(item, tagged, animeItems.has(item))),
         req.query.SortBy ?? req.query.sortBy,
         req.query.SortOrder ?? req.query.sortOrder
-      );
+      ).slice(0, limit);
       await applyWatchedState(across, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
 
-      res.json(itemList(across, startIndex + across.length, startIndex));
+      // A cross-library row ends where it stops; only a filtered read its budget cut short stays open.
+      res.json(itemList(across, listTotal(startIndex, across.length, limit, { hasMore: truncated, truncated }), startIndex));
       return;
     }
 
@@ -1504,15 +1667,17 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         const page = foldersOnly
           ? { items: [], hasMore: false }
           : room > 0
-          ? await boxSetMembers(userUUID, config, serverId, collection, folder, titlesFrom, room, includeItemTypes ? String(includeItemTypes) : undefined, extras.genre, officialRatings ? String(officialRatings) : undefined)
+          ? await boxSetMembers(userUUID, config, serverId, collection, folder, titlesFrom, room, includeItemTypes ? String(includeItemTypes) : undefined, extras.genre, officialRatings ? String(officialRatings) : undefined, { years, studios, extra })
           : { items: [], hasMore: true };
         await applyWatchedState(page.items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
         const items = [...ahead, ...page.items];
-        res.json(itemList(
-          items,
-          page.hasMore && items.length > 0 ? startIndex + items.length + folderLimit : startIndex + items.length,
-          startIndex
-        ));
+        // The folder lists its own folders before the titles its sources hold.
+        const counted = {
+          ...page,
+          ...(page.listed !== undefined ? { listed: page.listed + children.length } : {}),
+          ...(page.length !== undefined ? { length: page.length + children.length } : {}),
+        };
+        res.json(itemList(items, listTotal(startIndex, items.length, folderLimit, counted), startIndex));
         return;
       }
 
@@ -1561,18 +1726,19 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const pageLimit = limit > pageCap * 2 ? pageCap : limit;
 
     const played = await playedPick(req, userUUID, config, catalog.type, serverId, String(parentId));
+    const favourite = favouritePick(req, userUUID, config, catalog.type, serverId, String(parentId));
+    const resumable = await resumablePick(req, userUUID, config, catalog.type, serverId, String(parentId));
     const window = await fetchWindow(
       userUUID,
       catalog,
       startIndex,
       pageLimit,
       extras,
-      includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings),
+      withoutTitles(includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings, years, studios, extra), excludedTitleIds),
       profileTags(config),
-      `${listFilterKey(includeItemTypes, officialRatings)}${played.key}`,
-      played.pick
+      `${listFilterKey(includeItemTypes, officialRatings, years, studios, extra)}${excludedKey(excludedTitleIds)}${played.key}${favourite.key}${resumable.key}`,
+      chainPicks(played.pick, favourite.pick, resumable.pick)
     );
-    const hasMore = window.hasMore;
 
     const items = servedOrder(window.items, window)
       .filter((meta: any) => meta && meta.id)
@@ -1582,14 +1748,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const filtered = filterByIncludeTypes(items, includeItemTypes ? String(includeItemTypes) : undefined)
       .slice(0, pageLimit);
 
-    // Catalogs report no total, so one page of lookahead keeps the client asking
-    // and collapses to the truth once the catalog runs out.
-    const total = hasMore && filtered.length > 0
-      ? startIndex + filtered.length + pageLimit
-      : startIndex + filtered.length;
+    const total = listTotal(startIndex, filtered.length, pageLimit, window);
 
     await applyWatchedState(filtered, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
-    res.json(itemList(filtered, total, startIndex));
+    res.json({ ...itemList(filtered, total, startIndex), ...(window.capped ? { FilterComplete: false } : {}) });
   });
 
   const genreNeeded = new Map<string, boolean>();
@@ -1835,8 +1997,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     itemId: string
   ): Promise<void> => {
     const resolved = await withDefaultSourceId(
-      await resolveMediaSources(req, descriptor, item.RunTimeTicks ?? null),
-      itemId
+      await groupOrdered(req, itemId, await resolveMediaSources(req, descriptor, item.RunTimeTicks ?? null)),
+      itemId,
+      req
     );
     if (!resolved.length) {
       if (!Array.isArray(item.MediaSources) || !item.MediaSources.length) return;
@@ -1858,7 +2021,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
    * one has to carry the item guid rather than its own hash or nothing is
    * selectable.
    */
-  const withDefaultSourceId = async (sources: any[], itemId: string): Promise<any[]> => {
+  const withDefaultSourceId = async (sources: any[], itemId: string, req?: any): Promise<any[]> => {
     const first = sources.findIndex((source) => !headerSources.has(source));
     if (first < 0) return sources;
     const id = normaliseJellyfinId(itemId);
@@ -1866,9 +2029,32 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const ms = await recallDuration(sources[first].Id).catch(() => null);
     if (ms) rememberDuration(id, ms);
     else forgetDuration(id);
+    if (req) {
+      const config = await loadConfig(req).catch(() => null);
+      await noteDefaultSource(id, req.params.userUUID, profileKey(config), String(sources[first].Id ?? '')).catch(() => undefined);
+    }
     return sources.map((source, index) =>
       index === first ? { ...source, Id: id, ETag: id } : source
     );
+  };
+
+  // Before withDefaultSourceId, so the release a SyncPlay group plays is the one given the item's id.
+  const groupOrdered = async (req: any, itemId: string, sources: any[]): Promise<any[]> => {
+    const config = await loadConfig(req).catch(() => null);
+    if (!config || config.jellyfinMatchReleases === false || !sources.length) return sources;
+    try {
+      // Same rule withDefaultSourceId uses to pick the source given the item's id.
+      return await preferGroupRelease(syncPlay, await memberFor(req, syncPlay), config, itemId, sources, (s) => !headerSources.has(s));
+    } catch {
+      return sources;
+    }
+  };
+
+  // A request naming the item by its own id gets the file PlaybackInfo gave that id,
+  // not one picked again from group state that may have moved on since.
+  const sameDefault = async (req: any, itemId: string, sources: any[]): Promise<any[]> => {
+    const config = await loadConfig(req).catch(() => null);
+    return recordedDefaultFirst(normaliseJellyfinId(itemId), req.params.userUUID, profileKey(config), sources).catch(() => sources);
   };
 
   const unwrapMarker = async (itemId: string): Promise<{ itemId: string; descriptor: any }> => {
@@ -1905,7 +2091,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     // A named version keeps the list it came from.
     const named = typeof requested === 'string' && !!requested && normaliseJellyfinId(requested) !== normaliseJellyfinId(itemId);
     const all = await resolveMediaSources(req, descriptor, null, req.body?.Refresh === true && !named, req.body?.EnableRequiredHttpHeaders === true);
-    const withIds = await withDefaultSourceId(all, itemId);
+    const withIds = await withDefaultSourceId(named ? all : await groupOrdered(req, itemId, all), itemId, req);
 
     let sources = withIds;
     if (typeof requested === 'string' && requested && normaliseJellyfinId(requested) !== normaliseJellyfinId(itemId)) {
@@ -1947,7 +2133,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const key = subtitleKey(userUUID, itemId, sourceId);
     let sent = recallOffered(key);
     if (!sent) {
-      const sources = await withDefaultSourceId(await resolveMediaSources(req, descriptor, null, false, true), itemId);
+      const sources = await withDefaultSourceId(await sameDefault(req, itemId, await resolveMediaSources(req, descriptor, null, false, true)), itemId);
       const source = sources.find((s: any) => normaliseJellyfinId(s.Id) === normaliseJellyfinId(sourceId));
       if (!source) {
         res.status(404).end();
@@ -2021,7 +2207,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     // No pin for it, so it is resolved: a client that never called PlaybackInfo
     // or has outlived the pin gets the source matched from a fresh list.
-    const sources = await withDefaultSourceId(await resolveMediaSources(req, descriptor, null), itemId);
+    const sources = await withDefaultSourceId(await sameDefault(req, itemId, await resolveMediaSources(req, descriptor, null)), itemId);
     if (!sources.length) {
       res.status(404).json({ Message: 'No playable stream' });
       return;
@@ -2229,6 +2415,28 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.json(itemList(people, people.length, 0));
   });
 
+  // Unlike the search, a provider failure here is not reported as an unknown person.
+  router.get('/Persons/:name', async (req: any, res: any) => {
+    const config = await loadConfig(req);
+    if (!config) {
+      res.status(404).json({ Message: 'Person not found' });
+      return;
+    }
+    const looked = await lookupByName(String(req.params.name), (name) => personByName(config, name));
+    if (looked.status === 503) {
+      logger.debug(`Person lookup failed for "${req.params.name}": ${(looked.error as any)?.message || looked.error}`);
+      res.status(503).json({ Message: 'Service Unavailable' });
+      return;
+    }
+    if (looked.status === 404) {
+      res.status(404).json({ Message: 'Person not found' });
+      return;
+    }
+    const person = looked.found;
+    const id = encodeJellyfinId({ k: 'person', n: person.name, s: person.source, x: person.id });
+    res.json(personItem(id, serverIdFor(req.params.userUUID), person.name, person));
+  });
+
   const toHint = (item: any) => ({
     ItemId: item.Id,
     Id: item.Id,
@@ -2339,21 +2547,27 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
     }
 
-    res.json({
-      Name: match ? match.genre : name,
-      Id: encodeJellyfinId({
-        k: 'genre',
-        t: match ? match.catalog.type : 'movie',
-        c: match ? match.catalog.id : '',
-        g: match ? match.genre : name,
-      }),
-      ServerId: serverId,
-      Type: 'Genre',
-      IsFolder: false,
-      ImageTags: {},
-      BackdropImageTags: [],
-      ImageBlurHashes: {},
+    const id = encodeJellyfinId({
+      k: 'genre',
+      t: match ? match.catalog.type : 'movie',
+      c: match ? match.catalog.id : '',
+      g: match ? match.genre : name,
     });
+    res.json(namedItem('Genre', match ? match.genre : name, id, serverId));
+  });
+
+  router.get('/Studios/:name', (req: any, res: any) => {
+    const name = String(req.params.name);
+    res.json(namedItem('Studio', name, encodeJellyfinId({ k: 'studio', n: name }), serverIdFor(req.params.userUUID)));
+  });
+
+  router.get('/Years/:year', (req: any, res: any) => {
+    const year = parseYear(String(req.params.year), new Date());
+    if (year === null) {
+      res.status(404).json({ Message: 'Year not found' });
+      return;
+    }
+    res.json(namedItem('Year', String(year), yearItemId(year), serverIdFor(req.params.userUUID), { ProductionYear: year }));
   });
 
   const genrePairs = async (req: any): Promise<{ genres: string[]; pairs: any[] }> => {
@@ -2370,47 +2584,85 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     return { genres, pairs };
   };
 
-  // Jellyfin lists the ratings in view; reading a whole catalog for a menu would cost too much, so its first page stands in.
-  const ratingsInView = async (req: any): Promise<string[]> => {
+  // Jellyfin lists the ratings, years and studios in view; reading a whole catalog for a menu would cost too much, so its
+  // first page stands in. It is also the page every filtered walk starts on, so a value offered here is one it will find.
+  // A client asks for the filters, years and studios together, so one read answers them all for a minute.
+  const facetReads = new LRUCache<string, Promise<ReturnType<typeof facetsOf>>>({ max: 2000, ttl: 60_000 });
+  const facetsInView = async (req: any): Promise<ReturnType<typeof facetsOf>> => {
     const parentId = req.query.ParentId ?? req.query.parentId;
     const config = parentId ? await loadConfig(req) : null;
-    if (!config) return [];
-    const userUUID = req.params.userUUID;
-    const descriptor = await decodeJellyfinId(String(parentId));
-    let ratings: Array<string | null> = [];
+    if (!config) return facetsOf([]);
+    // Keyed on everything the catalog read itself is scoped by, so one viewer's facets never answer another's.
+    const { viewerAccountOwner, viewerOwnsWatchlist, viewerProfile, viewerReadsExtensions } = require('./viewer');
+    const key = [req.params.userUUID, config.jellyfinProfileId ?? '', viewerProfile(), viewerAccountOwner(), viewerOwnsWatchlist(), viewerReadsExtensions(), parentId].join('|');
+    const held = facetReads.get(key);
+    if (held) return held;
+    const read = readFacets(req.params.userUUID, config, String(parentId));
+    facetReads.set(key, read);
+    read.catch(() => {
+      if (facetReads.get(key) === read) facetReads.delete(key);
+    });
+    return read;
+  };
+
+  const readFacets = async (userUUID: string, config: any, parentId: string): Promise<ReturnType<typeof facetsOf>> => {
+    const none = facetsOf([]);
+    const descriptor = await decodeJellyfinId(parentId);
     if (descriptor?.k === 'boxset') {
       const collection = collectionById(config, descriptor.c);
       const folder = collection ? folderById(collection, descriptor.f) : null;
-      if (!collection || !folder) return [];
+      if (!collection || !folder) return none;
       const page = await boxSetMembers(userUUID, config, serverIdFor(userUUID), collection, folder, 0, 100);
-      ratings = page.items.map((item: any) => item.OfficialRating ?? null);
-    } else if (descriptor?.k === 'view') {
-      const catalog = await findCatalogByViewId(userUUID, config, descriptor.t, descriptor.c);
-      if (!catalog) return [];
-      // The page the browse itself opens on, with the genre it reads a catalog under.
-      const tags = profileTags(config);
-      const extras: Record<string, string> = {};
-      if (await needsDefaultGenre(userUUID, catalog, tags)) {
-        const genreExtra = (catalog.extra ?? []).find((e: any) => e?.name === 'genre' && e?.default);
-        if (genreExtra) extras.genre = String(genreExtra.default);
-      }
-      if (!extras.genre && requiresGenre(catalog)) return [];
-      ratings = ((await fetchCatalogPage(userUUID, catalog.type, catalog.id, extras, tags)) ?? []).map(officialRatingOf);
+      return facetsOf(page.items.map((item: any) => ({
+        rating: item.OfficialRating ?? null,
+        year: item.ProductionYear ?? null,
+        studios: (Array.isArray(item.Studios) ? item.Studios : []).map((studio: any) => ({ k: 'studio' as const, n: String(studio?.Name ?? '') })).filter((studio: any) => studio.n),
+        tags: Array.isArray(item.Tags) ? item.Tags : [],
+      })));
     }
-    return [...new Set(ratings.filter((rating): rating is string => Boolean(rating)))].sort();
+    if (descriptor?.k !== 'view') return none;
+    const catalog = await findCatalogByViewId(userUUID, config, descriptor.t, descriptor.c);
+    if (!catalog) return none;
+    // The page the browse itself opens on, with the genre it reads a catalog under.
+    const tags = profileTags(config);
+    const extras: Record<string, string> = {};
+    if (await needsDefaultGenre(userUUID, catalog, tags)) {
+      const genreExtra = (catalog.extra ?? []).find((e: any) => e?.name === 'genre' && e?.default);
+      if (genreExtra) extras.genre = String(genreExtra.default);
+    }
+    if (!extras.genre && requiresGenre(catalog)) return none;
+    const metas = (await fetchCatalogPage(userUUID, catalog.type, catalog.id, extras, tags)) ?? [];
+    return facetsOf(metas.map((meta: any) => ({ rating: officialRatingOf(meta), year: productionYear(meta), studios: studioDescriptorsOf(meta), tags: Array.isArray(meta.keywords) ? meta.keywords : [] })));
   };
 
   router.get('/Items/Filters', async (req: any, res: any) => {
-    const [{ genres, pairs }, ratings] = await Promise.all([genrePairs(req), ratingsInView(req).catch(() => [])]);
-    res.json({ Genres: genres, Tags: [], OfficialRatings: ratings, Years: [], GenreItems: pairs });
+    const [{ genres, pairs }, facets] = await Promise.all([genrePairs(req), facetsInView(req).catch(() => facetsOf([]))]);
+    res.json({ Genres: genres, Tags: facets.tags, OfficialRatings: facets.ratings, Years: facets.years, GenreItems: pairs });
+  });
+
+  const pagedList = (req: any, res: any, items: any[]) => {
+    const startIndex = Math.max(0, qInt(req, 'StartIndex', 0));
+    const limit = Math.max(1, qInt(req, 'Limit', items.length || 1));
+    res.json(itemList(items.slice(startIndex, startIndex + limit), items.length, startIndex));
+  };
+
+  router.get('/Years', async (req: any, res: any) => {
+    const { years } = await facetsInView(req).catch(() => facetsOf([]));
+    pagedList(req, res, yearItems(years, serverIdFor(req.params.userUUID), req.query.SortOrder ?? req.query.sortOrder));
+  });
+
+  router.get('/Studios', async (req: any, res: any) => {
+    const { studios } = await facetsInView(req).catch(() => facetsOf([]));
+    const serverId = serverIdFor(req.params.userUUID);
+    pagedList(req, res, studios.map((studio) => namedItem('Studio', studio.n, encodeJellyfinId(studio), serverId)));
   });
 
   // Unlike the legacy route, genres here are { Name, Id } pairs.
   router.get('/Items/Filters2', async (req: any, res: any) => {
-    const { pairs } = await genrePairs(req);
+    const [{ pairs }, facets] = await Promise.all([genrePairs(req), facetsInView(req).catch(() => facetsOf([]))]);
     res.json({
       Genres: pairs.map(({ Name, Id }: any) => ({ Name, Id })),
-      Tags: [],
+      Tags: facets.tags,
       AudioLanguages: [],
       SubtitleLanguages: [],
     });
@@ -2502,6 +2754,20 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     chain.push(series);
     res.json(chain);
+  });
+
+  router.get('/Items/:itemId/Images', async (req: any, res: any) => {
+    const itemId = String(req.params.itemId);
+    const images = await imagesFor(req, itemId);
+    if (images) {
+      res.json(imageInfos(images));
+      return;
+    }
+    if (await decodeJellyfinId(itemId)) {
+      res.json([]);
+      return;
+    }
+    res.status(404).json({ Message: 'Item not found' });
   });
 
   router.get(['/Items/:itemId/Images/:imageType', '/Items/:itemId/Images/:imageType/:index'], async (req: any, res: any) => {
@@ -2892,7 +3158,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }).catch(() => undefined);
   };
 
-  router.get(['/UserItems/Resume', '/Users/:userId/Items/Resume'], async (req: any, res: any) => {
+  async function resumeHandler(req: any, res: any): Promise<void> {
     const userUUID = req.params.userUUID;
     const config = await loadConfig(req);
     if (!config) {
@@ -2904,9 +3170,20 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const limit = Math.min(Math.max(1, qInt(req, 'Limit', 20)), 100);
     const watched = await watchedSnapshot(userUUID, config);
     const animeOnly = keepsAnimeOnly(config);
+    // A resumed play is a film or an episode; a show stands for its episodes.
+    const typesOf = (raw: unknown): Set<string> | null => {
+      const named = String(raw ?? '').split(',').map((t) => t.trim()).filter(Boolean);
+      return named.length ? new Set(named.map((t) => (t === 'Series' ? 'Episode' : t))) : null;
+    };
+    const included = typesOf(req.query.IncludeItemTypes ?? req.query.includeItemTypes);
+    const leftOut = typesOf(req.query.ExcludeItemTypes ?? req.query.excludeItemTypes);
     const rows = (await resumeSnapshot(userUUID, config))
       .filter((row) => row.kind === 'movie' || !watched.dropped.has(row.metaId))
-      .filter((row) => !animeOnly || isAnimeTitle(row.metaId, row.kind === 'movie' ? 'movie' : 'series'));
+      .filter((row) => !animeOnly || isAnimeTitle(row.metaId, row.kind === 'movie' ? 'movie' : 'series'))
+      .filter((row) => {
+        const type = row.kind === 'movie' ? 'Movie' : 'Episode';
+        return (!included || included.has(type)) && !leftOut?.has(type);
+      });
     if (!rows.length) {
       res.json(itemList([], 0, startIndex));
       return;
@@ -2966,7 +3243,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const shelf = distinct.filter(keepsUnderProfileCap(config));
     res.json(itemList(shelf, rows.length, startIndex));
     warmSeriesMetas(req, userUUID, shelf);
-  });
+  }
+  router.get(['/UserItems/Resume', '/Users/:userId/Items/Resume'], resumeHandler);
 
   const seriesMetaFor = async (req: any) => {
     const descriptor = await decodeJellyfinId(String(req.params.seriesId));
@@ -3979,6 +4257,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return;
     }
 
+    if (descriptor.k === 'studio') {
+      res.json(namedItem('Studio', descriptor.n, String(req.params.itemId), serverIdFor(userUUID)));
+      return;
+    }
+
     if (descriptor.k === 'episode') {
       const found = await seriesForEpisode(userUUID, await loadConfig(req), descriptor);
       if (!found) {
@@ -4111,6 +4394,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   }
   // Ahead of the stubs, which answer /Playlists with an empty list.
   registerPlaylistRoutes(router, playlistDeps);
+  router.get(['/Items/Root', '/Users/:userId/Items/Root'], (req: any, res: any) => {
+    res.json(rootFolder(rootFolderId(req.params.userUUID), serverIdFor(req.params.userUUID)));
+  });
+  registerSyncPlay(router, syncPlay);
+  startSweep(syncPlay);
   // Ahead of the item route, which would take /Items/Suggestions for an item id.
   registerStubs(router);
   router.get(['/Items/:itemId', '/Users/:userId/Items/:itemId'], singleItemHandler);
@@ -4307,6 +4595,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     recordPlaying(req, req.body).catch((error: any) =>
       logger.debug(`Playing report failed: ${error.message}`)
     );
+    const body = req.body || {};
+    memberFor(req, syncPlay)
+      .then((member) => member && noteGroupPlaying(syncPlay, member, String(body.ItemId ?? req.params.itemId ?? ''), String(body.MediaSourceId ?? '')))
+      .catch((error: any) => logger.debug(`SyncPlay release note failed: ${error?.message || error}`));
   });
 
   router.post(['/Sessions/Playing/Progress', '/PlayingItems/:itemId/Progress'], (req: any, res: any) => {
@@ -4342,7 +4634,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   // A client reads the new state back out of the response here rather than
   // trusting a bare acknowledgement, and reports the server as not supporting
   // the operation when the body is empty.
-  const playedState = (itemId: string, played: boolean): any => {
+  const playedState = (itemId: string, played: boolean, at: number | null = null): any => {
     const id = normaliseJellyfinId(itemId);
     return {
       ...EMPTY_USER_DATA,
@@ -4352,17 +4644,19 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       PlayCount: played ? 1 : 0,
       PlaybackPositionTicks: 0,
       PlayedPercentage: played ? 100 : 0,
-      LastPlayedDate: played ? new Date().toISOString() : null,
+      LastPlayedDate: played ? new Date(at ?? Date.now()).toISOString() : null,
     };
   };
 
   // Answered once the table holds the mark: the client reads the item back
   // straight after and would otherwise see the state from before.
   router.post(['/Users/:userId/PlayedItems/:itemId', '/UserPlayedItems/:itemId'], async (req: any, res: any) => {
-    await recordPlayed(req, { ItemId: req.params.itemId }).catch((error: any) =>
+    // A sync tool sends when the title was watched, so its history keeps that order.
+    const at = clientPlayedAt(req.query.DatePlayed ?? req.query.datePlayed);
+    await recordPlayed(req, { ItemId: req.params.itemId }, 'jellyfin', at).catch((error: any) =>
       logger.debug(`Played report failed: ${error.message}`)
     );
-    res.json(playedState(String(req.params.itemId), true));
+    res.json(playedState(String(req.params.itemId), true, at));
   });
 
   router.post('/AIOStreams/PlayedUpTo/:itemId', async (req: any, res: any) => {
@@ -4429,7 +4723,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
       const id = normaliseJellyfinId(String(req.params.itemId));
       res.json({
-        ...playedState(id, state.played),
+        ...playedState(id, state.played, state.at ?? null),
+        ...(!state.played && state.at ? { LastPlayedDate: new Date(state.at).toISOString() } : {}),
         PlaybackPositionTicks: Math.round(state.positionMs * 10000),
         PlayedPercentage: state.played ? 100 : 0,
         ...(state.rating !== undefined ? { Rating: state.rating } : {}),

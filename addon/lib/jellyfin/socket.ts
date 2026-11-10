@@ -74,9 +74,30 @@ function readFrame(buffer: Buffer): { opcode: number; payload: Buffer; size: num
 
 interface Listener {
   userId: string;
+  userUUID: string;
+  profile: string;
   deviceId: string | null;
   tokenKey?: string;
   send: (MessageType: string, Data?: any) => void;
+}
+
+type DeviceHook = (userUUID: string, profile: string, deviceId: string) => unknown;
+const goneHooks: DeviceHook[] = [];
+const backHooks: DeviceHook[] = [];
+
+export const onDeviceGone = (fn: DeviceHook): void => void goneHooks.push(fn);
+export const onDeviceBack = (fn: DeviceHook): void => void backHooks.push(fn);
+
+function fire(hooks: DeviceHook[], listener: Listener): void {
+  const deviceId = listener.deviceId;
+  if (!deviceId) return;
+  for (const hook of hooks) {
+    try {
+      Promise.resolve(hook(listener.userUUID, listener.profile, deviceId)).catch((error: any) => logger.debug(`Device hook failed: ${error?.message || error}`));
+    } catch (error: any) {
+      logger.debug(`Device hook failed: ${error?.message || error}`);
+    }
+  }
 }
 
 const listeners = new Map<string, Set<Listener>>();
@@ -174,6 +195,7 @@ export function rememberTokenDevice(userUUID: string, token: string | undefined,
       if (listener.tokenKey !== key || listener.deviceId) continue;
       listener.deviceId = deviceId;
       markListening(scope, deviceId);
+      fire(backHooks, listener);
     }
   }
 }
@@ -307,6 +329,13 @@ export async function sendToDevice(userUUID: string, profile: string, deviceId: 
   return true;
 }
 
+/** Unlike sendToDevice, this does not first check that the device is live. */
+export function pushToDevice(userUUID: string, profile: string, deviceId: string, MessageType: string, Data: any): void {
+  const scope = `${userUUID}:${profile}`;
+  command(scope, deviceId, MessageType, Data);
+  redis?.publish(COMMANDS, JSON.stringify({ o: ORIGIN, s: scope, d: deviceId, t: MessageType, p: Data })).catch(() => undefined);
+}
+
 export async function hasListeners(userUUID: string, profile: string): Promise<boolean> {
   const scope = `${userUUID}:${profile}`;
   if (listeners.get(scope)?.size) return true;
@@ -393,7 +422,8 @@ export function attachJellyfinSocket(server: any): void {
       return;
     }
 
-    const scope = `${userUUID}:${await historyOf(userUUID, session.profileId)}`;
+    const profile = await historyOf(userUUID, session.profileId);
+    const scope = `${userUUID}:${profile}`;
     if (socket.destroyed) return;
 
     socket.write(
@@ -411,7 +441,14 @@ export function attachJellyfinSocket(server: any): void {
       if (!socket.destroyed) socket.write(textFrame(JSON.stringify({ MessageType, MessageId: randomUUID().replace(/-/g, ''), Data })));
     };
 
-    const listener: Listener = { userId: dashedGuid(profileUserId(userUUID, session.profileId)), deviceId, tokenKey: token ? tokenKey(token) : undefined, send };
+    const listener: Listener = {
+      userId: dashedGuid(profileUserId(userUUID, session.profileId)),
+      userUUID,
+      profile,
+      deviceId,
+      tokenKey: token ? tokenKey(token) : undefined,
+      send,
+    };
     let followers = listeners.get(scope);
     if (!followers) {
       followers = new Set();
@@ -420,6 +457,7 @@ export function attachJellyfinSocket(server: any): void {
     followers.add(listener);
     subscribe();
     markListening(scope, deviceId);
+    fire(backHooks, listener);
 
     send('ForceKeepAlive', 60);
     let heardAt = Date.now();
@@ -437,6 +475,7 @@ export function attachJellyfinSocket(server: any): void {
           if (!found || listener.deviceId || socket.destroyed) return;
           listener.deviceId = found;
           markListening(scope, found);
+          fire(backHooks, listener);
         });
       }
     }, pingMs());
@@ -485,6 +524,7 @@ export function attachJellyfinSocket(server: any): void {
       if (gone && ![...(held ?? [])].some((other) => other.deviceId === gone)) {
         localCapabilities.delete(`${scope}:${gone}`);
         redis?.hdel(`${DEVICES}${scope}`, gone).catch(() => undefined);
+        fire(goneHooks, listener);
       }
       const left = (perUser.get(userUUID as string) ?? 1) - 1;
       if (left <= 0) perUser.delete(userUUID as string);

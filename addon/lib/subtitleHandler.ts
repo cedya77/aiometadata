@@ -702,10 +702,12 @@ async function markEpisodes(
   config: any,
   method: 'addToHistory' | 'removeFromHistory',
   scope?: 'season' | 'series',
-  only?: TrackedService
+  only?: TrackedService,
+  at?: number
 ): Promise<void> {
   const parsed = videoIds.map(parseMediaId).filter((p): p is ParsedMediaId => !!p && p.type === 'series');
   if (!parsed.length) return;
+  const watchedAt = at && method === 'addToHistory' ? new Date(at).toISOString() : undefined;
 
   let unresolved: TrackedService | null = null;
   for (const service of ['simkl', 'mdblist'] as const) {
@@ -740,7 +742,7 @@ async function markEpisodes(
       }
       if (!groups.size && unsent < parsed.length) unresolved = service;
       for (const group of groups.values()) {
-        await utils[method](group.ids, credential, undefined, undefined, group.episodes);
+        await utils[method](group.ids, credential, undefined, undefined, group.episodes, watchedAt);
       }
     } catch (error: any) {
       logger.error(`[${service}] Marking ${parsed.length} episode(s) failed: ${error.message}`);
@@ -797,7 +799,7 @@ async function markEpisodes(
   }
 
   const found: boolean[] = await mapWithConcurrency(parsed, 4, (id: ParsedMediaId) =>
-    checkinPublicMetaDB(id, config, { action: method === 'addToHistory' ? 'watched' : 'unwatch' }).catch(() => true)
+    checkinPublicMetaDB(id, config, { action: method === 'addToHistory' ? 'watched' : 'unwatch', ...(watchedAt ? { watchedAt } : {}) }).catch(() => true)
   );
   if (only && !found.some(Boolean)) throw noIdsFor('publicmetadb', parsed[0]);
 }

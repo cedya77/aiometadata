@@ -1339,6 +1339,9 @@ const CATALOG_META_FIELDS = [
   'behaviorHints',
   'trailers',
   'collection',
+  'studios',
+  'networks',
+  '_studioRefs',
 ];
 
 function projectAppExtrasForCatalogCache(appExtras: any): any {
@@ -2013,6 +2016,7 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
     tagline: meta.tagline,
     studios: meta.studios,
     networks: meta.networks,
+    _studioRefs: meta._studioRefs,
     countries: meta.countries,
     airDays: meta.airDays,
     airTime: meta.airTime,
