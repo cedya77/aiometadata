@@ -12,6 +12,8 @@ export interface GroupStore {
   update(id: string, fn: (g: Group | null) => Result): Promise<Result | null>;
   due(nowMs: number): Promise<string[]>;
   forget(id: string): Promise<void>;
+  /** Groups held, for the instance cap; may briefly count one that just expired. */
+  count(): Promise<number>;
   /** Drops a member's key only while it still names that group. */
   release(memberKey: string, groupId: string): Promise<void>;
 }
@@ -109,6 +111,8 @@ export function createRedisStore(redis: any, prefix = 'jf:sp:', options: { lockM
 
     forget,
 
+    count: async () => Number(await redis.scard(GROUPS)) || 0,
+
     async release(key, groupId) {
       await redis.eval(DELETE_IF, 1, memberKey(key), groupId);
     },
@@ -150,6 +154,7 @@ export function createMemoryStore(): GroupStore {
 
     due: async (nowMs) => [...groups.values()].filter((g) => nextDeadline(g) <= nowMs).map((g) => g.id),
     forget: async () => undefined,
+    count: async () => groups.size,
     async release(key, groupId) {
       if (members.get(key) === groupId) members.delete(key);
     },

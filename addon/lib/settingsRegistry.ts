@@ -1486,6 +1486,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     options: ['configuration', 'instance'],
   },
   {
+    key: 'JELLYFIN_SYNCPLAY_MAX_GROUPS',
+    envVar: 'JELLYFIN_SYNCPLAY_MAX_GROUPS',
+    label: 'Jellyfin SyncPlay Group Limit',
+    description: 'The most SyncPlay groups held at once across the instance. Each takes a few kilobytes in Redis; creating one past the limit is refused until another ends.',
+    category: 'Features',
+    type: 'number',
+    default: 1000,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_UPCOMING_HOLD_HOURS',
     envVar: 'JELLYFIN_UPCOMING_HOLD_HOURS',
     label: 'Jellyfin Upcoming Hold (hours)',
