@@ -39,7 +39,11 @@ import {
 } from './dto';
 import { buildViews, catalogView, collectionTypeFor, findCatalogByViewId, getCatalogs, getSearchableCatalogs, isBoxSetCatalog, isBrowsable, requiresGenre, rowFor } from './views';
 import { decodeJellyfinId } from './ids';
-import { liveDevices, rememberTokenDevice, saveCapabilities, sendToDevice } from './socket';
+import { liveDevices, onDeviceBack, onDeviceGone, pushToDevice, rememberTokenDevice, saveCapabilities, sendToDevice } from './socket';
+import redis from '../redisClient';
+import { createRedisStore } from './syncplay/store';
+import { noteDefaultSource, noteGroupPlaying, preferGroupRelease, recordedDefaultFirst } from './syncplay/releases';
+import { deviceBack, deviceGone, leaveOnLogout, memberFor, registerSyncPlay, registerSyncPlayPublic, startSweep, type SyncPlayDeps } from './syncplay/routes';
 import { artTag, imageTag, isWideTag } from './imageTags';
 import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, productionYear, studioDescriptorsOf, wantedYears, extraFiltersOf, type Window } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
@@ -383,10 +387,14 @@ async function resumablePick(req: any, userUUID: string, config: any, type: stri
   };
 }
 
-function userFor(profile: Profile, serverId: string, configuration?: any): any {
+function userFor(profile: Profile, serverId: string, configuration?: any, owner?: { config: any; userUUID: string }): any {
   const user = userDto(profile.userId, serverId, profile.name, avatarTag(profile));
   if (configuration && typeof configuration === 'object') user.Configuration = { ...user.Configuration, ...configuration };
   if (profile.downloads === false) user.Policy = { ...user.Policy, EnableContentDownloading: false };
+  // SyncPlay refuses a user held to an age rating, so the app is told not to offer it.
+  if (owner?.config && hasAgeRatingCap(scopeConfigToProfile({ ...owner.config }, owner.userUUID, profile.id ?? null))) {
+    user.Policy = { ...user.Policy, SyncPlayAccess: 'None' };
+  }
   return user;
 }
 
@@ -504,6 +512,28 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   const loginRateLimit = options.loginRateLimit || ((_req: any, _res: any, next: any) => next());
   const router = express.Router({ mergeParams: true, caseSensitive: false });
 
+  const syncPlay: SyncPlayDeps = {
+    loadConfig,
+    profileFor: sessionProfile,
+    profileKey,
+    clientInfo,
+    nowPlaying: async (req, config) => {
+      const deviceId = clientInfo(req).deviceId;
+      const profile = profileKey(config);
+      const window = envInt('JELLYFIN_DASHBOARD_LIVE_SECONDS', 120, 10) * 1000;
+      const now = Date.now();
+      const live = (await liveSessionsFor(req.params.userUUID)).find((s) => s.profile === profile && s.device === deviceId && now - s.at <= window);
+      return live ? { itemId: live.itemId, positionTicks: live.positionMs * 10000, paused: live.paused, at: live.at } : null;
+    },
+    decode: decodeJellyfinId,
+    restricted: hasAgeRatingCap,
+    store: createRedisStore(redis),
+    push: pushToDevice,
+    liveDevices,
+  };
+  onDeviceGone((userUUID, profile, deviceId) => deviceGone(syncPlay, userUUID, profile, deviceId));
+  onDeviceBack((userUUID, profile, deviceId) => deviceBack(syncPlay, userUUID, profile, deviceId));
+
   router.use(express.json({ limit: '1mb', type: ['application/json', 'text/json', 'application/*+json'] }));
   router.use(express.urlencoded({ extended: false }));
 
@@ -616,6 +646,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.json({ ...publicSystemInfo(serverIdFor(req.params.userUUID), baseFor(req)), aiostreams: extensionInfo(localAddress(req)) });
   });
 
+  registerSyncPlayPublic(router);
+
   router.all('/System/Ping', (_req: any, res: any) => {
     res.json(SERVER_NAME);
   });
@@ -663,7 +695,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return;
     }
     const serverId = serverIdFor(userUUID);
-    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId)));
+    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId, undefined, { config, userUUID })));
   });
 
   // Anonymous, like item art: a client renders it with a plain image tag.
@@ -692,7 +724,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     rememberTokenDevice(userUUID, token, clientInfo(req));
 
     res.json({
-      User: userFor(profile, serverId),
+      User: userFor(profile, serverId, undefined, { config, userUUID }),
       SessionInfo: sessionInfo(profile.userId, serverId, profile.name, clientInfo(req)),
       AccessToken: token,
       ServerId: serverId,
@@ -761,6 +793,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   });
 
   router.post('/Sessions/Logout', async (req: any, res: any) => {
+    if (req.jellyfin?.authenticated) {
+      await leaveOnLogout(req, syncPlay).catch((error: any) => logger.debug(`SyncPlay leave on sign-out failed: ${error?.message || error}`));
+    }
     await revokeToken(req.jellyfin?.token);
     res.status(204).end();
   });
@@ -801,7 +836,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
     const serverId = serverIdFor(userUUID);
     res.json(listProfiles(config, userUUID).map((profile) => ({
-      user: userFor(profile, serverId),
+      user: userFor(profile, serverId, undefined, { config, userUUID }),
       avatar: profile.avatar,
       hidden: false,
       needs: switchNeeds(req, profile),
@@ -843,7 +878,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       users: users.map((user) => {
         const row: any = byKey.get(user.key);
         return {
-          user: userFor(user.profile, serverId),
+          user: userFor(user.profile, serverId, undefined, { config, userUUID }),
           avatar: user.profile.avatar,
           hidden: false,
           locked: Boolean(user.profile.pin),
@@ -1003,7 +1038,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const serverId = serverIdFor(userUUID);
     const config = await database.getUserConfig(userUUID);
     const profile = (req.params.userId && profileByUserId(config, userUUID, req.params.userId)) || sessionProfile(req, config);
-    res.json(userFor(profile, serverId, await storedConfiguration(req, profile)));
+    res.json(userFor(profile, serverId, await storedConfiguration(req, profile), { config, userUUID }));
   };
   router.get('/Users/Me', meHandler);
 
@@ -1023,7 +1058,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const userUUID = req.params.userUUID;
     const config = await database.getUserConfig(userUUID);
     const serverId = serverIdFor(userUUID);
-    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId)));
+    res.json(listProfiles(config, userUUID).map((p) => userFor(p, serverId, undefined, { config, userUUID })));
   });
   router.get('/Users/:userId', meHandler);
 
@@ -1962,8 +1997,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     itemId: string
   ): Promise<void> => {
     const resolved = await withDefaultSourceId(
-      await resolveMediaSources(req, descriptor, item.RunTimeTicks ?? null),
-      itemId
+      await groupOrdered(req, itemId, await resolveMediaSources(req, descriptor, item.RunTimeTicks ?? null)),
+      itemId,
+      req
     );
     if (!resolved.length) {
       if (!Array.isArray(item.MediaSources) || !item.MediaSources.length) return;
@@ -1985,7 +2021,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
    * one has to carry the item guid rather than its own hash or nothing is
    * selectable.
    */
-  const withDefaultSourceId = async (sources: any[], itemId: string): Promise<any[]> => {
+  const withDefaultSourceId = async (sources: any[], itemId: string, req?: any): Promise<any[]> => {
     const first = sources.findIndex((source) => !headerSources.has(source));
     if (first < 0) return sources;
     const id = normaliseJellyfinId(itemId);
@@ -1993,9 +2029,32 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const ms = await recallDuration(sources[first].Id).catch(() => null);
     if (ms) rememberDuration(id, ms);
     else forgetDuration(id);
+    if (req) {
+      const config = await loadConfig(req).catch(() => null);
+      await noteDefaultSource(id, req.params.userUUID, profileKey(config), String(sources[first].Id ?? '')).catch(() => undefined);
+    }
     return sources.map((source, index) =>
       index === first ? { ...source, Id: id, ETag: id } : source
     );
+  };
+
+  // Before withDefaultSourceId, so the release a SyncPlay group plays is the one given the item's id.
+  const groupOrdered = async (req: any, itemId: string, sources: any[]): Promise<any[]> => {
+    const config = await loadConfig(req).catch(() => null);
+    if (!config || config.jellyfinMatchReleases === false || !sources.length) return sources;
+    try {
+      // Same rule withDefaultSourceId uses to pick the source given the item's id.
+      return await preferGroupRelease(syncPlay, await memberFor(req, syncPlay), config, itemId, sources, (s) => !headerSources.has(s));
+    } catch {
+      return sources;
+    }
+  };
+
+  // A request naming the item by its own id gets the file PlaybackInfo gave that id,
+  // not one picked again from group state that may have moved on since.
+  const sameDefault = async (req: any, itemId: string, sources: any[]): Promise<any[]> => {
+    const config = await loadConfig(req).catch(() => null);
+    return recordedDefaultFirst(normaliseJellyfinId(itemId), req.params.userUUID, profileKey(config), sources).catch(() => sources);
   };
 
   const unwrapMarker = async (itemId: string): Promise<{ itemId: string; descriptor: any }> => {
@@ -2032,7 +2091,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     // A named version keeps the list it came from.
     const named = typeof requested === 'string' && !!requested && normaliseJellyfinId(requested) !== normaliseJellyfinId(itemId);
     const all = await resolveMediaSources(req, descriptor, null, req.body?.Refresh === true && !named, req.body?.EnableRequiredHttpHeaders === true);
-    const withIds = await withDefaultSourceId(all, itemId);
+    const withIds = await withDefaultSourceId(named ? all : await groupOrdered(req, itemId, all), itemId, req);
 
     let sources = withIds;
     if (typeof requested === 'string' && requested && normaliseJellyfinId(requested) !== normaliseJellyfinId(itemId)) {
@@ -2074,7 +2133,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const key = subtitleKey(userUUID, itemId, sourceId);
     let sent = recallOffered(key);
     if (!sent) {
-      const sources = await withDefaultSourceId(await resolveMediaSources(req, descriptor, null, false, true), itemId);
+      const sources = await withDefaultSourceId(await sameDefault(req, itemId, await resolveMediaSources(req, descriptor, null, false, true)), itemId);
       const source = sources.find((s: any) => normaliseJellyfinId(s.Id) === normaliseJellyfinId(sourceId));
       if (!source) {
         res.status(404).end();
@@ -2148,7 +2207,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     // No pin for it, so it is resolved: a client that never called PlaybackInfo
     // or has outlived the pin gets the source matched from a fresh list.
-    const sources = await withDefaultSourceId(await resolveMediaSources(req, descriptor, null), itemId);
+    const sources = await withDefaultSourceId(await sameDefault(req, itemId, await resolveMediaSources(req, descriptor, null)), itemId);
     if (!sources.length) {
       res.status(404).json({ Message: 'No playable stream' });
       return;
@@ -4338,6 +4397,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   router.get(['/Items/Root', '/Users/:userId/Items/Root'], (req: any, res: any) => {
     res.json(rootFolder(rootFolderId(req.params.userUUID), serverIdFor(req.params.userUUID)));
   });
+  registerSyncPlay(router, syncPlay);
+  startSweep(syncPlay);
   // Ahead of the item route, which would take /Items/Suggestions for an item id.
   registerStubs(router);
   router.get(['/Items/:itemId', '/Users/:userId/Items/:itemId'], singleItemHandler);
@@ -4534,6 +4595,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     recordPlaying(req, req.body).catch((error: any) =>
       logger.debug(`Playing report failed: ${error.message}`)
     );
+    const body = req.body || {};
+    memberFor(req, syncPlay)
+      .then((member) => member && noteGroupPlaying(syncPlay, member, String(body.ItemId ?? req.params.itemId ?? ''), String(body.MediaSourceId ?? '')))
+      .catch((error: any) => logger.debug(`SyncPlay release note failed: ${error?.message || error}`));
   });
 
   router.post(['/Sessions/Playing/Progress', '/PlayingItems/:itemId/Progress'], (req: any, res: any) => {

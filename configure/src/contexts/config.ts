@@ -459,6 +459,8 @@ export interface AppConfig {
   jellyfinSimilarSource?: 'simkl';
   jellyfinLatestRows?: boolean;
   jellyfinMarkUnaired?: boolean;
+  /** SyncPlay lists the release another member is playing first. On when unset. */
+  jellyfinMatchReleases?: boolean;
   /** Playback is reported by the client, so the subtitle trigger is not used. */
   playbackReporting?: boolean;
   /** Jellyfin plays reach the trackers under playback reporting. On when unset. */
