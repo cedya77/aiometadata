@@ -4,7 +4,7 @@ import { dashedGuid, normaliseJellyfinId } from '../idsCodec';
 import * as E from './engine';
 import { MAX_QUEUE } from './queue';
 import type { GroupStore } from './store';
-import { graceMs, syncPlayActive, syncPlayEnabled, syncPlayScope } from './settings';
+import { graceMs, maxGroups, syncPlayActive, syncPlayEnabled, syncPlayScope } from './settings';
 
 const logger = consola.withTag('SyncPlay');
 
@@ -234,6 +234,11 @@ export function registerSyncPlay(router: any, deps: SyncPlayDeps): void {
       return;
     }
     if ((await leaveGroup(deps, member)) === 'busy') return busy(res);
+    // A soft cap: two groups made at the same moment may both pass it.
+    if ((await deps.store.count()) >= maxGroups()) {
+      res.status(503).json({ Message: 'Too many SyncPlay groups on this server' });
+      return;
+    }
     const now = Date.now();
     let playing = await deps.nowPlaying(req, config).catch(() => null);
     if (playing) {
@@ -302,8 +307,8 @@ export function registerSyncPlay(router: any, deps: SyncPlayDeps): void {
     }
     if (request.type === 'Ping') {
       const g = await deps.store.get(id);
-      const ms = Math.min(Math.max(Math.floor(Number(request.ms) || 0), 0), 10000);
-      if (g?.members.find((m) => m.key === member.key)?.ping === ms) {
+      // Pings jitter; only a real change is worth a locked write.
+      if (g?.members.some((m) => m.key === member.key) && !E.pingMoved(g, member.key, request.ms)) {
         res.status(204).end();
         return;
       }

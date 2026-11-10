@@ -40,6 +40,10 @@ export interface Group {
   members: Member[];
   queue: Q.Queue;
   waitDeadline?: number;
+  /** The wait began at a new position (an item or a seek), not at buffering mid-play. */
+  jumped?: boolean;
+  /** Playing started without the members still loading, who are not waited for again until the next change. */
+  forced?: boolean;
   presenceCheckAt: number;
   release?: { playlistItemId: string; identity: string };
 }
@@ -85,12 +89,19 @@ export interface Result {
 }
 
 const TICKS_PER_MS = 10000;
-const WAIT_MS = 30000;
+/** Opening a new item or position can take a while; buffering mid-play gets less. */
+const LOAD_WAIT_MS = 30000;
+const BUFFER_WAIT_MS = 10000;
 const PRESENCE_MS = 30000;
 const MAX_OFFSET_MS = 500;
+/** How far a member still playing after buffering may lag while it catches up. */
+const MAX_CATCH_UP_MS = 60000;
 const TIME_SYNC_MS = 2000;
 const DEFAULT_PING = 500;
 const MAX_PING = 10000;
+const PING_STEP = 50;
+
+const clampPing = (ms: unknown): number => Math.min(Math.max(Math.floor(Number(ms) || 0), 0), MAX_PING);
 
 const recipient = (m: Member): Recipient => ({ userUUID: m.userUUID, profile: m.profile, deviceId: m.deviceId });
 const clone = (g: Group): Group => JSON.parse(JSON.stringify(g));
@@ -119,14 +130,14 @@ class Turn {
     if (to.length) this.out.push({ to: to.map(recipient), kind: 'update', type, data });
   }
 
-  command(to: Member[], command: CommandType): void {
+  command(to: Member[], command: CommandType, whenMs?: number): void {
     if (!to.length) return;
     const g = this.g;
     this.out.push({
       to: to.map(recipient),
       kind: 'command',
       command,
-      whenMs: command === 'Unpause' ? g.lastActivity : this.now,
+      whenMs: whenMs ?? (command === 'Unpause' ? g.lastActivity : this.now),
       positionTicks: Math.max(g.positionTicks, 0),
       playlistItemId: Q.current(g.queue)?.playlistItemId ?? '',
       emittedMs: this.now,
@@ -144,6 +155,11 @@ class Turn {
   setState(state: State): void {
     if (state !== 'Waiting') this.g.waitDeadline = undefined;
     this.g.state = state;
+    this.g.forced = false;
+  }
+
+  blocked(): boolean {
+    return this.g.members.some((m) => m.buffering && !m.ignoreWait);
   }
 
   delay(): number {
@@ -153,15 +169,18 @@ class Turn {
   restartWait(wanted: 'Playing' | 'Paused'): void {
     this.setState('Waiting');
     this.g.wanted = wanted;
+    this.g.jumped = true;
     this.g.lastActivity = this.now;
     for (const m of this.g.members) m.buffering = true;
-    this.g.waitDeadline = this.now + WAIT_MS;
+    this.g.waitDeadline = this.now + LOAD_WAIT_MS;
   }
 
+  /** A member buffering mid-play: the group waits briefly, and the member may catch up rather than seek. */
   enterWaiting(wanted: 'Playing' | 'Paused'): void {
+    if (this.g.state !== 'Waiting') this.g.jumped = false;
     this.setState('Waiting');
     this.g.wanted = wanted;
-    this.g.waitDeadline ??= this.now + WAIT_MS;
+    this.g.waitDeadline ??= this.now + BUFFER_WAIT_MS;
   }
 
   freezePosition(): void {
@@ -169,13 +188,15 @@ class Turn {
     this.g.lastActivity = this.now;
   }
 
-  resume(reason: string): void {
+  /** `forced`: starting without members still loading, who are then not waited for again until the next change. */
+  resume(reason: string, forced = false): void {
     const g = this.g;
     // Everyone is sent the same command, including members the wait ignored.
     for (const m of g.members) m.buffering = false;
     if (g.wanted === 'Playing') {
       g.lastActivity = this.now + this.delay();
       this.setState('Playing');
+      g.forced = forced;
       this.command(this.all(), 'Unpause');
       this.stateUpdate(this.all(), reason);
     } else {
@@ -186,8 +207,7 @@ class Turn {
   }
 
   checkReady(reason: string): void {
-    if (this.g.state !== 'Waiting') return;
-    if (this.g.members.every((m) => !m.buffering || m.ignoreWait)) this.resume(reason);
+    if (this.g.state === 'Waiting' && !this.blocked()) this.resume(reason);
   }
 
   stop(reason: string): void {
@@ -289,11 +309,19 @@ export function join(group: Group, member: Member, ctx: Ctx): Result {
   const g = t.g;
   const existing = g.members.find((m) => m.key === member.key);
   if (existing) {
-    Object.assign(existing, { ...member, ignoreWait: existing.ignoreWait, buffering: existing.buffering, ping: existing.ping, awayUntil: undefined });
+    // A member that kept its place came back: unlike a new one, the group does not wait for it.
+    Object.assign(existing, { ...member, ping: existing.ping, buffering: false, ignoreWait: false, awayUntil: undefined });
     t.update([existing], 'GroupJoined', info(g, ctx.now));
-    // A stopped group's old queue would start that member playing alone.
-    if (g.state !== 'Idle') t.queue([existing], 'NewPlaylist');
-    if (g.state !== 'Waiting') t.stateCommand(existing, 'Ready');
+    if (g.state === 'Idle') {
+      t.command([existing], 'Stop');
+      return t.done();
+    }
+    t.queue([existing], 'NewPlaylist');
+    if (g.state === 'Waiting' && !t.blocked()) t.resume('Ready');
+    else if (g.state === 'Waiting') {
+      t.stateUpdate([existing], 'IgnoreWait');
+      t.command([existing], 'Pause');
+    } else t.stateCommand(existing, 'Ready');
     return t.done();
   }
   const m = fresh(member);
@@ -308,7 +336,7 @@ export function join(group: Group, member: Member, ctx: Ctx): Result {
   const wanted = g.state === 'Playing' ? 'Playing' : g.state === 'Paused' ? 'Paused' : g.wanted;
   t.setState('Waiting');
   g.wanted = wanted;
-  g.waitDeadline = ctx.now + WAIT_MS;
+  g.waitDeadline = ctx.now + LOAD_WAIT_MS;
   m.buffering = true;
   g.members.push(m);
   t.update([m], 'GroupJoined', info(g, ctx.now));
@@ -352,10 +380,7 @@ export function tick(group: Group, ctx: Ctx, offline: Set<string>, unknown: Set<
   const t = new Turn(clone(group), ctx);
   const g = t.g;
   const now = ctx.now;
-  if (g.state === 'Waiting' && g.waitDeadline !== undefined && g.waitDeadline <= now) {
-    for (const m of g.members) m.buffering = false;
-    t.resume('Ready');
-  }
+  if (g.state === 'Waiting' && g.waitDeadline !== undefined && g.waitDeadline <= now) t.resume('Ready', true);
   for (const m of [...g.members]) {
     if (m.awayUntil === undefined || m.awayUntil > now || unknown.has(m.key)) continue;
     if (offline.has(m.key)) leaveIn(t, m.key);
@@ -378,14 +403,36 @@ function ready(t: Turn, m: Member, r: Report): void {
   const at = Math.abs(r.when - now) > TIME_SYNC_MS ? now : r.when;
   const elapsed = r.isPlaying ? Math.max(now - at, 0) : 0;
   const clientTicks = Math.max(r.ticks, 0) + elapsed * TICKS_PER_MS;
-  if (Math.abs(clientTicks - g.positionTicks) > MAX_OFFSET_MS * TICKS_PER_MS) {
+  // Positive when the member is behind the group.
+  const behindMs = (g.positionTicks - clientTicks) / TICKS_PER_MS;
+  const catchingUp = r.isPlaying && !g.jumped && g.wanted === 'Playing';
+  if (Math.abs(behindMs) > (catchingUp ? MAX_CATCH_UP_MS : MAX_OFFSET_MS)) {
     m.buffering = true;
     t.command([m], 'Seek');
     return;
   }
   m.buffering = false;
-  if (g.members.every((x) => !x.buffering || x.ignoreWait)) t.resume('Ready');
-  else if (r.isPlaying) t.command([m], 'Pause');
+  const lagging = catchingUp && behindMs > t.delay();
+  if (t.blocked()) {
+    // Pauses when it reaches the group, if it is still playing towards it.
+    if (r.isPlaying) t.command([m], 'Pause', lagging ? now + behindMs : now);
+    return;
+  }
+  if (!lagging) {
+    t.resume('Ready');
+    return;
+  }
+  // The rest start when the member that fell behind reaches them, and it plays on meanwhile.
+  g.lastActivity = now + behindMs;
+  t.setState('Playing');
+  t.command(t.others(m.key), 'Unpause');
+  t.stateUpdate(t.all(), 'Ready');
+}
+
+/** Whether a reported ping differs enough from the one held to be worth a write. */
+export function pingMoved(g: Group, key: string, ms: unknown): boolean {
+  const m = g.members.find((x) => x.key === key);
+  return !!m && Math.abs(clampPing(ms) - m.ping) >= PING_STEP;
 }
 
 export function handle(group: Group, key: string, request: Request, ctx: Ctx): Result {
@@ -398,7 +445,7 @@ export function handle(group: Group, key: string, request: Request, ctx: Ctx): R
 
   switch (request.type) {
     case 'Ping':
-      m.ping = Math.min(Math.max(Math.floor(Number(request.ms) || 0), 0), MAX_PING);
+      m.ping = clampPing(request.ms);
       return t.done();
     case 'IgnoreWait':
       m.ignoreWait = request.value;
@@ -484,6 +531,7 @@ export function handle(group: Group, key: string, request: Request, ctx: Ctx): R
         t.command(t.all(), 'Seek');
         t.stateUpdate(t.all(), 'Seek');
       } else if (request.type === 'Buffer') {
+        if (g.forced) return t.done();
         t.freezePosition();
         m.buffering = true;
         t.enterWaiting('Playing');
@@ -523,8 +571,7 @@ export function handle(group: Group, key: string, request: Request, ctx: Ctx): R
         t.stateUpdate(t.all(), 'Pause');
       } else if (request.type === 'Unpause') {
         if (g.wanted === 'Playing') {
-          for (const x of g.members) x.buffering = false;
-          t.resume('Unpause');
+          t.resume('Unpause', true);
         } else {
           g.wanted = 'Playing';
           t.stateUpdate(t.all(), 'Unpause');

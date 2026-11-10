@@ -224,7 +224,7 @@ The watch history export carries playlists, and an import puts each one in the u
 
 SyncPlay lets devices watch together: one creates a group, others join it, and a pause, seek or skip on any of them applies to all. It works in the apps that have Jellyfin's SyncPlay: Jellyfin Web and the desktop and Android apps built on it. Recent Android TV versions have SyncPlay too, though they are untested with this server. Swiftfin, Infuse, Streamyfin and Findroid do not have it, as far as is known.
 
-Open the SyncPlay menu in the app's header to create or join a group. A group started while something is playing starts from that title, at that position. When one member buffers, the others pause until it is ready; a member that is still not ready after 30 seconds is left behind and the group carries on. A device that loses its connection keeps its place for a minute, so a TV that drops off briefly stays in the group.
+Open the SyncPlay menu in the app's header to create or join a group. A group started while something is playing starts from that title, at that position. When one member buffers mid-play, the others pause until it is ready. If it fell a little behind, it plays on and the others start again as it reaches them, rather than everyone jumping to one position. A member still not ready after 10 seconds is left behind and the group carries on; opening a title or seeking gets 30 seconds, as loading takes longer. Pressing play while the group waits starts it at once, without the members still loading. A device that loses its connection keeps its place for a minute, so a TV that drops off briefly stays in the group, and the group does not wait for it when it comes back.
 
 A user held to an age rating cannot create or join a group, since the group's queue is shared and would play titles their limit hides.
 
@@ -287,6 +287,7 @@ All of these are in the dashboard under **Server**, or as environment variables,
 | `JELLYFIN_SHELF_META_CONCURRENCY` | `4` | Titles the Continue Watching and Next Up shelves fetch metadata for at once. A cold anime title costs several requests, and MyAnimeList blocks a burst. |
 | `JELLYFIN_SYNCPLAY_ENABLED` | `true` | Offer SyncPlay to the apps that support it. Off hides it in those apps. |
 | `JELLYFIN_SYNCPLAY_SCOPE` | `configuration` | Who sees a SyncPlay group: the users of the configuration that started it, or with `instance` everyone on this instance. |
+| `JELLYFIN_SYNCPLAY_MAX_GROUPS` | `1000` | The most SyncPlay groups held at once; creating one past it is refused until another ends. |
 
 ### Playback
 
