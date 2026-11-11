@@ -126,18 +126,25 @@ export function chainPicks(...picks: Array<Pick | undefined>): Pick | undefined 
 
 export type ProviderId = { provider: 'imdb' | 'tmdb' | 'tvdb'; id: string };
 
-/** The `provider.id` pairs of AnyProviderIdEquals that name a title this server can build, or null when none was asked. */
+// Each pair is built as a whole title, and sync tools ask about one title at a time.
+const PROVIDER_IDS_MAX = 25;
+
+/** The first distinct `provider.id` pairs of AnyProviderIdEquals that name a title this server can build, or null when none was asked. */
 export function providerIdsAsked(query: Record<string, unknown>): ProviderId[] | null {
   const raw = query.AnyProviderIdEquals ?? query.anyProviderIdEquals;
   if (raw === undefined || raw === null || raw === '') return null;
   const asked: ProviderId[] = [];
+  const seen = new Set<string>();
   for (const entry of String(raw).split(',')) {
+    if (asked.length >= PROVIDER_IDS_MAX) break;
     const dot = entry.indexOf('.');
     if (dot < 0) continue;
     const provider = entry.slice(0, dot).trim().toLowerCase();
     const id = entry.slice(dot + 1).trim().toLowerCase();
-    if (provider === 'imdb' && /^tt\d+$/.test(id)) asked.push({ provider, id });
-    else if ((provider === 'tmdb' || provider === 'tvdb') && /^\d+$/.test(id)) asked.push({ provider, id });
+    const valid = (provider === 'imdb' && /^tt\d+$/.test(id)) || ((provider === 'tmdb' || provider === 'tvdb') && /^\d+$/.test(id));
+    if (!valid || seen.has(`${provider}.${id}`)) continue;
+    seen.add(`${provider}.${id}`);
+    asked.push({ provider: provider as ProviderId['provider'], id });
   }
   return asked;
 }
