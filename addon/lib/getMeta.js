@@ -2035,6 +2035,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   let kitsuId = allIds?.kitsuId;
   let imdbId = allIds?.imdbId;
   let tmdbId = allIds?.tmdbId;
+  const prefersImdb = isAnime && !!config.mal?.useImdbIdForCatalogAndSearch;
   kitsuId = kitsuId || idMapper.getMappingByTmdbId(tmdbId, 'movie')?.kitsu_id;
 
   const { year, image: tvdbPosterPath, remoteIds, characters } = movieData;
@@ -2156,7 +2157,8 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
  
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   return {
-    id: isAnime ? config.mal?.useImdbIdForCatalogAndSearch ? imdbId : stremioId : imdbId || stremioId,
+    id: isAnime && !(prefersImdb && imdbId) ? stremioId : imdbId || stremioId,
+    ...(prefersImdb && !imdbId ? { _awaitingImdb: true } : {}),
     type: 'movie',
     _metaProvider: 'tvdb',
     keywords: tmdbKeywords,
@@ -2300,6 +2302,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const malId = allIds?.malId;
   const castCount = config.castCount;
   imdbId = imdbId || tvdbShow.remoteIds?.find(id => id.sourceName === 'IMDB')?.id
+  const prefersImdb = isAnime && !!config.mal?.useImdbIdForCatalogAndSearch;
 
   // Get artwork based on art provider preference
   const tvdbPosterUrl = findArtwork(tvdbShow.artworks, 2, langCode3, config) || `${host}/missing_poster.png`;
@@ -2512,7 +2515,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               }
             }
           }
-          else if(idProvider === 'mal' && !config.mal?.useImdbIdForCatalogAndSearch) {
+          else if(idProvider === 'mal' && (!config.mal?.useImdbIdForCatalogAndSearch || (prefersImdb && !imdbId))) {
             if ((config.tvdbSeasonType === 'default' || config.tvdbSeasonType === 'official')){
               const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, episode.seasonNumber, episode.number);
               if (anidbEpisodeInfo) {
@@ -2606,7 +2609,8 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   logger.debug(`[TvdbSeriesMeta] imdbId: ${imdbId}, stremioId: ${stremioId}`);
   const meta = {
-    id: isAnime ? config.mal?.useImdbIdForCatalogAndSearch ? imdbId : stremioId : imdbId || stremioId,
+    id: isAnime && !(prefersImdb && imdbId) ? stremioId : imdbId || stremioId,
+    ...(prefersImdb && !imdbId ? { _awaitingImdb: true } : {}),
     type: 'series',
     _metaProvider: 'tvdb',
     keywords: tmdbKeywords,
