@@ -22,7 +22,7 @@ type Mode = "play" | "open";
 function DeviceIcon({ device }: { device: JellyfinDevice }) {
   const text = `${device.client} ${device.device}`;
   const Icon = /\btv\b|android ?tv|tizen|webos|roku|fire ?tv|shield|living room/i.test(text) ? Tv
-    : /iphone|ipad|ios|android|mobile|phone|swiftfin|findroid/i.test(text) ? Smartphone
+    : /iphone|ipad|\bios\b|android|mobile|phone|swiftfin|findroid/i.test(text) ? Smartphone
     : /chrome|firefox|safari|edge|opera|browser/i.test(text) ? Globe
     : /windows|macos|mac os|linux|desktop|mpv|theater/i.test(text) ? Monitor
     : MonitorPlay;
