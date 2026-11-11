@@ -102,20 +102,47 @@ export function subtitleLanguageName(lang: string, name: string | undefined, lan
   return resolveLanguage(raw, langCode)?.name ?? name ?? raw;
 }
 
+type TitledTrack = Pick<SubtitleTrack, 'title' | 'forced' | 'hearingImpaired' | 'machineTranslated'> & { ordinal: number; language?: string };
+
+/** The release without a closing `.en` or `.zh-TW` that says nothing the track's language label does not. */
+function shownRelease(track: TitledTrack, label: string): string | undefined {
+  const match = track.title ? /^(.+)\.([a-z]{2,3}(?:-[a-z]{2,4})?)$/i.exec(track.title) : null;
+  const tag = match ? resolveLanguage(match[2]) : null;
+  return match && tag && tag.code === track.language && (tag.name === label || !tag.name.includes('(')) ? match[1] : track.title;
+}
+
 /** The release a track was timed for when known, otherwise its language and place among that language's tracks. */
-export function subtitleTitles(track: Pick<SubtitleTrack, 'title' | 'forced' | 'hearingImpaired' | 'machineTranslated'> & { ordinal: number }, language: string): { title: string; displayTitle: string } {
-  const release = track.title?.toLowerCase() ?? '';
+export function subtitleTitles(track: TitledTrack, language: string, repeat = 1): { title: string; displayTitle: string } {
+  const shown = shownRelease(track, language);
+  const release = shown?.toLowerCase() ?? '';
   const flags = [
     track.forced && !release.includes('forced') ? 'Forced' : null,
     track.hearingImpaired && !/\b(sdh|hi|cc)\b|hearing/.test(release) ? 'SDH' : null,
     track.machineTranslated ? 'AI translated' : null,
   ].filter(Boolean);
-  if (!track.title) {
+  if (!shown) {
     const title = track.ordinal > 1 ? `${language} ${track.ordinal}` : language;
     return { title, displayTitle: `${[title, ...flags].join(' - ')} (external)` };
   }
-  const displayTitle = [release.startsWith(language.toLowerCase()) ? null : language, track.title, ...flags].filter(Boolean).join(' - ');
-  return { title: track.title, displayTitle };
+  const title = repeat > 1 ? `${shown} (${repeat})` : shown;
+  const lead = language.toLowerCase();
+  const leadsWithLanguage = release.startsWith(lead) && !/[\p{L}\p{M}]/u.test(release.charAt(lead.length));
+  const displayTitle = [leadsWithLanguage ? null : language, title, ...flags].filter(Boolean).join(' - ');
+  return { title, displayTitle };
+}
+
+/** subtitleTitles for each track of a menu, counting a release one language lists more than once. */
+export function subtitleMenuTitles<T extends TitledTrack>(tracks: T[], labelOf: (track: T) => string): Array<{ title: string; displayTitle: string }> {
+  const repeats = new Map<string, number>();
+  return tracks.map((track) => {
+    const label = labelOf(track);
+    const shown = shownRelease(track, label);
+    if (!shown) return subtitleTitles(track, label);
+    const key = `${label}\u0000${shown.toLowerCase()}`;
+    const repeat = (repeats.get(key) ?? 0) + 1;
+    repeats.set(key, repeat);
+    return subtitleTitles(track, label, repeat);
+  });
 }
 
 /** A few of each language, taken a round at a time so a late language is not lost to the cap. */

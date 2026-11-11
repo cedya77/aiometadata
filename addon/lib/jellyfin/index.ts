@@ -35,7 +35,7 @@ import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalo
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
-import { subtitleLanguageName, subtitleTitles } from './subtitles';
+import { subtitleLanguageName, subtitleMenuTitles } from './subtitles';
 import { heldNextUp, memoNextUp, resumeSnapshot, resumeUserData } from './resume';
 import { animeSequels } from './sequels';
 import { isAnimeTitle, showIdentity } from './canonicalIds';
@@ -1751,11 +1751,12 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
       const streams: any[] = Array.isArray(source.MediaStreams) ? source.MediaStreams : [];
       const start = streams.length;
+      const titles = subtitleMenuTitles(kept, (track) => track.languageLabel);
       kept.forEach((track, i) => {
         const index = start + i;
         const format = subtitleFormatFor(opts.profile, client, subtitleExtensionOf(track.url));
         const url = `/Videos/${itemId}/${source.Id}/Subtitles/${index}/0/Stream.${format}${token}`;
-        const { title, displayTitle } = subtitleTitles(track, track.languageLabel);
+        const { title, displayTitle } = titles[i];
         streams.push({
           Type: 'Subtitle',
           Index: index,
