@@ -49,6 +49,7 @@ import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalo
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { canPlay, coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberIssued, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
+import { subtitleLanguageName, subtitleMenuTitles } from './subtitles';
 import { heldNextUp, memoNextUp, resumeSnapshot, resumeUserData } from './resume';
 import { animeSequels } from './sequels';
 import { listSeasonFingerprints, saveSeasonFingerprint } from './fingerprints';
@@ -1951,29 +1952,33 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
       // A subtitle addon answers with dozens of files per language; a menu wants a few of each.
       const kept = pickSubtitles(
-        tracks.map((track) => ({ ...track, language: subtitleLanguage(track.lang, languageCode) })),
+        tracks.map((track) => {
+          const language = subtitleLanguage(track.lang, languageCode, track.langCode);
+          return { ...track, language, languageLabel: subtitleLanguageName(track.lang, languageName(language), track.langCode) };
+        }),
         envInt('JELLYFIN_SUBTITLES_PER_LANGUAGE', 3, 1),
-        envInt('JELLYFIN_SUBTITLES_MAX', 40, 1)
+        envInt('JELLYFIN_SUBTITLES_MAX', 40, 1),
+        (track) => track.languageLabel
       );
 
       const streams: any[] = Array.isArray(source.MediaStreams) ? source.MediaStreams : [];
       const start = streams.length;
+      const titles = subtitleMenuTitles(kept, (track) => track.languageLabel);
       kept.forEach((track, i) => {
         const index = start + i;
         const format = subtitleFormatFor(opts.profile, client, subtitleExtensionOf(track.url));
         const url = `/Videos/${itemId}/${source.Id}/Subtitles/${index}/0/Stream.${format}${token}`;
-        const name = languageName(track.language) ?? track.lang;
-        const title = track.ordinal > 1 ? `${name} ${track.ordinal}` : name;
+        const { title, displayTitle } = titles[i];
         streams.push({
           Type: 'Subtitle',
           Index: index,
           Codec: subtitleCodecFor(format),
           Language: track.language,
           Title: title,
-          DisplayTitle: `${title} (external)`,
+          DisplayTitle: displayTitle,
           IsDefault: false,
-          IsForced: false,
-          IsHearingImpaired: false,
+          IsForced: !!track.forced,
+          IsHearingImpaired: !!track.hearingImpaired,
           IsOriginal: false,
           IsInterlaced: false,
           IsExternal: true,
