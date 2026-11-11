@@ -87,6 +87,7 @@ const MDBLIST_GENRES_TTL = 30 * 24 * 60 * 60;
 const STREMTHRU_GENRES_TTL = 7 * 24 * 60 * 60;
 const LUMIERE_GENRES_TTL = 30 * 24 * 60 * 60;
 function ANILIST_CATALOG_TTL() { return parseInt(process.env.ANILIST_CATALOG_TTL || String(24 * 60 * 60), 10); }
+function AWAITING_IMDB_TTL() { return parsePositiveIntEnv(process.env.ANIME_LIST_UPDATE_INTERVAL_HOURS, 24) * 60 * 60; }
 
 
 const ERROR_TTL_STRATEGIES: Record<string, number> = {
@@ -1952,6 +1953,11 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
 
   const layout = buildMetaHashLayout({ config: withEpisodeOrder(config, meta._tvdbId), metaId, type, useShowPoster });
 
+  // Its id becomes the IMDb one once a mapping appears, so it must not outlive the next mapping refresh.
+  const awaitingImdb = !!meta._awaitingImdb;
+  delete meta._awaitingImdb;
+  if (awaitingImdb) ttl = Math.min(ttl, AWAITING_IMDB_TTL());
+
   normalizeMetaReleaseAvailability(meta);
 
   try {
@@ -2060,7 +2066,7 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
 
   try {
     const coldStore = require('./metaColdStore');
-    if (coldStore.isEnabled()) {
+    if (coldStore.isEnabled() && !awaitingImdb) {
       coldStore.writeThrough(meta, entries.map(({ legacyKey, componentData }) => ({ cacheKey: legacyKey, componentData })));
     }
   } catch (coldErr: any) {
