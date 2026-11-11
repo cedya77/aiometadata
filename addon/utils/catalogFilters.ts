@@ -17,6 +17,13 @@ const UNRELEASED_STATUSES = new Set([
   'not yet aired', 'upcoming', 'not_yet_released', 'planned', 'unreleased', 'tba',
 ]);
 
+/** A show that has not aired, by its status or a first air date still ahead. */
+function isUnreleasedShow(meta: any, now: Date = new Date()): boolean {
+  if (UNRELEASED_STATUSES.has(String(meta?.status || '').toLowerCase())) return true;
+  if (!meta?.released) return false;
+  return !(new Date(meta.released) <= now);
+}
+
 function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
   if (!hasAgeRatingCap(config)) {
     return metas;
@@ -130,12 +137,7 @@ async function applyCatalogFilters(metas: any[], { type, config, catalogConfig, 
   if (hideUnreleasedShows) {
     const now = new Date();
     const before = metas.length;
-    metas = metas.filter(meta => {
-      if (meta.type !== 'series') return true;
-      if (UNRELEASED_STATUSES.has(String(meta.status || '').toLowerCase())) return false;
-      if (!meta.released) return true;
-      return new Date(meta.released) <= now;
-    });
+    metas = metas.filter(meta => meta.type !== 'series' || !isUnreleasedShow(meta, now));
     if (before !== metas.length) {
       logger.debug(`Unreleased shows filter: removed ${before - metas.length} unreleased series`);
     }
@@ -321,4 +323,4 @@ async function applyCatalogFilters(metas: any[], { type, config, catalogConfig, 
   return metas;
 }
 
-module.exports = { applyCatalogFilters, catalogFiltersActive };
+module.exports = { applyCatalogFilters, catalogFiltersActive, isUnreleasedShow };
