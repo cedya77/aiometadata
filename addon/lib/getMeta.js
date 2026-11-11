@@ -2156,7 +2156,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
  
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   return {
-    id: isAnime ? config.mal?.useImdbIdForCatalogAndSearch ? imdbId : stremioId : imdbId || stremioId,
+    id: isAnime ? config.mal?.useImdbIdForCatalogAndSearch ? (imdbId || stremioId) : stremioId : imdbId || stremioId,
     type: 'movie',
     _metaProvider: 'tvdb',
     keywords: tmdbKeywords,
@@ -2606,7 +2606,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   logger.debug(`[TvdbSeriesMeta] imdbId: ${imdbId}, stremioId: ${stremioId}`);
   const meta = {
-    id: isAnime ? config.mal?.useImdbIdForCatalogAndSearch ? imdbId : stremioId : imdbId || stremioId,
+    id: isAnime ? config.mal?.useImdbIdForCatalogAndSearch ? (imdbId || stremioId) : stremioId : imdbId || stremioId,
     type: 'series',
     _metaProvider: 'tvdb',
     keywords: tmdbKeywords,
