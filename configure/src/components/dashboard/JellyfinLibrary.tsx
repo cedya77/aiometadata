@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useOpenTitle } from "./jellyfinUtils";
 import { Ambient } from "./JellyfinShared";
 import { Deck, DeckDetail, Fan, ListRow, TiltCard, ViewToggle, type DeckDetailInfo, type DeckItem, type ShelfView } from "./JellyfinDeck";
-import { remember, remembered, usePagedRows, useSwipe } from "./deckState";
+import { remember, remembered, usePagedRows, useSettled, useSwipe } from "./deckState";
 import { cx } from "./titleHelpers";
 import { JELLYFIN_LIBRARY_PAGE, useJellyfinLibrary, useJellyfinUndrop, type DashboardTab, type JellyfinLibraryKind, type JellyfinLibraryRow, type JellyfinLibraryTab } from "@/hooks/useDashboardQueries";
 
@@ -98,6 +98,9 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
   const items = useMemo(() => rows.map(itemOf), [rows]);
   const at = Math.min(index, Math.max(0, rows.length - 1));
   const focus = rows[at];
+  // The background and the panel follow the title the deck stops on, not every one it passes on the way.
+  const settledId = useSettled(focus?.metaId ?? null);
+  const shown = rows.find((row) => row.metaId === settledId) ?? focus;
   const meta = TABS.find((t) => t.key === tab)!;
   const sources = (data?.sources ?? []).map((s) => SOURCE_LABELS[s] ?? s);
   const kinds = data?.kinds ?? { movie: 0, series: 0 };
@@ -166,7 +169,7 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
   );
   return (
     <section className="relative isolate overflow-hidden">
-      <Ambient src={view === "deck" ? focus?.backdropUrl ?? focus?.posterUrl ?? null : null} />
+      <Ambient src={view === "deck" ? shown?.backdropUrl ?? shown?.posterUrl ?? null : null} />
       <div className="relative px-4 py-6 sm:px-6">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div className="flex min-w-0 items-center gap-4">
@@ -223,7 +226,7 @@ export default function JellyfinLibrary({ userUUID, profile, profileName, active
               ) : focus ? (
                 <>
                   <Deck items={items} index={at} onPick={pick} onOpen={(i) => openRow(rows[i])} />
-                  <Detail row={focus} tab={tab} action={tab === "dropped" ? pickUpButton(focus) : undefined} />
+                  <Detail row={shown} tab={tab} action={tab === "dropped" ? pickUpButton(shown) : undefined} />
                 </>
               ) : firstFailed ? (
                 failedPanel

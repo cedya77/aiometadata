@@ -23,7 +23,7 @@ import {
 import { Ambient } from "./JellyfinShared";
 import { duration, useOpenTitle, when } from "./jellyfinUtils";
 import { Deck, DeckDetail, Fan, ListRow, Poster, ViewToggle, type DeckDetailInfo, type DeckItem } from "./JellyfinDeck";
-import { remember, remembered, usePagedRows, useSwipe } from "./deckState";
+import { remember, remembered, usePagedRows, useSettled, useSwipe } from "./deckState";
 import { cx, usePhone } from "./titleHelpers";
 import { sizedArt } from "./art";
 
@@ -307,12 +307,7 @@ export default function JellyfinPlaylists({ userUUID, profile, profileName, acti
   const at = Math.min(index, Math.max(0, entries.length - 1));
   const focus = entries[at];
   // The background follows the title the pointer settles on, not every row it passes on the way.
-  const ambientWanted = view === "deck" ? focus?.wide ?? focus?.image ?? null : null;
-  const [ambient, setAmbient] = useState<string | null>(null);
-  useEffect(() => {
-    const wait = setTimeout(() => setAmbient(ambientWanted), 150);
-    return () => clearTimeout(wait);
-  }, [ambientWanted]);
+  const ambient = useSettled(view === "deck" ? focus?.wide ?? focus?.image ?? null : null);
   const pick = (i: number) => {
     setIndex(i);
     if (i >= entries.length - 4) loadMore();

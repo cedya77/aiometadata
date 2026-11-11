@@ -19,6 +19,16 @@ export function remember(key: string, value: string) {
   } catch {}
 }
 
+/** The value once it has held for `ms`, so a deck stepped through quickly redraws only where it stops. */
+export function useSettled<T>(value: T, ms = 150): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const wait = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(wait);
+  }, [value, ms]);
+  return settled;
+}
+
 export function useSwipe(index: number, count: number, onPick: (i: number) => void) {
   const drag = useRef<{ x: number; moved: boolean } | null>(null);
   const current = useRef(index);
