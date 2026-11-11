@@ -50,12 +50,14 @@ export function ListRow({ item, number, active, onPick, onOpen, trailing }: { it
     if (row.top < view.top) box.scrollBy({ top: row.top - view.top - 4, behavior: "smooth" });
     else if (row.bottom > view.bottom) box.scrollBy({ top: row.bottom - view.bottom + 4, behavior: "smooth" });
   }, [active]);
+  // A list scrolled under a resting pointer moves rows beneath it without the pointer moving, which is not a pick.
+  const pickOnMove = (event: React.MouseEvent) => { if (!active && (event.movementX || event.movementY)) onPick(); };
   const button = (
     <button
       ref={ref}
       type="button"
       onClick={onOpen}
-      onMouseEnter={onPick}
+      onMouseMove={pickOnMove}
       onFocus={onPick}
       className={cx(
         "group relative isolate flex w-full shrink-0 items-center gap-3 overflow-hidden rounded-xl py-2 pl-2 pr-3 text-left transition-all duration-300",
@@ -155,13 +157,15 @@ export function Deck({ items, index, onPick, onOpen }: { items: DeckItem[]; inde
               <Poster item={item} width={500} className="aspect-[2/3] w-full" />
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-transparent via-transparent to-white/15" />
             </div>
-            <div
-              aria-hidden
-              className="pointer-events-none mt-1 h-16 overflow-hidden rounded-xl opacity-30"
-              style={{ transform: "scaleY(-1)", maskImage: "linear-gradient(to top, black, transparent 80%)", WebkitMaskImage: "linear-gradient(to top, black, transparent 80%)" }}
-            >
-              <Poster item={item} width={500} className="aspect-[2/3] w-full object-bottom" />
-            </div>
+            {d === 0 && (
+              <div
+                aria-hidden
+                className="pointer-events-none mt-1 h-16 overflow-hidden rounded-xl opacity-30"
+                style={{ transform: "scaleY(-1)", maskImage: "linear-gradient(to top, black, transparent 80%)", WebkitMaskImage: "linear-gradient(to top, black, transparent 80%)" }}
+              >
+                <Poster item={item} width={500} className="aspect-[2/3] w-full object-bottom" />
+              </div>
+            )}
           </button>
         );
       })}
