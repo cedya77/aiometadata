@@ -2459,6 +2459,10 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     }
     
     
+    // Without an IMDb id, an anime under the IMDb provider numbers its episodes by the id it was asked by, as its meta id does.
+    const askedEpisodeIds = isAnime && !imdbId && idProvider !== 'kitsu' && idProvider !== 'mal'
+      ? (stremioId.startsWith('mal:') ? 'mal' : stremioId.startsWith('kitsu:') ? 'kitsu' : null)
+      : null;
     const nowMs = Date.now();
     videos = await Promise.all(
       episodeList.map(async (episode) => {
@@ -2492,7 +2496,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
           if (episode.seasonNumber === 0) {
             episodeId = `${imdbId || `tvdb:${tvdbId}`}:0:${episode.number}`;
           } 
-          else if (idProvider === 'kitsu' && isAnime) {
+          else if ((idProvider === 'kitsu' && isAnime) || askedEpisodeIds === 'kitsu') {
             if ((config.tvdbSeasonType === 'default' || config.tvdbSeasonType === 'official')){
               const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, episode.seasonNumber, episode.number);
               if (anidbEpisodeInfo) {
@@ -2517,7 +2521,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               }
             }
           }
-          else if(idProvider === 'mal' && (!config.mal?.useImdbIdForCatalogAndSearch || (prefersImdb && !imdbId))) {
+          else if((idProvider === 'mal' && (!config.mal?.useImdbIdForCatalogAndSearch || (prefersImdb && !imdbId))) || askedEpisodeIds === 'mal') {
             if ((config.tvdbSeasonType === 'default' || config.tvdbSeasonType === 'official')){
               const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, episode.seasonNumber, episode.number);
               if (anidbEpisodeInfo) {
