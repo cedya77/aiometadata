@@ -194,8 +194,52 @@ function metaFromSimklRow(row: any): any | null {
   };
 }
 
-/** What the chosen source recommends next to a title. Simkl falls back to TMDB when it has nothing for it. */
+const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+
+/**
+ * Whether a recommended title is out, judged as a movie or series catalog judges it. A title
+ * dated well enough is settled from its date; the rest read TMDB's details for the title.
+ */
+async function isOut(config: any, row: any): Promise<boolean> {
+  const kind: 'movie' | 'series' = row.type === 'movie' ? 'movie' : 'series';
+  const now = Date.now();
+  const released = row.released ? Date.parse(row.released) : NaN;
+  const year = Number(row.year) || 0;
+  const thisYear = new Date(now).getUTCFullYear();
+  if (Number.isFinite(released) && released > now) return false;
+  if (kind === 'series') {
+    if (Number.isFinite(released) || (year && year < thisYear)) return true;
+    if (year > thisYear) return false;
+  } else if (Number.isFinite(released) ? now - released >= YEAR_MS : year && year < thisYear - 1) {
+    return true;
+  }
+  if (!row._tmdbId) return true;
+  const { fetchTmdbDetails } = require('../getMeta');
+  const details = await fetchTmdbDetails(kind, row._tmdbId, config?.language || 'en-US', config).catch(() => null);
+  if (!details) return true;
+  if (kind === 'series') {
+    const { isUnreleasedShow } = require('../../utils/catalogFilters');
+    return !isUnreleasedShow({ status: details.status, released: details.first_air_date || undefined });
+  }
+  const { isReleasedDigitally } = require('../../utils/parseProps');
+  return isReleasedDigitally({ ...row, type: 'movie', released: row.released || details.release_date || undefined, app_extras: { releaseDates: details.release_dates } });
+}
+
+/** What the chosen source recommends next to a title, without what the user hides from catalogs until it is out. */
 export async function similarTitles(config: any, meta: any, type: 'movie' | 'series'): Promise<any[]> {
+  const rows = await recommendedTitles(config, meta, type);
+  const hides = (row: any) => (row.type === 'movie' ? !!config?.hideUnreleasedDigital : !!config?.hideUnreleasedShows);
+  if (!rows.some(hides)) return rows;
+  const { mapWithConcurrency } = require('../../utils/concurrency');
+  const { envInt } = require('../../utils/envNumber');
+  const kept: boolean[] = await mapWithConcurrency(rows, envInt('TITLE_CARD_CONCURRENCY', 8, 1), (row: any) =>
+    hides(row) ? isOut(config, row).catch(() => true) : true
+  );
+  return rows.filter((_row: any, i: number) => kept[i]);
+}
+
+/** What the chosen source recommends next to a title. Simkl falls back to TMDB when it has nothing for it. */
+async function recommendedTitles(config: any, meta: any, type: 'movie' | 'series'): Promise<any[]> {
   if (config?.jellyfinSimilarSource === 'simkl') {
     const { fetchSimklRecommendations } = require('../../utils/simklUtils');
     const rows: any[] = await fetchSimklRecommendations(
