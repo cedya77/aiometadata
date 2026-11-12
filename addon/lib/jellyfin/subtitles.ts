@@ -299,8 +299,15 @@ export function cuesToJellyfinJson(cues: Cue[]): string {
   });
 }
 
+function formatInBody(body: string): string | undefined {
+  const head = normaliseText(body).slice(0, 4096);
+  if (/^\s*\[Script Info\]/i.test(head) || /^\[V4\+? Styles\]/im.test(head)) return 'ass';
+  if (/^\s*WEBVTT\b/.test(head)) return 'vtt';
+  return undefined;
+}
+
 export function convertSubtitle(body: string, fromExtension: string, to: SubtitleFormat): { body: string; contentType: string } {
-  const from = fromExtension.toLowerCase();
+  const from = formatInBody(body) ?? fromExtension.toLowerCase();
   const styled = from === 'ass' || from === 'ssa';
   const textual = from === 'srt' || from === 'vtt' || from === 'sub';
   const cuesOf = () => (styled ? parseAssCues(body) : textual ? parseCues(body) : []);
