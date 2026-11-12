@@ -2535,13 +2535,14 @@ class Database {
   async readyTrackerOutbox(now: number, limit: number): Promise<any[]> {
     const sqlite = this.type === 'sqlite';
     const at = sqlite ? '?' : '$1';
+    // A title's writes go in order, but a waiting rating holds none back: it may be waiting for the title's own watched mark.
     const rows = await this.allPrimaryQuery(
       `SELECT id, lane, user_uuid, profile, service, op, item_key, payload, attempts, next_at, expires_at, claimed_until, created_at FROM (
          SELECT o.*, ROW_NUMBER() OVER (PARTITION BY o.lane ORDER BY o.id) AS lane_rank
          FROM tracker_outbox o
          WHERE o.next_at <= ${at} AND o.claimed_until <= ${at}
            AND NOT EXISTS (SELECT 1 FROM tracker_outbox c WHERE c.lane = o.lane AND c.claimed_until > ${at})
-           AND NOT EXISTS (SELECT 1 FROM tracker_outbox w WHERE w.lane = o.lane AND w.item_key = o.item_key AND w.id < o.id AND w.next_at > ${at})
+           AND NOT EXISTS (SELECT 1 FROM tracker_outbox w WHERE w.lane = o.lane AND w.item_key = o.item_key AND w.id < o.id AND w.next_at > ${at} AND w.op <> 'rate')
        ) ready WHERE lane_rank = 1 ORDER BY id LIMIT ${sqlite ? '?' : '$2'}`,
       sqlite ? [now, now, now, now, limit] : [now, limit]
     );

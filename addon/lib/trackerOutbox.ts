@@ -292,7 +292,7 @@ function judge(calls: TrackerCall[], error: any): Outcome {
     return { kind: 'retry', at: last.retryAt, reason: 'AniList API disabled' };
   }
   if (status === 0 || status === 408 || status === 429 || status >= 500) {
-    return { kind: 'retry', at: last.retryAt, reason: status === 0 ? `${last.host} did not answer` : `${last.host} answered ${status}` };
+    return { kind: 'retry', at: last.retryAt, reason: status === 0 ? `${last.host} did not answer` : `${last.host} answered ${status}${body ? `: ${body.slice(0, 120)}` : ''}` };
   }
   return { kind: 'drop', status, reason: `${last.host} answered ${status}${body ? `: ${body.slice(0, 120)}` : ''}` };
 }

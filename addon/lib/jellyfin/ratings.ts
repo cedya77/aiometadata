@@ -104,6 +104,7 @@ export async function rateItem(userUUID: string, config: any, descriptor: Descri
         ...(descriptor.k === 'episode' ? { video: stremioIdFor(descriptor) } : {}),
         ...(descriptor.k === 'season' ? { video: buildVideoId(descriptor.i, descriptor.s, 1) } : {}),
         ...(service === 'publicmetadb' ? { previous, keys, profile } : {}),
+        ...(service === 'simkl' ? { queuedAt: Date.now() } : {}),
       },
     })));
   }
@@ -155,12 +156,18 @@ export async function writeRating(config: any, payload: any, only: string, userU
     const access = (await getSimklToken(token))?.access_token;
     if (!access) throw new Error('Simkl token unavailable');
     const simklIds = { ...titleIds, ...(ids?.mal ? { mal: Number(ids.mal) } : {}), ...(ids?.kitsu ? { kitsu: Number(ids.kitsu) } : {}) };
-    // Simkl files a rated title it does not hold as watched, so only one already in the library is rated there.
-    if (!clearing) {
+    // Simkl files a rated title it does not hold: a released movie as watched, as its rating implies, but a show as
+    // watching, which a rating does not say. A show waits a while for the watched marks sent with it, then is skipped.
+    if (!clearing && kind === 'series') {
       const held = await makeAuthenticatedSimklRequest('https://api.simkl.com/sync/watched', access, 'Simkl library check', 'POST', [{ ids: simklIds }]);
       const entry = (Array.isArray(held?.data) ? held.data : Array.isArray(held) ? held : [])[0];
       if (!entry?.list) {
-        logger.debug(`Not rating on Simkl: ${JSON.stringify(simklIds)} is not in the library`);
+        const { noteTrackerCall } = require('../../utils/trackerCalls');
+        const { envInt } = require('../../utils/envNumber');
+        const waiting = Number(payload?.queuedAt) > 0 && Date.now() - Number(payload.queuedAt) < envInt('SIMKL_RATING_LIBRARY_WAIT', 180, 0) * 1000;
+        if (waiting) noteTrackerCall('https://api.simkl.com/sync/ratings', 429, 'not in the Simkl library yet', null, Date.now() + 30_000);
+        else noteTrackerCall('https://api.simkl.com/sync/ratings', 404, 'not in the Simkl library');
+        logger.debug(`Not rating on Simkl${waiting ? ' yet' : ''}: ${JSON.stringify(simklIds)} is not in the library`);
         return;
       }
     }

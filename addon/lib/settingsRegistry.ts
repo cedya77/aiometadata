@@ -1255,6 +1255,17 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     max: 3600,
   },
   {
+    key: 'SIMKL_RATING_LIBRARY_WAIT',
+    envVar: 'SIMKL_RATING_LIBRARY_WAIT',
+    label: 'Simkl Show Rating Wait',
+    description: 'How long, in seconds, a show rating waits for the show to reach your Simkl library, as a watched mark sent with it would put it, before it is skipped. Simkl would otherwise file the rated show as watching.',
+    category: 'Features',
+    type: 'number',
+    default: 180,
+    min: 0,
+    max: 3600,
+  },
+  {
     key: 'TRACKER_OUTBOX_SEND_TIMEOUT',
     envVar: 'TRACKER_OUTBOX_SEND_TIMEOUT',
     label: 'Tracker Write Timeout',
