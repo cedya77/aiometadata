@@ -19,9 +19,11 @@ function resolve(anchor: string): HTMLElement | null {
   return matches.find((el) => el.offsetParent !== null) ?? matches[0];
 }
 
-function reveal(element: HTMLElement): void {
+export function revealSetting(element: HTMLElement): void {
+  if (element.contains(document.activeElement)) return;
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  element.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+  const box = element.getBoundingClientRect();
+  if (box.top < 0 || box.bottom > window.innerHeight) element.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
 
   element.setAttribute('data-settings-highlight', '');
   window.setTimeout(() => element.removeAttribute('data-settings-highlight'), HIGHLIGHT_MS);
@@ -41,7 +43,7 @@ export function useAnchorFocus(
     if (!anchor) return;
 
     const immediate = resolve(anchor);
-    if (immediate) { reveal(immediate); return; }
+    if (immediate) { revealSetting(immediate); return; }
 
     const root = containerRef.current ?? document.body;
     let done = false;
@@ -54,7 +56,7 @@ export function useAnchorFocus(
       done = true;
       observer.disconnect();
       window.clearTimeout(timer);
-      reveal(element);
+      revealSetting(element);
     });
     observer.observe(root, { childList: true, subtree: true });
 

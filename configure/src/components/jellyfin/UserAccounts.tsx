@@ -21,9 +21,10 @@ interface UserAccountsProps {
   onChange: (next: JellyfinUser) => void;
   onAddCatalogs: (entries: CatalogConfig[]) => void;
   onRemoveCatalogs: (ids: string[]) => void;
+  bare?: boolean;
 }
 
-export function UserAccounts({ user, catalogs, onChange, onAddCatalogs, onRemoveCatalogs }: UserAccountsProps) {
+export function UserAccounts({ user, catalogs, onChange, onAddCatalogs, onRemoveCatalogs, bare }: UserAccountsProps) {
   const { auth, config } = useConfig();
   const [open, setOpen] = useState<CardService | null>(null);
   const [busy, setBusy] = useState<CardService | null>(null);
@@ -77,6 +78,7 @@ export function UserAccounts({ user, catalogs, onChange, onAddCatalogs, onRemove
 
   return (
     <div className="space-y-2.5">
+      {bare ? null : <>
       <div className="flex items-center gap-1.5">
         <Label className="text-xs font-medium">Accounts</Label>
         <TooltipProvider>
@@ -95,7 +97,8 @@ export function UserAccounts({ user, catalogs, onChange, onAddCatalogs, onRemove
       <p className="text-[11px] text-muted-foreground">
         {user.name}'s own trackers. Once one is connected, what they play, mark or heart goes there, and their shelves and watchlist read from it.
       </p>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      </>}
+      <div className={cn('grid grid-cols-2 gap-2', bare ? 'xl:grid-cols-3' : 'sm:grid-cols-3 lg:grid-cols-5')}>
         {CARD_SERVICE_ORDER.map((service) => {
           const info = CARD_SERVICES[service];
           const account = cardAccount(user, service);
@@ -129,6 +132,9 @@ export function UserAccounts({ user, catalogs, onChange, onAddCatalogs, onRemove
           );
         })}
       </div>
+      {bare ? (
+        <p className="text-xs text-muted-foreground">Your other accounts' catalogs, such as Trakt or TMDB, still show your lists to {user.name} if their tags include them.</p>
+      ) : null}
       {selected && selectedInfo && selectedAccount ? (
         <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
           <div className="flex flex-wrap items-center gap-2">
