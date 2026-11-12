@@ -29,6 +29,8 @@ interface SaveContextType {
   isSaving: boolean;
   error: string;
   savedConfig: SavedConfig | null;
+  /** The configuration as last saved or loaded, or null before there is one. */
+  persistedConfig: AppConfig | null;
   markConfigPersisted: (persisted: AppConfig) => void;
   /** Null until a save target exists, so callers can tell "unknown" from "no changes". */
   isDirty: boolean | null;
@@ -113,6 +115,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState("");
   const [savedConfig, setSavedConfig] = useState<SavedConfig | null>(null);
   const [savedFingerprint, setSavedFingerprint] = useState<string | null>(null);
+  const [persistedConfig, setPersistedConfig] = useState<AppConfig | null>(null);
   const [reinstallModalOpen, setReinstallModalOpen] = useState(false);
   const [suppressReinstallNotice, setSuppressReinstallNotice] = useState(false);
   const [isInstallOpen, setIsInstallOpen] = useState(false);
@@ -144,12 +147,14 @@ export function SaveProvider({ children }: { children: ReactNode }) {
       baselineUuid.current = null;
       baseVersion.current = null;
       setSavedFingerprint(null);
+      setPersistedConfig(null);
       return;
     }
     if (baselineUuid.current === auth.userUUID) return;
     baselineUuid.current = auth.userUUID;
     baseVersion.current = Number((config as { configVersion?: number }).configVersion) || null;
     setSavedFingerprint(fingerprintConfig(config));
+    setPersistedConfig(config);
   }, [contextLoading, auth.authenticated, auth.userUUID, config]);
 
   const saves = useMemo(() => {
@@ -184,6 +189,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
   // is on disk, so the baseline moves with it instead of reporting unsaved work.
   const markConfigPersisted = useCallback((persisted: AppConfig) => {
     setSavedFingerprint(fingerprintConfig(persisted));
+    setPersistedConfig(persisted);
   }, []);
 
   const currentFingerprint = useMemo(() => fingerprintConfig(config), [config]);
@@ -255,6 +261,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
       }
       setSavedConfig(result);
       setSavedFingerprint(fingerprintConfig(config));
+      setPersistedConfig(config);
       const savedVersion = Number(result?.configVersion);
       if (Number.isFinite(savedVersion) && savedVersion > 0) {
         baseVersion.current = savedVersion;
@@ -342,6 +349,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
     isSaving,
     error,
     savedConfig,
+    persistedConfig,
     isDirty,
     markConfigPersisted,
     canSave,

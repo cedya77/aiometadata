@@ -26,7 +26,7 @@ export function InstallLinks({ userUUID, installUrl }: { userUUID: string; insta
   const stremioOn = scrobblesStremio(config);
   const status = useStremioLinkStatus(stremioOn);
   const mainName = config.jellyfinUserName || config.addonName || userUUID.slice(0, 8);
-  const people = [{ id: '', name: mainName }, ...(config.jellyfinUsers ?? []).map((u) => ({ id: u.id, name: u.name || 'Unnamed user' }))];
+  const people = [{ id: '', name: mainName }, ...(config.jellyfinUsers ?? []).map((u) => ({ id: u.id, name: u.name || 'Unnamed person' }))];
   const address = jellyfinServerAddress(jellyfin.baseUrl, userUUID);
 
   if (!jellyfin.enabled && !stremioOn) return null;

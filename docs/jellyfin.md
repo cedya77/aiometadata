@@ -6,7 +6,7 @@ It is optional. With it switched off the addon behaves exactly as before.
 
 ## Before you start
 
-- **Switch it on.** `JELLYFIN_API_ENABLED=true` in the environment, or **Jellyfin API** under **Server** in the dashboard. The dialog described below appears in the configuration page only once it is on.
+- **Switch it on.** `JELLYFIN_API_ENABLED=true` in the environment, or **Jellyfin API** under **Server** in the dashboard. The **Jellyfin** tab described below appears in the configuration page only once it is on.
 - **A stream addon.** Without one, titles browse but do not play. Any addon that answers stream requests works; AIOStreams is the one most people use and the one that adds the most (media info, subtitles, release details).
 - **HTTPS on a stable hostname.** Clients keep the address they signed in with, and playback URLs are handed to them as given by the stream addon.
 - **Redis is recommended.** Sign-in tokens and Quick Connect codes live there. Without it they are kept in memory, so every restart signs every client out.
@@ -14,16 +14,16 @@ It is optional. With it switched off the addon behaves exactly as before.
 
 ## Connecting a client
 
-Open your configuration, save it, and press **Jellyfin** next to **Install**. The dialog shows everything a client needs.
+Open your configuration, save it, and open the **Jellyfin** tab, after **Watch Tracking** (the **Jellyfin** button next to **Install** goes there too). It lists what a client needs in the order you set it up: the server address, signing in, the stream addon, then how titles browse.
 
-![The Jellyfin dialog: server address, Quick Connect, client password and the stream addon](images/jellyfin/connect.jpg)
+![The Jellyfin tab: server address, Quick Connect, client password and the stream addon](images/jellyfin/connect.jpg)
 
 | | |
 |---|---|
 | Server address | `https://<your-host>/jellyfin/<configuration id>` |
 | User | one of the users listed on the client's sign-in screen; the first is you |
 | Password | the configuration password, or the client password below |
-| Quick Connect | a code shown by the client, entered in the dialog |
+| Quick Connect | a code shown by the client, entered in the Jellyfin tab |
 
 Treat the address like the install URL: anyone holding it and a password can browse your catalogs.
 
@@ -31,20 +31,21 @@ Treat the address like the install URL: anyone holding it and a password can bro
 
 **Client password.** A separate password that only opens this address. Replacing it signs every client out, which is the quickest way to revoke a device you no longer trust.
 
-**Quick Connect.** The client shows a code, you enter it in the dialog, and the client is signed in without any password, as the user picked in the dialog. Codes expire after ten minutes. Clients that lack Quick Connect use the client password.
+**Quick Connect.** The client shows a code, you enter it in the Jellyfin tab, and the client is signed in without any password, as the person picked above the code. The code is approved as soon as its sixth digit is typed or pasted. Codes expire after ten minutes. Clients that lack Quick Connect use the client password.
 
 A sign-in lasts until the client goes thirty days without using it (`JELLYFIN_TOKEN_TTL`, seconds); every use starts the thirty days again. Sign-ins are kept in the database, so a restart or an update never signs a client out.
 
-## Users
+## People
 
-The server shows a list of users on the sign-in screen, the way a household's Jellyfin does. The first user is you. Any further user is a card under **Users** in the **Watch Tracking** tab, the same cards that give each Stremio profile its own install link, and a user is made of:
+The server shows a list of users on the sign-in screen, the way a household's Jellyfin does. The first user is you. Any further user is a card in the **People** tab, the same cards that give each Stremio profile its own install link, and a user is made of:
 
 ![Two user cards: your own, and an anime user marked as the same person as you](images/jellyfin/users.jpg)
 
 - **Tags.** The catalogs, collections and search catalogs the user sees are the ones carrying any of the user's tags. Tags themselves are made in **Catalogs**; a tag with a content rating caps what the user can open. A user with no tags sees everything.
-- **Same person as you.** On, the user is you on another set of catalogs: shares your Continue Watching and watched marks, and what they play is written to your trackers. Off, the user is someone else, with their own Continue Watching, watched marks and watchlist kept apart from yours; nothing they play or favourite reaches your trackers. What they read from your trackers is their card's **Trackers** pick, so a user who should see your history without writing to it is one with the switch off and the pick left on Automatic.
-- **Accounts.** A user who is someone else can connect their own Simkl, MDBList, PublicMetaDB, AniList and MyAnimeList. Once any is connected, everything they play, mark, drop or heart goes to those accounts alone, their shelves read from them, and your trackers are neither read nor written for them. Each account has its own **Watch tracking** switch and **Movies** and **Series** filters; **When to record** in **Watch Tracking** applies to everyone. Simkl can be connected with a PIN typed on the user's own phone. The switch above can't be turned on while accounts are connected.
-- **Trackers**, **Watchlist** and **Skip intro and credits**, explained in the sections below. Each card carries its own copies, so a user who is you can still read a different watchlist shelf or a different skip source.
+- **Who is this.** **You, on fewer catalogs** is you on another set of catalogs: it shares your Continue Watching and watched marks, and what it plays is written to your trackers. **Someone else** is another person, with their own Continue Watching, watched marks and watchlist kept apart from yours; nothing they play or favourite reaches your trackers. What they read from your trackers is their card's **Continue Watching from** pick, so a person who should see your history without writing to it is **Someone else** with that pick left on Automatic.
+- **Accounts.** A user who is someone else can connect their own Simkl, MDBList, PublicMetaDB, AniList and MyAnimeList. Once any is connected, everything they play, mark, drop or heart goes to those accounts alone, their shelves read from them, and your trackers are neither read nor written for them. Each account has its own **Watch tracking** switch and **Movies** and **Series** filters; **It counts as watched** in **Watch Tracking** applies to everyone. Simkl can be connected with a PIN typed on the user's own phone. **You, on fewer catalogs** can't be picked while accounts are connected.
+- **Continue Watching from**, **Watchlist** and **Skip intro and credits**, explained in the sections below. Each card carries its own copies, so a user who is you can still read a different watchlist shelf or a different skip source.
+- **Jellyfin.** The **Jellyfin** part of the card holds the user's PIN, a stream addon and skip source of their own, and when a title counts as watched for them. The stream addon and skip source in step 3 of the **Jellyfin** tab are everyone's, yours included, until a card sets its own.
 - **Picture.** Click the avatar to set an image URL.
 
 A user is stored in the configuration and reaches the client once the configuration is saved.
@@ -53,11 +54,11 @@ A user is stored in the configuration and reaches the client once the configurat
 
 Users are not only for other people. Because each one carries its own tags and its own pickers, they double as profiles of a single account, and the sign-in screen becomes a way to switch between them on any client.
 
-**Two views of one account.** Tag your film and series catalogs `tv` and your anime catalogs `anime`, then make two users: one holding `tv`, one holding `anime`. Signing in as the first gives a client with nothing but films and shows, and a **Watchlist** pick of MDBList so its favourites are that shelf. Signing in as the second gives an anime-only client, its **Watchlist** pointed at Simkl's anime shelf and AniList, and, with **Trackers** set to Simkl, Next Up and the watched ticks read from it rather than from whichever tracker comes first under Automatic. Both are you: with **Same person as you** on, plays from either land on your trackers and both share one Continue Watching. Set the anime user's switch off instead and it keeps reading your trackers but writes nothing, which is the way to browse and watch under a second identity without the trackers ever hearing about it.
+**Two views of one account.** Tag your film and series catalogs `tv` and your anime catalogs `anime`, then make two users: one holding `tv`, one holding `anime`. Signing in as the first gives a client with nothing but films and shows, and a **Watchlist** pick of MDBList so its favourites are that shelf. Signing in as the second gives an anime-only client, its **Watchlist** pointed at Simkl's anime shelf and AniList, and, with **Continue Watching from** set to Simkl, Next Up and the watched ticks read from it rather than from whichever tracker comes first under Automatic. Both are you: as **You, on fewer catalogs**, plays from either land on your trackers and both share one Continue Watching. Make the anime user **Someone else** instead and it keeps reading your trackers but writes nothing, which is the way to browse and watch under a second identity without the trackers ever hearing about it.
 
-**A household.** A partner gets a user with the switch off and their own accounts connected: their plays land on their Simkl or MDBList, their Continue Watching and Next Up come from it, and their **Watchlist** library is their own list. A child gets a user holding a tag with a content rating on it, so the catalogs they see are the ones carrying that tag and nothing above the rating opens, plus **Skip intro and credits** and a watchlist of their own if wanted.
+**A household.** A partner gets a person set to **Someone else**, with their own accounts connected: their plays land on their Simkl or MDBList, their Continue Watching and Next Up come from it, and their **Watchlist** library is their own list. A child gets a user holding a tag with a content rating on it, so the catalogs they see are the ones carrying that tag and nothing above the rating opens, plus **Skip intro and credits** and a watchlist of their own if wanted.
 
-**A trial of one tracker.** A user that is you, with **Trackers** set to one service, shows what that service alone would put on the shelves, without changing what your own card reads.
+**A trial of one tracker.** A user that is you, with **Continue Watching from** set to one service, shows what that service alone would put on the shelves, without changing what your own card reads.
 
 Users cost nothing on the server: they are a scoping of the same configuration, and a client remembers which one it signed in as.
 
@@ -86,7 +87,7 @@ Search catalogs are tagged too, from the tag chip on each row under **Search**. 
 
 ### The version picker
 
-A title's versions are the stream addon's streams, returned as the item's media sources, so the client builds the same version picker it would for a server holding several files. By default a title opens at once with a placeholder version and the addon is asked when the picker is opened or play is pressed. A client that names `MediaSources` in the fields it asks for, as Infuse does, builds its picker from the item and plays nothing without them, so it is always answered in full. For a client that builds its picker from the title without asking, **Wait for the streams when a title opens** in the Jellyfin dialog makes the title wait for the addon so the versions are there on open; it is off by default, since a title that opens at once suits the clients that ask on their own. The instance's `JELLYFIN_RESOLVE_ON_OPEN` sets the rule: `user` leaves it to that switch, `always` and `never` decide for everyone and the switch shows as set by the server. The most versions offered is `JELLYFIN_MAX_MEDIA_SOURCES` (50).
+A title's versions are the stream addon's streams, returned as the item's media sources, so the client builds the same version picker it would for a server holding several files. By default a title opens at once with a placeholder version and the addon is asked when the picker is opened or play is pressed. A client that names `MediaSources` in the fields it asks for, as Infuse does, builds its picker from the item and plays nothing without them, so it is always answered in full. For a client that builds its picker from the title without asking, **Wait for streams when a title opens** in the Jellyfin tab makes the title wait for the addon so the versions are there on open; it is off by default, since a title that opens at once suits the clients that ask on their own. The instance's `JELLYFIN_RESOLVE_ON_OPEN` sets the rule: `user` leaves it to that switch, `always` and `never` decide for everyone and the switch shows as set by the server. The most versions offered is `JELLYFIN_MAX_MEDIA_SOURCES` (50).
 
 Each version carries what can be read from the stream: resolution and dynamic range, video codec, audio codec, channels and a profile such as Dolby TrueHD with Atmos or DTS:X, languages, file size, bitrate and runtime. Where the stream addon sends parsed release data the picture is complete; where it does not, the release name is parsed on the server. Clients render this as the badges on their title pages.
 
@@ -123,16 +124,16 @@ Each lookup sends the title, season and episode to the service asked. AniSkip is
 
 ### What the server records
 
-![Watch Tracking in General, with When to record set to playback start and stop](images/jellyfin/watch-tracking.jpg)
+![Watch Tracking, with It counts as watched set to When it's finished](images/jellyfin/watch-tracking.jpg)
 
 Clients report playback the way they would to Jellyfin: a start, progress every few seconds, pauses, and a stop. The server writes the position to the playstate table and reports the play to every tracker with watch tracking on, through the same path the addon uses for its own playback reporting. A title is marked played once a stop lands at or past `JELLYFIN_PLAYED_THRESHOLD` percent of its runtime (80, the same point the trackers mark a watch); the runtime is the player's own length when the client reports one in the play state's `Item.RunTimeTicks`, else the file's length as the stream addon reported it, else the metadata's. A stop before that keeps the position for Continue Watching.
 
-The table records every play and every watched mark whatever **When to record** is set to, so Continue Watching, the ticks and **This server only** work either way. The trackers are another matter.
+The table records every play and every watched mark whatever **It counts as watched** is set to, so Continue Watching, the ticks and **This server only** work either way. The trackers are another matter.
 
 A tracker records a play only when all three hold:
 
 1. the service is connected under **Integrations**;
-2. its switch in the **Watch Tracking** tab is on, the media type is one the service's options include, and **When to record** in the same section is set to **When playback starts and stops**, with **Jellyfin** on;
+2. its switch in the **Watch Tracking** tab is on, the media type is one the service's options include, and **It counts as watched** in the same tab is set to **When it's finished**, with **Jellyfin apps** on;
 3. the play went through a server that reports playback: this addon's Jellyfin server, or AIOStreams' with the handoff described further down.
 
 Plays from Stremio are recorded in this table too, under their own switch; see [Stremio](#stremio).
@@ -147,7 +148,7 @@ A title played in any other client, or on a Jellyfin server that was not signed 
 
 ### The tracker picker
 
-Reading and writing are two different things here. Every play through the server is **written** to every tracker with watch tracking on, whatever is picked below, as long as the user is you. **Trackers** on a user card decides what is **read back** from them and shown in the client, on top of what was played through this server:
+Reading and writing are two different things here. Every play through the server is **written** to every tracker with watch tracking on, whatever is picked below, as long as the user is you. **Continue Watching from** on a user card decides what is **read back** from them and shown in the client, on top of what was played through this server:
 
 | Choice | Continue Watching | Watched ticks, Next Up, Upcoming |
 |---|---|---|
@@ -161,7 +162,7 @@ Reading and writing are two different things here. Every play through the server
 
 **This server only** reads nothing from any tracker. Continue Watching, Next Up and the ticks show what was played through this server, on this configuration, and nothing watched elsewhere appears. Plays are still reported to the trackers. It is also what the playstate sync below keys on: a configuration set to this is skipped by it, so nothing is pulled from the trackers in the background either. Titles the sync already pulled before the switch stay in the table, which is why a tick can survive the change.
 
-A user that is not you never writes to your trackers, whatever their card says. With accounts of their own they write to those; without, they write nowhere. Their card's own **Trackers** pick decides what they read: a user with accounts reads only their accounts, Automatic meaning all of them; a user without accounts left on Automatic sees your trackers' paused titles and history on top of their own plays, which is how a user set up as someone else can follow your history without touching it; set to **This server only** they see their own plays alone.
+A user that is not you never writes to your trackers, whatever their card says. With accounts of their own they write to those; without, they write nowhere. Their card's own **Continue Watching from** pick decides what they read: a user with accounts reads only their accounts, Automatic meaning all of them; a user without accounts left on Automatic sees your trackers' paused titles and history on top of their own plays, which is how a user set up as someone else can follow your history without touching it; set to **This server only** they see their own plays alone.
 
 **Dropping a show.** A thumbs-down on a series, in a client that offers one, drops it: it leaves Continue Watching, Next Up and Upcoming, and the series reports the dislike back so the button shows its state. Playing an episode of it to the end, or marking one watched, takes the drop back. The drop is written to every connected tracker with watch tracking on (Simkl's dropped list, MDBList's and PublicMetaDB's dropped shows), and a thumbs-up or clearing the rating takes it back; Simkl has no undrop, so the show moves to Watching there. When the tracker read is Simkl, MDBList or PublicMetaDB, that tracker's dropped list is what counts, so a show dropped or taken back on its website follows; otherwise the drop is kept on this server. A thumbs-down on a film or an episode stores nothing.
 
@@ -230,11 +231,11 @@ A user held to an age rating cannot create or join a group, since the group's qu
 
 **Who sees a group.** By default, only the users and devices of the configuration that started it. With `JELLYFIN_SYNCPLAY_SCOPE` set to `instance`, every configuration on this instance sees every group, and the names of the profiles in it. That is for a private instance shared with friends; on a public one it shows strangers what others watch.
 
-**The same release.** Each member gets its streams from its own stream addon, so two members can be offered different releases of a title. A release with a longer intro, an extended cut or a 25 fps file plays out of step with the others, however well the group is kept in time. So in a group, the release of the first member to open or play the title is listed first for the others when their addon offers it. **Try to match releases across users** in the Jellyfin dialog turns this off for a configuration. Nothing is hidden: a member can still pick another version, at the cost of drifting from the group.
+**The same release.** Each member gets its streams from its own stream addon, so two members can be offered different releases of a title. A release with a longer intro, an extended cut or a 25 fps file plays out of step with the others, however well the group is kept in time. So in a group, the release of the first member to open or play the title is listed first for the others when their addon offers it. **Match releases in SyncPlay groups** in the Jellyfin tab turns this off for a configuration. Nothing is hidden: a member can still pick another version, at the cost of drifting from the group.
 
 ## AIOMetadata inside AIOStreams' Jellyfin server
 
-AIOStreams has a Jellyfin server of its own. In that setup the client signs in to AIOStreams, not to this addon, and AIOMetadata is one of the addons installed in it, supplying the catalogs and title pages. Nothing in this guide's sign-in, users or shelves sections applies then; AIOStreams builds those. What AIOMetadata still does is the tracking, through two resources it declares in its manifest once **When to record** in the **Watch Tracking** tab is set to **When playback starts and stops**, with **Jellyfin** on:
+AIOStreams has a Jellyfin server of its own. In that setup the client signs in to AIOStreams, not to this addon, and AIOMetadata is one of the addons installed in it, supplying the catalogs and title pages. Nothing in this guide's sign-in, users or shelves sections applies then; AIOStreams builds those. What AIOMetadata still does is the tracking, through two resources it declares in its manifest once **It counts as watched** in the **Watch Tracking** tab is set to **When it's finished**, with **Jellyfin apps** on:
 
 - **playback.** AIOStreams sends the plays its clients report as start, stop, mark-played and mark-unplayed events, with the title known under every id it holds, so a show keyed on MyAnimeList with episodes keyed on Kitsu is still recorded once. A stop past the trackers' 80 percent counts as a watch; an earlier one is a resume point. Each event is reported to every tracker with watch tracking on, the same way a play through this addon's own server is. A repeated event within `PLAYBACK_MARK_REPEAT_WINDOW` is an echo and dropped.
 - **watch_state.** AIOStreams reads back what the trackers and this addon hold, so its Continue Watching reflects other devices. The answer is the same merged view this addon's own resume shelf uses, following the **Trackers** pick, newest first, `WATCH_STATE_PULL_ITEMS` titles at a time, and may be reused for `WATCH_STATE_PULL_TTL` seconds before AIOStreams asks again.
@@ -249,21 +250,21 @@ set presets[instanceId=<this addon's instance id>].options.manifestUrl = "https:
 
 The catalogs keep their arrangement, since the addon is still the same instance. Adding a second copy of the addon for a user instead shows them both their rows and yours. A read without a viewer is yours, as before, and one naming nobody here is refused; the manifest logs the name it did not know.
 
-AIOStreams sends and reads these only with its `WATCH_STATE_HANDOFF_ENABLED` switched on. With **When to record** left on **When a title is opened**, or **Jellyfin** switched off, neither resource is declared and AIOStreams records nothing through this addon; opening a title is then the only signal, as for any other client.
+AIOStreams sends and reads these only with its `WATCH_STATE_HANDOFF_ENABLED` switched on. With **It counts as watched** left on **When it's opened**, or **Jellyfin apps** switched off, neither resource is declared and AIOStreams records nothing through this addon; opening a title is then the only signal, as for any other client.
 
 Running both servers at once is fine: a client on this addon's server plays through AIOStreams as a plain stream addon, which is not a session AIOStreams reports, so a play is recorded once, by whichever server the client signed in to.
 
 ## Stremio
 
-Stremio sends add-ons the plays, pauses and stops of its player, and the watched marks and library changes you make. With **When to record** set to **When playback starts and stops** and **Stremio SDK** switched on, the manifest declares the `player` and `library` resources and AIOMetadata records them the way it records a play on its own Jellyfin server: in the user's play-state table first, so Continue Watching, the ticks and Next Up here show it at once, and then on every tracker with watch tracking on.
+Stremio sends add-ons the plays, pauses and stops of its player, and the watched marks and library changes you make. With **It counts as watched** set to **When it's finished** and **Addon apps** switched on, the manifest declares the `player` and `library` resources and AIOMetadata records them the way it records a play on its own Jellyfin server: in the user's play-state table first, so Continue Watching, the ticks and Next Up here show it at once, and then on every tracker with watch tracking on.
 
 - **Reinstall once.** Stremio keeps the manifest it installed and does not refresh it for third-party add-ons, so it sends nothing until the addon is reinstalled after the switch is turned on. Saving raises the reinstall prompt, and the switch shows **Reinstall required** until a manifest declaring the events has been fetched, then **No playback from Stremio yet** until the first event arrives.
-- **Watched.** A stop at or past the user's watched point (`JELLYFIN_PLAYED_THRESHOLD`, 80 unless changed for the user) counts as a watch; an earlier one keeps the position as a resume point. Stremio ticks a title at 70 percent itself, so a stop between the two shows watched in Stremio and as a resume point on the trackers. A season or a whole series marked in Stremio is recorded as one mark.
+- **Watched.** A stop at or past the user's watched point (`JELLYFIN_PLAYED_THRESHOLD`, 80 unless the user's **Watched after** is changed) counts as a watch; an earlier one keeps the position as a resume point. Stremio ticks a title at 70 percent itself, so a stop between the two shows watched in Stremio and as a resume point on the trackers. A season or a whole series marked in Stremio is recorded as one mark.
 - **Library.** With **Sync Stremio library with watchlists** on, adding a title to the Stremio library adds it to the user's watchlist here and on their trackers, and removing it removes it. Titles Stremio keeps only because they were played are not part of this.
 - **Several people.** Each Stremio profile picks its own add-ons, so each installs its own link. Your own profile uses the plain install link; for a user card, use that user's link under **Stremio install links** in **Configuration**, which adds `?viewer=` with the card's id. That profile's plays then go to that user's table and accounts, and its catalogs follow the user, as on this addon's own server. A link naming a card that no longer exists is refused, so its plays never land on yours.
 - **Repeats.** Two installs of the same configuration in one profile both receive every event; a repeat of the last event for the same title within `STREMIO_EVENT_DEDUPE_SECONDS` (60) is dropped.
 
-**When a title is opened** stays available for clients that report neither way: they ask the addon for subtitles when a title opens, and that request is recorded as a watch.
+**When it's opened** stays available for clients that report neither way: they ask the addon for subtitles when a title opens, and that request is recorded as a watch.
 
 ## Artwork and appearance
 
@@ -362,7 +363,7 @@ Clients differ in what they ask for, and a few things are worth knowing when a r
 
 ## Troubleshooting
 
-**The Jellyfin button is missing from the configuration page.** `JELLYFIN_API_ENABLED` is off, or the page was loaded before it was switched on.
+**The Jellyfin tab is missing from the configuration page.** `JELLYFIN_API_ENABLED` is off, or the page was loaded before it was switched on.
 
 **A client says the server is unavailable right after signing in.** Usually a tracker read that failed while building the first shelves. The log, filtered by the configuration id, names the tracker and the status: `401` is a wrong or revoked key or token, `429` is the tracker's rate limit, and both are retried on the next request.
 

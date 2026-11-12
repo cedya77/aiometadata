@@ -1,15 +1,14 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Puzzle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { HouseholdUsers } from '@/components/users/HouseholdUsers';
+import { Reporting, Step } from '@/components/settings/StepTimeline';
+import { Segmented } from '@/components/settings/Segmented';
 import { useConfig } from '@/contexts/ConfigContext';
 import type { WatchTrackingService } from '@/contexts/config';
 import { useStremioLinkStatus } from '@/hooks/useStremioLinkStatus';
-import { CARD_SERVICES } from '@/lib/cardAccounts';
-import { hashFor, parseRoute } from '@/lib/settingsRoute';
-import { useSave } from '@/contexts/SaveContext';
+import { CARD_SERVICES, isHolder } from '@/lib/cardAccounts';
+import { navigateToSettingsSection } from '@/lib/settingsRoute';
 import { cn } from '@/lib/utils';
 import {
   openServiceConnect,
@@ -23,8 +22,6 @@ import {
   type WatchTrackingMediaType,
 } from '@/lib/watchTracking';
 
-const IMAGE_URL = /^https?:\/\//i;
-
 function ago(at: number): string {
   const minutes = Math.floor((Date.now() - at) / 60000);
   if (minutes < 1) return 'just now';
@@ -33,34 +30,6 @@ function ago(at: number): string {
   if (hours < 24) return `${hours} h ago`;
   const days = Math.floor(hours / 24);
   return days === 1 ? 'yesterday' : `${days} days ago`;
-}
-
-function Step({ n, last, title, hint, children }: { n: number; last?: boolean; title: string; hint: string; children: ReactNode }) {
-  return (
-    <div className="flex gap-4 sm:gap-5">
-      <div className="flex w-7 shrink-0 flex-col items-center" aria-hidden="true">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full border border-muted-foreground/30 bg-card text-[13px] font-semibold">{n}</div>
-        {last ? null : <div className="my-1.5 w-px flex-1 bg-border" />}
-      </div>
-      <section className={cn('min-w-0 flex-1 space-y-3.5', last ? '' : 'pb-9')}>
-        <div className="space-y-0.5 pt-0.5">
-          <h3 className="text-[15px] font-semibold">{title}</h3>
-          <p className="text-sm text-muted-foreground">{hint}</p>
-        </div>
-        {children}
-      </section>
-    </div>
-  );
-}
-
-function Reporting({ tone, text, detail }: { tone: 'ok' | 'wait'; text: string; detail?: string }) {
-  return (
-    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      <span className={cn('h-1.5 w-1.5 rounded-full', tone === 'ok' ? 'bg-emerald-400' : 'bg-amber-400')} aria-hidden="true" />
-      <span className="text-foreground/80">{text}</span>
-      {detail ? <><span className="text-muted-foreground/50" aria-hidden="true">·</span><span className="text-muted-foreground">{detail}</span></> : null}
-    </p>
-  );
 }
 
 function SourceCard({ id, icon, title, hint, checked, onChange, children }: {
@@ -87,17 +56,6 @@ function SourceCard({ id, icon, title, hint, checked, onChange, children }: {
   );
 }
 
-function Face({ name, avatar, first }: { name: string; avatar?: string; first: boolean }) {
-  const ring = cn('h-8 w-8 rounded-full border-2 border-background', !first && '-ml-2');
-  if (avatar && IMAGE_URL.test(avatar)) return <img src={avatar} alt="" className={cn(ring, 'bg-muted object-cover')} />;
-  return (
-    <div className={cn(ring, 'flex items-center justify-center bg-muted text-xs font-semibold text-muted-foreground')}>
-      {(name.trim()[0] || '?').toUpperCase()}
-    </div>
-  );
-}
-
-const SHOWN_FACES = 4;
 
 export function WatchTrackingSettings() {
   const { config, setConfig } = useConfig();
@@ -105,25 +63,6 @@ export function WatchTrackingSettings() {
   const stremioOn = scrobblesStremio(config);
   const jellyfinOn = scrobblesJellyfin(config);
   const linkStatus = useStremioLinkStatus(stremioOn);
-
-  const [peopleOpen, setPeopleOpen] = useState(() => parseRoute(window.location.hash).anchor === 'household-users');
-  useEffect(() => {
-    const follow = () => { if (parseRoute(window.location.hash).anchor === 'household-users') setPeopleOpen(true); };
-    window.addEventListener('hashchange', follow);
-    return () => window.removeEventListener('hashchange', follow);
-  }, []);
-  // A save held up by the people set up here opens the list, where the reason is shown.
-  const { saveBlockedBy } = useSave();
-  useEffect(() => {
-    if (saveBlockedBy) setPeopleOpen(true);
-  }, [saveBlockedBy]);
-  const togglePeople = () => {
-    // Closing drops the people anchor, so following a link to it again opens the list.
-    if (peopleOpen && parseRoute(window.location.hash).anchor === 'household-users') {
-      window.history.replaceState(null, '', hashFor('watch-tracking'));
-    }
-    setPeopleOpen(!peopleOpen);
-  };
 
   // Any install that has reported counts; the newest report is the one shown.
   const links = Object.values(linkStatus ?? {});
@@ -158,8 +97,7 @@ export function WatchTrackingSettings() {
     }));
   };
 
-  const mainName = config.jellyfinUserName || config.addonName || 'You';
-  const people = [{ name: mainName, avatar: config.jellyfinUserAvatar }, ...(config.jellyfinUsers ?? []).map((u) => ({ name: u.name || 'Unnamed user', avatar: u.avatar }))];
+  const others = (config.jellyfinUsers ?? []).some((user) => isHolder(user));
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -189,10 +127,11 @@ export function WatchTrackingSettings() {
               checked={stremioOn}
               onChange={(on) => setSource('stremioScrobbling', on)}
             >
-              <div className="flex items-center gap-3 rounded-md border bg-background px-3 py-2">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Works with</span>
-                <img src="/stremio_icon.png" alt="Stremio" title="Stremio" className="h-[22px] w-[22px] object-contain" />
-              </div>
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                Works with
+                <img src="/stremio_icon.png" alt="" className="h-4 w-4 object-contain" />
+                <span className="text-foreground/80">Stremio</span>
+              </p>
               {stremioOn ? (
                 <>
                   {addonStatus}
@@ -217,27 +156,14 @@ export function WatchTrackingSettings() {
           </p>
         </Step>
 
-        <Step n={2} title="It counts as watched" hint="For apps that don't report playback, pick when it's opened.">
-          <div id="playback-detection" role="radiogroup" aria-label="When a title counts as watched" className="flex gap-1 rounded-lg border bg-card p-1 sm:inline-flex">
-            {([
-              [false, "When it's opened"],
-              [true, "When it's finished"],
-            ] as const).map(([value, label]) => (
-              <button
-                key={label}
-                type="button"
-                role="radio"
-                aria-checked={finished === value}
-                onClick={() => setConfig((prev) => (value ? withStremioEventsSince(prev, { ...prev, playbackReporting: true }) : { ...prev, playbackReporting: false }))}
-                className={cn(
-                  'flex-1 whitespace-nowrap rounded-md px-2 py-2 text-sm font-medium transition-colors sm:flex-none sm:px-4',
-                  finished === value ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        <Step n={2} title="It counts as watched" hint="Opened suits apps that don't report playback. Finished waits for each person's Watched after point.">
+          <Segmented
+            id="playback-detection"
+            label="When a title counts as watched"
+            value={finished}
+            options={[[false, "When it's opened"], [true, "When it's finished"]]}
+            onChange={(value) => setConfig((prev) => (value ? withStremioEventsSince(prev, { ...prev, playbackReporting: true }) : { ...prev, playbackReporting: false }))}
+          />
         </Step>
 
         <Step n={3} last title="And it's sent to" hint={connected.length ? 'Tap a type to leave it out.' : 'Connect a service to send your watches somewhere.'}>
@@ -304,23 +230,20 @@ export function WatchTrackingSettings() {
               .
             </p>
           ) : null}
+          {others ? (
+            <p className="text-sm text-muted-foreground">
+              These are yours. Anyone else's go to the trackers on their card in{' '}
+              <button
+                type="button"
+                onClick={() => navigateToSettingsSection('people')}
+                className="font-medium text-foreground/80 underline-offset-2 hover:text-foreground hover:underline"
+              >
+                People
+              </button>
+              .
+            </p>
+          ) : null}
         </Step>
-      </div>
-
-      <div id="household-users" className="space-y-4 border-t pt-6">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-          <div className="flex" aria-hidden="true">
-            {people.slice(0, SHOWN_FACES).map((person, index) => <Face key={index} name={person.name} avatar={person.avatar} first={index === 0} />)}
-          </div>
-          <div className="min-w-0 flex-1 space-y-0.5">
-            <p className="text-sm font-medium">{people.length === 1 ? 'Just you' : `${people.length} people`}</p>
-            <p className="text-sm text-muted-foreground">{people.length === 1 ? 'Add the people who watch here, each with their own services' : 'Each one can send to their own services'}</p>
-          </div>
-          <Button type="button" variant="outline" size="sm" aria-expanded={peopleOpen} onClick={togglePeople}>
-            {peopleOpen ? 'Done' : 'Manage people'}
-          </Button>
-        </div>
-        {peopleOpen ? <HouseholdUsers /> : null}
       </div>
     </div>
   );
