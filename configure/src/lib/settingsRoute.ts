@@ -7,7 +7,9 @@ export type SettingsSectionId =
   | 'filters'
   | 'search'
   | 'catalogs'
+  | 'people'
   | 'watch-tracking'
+  | 'jellyfin'
   | 'configuration';
 
 export interface SettingsSection {
@@ -25,9 +27,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: 'filters', title: 'Filters' },
   { id: 'search', title: 'Search' },
   { id: 'catalogs', title: 'Catalogs' },
+  { id: 'people', title: 'People' },
   { id: 'watch-tracking', title: 'Watch Tracking' },
+  { id: 'jellyfin', title: 'Jellyfin' },
   { id: 'configuration', title: 'Configuration' },
 ];
+
+/** The sections this instance offers; the route still accepts every id so a deep link survives loading. */
+export function visibleSettingsSections({ jellyfin }: { jellyfin: boolean }): SettingsSection[] {
+  return jellyfin ? SETTINGS_SECTIONS : SETTINGS_SECTIONS.filter((section) => section.id !== 'jellyfin');
+}
 
 export const DEFAULT_SECTION: SettingsSectionId = 'general';
 
@@ -57,6 +66,7 @@ export interface SettingsRoute {
 
 
 const ANCHOR_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
+const OLD_PEOPLE_ANCHOR = 'household-users';
 
 export function parseRoute(hash: string): SettingsRoute {
   const raw = (hash || '').trim().replace(/^#/, '');
@@ -67,6 +77,10 @@ export function parseRoute(hash: string): SettingsRoute {
     return { section: DEFAULT_SECTION, anchor: null };
   }
   const anchorPart = slash === -1 ? '' : raw.slice(slash + 1);
+  if (sectionPart === 'watch-tracking' && (anchorPart === OLD_PEOPLE_ANCHOR || anchorPart.startsWith(`${OLD_PEOPLE_ANCHOR}.`))) {
+    const key = anchorPart.slice(OLD_PEOPLE_ANCHOR.length + 1);
+    return { section: 'people', anchor: ANCHOR_PATTERN.test(key) ? key : null };
+  }
   return {
     section: sectionPart,
     anchor: ANCHOR_PATTERN.test(anchorPart) ? anchorPart : null,
@@ -115,14 +129,14 @@ export function consumeCollectionBuilderRequest(): boolean {
   return requested;
 }
 
-export function adjacentSections(id: SettingsSectionId): {
+export function adjacentSections(id: SettingsSectionId, sections: SettingsSection[] = SETTINGS_SECTIONS): {
   prev: SettingsSection | null;
   next: SettingsSection | null;
 } {
-  const index = SETTINGS_SECTIONS.findIndex((section) => section.id === id);
+  const index = sections.findIndex((section) => section.id === id);
   if (index === -1) return { prev: null, next: null };
   return {
-    prev: index > 0 ? SETTINGS_SECTIONS[index - 1] : null,
-    next: index < SETTINGS_SECTIONS.length - 1 ? SETTINGS_SECTIONS[index + 1] : null,
+    prev: index > 0 ? sections[index - 1] : null,
+    next: index < sections.length - 1 ? sections[index + 1] : null,
   };
 }

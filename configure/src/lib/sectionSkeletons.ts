@@ -205,11 +205,39 @@ export const SECTION_SKELETONS: Record<SettingsSectionId, SkeletonSpec> = {
       {
         kind: 'heading',
         title: 'Watch Tracking',
-        description: 'Choose how plays are recorded, which services hear about them, and who is watching.',
+        description: 'Follow a watch from your app to your trackers.',
       },
       { kind: 'card', card: { descriptionLines: 2, control: 'switch-list', controlCount: 3 } },
       { kind: 'card', card: { descriptionLines: 1, control: 'switch-list', controlCount: 5 } },
       { kind: 'card', card: { descriptionLines: 2, control: 'text' } },
+    ],
+  },
+
+  'people': {
+    className: 'space-y-8',
+    blocks: [
+      {
+        kind: 'heading',
+        title: 'People',
+        description: 'Everyone who watches here, each with their own catalogs, trackers and sign-in.',
+      },
+      { kind: 'grid', className: 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4', cards: [{ descriptionLines: 1, control: 'text' }, { descriptionLines: 1, control: 'text' }] },
+      { kind: 'card', card: { descriptionLines: 2, control: 'switch-list', controlCount: 4 } },
+    ],
+  },
+
+  'jellyfin': {
+    className: 'space-y-8',
+    blocks: [
+      {
+        kind: 'heading',
+        title: 'Jellyfin',
+        description: 'Connect Jellyfin apps to this configuration and choose how they play and browse.',
+      },
+      { kind: 'callout' },
+      { kind: 'card', card: { descriptionLines: 1, control: 'input', controlCount: 1 } },
+      { kind: 'grid', className: 'grid grid-cols-1 gap-3 md:grid-cols-2', cards: [{ descriptionLines: 1, control: 'input', controlCount: 1 }, { descriptionLines: 2, control: 'text' }] },
+      { kind: 'card', card: { descriptionLines: 1, control: 'switch-list', controlCount: 4 } },
     ],
   },
 

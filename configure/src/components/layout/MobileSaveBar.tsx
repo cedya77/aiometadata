@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Loader2, Save } from 'lucide-react';
 import { useSave } from '@/contexts/SaveContext';
+import { navigateToSettingsSection } from '@/lib/settingsRoute';
 
 /**
  * The header scrolls away and sections run long on phones, so the header's save
@@ -29,7 +30,9 @@ export function MobileSaveBar() {
             </div>
             <div className="truncate text-xs text-muted-foreground">
               {blocked
-                ? missingKeys.length ? `Missing: ${missingKeys.map(k => k.name).join(', ')}` : saveBlockedBy
+                ? missingKeys.length
+                  ? `Missing: ${missingKeys.map(k => k.name).join(', ')}`
+                  : <button type="button" className="underline underline-offset-2" onClick={() => navigateToSettingsSection('people')}>{saveBlockedBy} Fix in People</button>
                 : neverSaved
                   ? 'Save to get your install link.'
                   : 'Save to apply them to your addon.'}

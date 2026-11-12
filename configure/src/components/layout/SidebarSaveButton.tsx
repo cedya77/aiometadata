@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Loader2, Save } from 'lucide-react';
 import { useSave } from '@/contexts/SaveContext';
+import { navigateToSettingsSection } from '@/lib/settingsRoute';
 import { cn } from '@/lib/utils';
 
 /**
@@ -46,7 +47,7 @@ export function SidebarSaveButton() {
         {blocked
           ? `Missing ${missingKeys.length} required key${missingKeys.length === 1 ? '' : 's'}`
           : saveBlockedBy
-            ? saveBlockedBy
+            ? <button type="button" className="underline underline-offset-2 hover:text-amber-300" onClick={() => navigateToSettingsSection('people')}>{saveBlockedBy} Fix in People</button>
           : isDirty
             ? 'You have unsaved changes'
             : isDirty === null

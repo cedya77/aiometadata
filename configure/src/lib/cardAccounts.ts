@@ -1,4 +1,5 @@
-import type { CardService, CatalogConfig, JellyfinUser, JellyfinUserAccounts } from '@/contexts/config';
+import type { AppConfig, CardService, CatalogConfig, JellyfinUser, JellyfinUserAccounts } from '@/contexts/config';
+import { WATCH_TRACKING_SERVICE_DEFINITIONS, WATCH_TRACKING_SERVICES } from './watchTracking';
 
 type Shelf = 'movies' | 'series' | 'anime';
 type KeyField = keyof NonNullable<JellyfinUserAccounts['apiKeys']>;
@@ -27,6 +28,45 @@ export const CARD_SERVICES: Record<CardService, CardServiceInfo> = {
 export function connectedServices(user?: JellyfinUser): CardService[] {
   if (!user || user.trackers === true) return [];
   return CARD_SERVICE_ORDER.filter((service) => Boolean(user.accounts?.apiKeys?.[CARD_SERVICES[service].key]));
+}
+
+export function mainConnectedServices(config: AppConfig): CardService[] {
+  return WATCH_TRACKING_SERVICES.filter((service) => {
+    const definition = WATCH_TRACKING_SERVICE_DEFINITIONS[service];
+    return definition.hasCredential(config) && config[definition.masterKey] === true;
+  });
+}
+
+export function mainPersonName(config: { jellyfinUserName?: string; addonName?: string }, userUUID: string): string {
+  return config.jellyfinUserName || config.addonName || userUUID.slice(0, 8) || 'You';
+}
+
+export function newPersonId(): string {
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export function personNameTaken(config: AppConfig, userUUID: string, name: string): boolean {
+  const wanted = name.trim().toLowerCase();
+  return mainPersonName(config, userUUID).toLowerCase() === wanted
+    || (config.jellyfinUsers ?? []).some((user) => user.name.toLowerCase() === wanted);
+}
+
+export interface HouseholdPerson {
+  key: string;
+  name: string;
+  avatar?: string;
+  main: boolean;
+  user?: JellyfinUser;
+}
+
+/** The main person first, then everyone added, as the sign-in screen lists them. */
+export function householdPeople(config: AppConfig, userUUID: string): HouseholdPerson[] {
+  return [
+    { key: 'main', name: mainPersonName(config, userUUID), avatar: config.jellyfinUserAvatar, main: true },
+    ...(config.jellyfinUsers ?? []).map((user) => ({ key: user.id, name: user.name || 'Unnamed person', avatar: user.avatar, main: false, user })),
+  ];
 }
 
 export function isHolder(user?: JellyfinUser): boolean {
@@ -138,10 +178,11 @@ export function householdIssue(
   userUUID: string,
 ): string | null {
   const users = config.jellyfinUsers ?? [];
-  const mainName = config.jellyfinUserName || config.addonName || userUUID.slice(0, 8);
-  const clash = handoffNameClash(mainName, config.jellyfinUserHandoffNames, users);
-  if (clash) return `"${clash}" is used by two users.`;
-  if (pinInvalid(config.jellyfinUserPin) || users.some((user) => pinInvalid(user.pin))) return 'A PIN must be 4 to 12 digits.';
+  const clash = handoffNameClash(mainPersonName(config, userUUID), config.jellyfinUserHandoffNames, users);
+  if (clash) return `"${clash}" is used by two people.`;
+  if (pinInvalid(config.jellyfinUserPin)) return 'Your PIN must be 4 to 12 digits.';
+  const badPin = users.find((user) => pinInvalid(user.pin));
+  if (badPin) return `${badPin.name || 'A person'}'s PIN must be 4 to 12 digits.`;
   return null;
 }
 

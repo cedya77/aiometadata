@@ -1,23 +1,43 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
-/** Whether this instance runs the Jellyfin server, and the address clients reach it at. */
-export function useJellyfinServer(): { enabled: boolean; baseUrl: string } {
-  const [server, setServer] = useState({ enabled: false, baseUrl: window.location.origin });
+export type ResolveOnOpenMode = 'user' | 'always' | 'never';
+export type UpcomingMode = 'user' | 'caught-up' | 'airing';
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/config')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (cancelled || !data) return;
-        const baseUrl = typeof data.jellyfinBaseUrl === 'string' && data.jellyfinBaseUrl.trim() ? data.jellyfinBaseUrl.trim() : window.location.origin;
-        setServer({ enabled: Boolean(data.jellyfinEnabled), baseUrl });
-      })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, []);
+export interface JellyfinServer {
+  loaded: boolean;
+  enabled: boolean;
+  baseUrl: string;
+  resolveOnOpen: ResolveOnOpenMode;
+  upcomingMode: UpcomingMode;
+}
 
-  return server;
+async function fetchInstanceConfig(): Promise<Record<string, unknown>> {
+  const response = await fetch('/api/config');
+  if (!response.ok) throw new Error(`Instance config ${response.status}`);
+  return response.json();
+}
+
+function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+/** Whether this instance runs the Jellyfin server, the address clients reach it at, and the modes it forces. */
+export function useJellyfinServer(active = true): JellyfinServer {
+  const { data, isSuccess } = useQuery({
+    queryKey: ['instance-config'],
+    queryFn: fetchInstanceConfig,
+    staleTime: Infinity,
+    refetchOnWindowFocus: (query) => query.state.status === 'error',
+    enabled: active,
+  });
+  const baseUrl = typeof data?.jellyfinBaseUrl === 'string' && data.jellyfinBaseUrl.trim() ? data.jellyfinBaseUrl.trim() : window.location.origin;
+  return {
+    loaded: isSuccess,
+    enabled: Boolean(data?.jellyfinEnabled),
+    baseUrl,
+    resolveOnOpen: pick(data?.jellyfinResolveOnOpen, ['user', 'always', 'never'] as const, 'user'),
+    upcomingMode: pick(data?.jellyfinUpcomingMode, ['user', 'caught-up', 'airing'] as const, 'user'),
+  };
 }
 
 export function jellyfinServerAddress(baseUrl: string, userUUID: string): string {
