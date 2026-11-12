@@ -23,7 +23,7 @@ const SHOW_FILTERS: Array<{ key: ShowFilter; label: string; outcomes: string[] }
   { key: "next", label: "Up next", outcomes: ["shown"] },
   { key: "waiting", label: "Waiting", outcomes: ["caught-up", "airs-later"] },
   { key: "done", label: "Finished", outcomes: ["finished", "unfinished", "dropped"] },
-  { key: "problems", label: "Not shown", outcomes: ["missing-episode", "no-meta", "no-air-date", "not-anime", "rating-cap"] },
+  { key: "problems", label: "Not shown", outcomes: ["missing-episode", "no-meta", "no-air-date", "on-hold", "not-anime", "rating-cap"] },
 ];
 function showStatus(row: JellyfinShowRow): { text: string; tone: string; fixable: boolean } {
   const next = episodeRef(row.next);
@@ -37,6 +37,7 @@ function showStatus(row: JellyfinShowRow): { text: string; tone: string; fixable
       return { text: `Reached the end, ${left} episode${left === 1 ? "" : "s"} unwatched`, tone: "text-amber-300", fixable: false };
     }
     case "dropped": return { text: "Dropped", tone: "text-muted-foreground", fixable: false };
+    case "on-hold": return { text: "Left out: on hold", tone: "text-muted-foreground", fixable: false };
     case "missing-episode": return { text: `Last watched ${episodeRef(row.last) || "episode"} is not among its ${row.episodes ?? 0} episodes`, tone: "text-red-400", fixable: true };
     case "no-meta": return { text: "No metadata for this show", tone: "text-red-400", fixable: true };
     case "no-air-date": return { text: `${next} has no air date`, tone: "text-amber-400", fixable: true };

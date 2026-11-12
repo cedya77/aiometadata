@@ -441,7 +441,7 @@ const streamCacheKey = (userUUID: string, profile: string, type: string, id: str
 export type NextUpSource = 'server' | 'tracker' | 'sequel';
 
 export interface NextUpStep {
-  outcome: 'shown' | 'caught-up' | 'airs-later' | 'no-air-date' | 'missing-episode' | 'no-meta' | 'finished' | 'dropped' | 'not-anime' | 'rating-cap' | 'duplicate';
+  outcome: 'shown' | 'caught-up' | 'airs-later' | 'no-air-date' | 'missing-episode' | 'no-meta' | 'finished' | 'dropped' | 'on-hold' | 'not-anime' | 'rating-cap' | 'duplicate';
   next?: { season: number | null; number: number | null; name: string | null };
   from?: { season: number | null; number: number | null; name: string | null };
   airsAt?: number;
@@ -3417,10 +3417,17 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     // The table first; a tracker adds the shows it knows that the table does not.
     const t2 = Date.now();
     const ownRows = await ownNextUpRows(userUUID, profileKey(config));
-    const own = ownRows.filter((row) => !snapshot.dropped.has(row.metaId));
+    // A show on hold stays off the shelf, but its own page still offers its next episode.
+    const forShow = Boolean(req.query.SeriesId ?? req.query.seriesId ?? req.query.ParentId ?? req.query.parentId);
+    const leftOut = (row: NextUpRow): 'dropped' | 'on-hold' | null =>
+      snapshot.dropped.has(row.metaId) ? 'dropped' : !forShow && snapshot.onHold?.has(row.metaId) ? 'on-hold' : null;
+    const own = ownRows.filter((row) => !leftOut(row));
     lap.own = Date.now() - t2;
     if (trace) {
-      for (const row of ownRows) if (snapshot.dropped.has(row.metaId)) trace(row, 'server', { outcome: 'dropped' });
+      for (const row of ownRows) {
+        const outcome = leftOut(row);
+        if (outcome) trace(row, 'server', { outcome });
+      }
       for (const row of snapshot.nextUp) if (snapshot.dropped.has(row.metaId)) trace(row, 'tracker', { outcome: 'dropped' });
     }
     const { homedRows } = require('./episodeHome');

@@ -207,6 +207,8 @@ export interface WatchedSnapshot {
   dropped: Set<string>;
   /** The drops could not be read, so `dropped` is not the whole list. */
   droppedUnread?: boolean;
+  /** Shows the tracker lists as on hold, under every id they answer to. */
+  onHold?: Set<string>;
   /** Anime entries the tracker lists as completed. */
   finishedAnime?: FinishedAnime[];
   /** Every entry on the tracker's lists, as `mal:` and `simkl:` keys. */
@@ -234,6 +236,7 @@ interface Collecting {
   /** When a video was last watched, by video id, where the tracker says. */
   at: Map<string, number>;
   dropped: Set<string>;
+  onHold?: Set<string>;
   finishedAnime?: FinishedAnime[];
   listedAnime?: Set<string>;
 }
@@ -308,6 +311,7 @@ function collectShow(entry: any, snapshot: Collecting, isAnime: boolean, history
   }
   // An older Simkl app is sent `notinteresting` where a newer one gets `dropped`.
   if (entry?.status === 'dropped' || entry?.status === 'notinteresting') for (const key of seriesKeysWithKitsu(ids)) snapshot.dropped.add(key);
+  if (entry?.status === 'hold') for (const key of seriesKeysWithKitsu(ids)) snapshot.onHold?.add(key);
 
   if (film) {
     if (entry?.status !== 'completed') return;
@@ -404,6 +408,7 @@ interface RawSnapshot {
   following?: Array<{ metaId: string; mediaType: 'anime' | 'series' }>;
   dropped?: string[];
   droppedUnread?: boolean;
+  onHold?: string[];
   finishedAnime?: FinishedAnime[];
   listedAnime?: string[];
 }
@@ -419,6 +424,7 @@ export async function assembleSimkl(data: any): Promise<RawSnapshot> {
     following: [],
     at: new Map(),
     dropped: new Set(),
+    onHold: new Set(),
     finishedAnime: [],
     listedAnime: new Set(),
   };
@@ -455,6 +461,7 @@ export async function assembleSimkl(data: any): Promise<RawSnapshot> {
     nextUp: snapshot.nextUp.sort((a, b) => b.lastWatchedAt - a.lastWatchedAt),
     following: snapshot.following,
     dropped: [...snapshot.dropped],
+    onHold: [...(snapshot.onHold ?? [])],
     finishedAnime: snapshot.finishedAnime,
     listedAnime: [...(snapshot.listedAnime ?? [])],
   };
@@ -483,6 +490,7 @@ export async function assembleAnimeList(entries: AnimeListEntry[]): Promise<RawS
     following: [],
     at: new Map(),
     dropped: new Set(),
+    onHold: new Set(),
   };
   const history = new Map<string, HistoryEntry>();
 
@@ -500,6 +508,7 @@ export async function assembleAnimeList(entries: AnimeListEntry[]): Promise<RawS
     if (!metaId) continue;
 
     if (entry.status === 'dropped') for (const key of seriesKeysWithKitsu(ids)) snapshot.dropped.add(key);
+    if (entry.status === 'paused') for (const key of seriesKeysWithKitsu(ids)) snapshot.onHold?.add(key);
     const watchedCount = entry.status === 'completed' ? Math.max(entry.progress, entry.episodes ?? 0) : entry.progress;
 
     if (entry.movie) {
@@ -554,6 +563,7 @@ export async function assembleAnimeList(entries: AnimeListEntry[]): Promise<RawS
     nextUp: snapshot.nextUp.sort((a, b) => b.lastWatchedAt - a.lastWatchedAt),
     following: snapshot.following,
     dropped: [...snapshot.dropped],
+    onHold: [...(snapshot.onHold ?? [])],
   };
 }
 
@@ -795,7 +805,7 @@ type MirroredService = 'simkl' | 'mdblist' | 'publicmetadb' | 'anilist' | 'mal';
 
 // Raised to rebuild indexes written in an older spelling.
 const INDEX_FORMAT = 9;
-const SERVICE_FORMATS: Partial<Record<MirroredService, number>> = { publicmetadb: 10 };
+const SERVICE_FORMATS: Partial<Record<MirroredService, number>> = { publicmetadb: 10, simkl: 10, anilist: 10, mal: 10 };
 const formatOf = (service: MirroredService): number => SERVICE_FORMATS[service] ?? INDEX_FORMAT;
 
 interface SummaryData {
@@ -804,6 +814,7 @@ interface SummaryData {
   following: Array<{ metaId: string; mediaType: 'anime' | 'series' }>;
   dropped: string[];
   droppedUnread?: boolean;
+  onHold?: string[];
   finishedAnime?: FinishedAnime[];
   listedAnime?: string[];
 }
@@ -819,6 +830,7 @@ function viewOf(source: string, fingerprint: string, data: SummaryData): Watched
     following: data?.following ?? [],
     dropped: new Set(data?.dropped ?? []),
     droppedUnread: data?.droppedUnread === true,
+    onHold: new Set(data?.onHold ?? []),
     ...(data?.finishedAnime ? { finishedAnime: data.finishedAnime, listedAnime: new Set(data.listedAnime ?? []) } : {}),
     fingerprint,
   };
@@ -993,6 +1005,7 @@ async function buildIndex(service: MirroredService, credential: string, config: 
     following: raw.following ?? [],
     dropped: raw.dropped ?? [],
     droppedUnread: raw.droppedUnread === true,
+    ...(raw.onHold?.length ? { onHold: raw.onHold } : {}),
     ...(raw.finishedAnime ? { finishedAnime: raw.finishedAnime, listedAnime: raw.listedAnime ?? [] } : {}),
   };
   // Written last: an index left half-written by a crash is rebuilt, since its version never lands.
