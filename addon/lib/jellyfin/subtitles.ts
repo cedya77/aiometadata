@@ -243,25 +243,37 @@ export function parseCues(input: string): Cue[] {
   return cues;
 }
 
+function withoutOverrideTags(text: string): string {
+  let out = '';
+  let at = 0;
+  for (;;) {
+    const open = text.indexOf('{', at);
+    const close = open === -1 ? -1 : text.indexOf('}', open);
+    if (close === -1) return out + text.slice(at);
+    out += text.slice(at, open);
+    at = close + 1;
+  }
+}
+
 /** The Dialogue lines of an ASS or SSA script, styling dropped. */
 export function parseAssCues(input: string): Cue[] {
   const cues: Cue[] = [];
   let textIndex = 9;
   for (const line of normaliseText(input).split('\n')) {
-    const format = /^\s*Format:\s*(.+)$/i.exec(line);
+    const format = /^\s*Format:\s*([\s\S]*)/i.exec(line);
     if (format) {
       const at = format[1].split(',').map((f) => f.trim().toLowerCase()).indexOf('text');
       if (at >= 0) textIndex = at;
       continue;
     }
-    const dialogue = /^\s*Dialogue:\s*(.+)$/i.exec(line);
+    const dialogue = /^\s*Dialogue:\s*([\s\S]*)/i.exec(line);
     if (!dialogue) continue;
     const parts = dialogue[1].split(',');
     if (parts.length <= textIndex) continue;
     const startMs = timeToMs(parts[1] ?? '');
     const endMs = timeToMs(parts[2] ?? '');
     if (startMs === null || endMs === null) continue;
-    const text = parts.slice(textIndex).join(',').replace(/\{[^}]*\}/g, '').replace(/\\[Nnh]/g, '\n').trim();
+    const text = withoutOverrideTags(parts.slice(textIndex).join(',')).replace(/\\[Nnh]/g, '\n').trim();
     if (text) cues.push({ startMs, endMs, text });
   }
   return cues.sort((a, b) => a.startMs - b.startMs);
@@ -300,7 +312,7 @@ export function cuesToJellyfinJson(cues: Cue[]): string {
 }
 
 function formatInBody(body: string): string | undefined {
-  const head = normaliseText(body).slice(0, 4096);
+  const head = normaliseText(body.slice(0, 4096));
   if (/^\s*\[Script Info\]/i.test(head) || /^\[V4\+? Styles\]/im.test(head)) return 'ass';
   if (/^\s*WEBVTT\b/.test(head)) return 'vtt';
   return undefined;
