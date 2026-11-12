@@ -281,7 +281,7 @@ export async function spellingRoots(ids: string[], writtenAt: (i: number) => unk
     if (ra !== rb) parent.set(ra, rb);
   };
 
-  const together = new Map<string, string>();
+  const together = new Map<string, Map<string, string>>();
   for (let i = 0; i < ids.length; i += 1) {
     const id = ids[i];
     if (breathe && i % BREATH_EVERY === BREATH_EVERY - 1) await new Promise((resolve) => setImmediate(resolve));
@@ -291,11 +291,37 @@ export async function spellingRoots(ids: string[], writtenAt: (i: number) => unk
     const parsed = parseStremioId(id);
     const at = parsed && parsed.episode !== null && parsed.episode !== undefined ? `${parsed.season ?? ''}:${parsed.episode}` : 'title';
     const key = `${written}|${at}`;
-    const first = together.get(key);
-    if (first) union(id, first);
-    else together.set(key, id);
+    const moment = together.get(key) ?? new Map<string, string>();
+    together.set(key, moment.set(id, parsed?.idType ?? id));
+  }
+  // One play writes each provider's id once, so a moment naming a provider twice holds more than one title.
+  for (const moment of together.values()) {
+    if (moment.size < 2) continue;
+    if (new Set(moment.values()).size < moment.size) {
+      await pairFilmsByIds(moment, union);
+      continue;
+    }
+    const [first, ...rest] = moment.keys();
+    for (const id of rest) union(first, id);
   }
   return find;
+}
+
+/** Films sharing a moment, joined where a film's other spelling is written there too. */
+async function pairFilmsByIds(moment: Map<string, string>, union: (a: string, b: string) => void): Promise<void> {
+  const { movieSpellings } = require('./watched');
+  const paired = new Set<string>();
+  const films = [...moment].filter(([id, provider]) => (provider === 'imdb' || provider === 'tmdb') && parseStremioId(id)?.episode === null);
+  // IMDb ids first: each one answered pairs its TMDB spelling, which then needs no lookup of its own.
+  films.sort(([, a], [, b]) => Number(a === 'tmdb') - Number(b === 'tmdb'));
+  for (const [id] of films) {
+    if (paired.has(id)) continue;
+    for (const other of (await movieSpellings(id, {})) as string[]) {
+      if (!moment.has(other)) continue;
+      union(id, other);
+      paired.add(other);
+    }
+  }
 }
 
 /** Rows grouped by title. */
