@@ -2,6 +2,7 @@ import consola from 'consola';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../utils/envNumber';
 import { enqueueTrackerWrites, startWindowSeconds, type OutboxJob } from './trackerOutbox';
+import { rewatchGapMs } from './jellyfin/bulkMarks';
 import type { WatchTrackingService } from './watchTracking';
 
 const logger = consola.withTag('Playback');
@@ -37,7 +38,7 @@ export interface PlaybackReport {
  * position or timestamp, and repeats it across retries. Some clients also report
  * a single stop twice in two shapes, so a repeat is expected rather than a fault.
  */
-const seen = new LRUCache<string, true>({
+const seen = new LRUCache<string, number>({
   max: envInt('PLAYBACK_DEDUPE_MAX', 10000, 1),
   ttl: envInt('PLAYBACK_DEDUPE_TTL', 6 * 60 * 60, 60) * 1000,
 });
@@ -80,11 +81,14 @@ function markRepeatMs(): number {
   return envInt('PLAYBACK_MARK_REPEAT_WINDOW', 300, 0) * 1000;
 }
 
-export function isDuplicate(userUUID: string, id: string | null): boolean {
+/** A message seen before, within withinMs of the first time when given. */
+export function isDuplicate(userUUID: string, id: string | null, withinMs?: number): boolean {
   if (!id) return false;
   const key = `${userUUID}:${id}`;
-  if (seen.has(key)) return true;
-  seen.set(key, true);
+  const at = seen.get(key);
+  const now = Date.now();
+  if (at !== undefined && (withinMs === undefined || now - at < withinMs)) return true;
+  seen.set(key, now);
   return false;
 }
 
@@ -101,11 +105,12 @@ export function isRepeatWatched(userUUID: string, report: PlaybackReport): boole
   const key = `watched:${userUUID}:${video}`;
   const previous = decisions.get(key);
   const now = Date.now();
-  decisions.set(key, { intent, at: now });
-
-  if (!previous || previous.intent !== intent) return false;
-  if (report.event === 'played' || report.event === 'unplayed') return now - previous.at < markRepeatMs();
-  return true;
+  const finish = report.event !== 'played' && report.event !== 'unplayed';
+  // A finish after the rewatch gap from the last one kept is another viewing, as the watch history counts it.
+  const repeat = Boolean(previous && previous.intent === intent)
+    && now - previous!.at < (finish ? rewatchGapMs(Number(report.durationMs) || 0) : markRepeatMs());
+  if (!finish || !repeat) decisions.set(key, { intent, at: now });
+  return repeat;
 }
 
 /** Keeps one user's events apart from another's; the installation keeps the key it always had. */
@@ -314,7 +319,9 @@ export async function handlePlaybackReport(
     return { status: 400, reason: 'unrecognised event' };
   }
 
-  if (isDuplicate(viewerScope(userUUID, config), report.id)) {
+  // A finish names its position, which a rewatch can end on again: past the rewatch gap it is another viewing.
+  const finishGap = report.event === 'stop' && intentOf(report) === 'watched' ? rewatchGapMs(Number(report.durationMs) || 0) : undefined;
+  if (isDuplicate(viewerScope(userUUID, config), report.id, finishGap)) {
     logger.debug(`Duplicate ${report.event} for ${type}/${id} (${report.id})`);
     return { status: 204 };
   }

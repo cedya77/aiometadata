@@ -9,6 +9,7 @@ import { upsertPlaystateEverywhere } from './aliases';
 import { PLAY_SOURCES, type PlaySourceId } from '../playSources';
 import type { Descriptor } from './idsCodec';
 import { playCountOf } from './dto';
+import { rewatchGapMs } from './bulkMarks';
 
 const logger = consola.withTag('JellyfinPlaystate');
 
@@ -463,8 +464,7 @@ async function writePlaystate(
       return;
     }
     if (event === 'stop' && played === true) {
-      const gapMs = runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
-      const watch = finished ? { at: now, kind: 'finish', gapMs } : undefined;
+      const watch = finished ? { at: now, kind: 'finish', gapMs: rewatchGapMs(runtimeMs) } : undefined;
       await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, runtimeMs, played: true, lastPlayedAt: now, origin: 'server', ...(watch ? { watch } : {}) }, profile, session.aliases);
       return;
     }

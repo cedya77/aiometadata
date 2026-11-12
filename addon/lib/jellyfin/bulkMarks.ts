@@ -1,6 +1,11 @@
 import { envInt } from '../../utils/envNumber';
 import { parseStremioId } from './idsCodec';
 
+/** How long after a finish another finish of the same title is still that viewing, not a rewatch. */
+export function rewatchGapMs(runtimeMs: number): number {
+  return runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
+}
+
 /** How many marks in a row, each within the gap of the last, read as one bulk mark rather than viewings. */
 export function bulkMarkRule(): { size: number; gapMs: number } {
   return { size: envInt('JELLYFIN_BULK_MARK_SIZE', 6, 2), gapMs: envInt('JELLYFIN_BULK_MARK_GAP_SECONDS', 60, 0) * 1000 };

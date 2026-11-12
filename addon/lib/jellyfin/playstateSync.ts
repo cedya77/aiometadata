@@ -6,7 +6,7 @@ import { filmsHeldElsewhere, getPlaystatesAcross, upsertPlaystateEverywhere } fr
 import { profileKey, scopeConfigToProfile } from './profiles';
 import { accountOwner } from '../accounts';
 import { runAsAccountOwner } from './viewer';
-import { bulkTimes } from './bulkMarks';
+import { bulkTimes, rewatchGapMs } from './bulkMarks';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -92,8 +92,7 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
     const watchedAt = trackerAt ?? 0;
     if (row && row.played && Number(row.position_ms) > 0 && !paused.has(videoId) && watchedAt > Number(row.updated_at)) {
       const runtimeMs = Number(row.runtime_ms) || 0;
-      const gapMs = runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
-      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: watchedAt, lastPlayedKind: bulk.has(watchedAt) ? 'mark' : 'viewing', origin, watch: { at: watchedAt, kind: 'finish', gapMs } }, profile, heldAs);
+      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: watchedAt, lastPlayedKind: bulk.has(watchedAt) ? 'mark' : 'viewing', origin, watch: { at: watchedAt, kind: 'finish', gapMs: rewatchGapMs(runtimeMs) } }, profile, heldAs);
       added += 1;
       continue;
     }

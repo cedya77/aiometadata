@@ -15,6 +15,7 @@ import { isMatchable, scrobblingTrackers, trackerName, trackerOf, type Mark } fr
 import { sourceOfApp } from '../playSources';
 import { shouldTrackServiceMediaType } from '../watchTracking';
 import { sourceKeyFor } from './trackerMirror';
+import { rewatchGapMs } from './bulkMarks';
 import { mapWithConcurrency } from '../../utils/concurrency';
 import redis from '../redisClient';
 
@@ -193,10 +194,6 @@ export function historyKeyOf(config: any, userUUID: string, profile: string | nu
 const profileLabel = (names: Map<string, string>, key: string): string =>
   names.get(key) ?? (key ? key.slice(0, 8) : 'Main');
 
-function sameViewingMs(runtimeMs: number): number {
-  return runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
-}
-
 async function playRows(userUUID: string, rows: any[], names: Map<string, string>): Promise<PlayRow[]> {
   const described = await mapWithConcurrency(rows, envInt('JELLYFIN_DASHBOARD_DESCRIBE_CONCURRENCY', 8, 1), (row: any) => describe(userUUID, String(row.video_id)));
   const seen = new Map<string, PlayRow[]>();
@@ -207,7 +204,7 @@ async function playRows(userUUID: string, rows: any[], names: Map<string, string
     const watchedAt = row.watched_at ? Number(row.watched_at) : null;
     const keys = named.keys.map((id) => `${row.profile}|${id}`);
     const earlier = Number(row.earlier) > 0;
-    const within = sameViewingMs(Number(row.runtime_ms) || 0);
+    const within = rewatchGapMs(Number(row.runtime_ms) || 0);
     const held = keys.flatMap((key) => seen.get(key) ?? [])
       .find((entry) => watchedAt === null || entry.watchedAt === null || Math.abs(entry.watchedAt - watchedAt) < within);
     if (held) {
@@ -1875,7 +1872,7 @@ async function titleIds(meta: any, film: boolean): Promise<TitleIds> {
 }
 
 function viewings(ats: number[], runtimeMs: number): number[] {
-  const within = sameViewingMs(runtimeMs);
+  const within = rewatchGapMs(runtimeMs);
   const out: number[] = [];
   for (const at of [...new Set(ats)].sort((x, y) => x - y)) {
     if (!out.length || at - out[out.length - 1] >= within) out.push(at);
