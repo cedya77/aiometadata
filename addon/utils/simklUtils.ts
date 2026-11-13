@@ -2047,12 +2047,12 @@ function resolveSimklAnimeTarget(
     : null;
   if (!mapped) return null;
 
-  // Simkl often omits tvdb on anime entries, but the mapping carries the id it
-  // just resolved the episode against.
+  // The episode was resolved against the mapping's series, so its tvdb id is
+  // the one to use: Simkl's own can be missing or name a different show.
   let stremioId: string;
   if (provider === 'tmdb' && ids.tmdb) stremioId = `tmdb:${ids.tmdb}`;
   else if (provider === 'imdb' && ids.imdb) stremioId = normalizeImdbId(ids.imdb);
-  else stremioId = `tvdb:${ids.tvdb || mapped.tvdbId}`;
+  else stremioId = `tvdb:${mapped.tvdbId}`;
 
   return { stremioId, season: mapped.tvdbSeason, episode: mapped.tvdbEpisode };
 }
