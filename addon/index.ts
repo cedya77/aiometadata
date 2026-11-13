@@ -73,7 +73,7 @@ const { revokeSimklGrant } = require('./lib/accountLinks');
 const { SimklClient } = simklAuth;
 const jikan = require('./lib/mal');
 const buildInfo = require('./lib/buildInfo');
-const { clientDistDir, clientIndexPath, publicDir } = require('./lib/runtimePaths');
+const { appRoot, clientDistDir, clientIndexPath, publicDir } = require('./lib/runtimePaths');
 const ADDON_VERSION = buildInfo.version;
 const { withGlobalEpoch } = require('./lib/cacheEpoch');
 const idMapper = require('./lib/id-mapper');
@@ -149,6 +149,22 @@ addon.use((req, res, next) => {
 
 const { readiness } = require('./lib/lifecycle/runtime.js');
 const { createReadinessGate } = require('./lib/lifecycle/readiness.js');
+
+// The license texts and notices travel with every instance, so its users can read them (AGPL-3.0 section 13).
+const LICENSE_FILES = new Set(['LICENSE', 'LICENSE-FSL.md', 'LICENSING.md', 'NOTICE', 'TRADEMARKS.md', 'THIRD_PARTY_NOTICES.txt']);
+addon.get('/licenses/:file', (req, res) => {
+  const file = String(req.params.file);
+  if (!LICENSE_FILES.has(file)) return res.status(404).json({ error: 'Not found' });
+  res.type('text/plain; charset=utf-8');
+  res.sendFile(path.join(appRoot, file), (error) => {
+    if (error && !res.headersSent) res.status(404).json({ error: 'Not found' });
+  });
+});
+
+/** Where this instance's source can be had. An operator running a modified copy points it at their own. */
+function sourceCodeUrl() {
+  return getSetting('SOURCE_CODE_URL') || `https://github.com/cedya77/aiometadata/tree/v${ADDON_VERSION}`;
+}
 
 addon.get('/health/live', (req, res) => {
   res.status(200).json({
@@ -612,6 +628,7 @@ const respond = function (req, res, data, opts?) {
       simklActivitiesTTL: parseInt(getSetting('SIMKL_ACTIVITIES_TTL'), 10) || 1800,
       customDescriptionBlurb: getSetting('CUSTOM_DESCRIPTION_BLURB'),
       addonVersion: ADDON_VERSION,
+      sourceCodeUrl: sourceCodeUrl(),
       hasBuiltInTvdb: !!getSetting('BUILT_IN_TVDB_API_KEY'),
       hasBuiltInTmdb: !!getSetting('BUILT_IN_TMDB_API_KEY'),
       hasBuiltInMdblist: !!getSetting('BUILT_IN_MDBLIST_API_KEY'),

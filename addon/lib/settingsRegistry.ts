@@ -4572,6 +4572,15 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     envOnly: true,
   },
   {
+    key: 'SOURCE_CODE_URL',
+    envVar: 'SOURCE_CODE_URL',
+    label: 'Source Code URL',
+    description: "Where users of this instance can get its source code, shown in the configure page's About dialog. Leave empty for the official release this build was made from. If you run a modified copy, the AGPL requires you to offer your users its source: point this at it.",
+    category: 'Server & Storage',
+    type: 'string',
+    default: '',
+  },
+  {
     key: 'DATABASE_URI',
     envVar: 'DATABASE_URI',
     label: 'Database URI',

@@ -25,6 +25,11 @@ cp .env.example .env
 - **Description**: Your domain name for generating URLs
 - **Example**: `HOST_NAME=your-domain.com`
 
+### `SOURCE_CODE_URL`
+- **Default**: the official source of the release this build was made from (`https://github.com/cedya77/aiometadata/tree/v<version>`)
+- **Description**: Where the users of this instance can get its source code. The configure page's About dialog links to it. If you run a modified copy, the AGPL requires you to offer your users the source of your version: set this to where it is published.
+- **Example**: `SOURCE_CODE_URL=https://github.com/you/aiometadata-fork/tree/main`
+
 ### `NODE_ENV`
 - **Default**: `development`
 - **Options**: `development`, `production`
