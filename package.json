@@ -10,7 +10,7 @@
     "dev:server": "nodemon addon/server.js",
     "predev:server:ts": "npm run generate:build-info",
     "dev:server:ts": "nodemon --exec ts-node addon/server.ts",
-    "prebuild": "npm run generate:build-info",
+    "prebuild": "npm run generate:build-info && npm run notices",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "prebuild:backend": "npm run generate:build-info",

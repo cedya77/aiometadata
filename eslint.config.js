@@ -65,6 +65,17 @@ module.exports = tseslint.config(
     rules: legacyJsRules,
   },
   {
+    // .mjs files are ES modules wherever they live.
+    files: ["scripts/**/*.mjs"],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: globals.node,
+    },
+    rules: legacyJsRules,
+  },
+  {
     files: ["addon/utils/JSONCrush.js"],
     extends: [js.configs.recommended],
     languageOptions: {
