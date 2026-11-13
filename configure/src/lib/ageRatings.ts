@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 /** Most permissive last. An install URL may only pick a rating below the stored one. */
 export const AGE_RATING_ORDER = ['G', 'PG', 'PG-13', 'R', 'NC-17'] as const;
 

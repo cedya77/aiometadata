@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { Copy, ExternalLink, LayoutDashboard } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';

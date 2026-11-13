@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { inflateSync } from 'zlib';
 
 // Stremio's per-episode watched marks: `<anchorVideoId>:<anchorLength>:<base64(zlib(bits))>`, one bit per video

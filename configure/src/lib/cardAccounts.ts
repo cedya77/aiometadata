@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import type { AppConfig, CardService, CatalogConfig, JellyfinUser, JellyfinUserAccounts } from '@/contexts/config';
 import { WATCH_TRACKING_SERVICE_DEFINITIONS, WATCH_TRACKING_SERVICES } from './watchTracking';
 

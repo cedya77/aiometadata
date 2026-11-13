@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CalendarDays, CalendarPlus, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, ImageOff, Link2Off, Loader2, RotateCcw } from "lucide-react";

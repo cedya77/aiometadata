@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 // A Stremio library as the dashboard sends it: each profile's `datastoreGet` records, verbatim. A saved
 // `datastoreGet` result (an array, or `{ result }`) reads as one profile.
 

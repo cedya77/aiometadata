@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
 
 /** Where a walk stopped: the position a client asks for next, how many shown titles came before it, and what the walk needs to go on. */

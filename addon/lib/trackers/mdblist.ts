@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { envInt } from '../../utils/envNumber';
 import { MARK_KINDS, type Mark, type Tracker } from './types';
 import { TITLE_KEYS, cleanIds, dateOf, iso, markItem, mirrored, notFoundCount, scoreOf, titleIds, type MarkItem, type MarkOutcome } from './marks';

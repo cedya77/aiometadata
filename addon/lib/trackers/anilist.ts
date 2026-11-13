@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { MARK_KINDS, type Tracker } from './types';
 import { animeList, animeToken } from './animeList';
 

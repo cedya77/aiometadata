@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 // Stremio's account API, called straight from the browser so the password and keys never reach this server.
 
 export const STREMIO_API = 'https://api.strem.io/api/';

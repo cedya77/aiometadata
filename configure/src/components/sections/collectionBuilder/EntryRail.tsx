@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { AlertTriangle, ChevronRight, GripVertical, Tv, type LucideIcon } from 'lucide-react';
 import { useSortable } from '@dnd-kit/sortable';

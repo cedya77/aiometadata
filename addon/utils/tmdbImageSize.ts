@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 export const TMDB_IMAGE_HOST = 'https://image.tmdb.org/t/p';
 
 export const TMDB_POSTER_SIZE = 'w600_and_h900_bestv2';

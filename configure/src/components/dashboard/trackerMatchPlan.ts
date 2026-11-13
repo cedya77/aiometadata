@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 export type Ref = { season: number; episode: number };
 export type OurEpisode = { number: number; name: string | null; airsAt: number | null };
 export type TheirEpisode = { season: number; number: number; title: string | null; airedAt: number | null; sends: Ref; norm: string; words: Set<string> };

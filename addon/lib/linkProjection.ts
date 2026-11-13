@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 function getConfiguredHost(): string | null {
   if (!process.env.HOST_NAME) return null;
   return process.env.HOST_NAME.startsWith('http')

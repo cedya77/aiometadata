@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 /**
  * Whether a TMDB record's title and overview came back in the user's own language.
  * No imports on purpose: parseProps and getTmdb drag in the Redis cache stack, which

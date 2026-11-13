@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 /**
  * What may leave a config when a catalog is shared. Used by the catalog export in
  * the configure UI and by the collection exports, which embed catalogs so an

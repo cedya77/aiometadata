@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 /**
  * Typed by hand on a TV remote as often as pasted, so the alphabet leaves out
  * the characters that are read wrong and the groups keep the place visible.

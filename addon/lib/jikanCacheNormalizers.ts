@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 // Jikan (MAL) cache normalizers 
 function pickDefined(source: any, keys: string[]) {
   if (!source || typeof source !== 'object') return source;

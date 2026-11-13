@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 /**
  * TVDB files European Portuguese under `por` and Brazilian under `pt`, and most records
  * carry only one of the two. Falling straight from the missing one to English hands a

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ArrowDownWideNarrow, ArrowLeft, ArrowUpNarrowWide, Check, ChevronLeft, ChevronRight, ImageOff, X } from "lucide-react";

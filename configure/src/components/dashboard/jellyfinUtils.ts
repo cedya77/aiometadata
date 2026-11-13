@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useJellyfinPlays, type JellyfinTitleRef, type DashboardTab, type JellyfinPlayKind, type JellyfinPlayRow, type JellyfinProfileSummary } from "@/hooks/useDashboardQueries";

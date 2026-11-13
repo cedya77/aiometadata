@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, ChevronUp, Film, GripVertical, Layers, List, ListVideo, Loader2, PencilLine, Plus, Trash2, Tv, X } from "lucide-react";

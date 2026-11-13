@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { createContext, useCallback, useContext, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { dashboardUrl, navigateDashboard, useDashboardRoute, type DashboardPage, type DashboardRoute } from "@/lib/dashboardRoute";
 

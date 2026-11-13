@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 // A configuration's own Jellyfin page runs the dashboard's Jellyfin tab with a session in place of the admin key.
 
 const ROOT = '/jellyfin-page';

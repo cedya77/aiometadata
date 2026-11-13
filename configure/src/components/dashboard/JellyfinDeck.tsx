@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Film, Layers, LayoutGrid, Star, Tv } from "lucide-react";
 import { sizedArt } from "./art";

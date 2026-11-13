@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 /**
  * A catalog's `cacheTTL` is an override, not a copy of the instance default. It is
  * stored only when someone picks a value; left absent, the catalog follows whatever

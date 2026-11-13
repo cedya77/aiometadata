@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { Header } from './components/layout/Header';
 import { SettingsLayout } from './components/SettingsLayout';
 import { AdminProvider } from './contexts/AdminContext';

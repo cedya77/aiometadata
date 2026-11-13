@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import type { ComponentType } from "react";
 import { artAt } from "./art";
 import { AnimeSlide, FaceSlide, IntroSlide, MapSlide, OutroSlide, RhythmSlide, TopShowSlide, type StorySlideProps } from "./JellyfinYearStorySlides";

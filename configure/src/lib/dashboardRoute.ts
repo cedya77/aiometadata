@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useMemo, useSyncExternalStore } from 'react';
 import type { DashboardTab, JellyfinTitlePerson, JellyfinTitleRef } from '@/hooks/useDashboardQueries';
 import { ownPageBase, ownPageUser } from '@/lib/ownPage';

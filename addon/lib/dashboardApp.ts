@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 // The dashboard installs as a home screen app that opens where it was added: a Jellyfin tab opens on its own
 // configuration and user, any other page on the dashboard.
 

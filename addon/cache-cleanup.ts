@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 // Place this in server.ts or a new migrations.ts file
 import redisClient from './lib/redisClient.js'; // Your connected Redis client
 import consola from 'consola';

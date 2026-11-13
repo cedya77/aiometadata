@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 // Generated from the Library of Congress ISO 639-2 list (www.loc.gov/standards/iso639-2).
 // Each entry is `<639-1>:<639-2/B>`, then `/<639-2/T>` where the two differ.
 export const ISO_639 = [

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { lazy, Suspense, useMemo, useState, type CSSProperties } from "react";
 import { X } from "lucide-react";
 import type { JellyfinYearPeople, JellyfinYearTitle } from "@/hooks/useDashboardQueries";

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Check, CheckSquare, Ellipsis, Film, Loader2, MoreHorizontal, PencilLine, Play, Repeat, Square, Star, Tv } from "lucide-react";
 import type { JellyfinTitle, JellyfinTitleAction, JellyfinTitleEpisode, JellyfinTitlePerson } from "@/hooks/useDashboardQueries";

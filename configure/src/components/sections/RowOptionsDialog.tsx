@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useEffect, useId, useState } from 'react';
 import { Rows3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';

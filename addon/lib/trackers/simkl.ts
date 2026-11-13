@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { MARK_KINDS, type Mark, type Tracker } from './types';
 import { cleanIds, dateOf, iso, keysOf, markItem, markKeys, notFoundCount, scoreOf, type MarkItem, type MarkOutcome } from './marks';
 import { sharesId, targetsFor, type CopyItem, type CopyTarget, type WatchOutcome } from './watches';
