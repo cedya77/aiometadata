@@ -4,6 +4,26 @@ Thanks for your interest in contributing.
 
 This repository is maintained with limited review time, so we use a strict contribution process to keep reviews fair, fast, and useful.
 
+## Licenses and the contributor agreement
+
+AIOMetadata is under two licenses: the core under AGPL-3.0-or-later, and the
+v4 feature modules under FSL-1.1-ALv2 (Jellyfin server, trackers, dashboard).
+[`LICENSING.md`](../LICENSING.md) lists which paths are which. Contributions to
+both parts are welcome.
+
+- **Sign the CLA.** Before your first pull request can merge, you sign the
+  [Contributor License Agreement](CLA.md) by commenting the sentence the CLA
+  bot asks for. You keep your copyright and give the maintainer a license that
+  lets the project keep publishing your work under its licenses, including
+  future ones. Everyone named in a `Co-authored-by` trailer signs too: the bot
+  checks every author in the pull request.
+- **Add the license header.** Every source file starts with an SPDX header.
+  `npm run check:licenses -- --fix` writes the right one for the file's path.
+  A new file under an FSL path, or a new FSL module, also needs its path in
+  `LICENSING.md`.
+- **Only contribute what you may.** Don't copy code from other projects unless
+  its license allows it and you say so in the pull request.
+
 ## Before you open a pull request
 
 For anything beyond a tiny typo, documentation fix, or clearly isolated bugfix, **open an issue first and wait for maintainer confirmation before starting work**.
@@ -60,6 +80,7 @@ Before marking a PR ready for review, make sure you have:
 - added or updated tests when needed;
 - added or updated documentation when needed;
 - kept the diff focused and reviewable.
+- signed the CLA, and checked that new files carry the license header (`npm run check:licenses`).
 
 ## Fast-path exceptions
 
