@@ -4,19 +4,26 @@ Thanks for your interest in contributing.
 
 This repository is maintained with limited review time, so we use a strict contribution process to keep reviews fair, fast, and useful.
 
-## Licenses and the contributor agreement
+## Licenses
 
 AIOMetadata is under two licenses: the core under AGPL-3.0-or-later, and the
 v4 feature modules under FSL-1.1-ALv2 (Jellyfin server, trackers, dashboard).
 [`LICENSING.md`](../LICENSING.md) lists which paths are which. Contributions to
 both parts are welcome.
 
-- **Sign the CLA.** Before your first pull request can merge, you sign the
-  [Contributor License Agreement](CLA.md) by commenting the sentence the CLA
-  bot asks for. You keep your copyright and give the maintainer a license that
-  lets the project keep publishing your work under its licenses, including
-  future ones. Everyone named in a `Co-authored-by` trailer signs too: the bot
-  checks every author in the pull request.
+- **Contribute under the project's licenses.** By opening a pull request you
+  confirm that you wrote the change or have the right to submit it, and that
+  you license it under the license of each file it touches, as `LICENSING.md`
+  maps it:
+  - core files: AGPL-3.0-or-later, with the additional permission for linking
+    the FSL modules;
+  - feature modules: FSL-1.1-ALv2.
+
+  cedya77 then publishes it as part of AIOMetadata on those terms, including
+  each FSL release's change to Apache-2.0 two years after it ships. You keep
+  your copyright. Everyone named in a `Co-authored-by` trailer must agree too.
+  The pull request template has a box for this, and a pull request can't pass
+  the intake check without it.
 - **Add the license header.** Every source file starts with an SPDX header.
   `npm run check:licenses -- --fix` writes the right one for the file's path.
   A new file under an FSL path, or a new FSL module, also needs its path in
@@ -80,7 +87,7 @@ Before marking a PR ready for review, make sure you have:
 - added or updated tests when needed;
 - added or updated documentation when needed;
 - kept the diff focused and reviewable.
-- signed the CLA, and checked that new files carry the license header (`npm run check:licenses`).
+- confirmed in the template that the change is under the project's licenses, and checked that new files carry the license header (`npm run check:licenses`).
 
 ## Fast-path exceptions
 

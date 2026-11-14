@@ -191,8 +191,10 @@ runs.
 **When does a release become Apache-2.0?** On the second anniversary of the
 date that release is published. The release notes give the date.
 
-**Can I contribute?** Yes. Contributions are accepted under the contributor
-license agreement described in [`docs/contributing.md`](docs/contributing.md).
+**Can I contribute?** Yes. A contribution comes in under the license of each
+file it touches, as the map above sets out, and the pull request template asks
+you to confirm that. [`docs/contributing.md`](docs/contributing.md) has the
+details.
 
 ## Licensor's note on hosting
 
