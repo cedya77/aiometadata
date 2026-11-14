@@ -25,6 +25,7 @@ import { CacheTTLField } from '@/components/CacheTTLField';
 import { useConfig } from '@/contexts/ConfigContext';
 import type { CatalogConfig } from '@/contexts/config';
 import { mergedSourcesShape } from '@/lib/posterShape';
+import { isMovieLensExploreId } from '@/lib/movielensCatalogIds';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -3470,7 +3471,7 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
 
   const hasRatingPosters = config.posterRatingProvider !== 'none' && !!(config.apiKeys?.rpdb || config.apiKeys?.topPoster || config.customPosterUrlPattern);
   const isDiscover = catalog.id.includes('.discover.') && !!catalog.metadata?.discover?.formState;
-  const isMovieLensExplore = catalog.source === 'movielens' && catalog.id.startsWith('movielens.explore');
+  const isMovieLensExplore = catalog.source === 'movielens' && isMovieLensExploreId(catalog.id);
   const canDuplicate = isDiscover || isMovieLensExplore;
   const canDelete = true;
 

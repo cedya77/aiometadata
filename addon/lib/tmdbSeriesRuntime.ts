@@ -131,7 +131,10 @@ async function resolveSeriesRuntime(details: any, seasons: any = null): Promise<
 
   const fromEpisodes = runtimeFromEpisodes(seasons);
   if (fromEpisodes !== null) {
-    await rememberSeriesRuntime(tmdbId, fromEpisodes);
+    // Fire-and-forget: storing the value must never delay the response.
+    rememberSeriesRuntime(tmdbId, fromEpisodes).catch((error: any) => {
+      logger.debug(`Could not remember runtime for tmdb:${tmdbId}: ${error?.message || error}`);
+    });
     return fromEpisodes;
   }
 

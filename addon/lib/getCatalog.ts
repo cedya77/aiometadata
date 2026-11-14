@@ -28,6 +28,7 @@ import { resolveAllIds } from './id-resolver.js';
 import { cacheWrapTvdbApi, cacheWrap, cacheWrapCatalog, cacheWrapAniListCatalog, cacheWrapJikanApi, cacheWrapGlobal, classifyResultAllowEmpty, stableStringify, CATALOG_TTL } from './getCache.js';
 import { applyCatalogKeyArgs, applyCatalogKeyStamps, hiddenCatalogGenre } from './catalogKeyArgs.js';
 import { endOfList, withListedTotal } from './catalogPagination';
+import { isMovieLensExploreId } from './movielensCatalogIds';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { tmdbCertificationFilter } from '../utils/ageRating';
 import { getMeta } from './getMeta.js';
@@ -2971,7 +2972,8 @@ async function getMovieLensCatalog(
 
     const isList = catalogId.startsWith('movielens.list.');
     const isWatchlist = catalogId === 'movielens.watchlist';
-    const isExplore = catalogId.startsWith('movielens.explore');
+    // Older ids such as movielens.toppicks are explore catalogs too.
+    const isExplore = isMovieLensExploreId(catalogId);
     if (!isList && !isWatchlist && !isExplore) {
       logger.warn(`[MovieLens] Unknown catalog id ${catalogId}`);
       return [];

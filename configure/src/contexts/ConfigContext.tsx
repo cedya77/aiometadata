@@ -5,6 +5,7 @@ import { setSimklListMinTTL } from '@/lib/catalogTTL';
 import { AppConfig, CatalogConfig, SearchConfig } from "./config";
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { allCatalogDefinitions, allSearchProviders } from "@/data/catalogs";
+import { canonicalTimezone } from '@/data/timezones';
 import { LoadingScreen } from "@/components/LoadingScreen"; 
 import { declaresStremioEvents, hasAnyWatchTrackingEnabled } from '@/lib/watchTracking';
 import { reconcileTagRegistry } from '@/lib/catalogShare';
@@ -191,7 +192,7 @@ const initialConfig: AppConfig = {
   searchEnabled: true,
   sessionId: "",
   catalogSetupComplete: false,
-  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+  timezone: canonicalTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
   catalogs: allCatalogDefinitions
     .map(c => ({
       id: c.id,

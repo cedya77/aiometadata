@@ -17,6 +17,7 @@ import { configCatalogFor, placeCollections } from "./collectionBuilder/homeOrde
 import { similarCatalogs } from "./similarCatalog";
 import { holderCards, rowOwner, servesCatalog, withAccountOwner } from "./accounts";
 import { hasNamedViewers } from "./jellyfin/profiles";
+import { isMovieLensExploreId } from "./movielensCatalogIds";
 const jikan: any = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
 const catalogsTranslations: Record<string, Record<string, string>> = catalogsTranslationsJson;
@@ -1250,7 +1251,7 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
       if (userCatalog.id.startsWith('movielens.')) {
           logger.debug(`Processing MovieLens catalog: ${userCatalog.id}`);
           const catalogType = userCatalog.displayType || userCatalog.type;
-          const takesGenres = userCatalog.id.startsWith('movielens.explore') || userCatalog.id === 'movielens.watchlist';
+          const takesGenres = isMovieLensExploreId(userCatalog.id) || userCatalog.id === 'movielens.watchlist';
           const genreOptions = takesGenres ? MOVIELENS_GENRES : [];
           const options = userCatalog.showInHome ? genreOptions : ['None', ...genreOptions];
           const extra: any[] = [];

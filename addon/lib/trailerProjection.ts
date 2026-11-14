@@ -40,7 +40,7 @@ type Fetched =
   | { outcome: 'failed' };
 
 function requestTimeoutMs(): number {
-  return envInt('TRAILER_ADDON_TIMEOUT_MS', 5000, 1);
+  return envInt('TRAILER_ADDON_TIMEOUT_MS', 6000, 500);
 }
 
 function answerTtl(): number {
@@ -179,7 +179,8 @@ async function resourceOf(manifestUrl: string, hash: string): Promise<AddonResou
     if (cached?.resource === 'stream' || cached?.resource === 'meta') return cached.resource as AddonResource;
 
     const fetched = await fetchJson(manifestUrl);
-    if (fetched.outcome === 'failed') return null;
+    // A manifest that could not be read (404, other error, timeout) is not remembered; it is read again next time.
+    if (fetched.outcome === 'failed' || fetched.outcome === 'missing') return null;
     const resource: AddonResource = fetched.outcome === 'ok' && offersStreams(fetched.data) ? 'stream' : 'meta';
     await writeCached(key, { resource }, answerTtl());
     return resource;

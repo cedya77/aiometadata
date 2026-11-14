@@ -149,20 +149,32 @@ async function clear(): Promise<void> {
   }
 }
 
+async function loadDirect(loader: Loader): Promise<any> {
+  return loader();
+}
+
 function getOrLoad(key: string, loader: Loader): Promise<any> {
+  // Without Redis the in-process copy cannot be kept in step with saves on
+  // other replicas, so every load goes straight to the loader and nothing is
+  // served from or stored in memory.
+  if (!redisReady()) return loadDirect(loader);
+
   const inFlight = pendingLoads.get(key);
   if (inFlight) return inFlight.promise;
 
   const record = {} as PendingLoad;
   record.promise = (async () => {
+    if (!redisReady()) return loader();
+
     const cached = await get(key);
     if (cached !== null && cached !== undefined) return cached;
 
     const value = await loader();
     // A del() or clear() while the loader ran drops this record; the value is
     // still returned to the waiting callers but not cached, since it may predate
-    // the change that caused the del.
-    if (value !== null && value !== undefined && pendingLoads.get(key) === record) {
+    // the change that caused the del. If Redis went away during the load the
+    // value is not held in memory either.
+    if (value !== null && value !== undefined && pendingLoads.get(key) === record && redisReady()) {
       set(key, value).catch((error) => {
         logger.warn(`Config cache store failed for ${shortKey(key)}...: ${errorMessage(error)}`);
       });

@@ -7,7 +7,29 @@ export interface TimezoneOption {
   label: string;
 }
 
+// Obsolete IANA aliases that some browsers still list, mapped to the current
+// zone name. The picker offers and saves only the current name.
+const legacyTimezoneAliases: Record<string, string> = {
+  'Asia/Calcutta': 'Asia/Kolkata',
+  'Asia/Saigon': 'Asia/Ho_Chi_Minh',
+  'Asia/Katmandu': 'Asia/Kathmandu',
+  'Asia/Rangoon': 'Asia/Yangon',
+  'Europe/Kiev': 'Europe/Kyiv',
+  'America/Buenos_Aires': 'America/Argentina/Buenos_Aires',
+  'Atlantic/Faeroe': 'Atlantic/Faroe',
+  'Pacific/Truk': 'Pacific/Chuuk',
+  'Pacific/Ponape': 'Pacific/Pohnpei',
+};
+
+/** The current IANA name for a zone, replacing a known obsolete alias. */
+export function canonicalTimezone(zone: string): string {
+  return Object.prototype.hasOwnProperty.call(legacyTimezoneAliases, zone)
+    ? legacyTimezoneAliases[zone]
+    : zone;
+}
+
 // Used when the browser cannot list its zones (Intl.supportedValuesOf missing).
+// Current IANA names only.
 const fallbackTimezones = [
   'UTC',
   'America/New_York',
@@ -59,7 +81,8 @@ export function formatTimezoneLabel(zone: string): string {
 }
 
 function buildTimezoneOptions(): TimezoneOption[] {
-  const zones = new Set(listRuntimeTimezones());
+  // Aliases collapse onto their current name, so each zone is listed once.
+  const zones = new Set(listRuntimeTimezones().map(canonicalTimezone));
   zones.delete('UTC');
   const options = Array.from(zones)
     .map(zone => ({ value: zone, label: formatTimezoneLabel(zone) }))
@@ -73,9 +96,10 @@ export const timezoneOptions: TimezoneOption[] = buildTimezoneOptions();
 /**
  * The options to show for a given saved value. A zone missing from the
  * generated list (older browser, or saved elsewhere) is added so the picker
- * still shows and keeps it.
+ * still shows and keeps it. An obsolete alias is matched by its current name.
  */
 export function timezoneOptionsWith(selected: string | undefined): TimezoneOption[] {
+  if (selected) selected = canonicalTimezone(selected);
   if (!selected || timezoneOptions.some(opt => opt.value === selected)) return timezoneOptions;
   return [{ value: selected, label: formatTimezoneLabel(selected) }, ...timezoneOptions];
 }

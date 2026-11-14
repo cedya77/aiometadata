@@ -5,6 +5,7 @@ import { LRUCache } from 'lru-cache';
 import consola from 'consola';
 import { isDiscoverCatalogId, applyDiscoverSignature } from './discoverCatalogSignature';
 import { defaultsToNoneGenre } from './genreNoneDefault';
+import { isMovieLensExploreId } from './movielensCatalogIds';
 import { envInt } from '../utils/envNumber';
 
 const logger = consola.withTag('Catalog');
@@ -116,7 +117,7 @@ export async function applyCatalogKeyStamps(args: Record<string, any>, catalogId
     }
   }
 
-  if (catalogId.startsWith('movielens.explore')) {
+  if (isMovieLensExploreId(catalogId)) {
     try {
       const credId = config.apiKeys?.movieLensCredId;
       const explicitTags = String(catalogConfig?.metadata?.tags || '')

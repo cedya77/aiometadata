@@ -455,8 +455,9 @@ const getCacheHeaders = function (opts) {
 
 // A household user named by `viewer` brings their own tags, which stand in for the
 // install URL's `tag` for the whole request. Set by the routes once the name is matched.
+// A user without tags of their own leaves the URL's `tag` (and any cap it carries) in force.
 function tagQueryOf(req) {
-  return Array.isArray(req.viewerTags) ? req.viewerTags : req.query.tag;
+  return Array.isArray(req.viewerTags) && req.viewerTags.length > 0 ? req.viewerTags : req.query.tag;
 }
 
 function refuseUnknownViewer(res, area, userUUID, name, level = 'info') {

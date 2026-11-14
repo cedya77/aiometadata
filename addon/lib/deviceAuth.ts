@@ -121,18 +121,21 @@ function parseSession(raw: unknown): DeviceAuthSession | null {
   }
 }
 
-async function readFromRedis(id: string): Promise<DeviceAuthSession | null> {
-  if (!redis) return null;
+/** Redis's answer for a session, or NO_ANSWER when Redis is absent, not ready, slow or failing. */
+const NO_ANSWER = Symbol('no answer');
+
+async function readFromRedis(id: string): Promise<DeviceAuthSession | null | typeof NO_ANSWER> {
+  if (!redis || redis.status !== 'ready') return NO_ANSWER;
   try {
     const raw = await within(redis.get(sessionKey(id)), REDIS_READ_WAIT_MS);
     if (raw === TIMED_OUT) {
-      logger.debug('Redis did not answer a code sign-in session lookup in time; treating it as unknown');
-      return null;
+      logger.debug('Redis did not answer a code sign-in session lookup in time; using the in-process copy');
+      return NO_ANSWER;
     }
     return parseSession(raw);
   } catch (error: any) {
     logger.debug(`Could not read code sign-in session from Redis: ${error?.message || error}`);
-    return null;
+    return NO_ANSWER;
   }
 }
 
@@ -159,17 +162,26 @@ export function createDeviceAuthSession(provider: string, grant: DeviceCodeGrant
 }
 
 /**
- * The live session of this provider with this id, or null. Another replica's
- * session is found through Redis; an expired one is deleted.
+ * The live session of this provider with this id, or null; an expired one is
+ * deleted. When Redis answers it is the authority, so a cancel, a widened poll
+ * gap or an expiry recorded by another replica is seen here. The in-process
+ * copy is used only when Redis is absent, not ready or does not answer in time.
  */
 export async function getDeviceAuthSession(provider: string, id: unknown): Promise<DeviceAuthSession | null> {
   if (!isDeviceAuthSessionId(id)) return null;
   pruneExpired();
 
-  let session = sessions.get(id) || null;
-  if (!session) {
-    session = await readFromRedis(id);
-    if (session) sessions.set(id, session);
+  let session: DeviceAuthSession | null;
+  const fromRedis = await readFromRedis(id);
+  if (fromRedis === NO_ANSWER) {
+    session = sessions.get(id) || null;
+  } else if (fromRedis) {
+    session = fromRedis;
+    sessions.set(id, session);
+  } else {
+    // Gone from Redis (cancelled, finished or expired elsewhere): drop any stale local copy.
+    sessions.delete(id);
+    session = null;
   }
   if (!session) return null;
 

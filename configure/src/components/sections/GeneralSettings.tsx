@@ -9,7 +9,7 @@ import { useConfig } from '@/contexts/ConfigContext';
 
 import { languageOptions } from '@/data/languages';
 import { ratingCountryCodes } from '@/data/ratingCountries';
-import { timezoneOptionsWith } from '@/data/timezones';
+import { canonicalTimezone, timezoneOptionsWith } from '@/data/timezones';
 
 const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
 const ratingCountryOptions = ratingCountryCodes
@@ -89,7 +89,7 @@ export function GeneralSettings() {
   };
 
   const handleTimezoneChange = (value: string) => {
-    setConfig(prevConfig => ({ ...prevConfig, timezone: value }));
+    setConfig(prevConfig => ({ ...prevConfig, timezone: canonicalTimezone(value) }));
   };
 
   return (
@@ -128,7 +128,7 @@ export function GeneralSettings() {
                 <Label htmlFor="timezone" className="font-medium">Timezone</Label>
                 <p className="text-sm text-muted-foreground">For calendar-based features (e.g., Trakt Calendar).</p>
               </div>
-              <Select value={config.timezone || 'UTC'} onValueChange={handleTimezoneChange}>
+              <Select value={canonicalTimezone(config.timezone || 'UTC')} onValueChange={handleTimezoneChange}>
                 <SelectTrigger id="timezone" className="w-full sm:w-[240px] shrink-0">
                   <SelectValue placeholder="Select timezone" />
                 </SelectTrigger>

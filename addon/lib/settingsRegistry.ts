@@ -2955,8 +2955,8 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     description: 'How long a request to a user\'s trailer addon may take before the metadata provider\'s trailer is used instead.',
     category: 'Features',
     type: 'number',
-    default: 5000,
-    min: 1,
+    default: 6000,
+    min: 500,
   },
   {
     key: 'TRAILER_ADDON_CATALOG_WAIT_MS',

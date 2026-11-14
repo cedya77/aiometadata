@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useConfig } from '@/contexts/ConfigContext';
 import { CatalogConfig } from '@/contexts/config';
+import { isMovieLensExploreId } from '@/lib/movielensCatalogIds';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -149,7 +150,7 @@ export function MovieLensIntegration({ isOpen, onClose }: MovieLensIntegrationPr
   };
 
   const addCatalog = (id: string, name: string, metadata?: Record<string, unknown>) => {
-    const isExplore = id.startsWith('movielens.explore');
+    const isExplore = isMovieLensExploreId(id);
     const taken = config.catalogs.some(c => c.id === id);
     if (!isExplore && taken) {
       toast.info(`${name} is already added.`);

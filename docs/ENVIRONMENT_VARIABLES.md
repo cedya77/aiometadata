@@ -663,7 +663,7 @@ These caps bound the per-process heap used by module-level caches. The defaults 
 A configuration can take trailers from a Stremio trailer addon instead of the metadata provider. These settings bound how that addon is asked.
 
 ### `TRAILER_ADDON_TIMEOUT_MS`
-- **Default**: `5000`
+- **Default**: `6000` (minimum `500`)
 - **Description**: How long a request to a user's trailer addon may take before the metadata provider's trailer is used instead.
 
 ### `TRAILER_ADDON_CATALOG_WAIT_MS`
