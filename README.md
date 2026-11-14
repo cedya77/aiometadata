@@ -181,17 +181,26 @@ instance is bound by the terms of every provider it talks to, and is the API
 licensee for any server-wide keys it configures (the `BUILT_IN_*_API_KEY`
 settings serve every user of that instance under the operator's account).
 
-- **TMDB.** The standard TMDB API license does not permit commercial use; that
-  needs a separate written agreement with TMDB. Any instance must show TMDB's
-  attribution (see below).
-- **IMDb datasets** (`datasets.imdbws.com`, used for IMDb ratings). Available
-  for personal and non-commercial use only. An instance run commercially must
-  not use this feature.
-- **TVDB, Trakt, Simkl, MyAnimeList, AniList, Kitsu, Fanart.tv, MDBList, RPDB,
-  MovieLens, Letterboxd, Gemini and OpenRouter** each have their own API terms.
-  Several restrict commercial use or require you to register your own app.
-  Read the current terms of every provider you enable before you offer an
-  instance to anyone else.
+The main obligations, as published on 14 Nov 2026 (details, sources and the
+providers not covered here are in [docs/provider-terms.md](docs/provider-terms.md)):
+
+- **Commercial use is not allowed** by TMDB's standard license (a written
+  agreement with TMDB is required) or by the IMDb datasets, which are for
+  personal and non-commercial use only.
+- **Commercial use needs a license above $150/month** of revenue on Simkl and
+  AniList, and **written authorization** on MyAnimeList's official API.
+- **Scraping:** Letterboxd's terms prohibit automated extraction, and Jikan
+  scrapes MyAnimeList, whose agreement prohibits scraping. A commercial
+  instance should get permission or switch these off (`JIKAN_ENABLED=false`).
+- **Attribution shown to users:** TMDB's logo and notice (below, and in the
+  configure page's About dialog), TheTVDB with a link, a "not endorsed by
+  Trakt" line, a visible Simkl link, and a credit to TVmaze, whose data is
+  CC BY-SA 4.0.
+- **Caching:** TMDB content may be cached for at most 6 months, including in
+  the meta cold store and the image cache.
+- **AI providers:** Gemini and OpenRouter users must be 18 or older. Only the
+  paid Gemini tier may serve users in the EEA, UK and Switzerland. OpenRouter
+  forbids reselling model access.
 
 ### TMDB attribution
 
