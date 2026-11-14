@@ -519,6 +519,21 @@ function refuseUnknownViewer(res, area, userUUID, name, quiet = false) {
   return res.status(404).json({ error: "Unknown viewer" });
 }
 
+// The form every language the configuration page offers takes.
+const TAG_LANGUAGE = /^[a-z]{2}-[A-Z]{2}$/;
+
+/** The language of the first tag, in the configuration's order, that a read goes through and sets one; copied, as below. */
+function withTagLanguage(config, req) {
+  const asked = tagsAsked(req);
+  if (!asked) return config;
+  const { tags } = resolveManifestTags(config, asked);
+  const wanted = new Set(tags.map((tag) => String(tag).toLowerCase()));
+  const tag = (Array.isArray(config.tags) ? config.tags : []).find((t) =>
+    wanted.has(String(t?.name).toLowerCase()) && TAG_LANGUAGE.test(String(t?.language || '')));
+  if (!tag || tag.language === config.language) return config;
+  return { ...config, language: tag.language };
+}
+
 /**
  * The filtering an install URL asks for, from the profiles it names and from the raw
  * parameters. One UUID can then serve both an unrestricted and a family install.
@@ -4858,18 +4873,18 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
     const { userUUID } = req.params;
     try {
         // Load config from database
-        const config = await database.getUserConfig(userUUID);
-        if (!config) {
+        const storedConfig = await database.getUserConfig(userUUID);
+        if (!storedConfig) {
             consola.debug(`[Manifest] No config found for user: ${userUUID}`);
             res.setHeader('Access-Control-Allow-Origin', '*');
             res.setHeader('Access-Control-Allow-Headers', '*');
             return res.status(404).send({ err: "User configuration not found." });
         }
-        
         const { profileForViewer, scopeConfigToProfile } = require('./lib/jellyfin/profiles');
-        const profile = profileForViewer(config, userUUID, req.query.viewer);
+        const profile = profileForViewer(storedConfig, userUUID, req.query.viewer);
         if (profile === undefined) return refuseUnknownViewer(res, 'Manifest', userUUID, req.query.viewer);
         if (profile?.tags.length) req.viewerTags = profile.tags;
+        const config = withTagLanguage(storedConfig, req);
 
         const { tags, unknown: unknownTags } = resolveManifestTags(config, tagsAsked(req));
         req.manifestTags = tags;
@@ -4972,7 +4987,7 @@ const catalogRoute = async function (req, res) {
     return res.status(404).send({ error: "User configuration not found" });
   }
   const { viewerConfigFor } = require('./lib/accounts');
-  const config = applyRatingOverrides(viewerConfigFor(storedConfig, req.params.accountOwner, id), req, userUUID);
+  const config = withTagLanguage(applyRatingOverrides(viewerConfigFor(storedConfig, req.params.accountOwner, id), req, userUUID), req);
   config.userUUID = userUUID;
 
   {
@@ -5669,11 +5684,16 @@ const metaRoute = async function (req, res) {
   }
   
   // Load config from database
-  const config = await loadRouteConfig(userUUID);
-  if (!config) {
+  const storedConfig = await loadRouteConfig(userUUID);
+  if (!storedConfig) {
     return res.status(404).send({ error: "User configuration not found" });
   }
-  
+  if (req.query.viewer) {
+    const viewer = require('./lib/jellyfin/profiles').profileForViewer(storedConfig, userUUID, req.query.viewer);
+    if (viewer?.tags.length) req.viewerTags = viewer.tags;
+  }
+  const config = withTagLanguage(storedConfig, req);
+
   // Add userUUID to config for per-user token caching
   config.userUUID = userUUID;
   config.addonIdentifier = req.addonIdentifier || userUUID;
