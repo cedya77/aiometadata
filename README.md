@@ -192,10 +192,10 @@ providers not covered here are in [docs/provider-terms.md](docs/provider-terms.m
 - **Scraping:** Letterboxd's terms prohibit automated extraction, and Jikan
   scrapes MyAnimeList, whose agreement prohibits scraping. A commercial
   instance should get permission or switch these off (`JIKAN_ENABLED=false`).
-- **Attribution shown to users:** TMDB's logo and notice (below, and in the
-  configure page's About dialog), TheTVDB with a link, a "not endorsed by
-  Trakt" line, a visible Simkl link, and a credit to TVmaze, whose data is
-  CC BY-SA 4.0.
+- **Attribution shown to users:** the configure page's About dialog (click
+  the version number) shows what each provider asks for: TMDB's logo and
+  notice (also below), TheTVDB with a link, a "not endorsed by Trakt" line, a
+  visible Simkl link, and a credit to TVmaze, whose data is CC BY-SA 4.0.
 - **Caching:** TMDB content may be cached for at most 6 months, including in
   the meta cold store and the image cache.
 - **AI providers:** Gemini and OpenRouter users must be 18 or older. Only the

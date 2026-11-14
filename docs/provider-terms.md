@@ -19,12 +19,12 @@ that date.
 | --- | --- | --- | --- | --- |
 | TMDB | metadata, images, search | **Not allowed** without a written agreement with TMDB | TMDB logo and notice (shown in the About dialog) | Cache TMDB content at most 6 months; no use to train AI models |
 | IMDb datasets | IMDb ratings | **Not allowed**: "personal and non-commercial use" only | — | — |
-| TheTVDB | metadata, art | Commercial projects contact TVDB sales; discounts for free and open-source projects | Attribution **with a link to TheTVDB.com** to end users viewing its metadata | — |
-| Trakt | catalogs, tracking, scrobbling | Allowed on the free Standard tier | A line saying the app uses Trakt but is not endorsed or certified by Trakt | 500 GET per 5 min per user (or per client id and IP unauthenticated), 1 write/s; no reusable catalog copies |
-| Simkl | catalogs, tracking | Free under $150/month revenue; a commercial license at or above it | A visible "Simkl" attribution linking to each item's Simkl page; Trending sections titled with "Simkl" | 10 GET/s and 1 POST/s per client id and per user token |
+| TheTVDB | metadata, art | Commercial projects contact TVDB sales; discounts for free and open-source projects | Attribution **with a link to TheTVDB.com** to end users viewing its metadata (shown in the About dialog) | — |
+| Trakt | catalogs, tracking, scrobbling | Allowed on the free Standard tier | A line saying the app uses Trakt but is not endorsed or certified by Trakt (shown in the About dialog) | 500 GET per 5 min per user (or per client id and IP unauthenticated), 1 write/s; no reusable catalog copies |
+| Simkl | catalogs, tracking | Free under $150/month revenue; a commercial license at or above it | A visible "Simkl" attribution (shown in the About dialog), ideally linking to each item's Simkl page; Trending sections titled with "Simkl" | 10 GET/s and 1 POST/s per client id and per user token |
 | MyAnimeList (official API) | anime lists, tracking | Earning money needs MyAnimeList's written authorization | Credit MyAnimeList as the source | Your own Client ID, never shared; scraping prohibited; delete removed content within 24 h |
 | AniList | anime catalogs, lists | Free under $150/month revenue; a commercial license above it (contact@anilist.co) | — | 90 requests/min (temporarily 30/min) |
-| TVmaze | schedules, episodes | Allowed: data is CC BY-SA 4.0 | Credit TVmaze with a link; share-alike applies to the data | 20 calls per 10 s per IP |
+| TVmaze | schedules, episodes | Allowed: data is CC BY-SA 4.0 | Credit TVmaze with a link (shown in the About dialog); share-alike applies to the data | 20 calls per 10 s per IP |
 | Gemini (Google) | AI search, recommendations | Allowed under Google's API terms | — | Users must be 18+; only paid tier for EEA, UK and Swiss users; unpaid-tier prompts may train Google's models |
 | OpenRouter | AI search, recommendations | Allowed, but **no reselling of model access** | — | Users must be 18+; key holder responsible for all use |
 | MDBList | lists, ratings | Not verified | — | Quotas are per account and shared by all its keys: 1,000 requests/day free, more on paid tiers |
