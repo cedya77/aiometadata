@@ -37,6 +37,7 @@ whole folder):
 - `addon/lib/collectionBuilder/homeOrder.ts`
 - `addon/lib/collectionBuilder/mergeModes.ts`
 - `addon/lib/dashboardApp.ts`
+- `addon/lib/featureDatabase.ts`
 - `addon/lib/playSources.ts`
 - `addon/lib/tmdbSeriesRuntime.ts`
 - `addon/lib/stremioEventStatus.ts`
@@ -56,6 +57,7 @@ whole folder):
 - `configure/src/components/users/Face.tsx`
 - `configure/src/components/users/HouseholdUsers.tsx`
 - `configure/src/components/users/InstallLinks.tsx`
+- `configure/src/hooks/useDashboardQueries.ts`
 - `configure/src/hooks/useJellyfinServer.ts`
 - `configure/src/hooks/useOwnPageStatus.ts`
 - `configure/src/hooks/useStremioLinkStatus.ts`
@@ -69,9 +71,12 @@ whole folder):
 - `configure/src/lib/stremioAccount.ts`
 <!-- fsl-paths:end -->
 
-These are the folders and files v4 adds over v3.8.3. Earlier versions of the
-four folders shipped in v3.8.3 and before, and those versions stay under the
-GPL-3.0 they were released with.
+These are the folders and files v4 adds over v3.8.3, plus two that carry
+mostly v4 work: `addon/lib/featureDatabase.ts` holds the v4 feature modules'
+tables and queries, split out of the core store (`addon/lib/databaseCore.ts`),
+and `configure/src/hooks/useDashboardQueries.ts` serves only the dashboard.
+Earlier versions of these folders and files shipped in v3.8.3 and before, and
+those versions stay under the GPL-3.0 they were released with.
 
 **Not covered by either license.** These files are third-party material,
 listed in [`NOTICE`](NOTICE):
