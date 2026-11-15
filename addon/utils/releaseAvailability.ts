@@ -103,12 +103,7 @@ function normalizeMetaReleaseAvailability<T extends MetaWithReleaseAvailability 
     }
   }
 
-  if (meta.app_extras && Object.prototype.hasOwnProperty.call(meta.app_extras, 'releaseDates')) {
-    delete meta.app_extras.releaseDates;
-    if (isEmptyPlainObject(meta.app_extras)) {
-      delete meta.app_extras;
-    }
-  }
+  compactReleaseDatesInPlace(meta);
 
   return meta;
 }
@@ -129,6 +124,57 @@ function normalizeReleaseAvailabilityInPayload<T extends PayloadWithMetas | null
   return payload;
 }
 
+/**
+ * Keeps the earliest release of each TMDB release type (1 premiere ... 4 digital,
+ * 5 physical, 6 TV), with its country, in the TMDB `release_dates` shape. Clients
+ * that hide titles until they can be streamed (e.g. Remux, which reads
+ * `app_extras.releaseDates`) get the dates they need without the full list.
+ */
+function compactTmdbReleaseDates(releaseDates: TmdbReleaseDates | null | undefined): TmdbReleaseDates | null {
+  const results = releaseDates?.results;
+  if (!Array.isArray(results)) return null;
+
+  const earliestByType = new Map<number, { country: string; release: TmdbReleaseDate; ms: number }>();
+  for (const country of results) {
+    const dates = country?.release_dates;
+    if (!Array.isArray(dates)) continue;
+    for (const release of dates) {
+      const ms = parseDateMs(release?.release_date);
+      const type = Number(release?.type);
+      if (ms === null || !Number.isFinite(type)) continue;
+      const current = earliestByType.get(type);
+      if (!current || ms < current.ms) {
+        earliestByType.set(type, { country: country.iso_3166_1, release, ms });
+      }
+    }
+  }
+  if (earliestByType.size === 0) return null;
+
+  return {
+    results: [...earliestByType.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([type, { country, release }]) => ({
+        iso_3166_1: country,
+        release_dates: [{ release_date: toIsoDate(release.release_date), type }],
+      })),
+  };
+}
+
+function compactReleaseDatesInPlace(meta: MetaWithReleaseAvailability): void {
+  if (!meta.app_extras || !Object.prototype.hasOwnProperty.call(meta.app_extras, 'releaseDates')) return;
+
+  const compact = compactTmdbReleaseDates(meta.app_extras.releaseDates);
+  if (compact) {
+    meta.app_extras.releaseDates = compact;
+    return;
+  }
+
+  delete meta.app_extras.releaseDates;
+  if (isEmptyPlainObject(meta.app_extras)) {
+    delete meta.app_extras;
+  }
+}
+
 function stripMetaReleaseAvailabilityForResponse<T extends MetaWithReleaseAvailability | null | undefined>(meta: T): T {
   if (!meta || typeof meta !== 'object') return meta;
 
@@ -136,12 +182,7 @@ function stripMetaReleaseAvailabilityForResponse<T extends MetaWithReleaseAvaila
     delete meta[RELEASE_AVAILABILITY_FIELD];
   }
 
-  if (meta.app_extras && Object.prototype.hasOwnProperty.call(meta.app_extras, 'releaseDates')) {
-    delete meta.app_extras.releaseDates;
-    if (isEmptyPlainObject(meta.app_extras)) {
-      delete meta.app_extras;
-    }
-  }
+  compactReleaseDatesInPlace(meta);
 
   return meta;
 }
