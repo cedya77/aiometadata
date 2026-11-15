@@ -27,7 +27,7 @@ const posterCacheConfig = require('./posterCache/config.js');
 const { collectWarmupTargets, extractIdsFromWarmerMeta } = require('./warmupTargets.js');
 const imageWarmQueue = require('./posterCache/warmQueue.js');
 const { isEndOfList, listedTotalOf } = require('./catalogPagination');
-const { usesTrailerAddon, warmAddonTrailers } = require('./trailerProjection');
+const { usesTrailerAddon, queueTrailerWarm, trailerWarmStats, resetTrailerWarm } = require('./trailerProjection');
 
 function pinnedCollectionTasks(config, enabledCatalogs) {
   const tasks = new Map();
@@ -392,17 +392,14 @@ class ComprehensiveCatalogWarmer {
   }
 
   // A config that takes trailers from an addon has that addon's answers kept
-  // warm too, so its catalog pages need not wait on it.
+  // warm too, so its catalog pages need not wait on it. The titles are queued
+  // and asked in the background, so a slow addon never holds up the catalogs.
   async warmTrailers(metas, config, uuid) {
     if (!usesTrailerAddon(config)) return;
     try {
       const nextRunAt = Date.now() + this.config.intervalHours * 60 * 60 * 1000;
-      const fetched = await warmAddonTrailers(metas, config, nextRunAt);
-      if (!fetched) return;
-      this.stats.trailersFetched = (this.stats.trailersFetched || 0) + fetched;
-      const uuidStats = this.stats.uuidStats[uuid];
-      if (uuidStats) uuidStats.trailersFetched = (uuidStats.trailersFetched || 0) + fetched;
-      this.log('debug', `Fetched trailers for ${fetched} title(s) from the trailer addon`);
+      const queued = await queueTrailerWarm(metas, config, nextRunAt);
+      if (queued) this.log('debug', `Queued ${queued} title(s) for the trailer addon (${uuid})`);
     } catch (error) {
       this.log('warn', `Trailer warming failed: ${error.message}`);
     }
@@ -802,6 +799,7 @@ class ComprehensiveCatalogWarmer {
     // Reset stop flag at start
     this.shouldStop = false;
     imageWarmQueue.resetStats();
+    resetTrailerWarm();
     this.isRunning = true;
     this.stats.isRunning = true;
     this.stats.totalUUIDs = this.config.uuids.length;
@@ -870,7 +868,6 @@ class ComprehensiveCatalogWarmer {
       this.stats.totalPages = 0;
       this.stats.pagesFromCache = 0;
       this.stats.totalItems = 0;
-      this.stats.trailersFetched = 0;
       this.stats.errors = [];
 
       // Process each UUID sequentially
@@ -961,8 +958,10 @@ class ComprehensiveCatalogWarmer {
       const cachedPages = this.stats.pagesFromCache ? ` (${this.stats.pagesFromCache} already cached)` : '';
       this.log('success', `Warmup ${stoppedEarly ? 'stopped' : 'complete'}! Processed ${this.config.uuids.length} UUID(s), warmed ${this.stats.catalogsWarmed}/${this.stats.totalCatalogs} catalogs and ${this.stats.pinnedWarmed}/${this.stats.totalPinned} collection genres, ${this.stats.totalPages} pages${cachedPages}, ${this.stats.totalItems} items in ${this.stats.duration}`);
 
-      if (this.stats.trailersFetched > 0) {
-        this.log('info', `Trailer warming: fetched trailers for ${this.stats.trailersFetched} title(s) from trailer addons`);
+      const trailerStats = trailerWarmStats();
+      if (trailerStats.queued > 0) {
+        const skipped = trailerStats.skipped ? `, ${trailerStats.skipped} skipped after the addon stopped answering` : '';
+        this.log('info', `Trailer warming: ${trailerStats.queued} due, ${trailerStats.fetched} fetched, ${trailerStats.unanswered} unanswered${skipped}, ${trailerStats.outstanding} still queued`);
       }
 
       const imageStats = imageWarmQueue.getStats();

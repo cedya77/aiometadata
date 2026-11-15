@@ -3,7 +3,6 @@
 import { createHash } from 'crypto';
 import { httpGet } from '../utils/httpClient';
 import { envInt } from '../utils/envNumber';
-import { mapWithConcurrency } from '../utils/concurrency';
 import { withGlobalEpoch } from './cacheEpoch';
 import { decodeCachePayload, encodeCachePayload } from './cacheCodec';
 const redis: any = require('./redisClient');
@@ -334,11 +333,77 @@ async function applyAddonTrailersToList(metas: any[], config: any): Promise<any[
   return metas;
 }
 
+interface WarmJob {
+  key: string;
+  manifestUrl: string;
+  hash: string;
+  target: TitleTarget;
+}
+
+// Catalog warming hands its titles over and moves on, so a slow addon never holds up the catalogs.
+const warmQueue: WarmJob[] = [];
+let warmHead = 0;
+const warmQueued = new Set<string>();
+let warmWorkers = 0;
+// An addon that has stopped answering is not asked again until the next warm run.
+const unansweredInARow = new Map<string, number>();
+let warmStats = { queued: 0, fetched: 0, unanswered: 0, skipped: 0 };
+
+function nextWarmJob(): WarmJob | undefined {
+  if (warmHead >= warmQueue.length) return undefined;
+  const job = warmQueue[warmHead++];
+  if (warmHead > 1024 && warmHead * 2 >= warmQueue.length) {
+    warmQueue.splice(0, warmHead);
+    warmHead = 0;
+  }
+  return job;
+}
+
+async function runWarmWorker(): Promise<void> {
+  warmWorkers += 1;
+  try {
+    for (let job = nextWarmJob(); job; job = nextWarmJob()) {
+      try {
+        if ((unansweredInARow.get(job.hash) ?? 0) >= warmConcurrency() * 2) {
+          warmStats.skipped += 1;
+          continue;
+        }
+        const { key, manifestUrl, hash, target } = job;
+        const trailers = await shared(`refresh:${key}`, () => fetchTitleTrailers(manifestUrl, hash, target)).catch(() => null);
+        if (trailers === null) {
+          warmStats.unanswered += 1;
+          unansweredInARow.set(hash, (unansweredInARow.get(hash) ?? 0) + 1);
+        } else {
+          warmStats.fetched += 1;
+          unansweredInARow.delete(hash);
+        }
+      } finally {
+        warmQueued.delete(job.key);
+      }
+    }
+  } finally {
+    warmWorkers -= 1;
+  }
+  if (warmWorkers === 0) logger.debug(`Warm queue empty: ${warmStats.fetched} fetched, ${warmStats.unanswered} unanswered, ${warmStats.skipped} skipped`);
+}
+
+/** This run's counts. Titles still queued when the catalogs finish are asked after them. */
+function trailerWarmStats(): { queued: number; fetched: number; unanswered: number; skipped: number; outstanding: number } {
+  return { ...warmStats, outstanding: warmQueue.length - warmHead };
+}
+
+/** A new warm run starts its counts again and gives an addon that stopped answering another chance. */
+function resetTrailerWarm(): void {
+  warmStats = { queued: 0, fetched: 0, unanswered: 0, skipped: 0 };
+  unansweredInARow.clear();
+}
+
 /**
- * Re-asks the addon for the titles whose cached answer is missing or would
- * lapse before `nextRunAt` (epoch ms). Returns how many answers were fetched.
+ * Queues the titles whose cached answer is missing or would lapse before
+ * `nextRunAt` (epoch ms), and returns how many were queued. They are asked in
+ * the background, a few at a time.
  */
-async function warmAddonTrailers(metas: any[], config: any, nextRunAt: number): Promise<number> {
+async function queueTrailerWarm(metas: any[], config: any, nextRunAt: number): Promise<number> {
   const manifestUrl = trailerAddonManifestUrl(config);
   if (!manifestUrl || !redis || !Array.isArray(metas) || metas.length === 0) return 0;
 
@@ -346,7 +411,9 @@ async function warmAddonTrailers(metas: any[], config: any, nextRunAt: number): 
   const targets = new Map<string, TitleTarget>();
   for (const meta of metas) {
     const target = titleTargetOf(meta);
-    if (target) targets.set(titleCacheKey(hash, target), target);
+    if (!target) continue;
+    const key = titleCacheKey(hash, target);
+    if (!warmQueued.has(key)) targets.set(key, target);
   }
   if (targets.size === 0) return 0;
 
@@ -366,34 +433,32 @@ async function warmAddonTrailers(metas: any[], config: any, nextRunAt: number): 
     logger.warn(`Could not read trailer lifetimes, warming none: ${error?.message}`);
     return 0;
   }
-  if (due.length === 0) return 0;
 
-  const width = warmConcurrency();
-  // An addon that has stopped answering is not asked for the rest of the page.
-  let unanswered = 0;
-  const answered = await mapWithConcurrency(due, width, async (key) => {
-    if (unanswered >= width * 2) return false;
-    const target = targets.get(key) as TitleTarget;
-    const trailers = await shared(`refresh:${key}`, () => fetchTitleTrailers(manifestUrl, hash, target)).catch(() => null);
-    if (trailers === null) {
-      unanswered++;
-      return false;
-    }
-    unanswered = 0;
-    return true;
-  });
-  return answered.filter(Boolean).length;
+  let queued = 0;
+  for (const key of due) {
+    if (warmQueued.has(key)) continue;
+    warmQueued.add(key);
+    warmQueue.push({ key, manifestUrl, hash, target: targets.get(key) as TitleTarget });
+    queued += 1;
+  }
+  warmStats.queued += queued;
+  while (warmWorkers < warmConcurrency() && warmHead < warmQueue.length) void runWarmWorker();
+  return queued;
 }
 
 export {
   applyAddonTrailersProjection,
   applyAddonTrailersToList,
-  warmAddonTrailers,
+  queueTrailerWarm,
+  trailerWarmStats,
+  resetTrailerWarm,
   usesTrailerAddon,
 };
 module.exports = {
   applyAddonTrailersProjection,
   applyAddonTrailersToList,
-  warmAddonTrailers,
+  queueTrailerWarm,
+  trailerWarmStats,
+  resetTrailerWarm,
   usesTrailerAddon,
 };
