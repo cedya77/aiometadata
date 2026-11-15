@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 require("dotenv").config();
 import * as moviedb from "./getTmdb.js";
 import { getMeta } from './getMeta.js';
@@ -5,9 +7,12 @@ import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
 import { allowsUnrated, hasAgeRatingCap, passesAgeRating } from '../utils/ageRating.js';
 import { applyContentRatingProjection, buildCertificationMap, replaceCertifications } from '../utils/contentRating.js';
+import { withListedTotal } from './catalogPagination';
 const consola = require('consola');
 
-const logger = consola.withTag('GetTrending'); 
+const logger = consola.withTag('GetTrending');
+
+const TMDB_MAX_LISTED = 10000;
 
 async function getTrending(type: string, language: string, page: number, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<{ metas: any[] }> {
   const startTime = performance.now();
@@ -80,6 +85,11 @@ async function getTrending(type: string, language: string, page: number, genre: 
     const totalTime = performance.now() - startTime;
     logger.debug(`[getTrending] Total function execution took ${totalTime.toFixed(2)}ms`);
     
+    // TMDB serves at most 500 pages of 20, whatever total it reports.
+    if (typeof res?.total_results === 'number') {
+      withListedTotal(filteredMetas, Math.min(res.total_results, TMDB_MAX_LISTED));
+    }
+
     return { metas: filteredMetas };
 
   } catch (error: any) {

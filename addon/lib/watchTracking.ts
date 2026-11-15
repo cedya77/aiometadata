@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import type { UserConfig } from '../types';
 import { ACCOUNT_SERVICES, credentialOf, trackerConfig } from './accounts';
 
@@ -9,6 +11,18 @@ export type WatchTrackingService =
   | 'publicmetadb';
 
 export type WatchTrackingMediaType = 'movie' | 'series';
+
+export function scrobblesJellyfin(config: any): boolean {
+  return config?.playbackReporting === true && config?.jellyfinScrobbling !== false;
+}
+
+export function scrobblesStremio(config: any): boolean {
+  return config?.playbackReporting === true && config?.stremioScrobbling === true;
+}
+
+export function syncsStremioLibrary(config: any): boolean {
+  return scrobblesStremio(config) && config?.stremioLibraryWatchlist === true;
+}
 
 export const WATCH_TRACKING_SERVICES: WatchTrackingService[] = [
   'simkl',

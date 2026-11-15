@@ -1,12 +1,15 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useState, useEffect } from 'react';
 import { useConfig } from '@/contexts/ConfigContext';
 import { CatalogConfig } from '@/contexts/config';
+import { isMovieLensExploreId } from '@/lib/movielensCatalogIds';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ExternalLink, CheckCircle2, Loader2, Plus, RefreshCw, Sparkles, Bookmark, CalendarClock, Star, ListVideo } from 'lucide-react';
+import { ExternalLink, CheckCircle2, Loader2, Plus, RefreshCw, Sparkles, Bookmark, CalendarClock, Star, ListVideo, Award, History } from 'lucide-react';
 import { toast } from "sonner";
 
 interface MovieLensIntegrationProps {
@@ -147,12 +150,14 @@ export function MovieLensIntegration({ isOpen, onClose }: MovieLensIntegrationPr
   };
 
   const addCatalog = (id: string, name: string, metadata?: Record<string, unknown>) => {
-    const isExplore = id.startsWith('movielens.explore');
-    if (!isExplore && config.catalogs.some(c => c.id === id)) {
+    const isExplore = isMovieLensExploreId(id);
+    const taken = config.catalogs.some(c => c.id === id);
+    if (!isExplore && taken) {
       toast.info(`${name} is already added.`);
       return;
     }
-    const uniqueId = isExplore ? `${id}.${Date.now().toString(36)}` : id;
+    // Explore presets may be added repeatedly; only later copies need a suffix.
+    const uniqueId = isExplore && taken ? `${id}.${Date.now().toString(36)}` : id;
     const newCatalog: CatalogConfig = {
       id: uniqueId,
       type: 'movie',
@@ -265,10 +270,10 @@ export function MovieLensIntegration({ isOpen, onClose }: MovieLensIntegrationPr
                     <Star className="h-4 w-4 mr-2" /> Highest Rated by Users <Plus className="h-4 w-4 ml-auto" />
                   </Button>
                   <Button variant="outline" className="justify-start" onClick={() => addCatalog('movielens.explore.myrated.score', 'Your Rated Collection', { sortBy: 'userRating', includeRated: true })}>
-                    <Star className="h-4 w-4 mr-2" /> Your Rated Collection <Plus className="h-4 w-4 ml-auto" />
+                    <Award className="h-4 w-4 mr-2" /> Your Rated Collection <Plus className="h-4 w-4 ml-auto" />
                   </Button>
                   <Button variant="outline" className="justify-start" onClick={() => addCatalog('movielens.explore.myrated.date', 'Your Rated Collection by Date', { sortBy: 'userRatedDate', includeRated: true })}>
-                    <Star className="h-4 w-4 mr-2" /> Your Rated Collection by Date <Plus className="h-4 w-4 ml-auto" />
+                    <History className="h-4 w-4 mr-2" /> Your Rated Collection by Date <Plus className="h-4 w-4 ml-auto" />
                   </Button>
                 </CardContent>
               </Card>

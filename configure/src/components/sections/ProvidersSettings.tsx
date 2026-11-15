@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { TvdbShowSettings } from '@/components/settings/TvdbShowSettings';
@@ -11,11 +13,6 @@ import { ProviderSelect, type SelectableOption } from '@/components/settings/Pro
 import { SettingRow } from '@/components/settings/SettingRow';
 import { NoticeDisclosure } from '@/components/settings/NoticeDisclosure';
 import { animeNotices } from '@/lib/animeNotices';
-
-const trailerProviders: SelectableOption[] = [
-  { value: 'default', label: 'Metadata provider' },
-  { value: 'addon', label: 'A trailer addon' },
-];
 
 const movieProviders: SelectableOption[] = [
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
@@ -49,6 +46,11 @@ const animeEpisodeDateSources: SelectableOption[] = [
   { value: 'provider', label: 'Metadata provider' },
   { value: 'earliest', label: 'Earliest release' },
   { value: 'dub', label: 'English dub' },
+];
+
+const trailerProviders: SelectableOption[] = [
+  { value: 'default', label: 'Metadata provider' },
+  { value: 'addon', label: 'A trailer addon' },
 ];
 
 const tvdbSeasonTypes: SelectableOption[] = [
@@ -201,35 +203,41 @@ export function ProvidersSettings() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader><CardTitle>Trailers</CardTitle><CardDescription>Where a title's trailer comes from.</CardDescription></CardHeader>
-          <CardContent className="space-y-3">
-            <ProviderSelect
-              id="trailer-provider"
-              ariaLabel="Trailer source"
-              value={config.trailerProvider ?? 'default'}
-              onValueChange={(val) => setConfig(prev => ({ ...prev, trailerProvider: val === 'addon' ? 'addon' : undefined }))}
-              options={trailerProviders}
-              hasTvdbKey={hasTvdbKey}
-            />
-            {config.trailerProvider === 'addon' && (
-              <>
-                <Input
-                  id="trailer-addon-url"
-                  aria-label="Trailer addon manifest URL"
-                  value={config.trailerAddonUrl ?? ''}
-                  placeholder="https://.../manifest.json"
-                  className="font-mono text-xs"
-                  onChange={(e) => setConfig(prev => ({ ...prev, trailerAddonUrl: e.target.value.trim() || undefined }))}
-                />
-                <p className="text-xs text-muted-foreground">
-                  The manifest URL of an addon that answers stream requests with trailers, YouTube ids or direct video links. Its own settings, such as language, travel in that URL. A title it does not know keeps the metadata provider's trailer.
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
       </div>
+
+      <Card>
+        <CardHeader><CardTitle>Trailers</CardTitle><CardDescription>Where a title's trailer comes from.</CardDescription></CardHeader>
+        <CardContent className="space-y-3">
+          <ProviderSelect
+            id="trailer-provider"
+            ariaLabel="Trailer provider"
+            value={config.trailerProvider === 'addon' ? 'addon' : 'default'}
+            onValueChange={(value) => setConfig(prev => ({ ...prev, trailerProvider: value === 'addon' ? 'addon' : 'default' }))}
+            options={trailerProviders}
+            hasTvdbKey={hasTvdbKey}
+            className="w-full sm:w-[240px]"
+          />
+          {config.trailerProvider === 'addon' && (
+            <>
+              <Input
+                id="trailer-addon-url"
+                aria-label="Trailer addon manifest URL"
+                className="font-mono text-sm"
+                placeholder="https://.../manifest.json"
+                value={config.trailerAddonUrl || ''}
+                onChange={(e) => setConfig(prev => ({ ...prev, trailerAddonUrl: e.target.value }))}
+                onBlur={(e) => {
+                  const trimmed = e.target.value.trim();
+                  if (trimmed !== e.target.value) setConfig(prev => ({ ...prev, trailerAddonUrl: trimmed }));
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                The addon should answer stream requests with trailers (YouTube ids or direct video links). Its own settings, such as language, go in its URL. A title it doesn't know keeps the metadata provider's trailer.
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       {/* TVDB Specific Settings */}
       <CollapsibleSettingCard

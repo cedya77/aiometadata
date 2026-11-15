@@ -1,0 +1,27 @@
+name: License Check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - dev
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  headers-and-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Reads package-lock.json and LICENSING.md only, so no install is needed.
+      - name: Check SPDX headers and dependency licenses
+        run: node scripts/check-licenses.mjs

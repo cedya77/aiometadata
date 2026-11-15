@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 const GENRE_KEYS = ['id', 'name'];
 const PRODUCTION_COUNTRY_KEYS = ['iso_3166_1', 'name'];
 const IMAGE_KEYS = ['file_path', 'iso_639_1', 'iso_3166_1', 'vote_average', 'vote_count', 'width', 'height', 'aspect_ratio'];
@@ -13,7 +15,7 @@ const RELEASE_DATE_KEYS = ['certification', 'type', 'release_date'];
 const CONTENT_RATING_KEYS = ['iso_3166_1', 'rating'];
 const KEYWORD_KEYS = ['id', 'name'];
 
-const EPISODE_KEYS = ['id', 'name', 'overview', 'air_date', 'episode_number', 'season_number', 'still_path', 'runtime'];
+const EPISODE_KEYS = ['id', 'name', 'overview', 'air_date', 'episode_number', 'season_number', 'still_path', 'runtime', 'episode_type'];
 const SEASON_KEYS = ['id', '_id', 'air_date', 'episode_count', 'name', 'overview', 'poster_path', 'season_number', 'vote_average'];
 const DETAIL_COMMON_KEYS = [
   'id',
@@ -225,8 +227,8 @@ function normalizeTmdbDetailCommonForCache(detail: any) {
   if (detail.production_countries !== undefined) {
     normalized.production_countries = mapIfArray(detail.production_countries, normalizeTmdbProductionCountryForCache);
   }
-  if (detail.production_companies !== undefined) normalized.production_companies = mapIfArray(detail.production_companies, (company: any) => pickDefined(company, ['name']));
-  if (detail.networks !== undefined) normalized.networks = mapIfArray(detail.networks, (network: any) => pickDefined(network, ['name']));
+  if (detail.production_companies !== undefined) normalized.production_companies = mapIfArray(detail.production_companies, (company: any) => pickDefined(company, ['id', 'name']));
+  if (detail.networks !== undefined) normalized.networks = mapIfArray(detail.networks, (network: any) => pickDefined(network, ['id', 'name']));
   if (detail.external_ids !== undefined) normalized.external_ids = normalizeTmdbExternalIdsForCache(detail.external_ids);
   if (detail.images !== undefined) normalized.images = normalizeTmdbImagesForCache(detail.images);
   if (detail.credits !== undefined) normalized.credits = normalizeTmdbCreditsForCache(detail.credits);

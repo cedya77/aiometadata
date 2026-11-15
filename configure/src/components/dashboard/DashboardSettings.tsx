@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useState, useMemo, useRef, useCallback, type KeyboardEvent } from "react";
 import {
   Card,
@@ -413,7 +415,7 @@ function SettingRow({ setting }: { setting: SettingItem }) {
             <SelectTrigger className="h-8 w-full sm:w-48 text-xs">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent sheet>
               {setting.options.map((opt) => (
                 <SelectItem key={opt} value={opt} className="text-xs">
                   {opt}

@@ -1,5 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { httpGet, httpPost, httpRequest } from "./httpClient.js";
-import { historyPayload, type EpisodeRef } from "./historyPayload";
+import { historyBatchPayload, historyPayload, type EpisodeRef, type HistoryWrite } from "./historyPayload";
 import { noteTrackerCall } from "./trackerCalls";
 import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart, cacheWrapGlobal, classifyResultAllowEmpty } from "../lib/getCache.js";
@@ -736,9 +738,10 @@ async function fetchSimklUserStats(tokenId: string): Promise<any> {
   );
 }
 
-async function fetchSimklLastActivities(accessToken: string, config?: any): Promise<any> {
+async function fetchSimklLastActivities(accessToken: string, config?: any, fresh = false): Promise<any> {
   const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
   const cacheKey = `simkl-api-last-activities:${tokenHash}`;
+  if (fresh) await require('../lib/getCache').redis?.del(`global:${cacheKey}`).catch(() => undefined);
   
   // Cached so that rapid pagination requests share one "state of truth"
   // instead of hitting the API once per page.
@@ -945,20 +948,55 @@ function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
   return Object.keys(ids).length > 0 ? ids : null;
 }
 
+// Whether a missed entry was a film: TMDB numbers films and shows apart, so ids match only within one kind. Anime holds both.
+export type SimklMissed = { ids: Record<string, any>; movie: boolean | null };
+
+export async function addHistoryBatch(writes: HistoryWrite[], accessToken: string, rewatch = false): Promise<{ notFound: number; missed: SimklMissed[] }> {
+  const response: any = await makeAuthenticatedSimklRequest(
+    `${SIMKL_BASE_URL}/sync/history${rewatch ? '?allow_rewatch=yes' : ''}`, accessToken, `Simkl history batch of ${writes.length}`, 'POST', historyBatchPayload(writes), 60000
+  );
+  if (response.status < 200 || response.status >= 300) {
+    const error: any = new Error(`Simkl answered ${response.status}`);
+    error.response = { status: response.status, data: response.data };
+    throw error;
+  }
+  const missed = response?.data?.not_found;
+  const sections = ['movies', 'shows', 'anime', 'episodes'].map((key) => ({ key, items: Array.isArray(missed?.[key]) ? missed[key] : [] }));
+  const items = sections.flatMap(({ items: listed }) => listed);
+  const episodes = items.reduce((n, item: any) => n + (Array.isArray(item?.seasons) ? item.seasons.reduce((m: number, s: any) => m + (Array.isArray(s?.episodes) ? s.episodes.length : 0), 0) : 1), 0);
+  return {
+    notFound: episodes,
+    missed: sections.flatMap(({ key, items: listed }) => listed.map((item: any) => ({ ids: item?.ids ?? {}, movie: key === 'movies' ? true : key === 'anime' ? null : false }))),
+  };
+}
+
+function unmatched(url: string, data: any): boolean {
+  const missed = data?.not_found;
+  const items = ['movies', 'shows', 'anime', 'episodes'].flatMap((key) => (Array.isArray(missed?.[key]) ? missed[key] : []));
+  if (!items.length) return false;
+  noteTrackerCall(url, 404, 'not found on Simkl');
+  return true;
+}
+
 export async function addToHistory(
   idInput: Record<string, string | number>,
   accessToken: string,
   season?: number,
   episode?: number,
-  episodes?: EpisodeRef[]
+  episodes?: EpisodeRef[],
+  watchedAt?: string
 ): Promise<boolean> {
-  const payload = historyPayload(idInput, season, episode, episodes);
+  const payload = historyPayload(idInput, season, episode, episodes, watchedAt);
 
   try {
     const response = await makeAuthenticatedSimklRequest(
       `${SIMKL_BASE_URL}/sync/history`, accessToken, 'Simkl add to history', 'POST', payload, 10000
     );
     if (response.status >= 200 && response.status < 300) {
+      if (unmatched(`${SIMKL_BASE_URL}/sync/history`, response.data)) {
+        logger.warn('[Simkl] Add to history did not find the title', { ids: idInput, season, episode, not_found: response.data?.not_found });
+        return false;
+      }
       logger.info('[Simkl] Added to history', { ids: idInput, season, episode });
       return true;
     }
@@ -967,6 +1005,27 @@ export async function addToHistory(
   } catch (error: any) {
     logger.error(`[Simkl] Failed to add to history: ${error.message}`);
     return false;
+  }
+}
+
+export async function episodeWatchedAt(
+  idInput: Record<string, string | number>,
+  accessToken: string,
+  season: number,
+  episode: number
+): Promise<string | null | undefined> {
+  try {
+    const response = await makeAuthenticatedSimklRequest(
+      `${SIMKL_BASE_URL}/sync/watched?extended=episodes`, accessToken, 'Simkl episode state', 'POST', [{ ids: idInput, type: 'show' }], 10000
+    );
+    if (response.status < 200 || response.status >= 300) return undefined;
+    const entry = Array.isArray(response.data) ? response.data[0] : null;
+    if (!entry || entry.result === 'not_found') return undefined;
+    const found = entry?.seasons?.find((s: any) => s.number === season)?.episodes?.find((e: any) => e.number === episode);
+    return found?.watched ? (found.last_watched_at ?? null) : null;
+  } catch (error: any) {
+    logger.error(`[Simkl] Reading the episode state failed: ${error.message}`);
+    return undefined;
   }
 }
 
@@ -1032,6 +1091,10 @@ export async function removeFromHistory(
       `${SIMKL_BASE_URL}/sync/history/remove`, accessToken, 'Simkl remove from history', 'POST', payload, 10000
     );
     if (response.status >= 200 && response.status < 300) {
+      if (unmatched(`${SIMKL_BASE_URL}/sync/history/remove`, response.data)) {
+        logger.warn('[Simkl] Remove from history did not find the title', { ids: idInput, season, episode, not_found: response.data?.not_found });
+        return false;
+      }
       logger.info('[Simkl] Removed from history', { ids: idInput, season, episode });
       return true;
     }
@@ -1139,7 +1202,7 @@ async function checkinSeries(
   const progress = typeof options.progress === 'number' ? options.progress : 1;
   const normalizedIds = normalizeEpisodeIdInput(idInput);
 
-  if (!normalizedIds || !accessToken || season < 1 || episode < 1) {
+  if (!normalizedIds || !accessToken || season < 0 || episode < 1) {
     logger.warn('[Simkl Checkin] Invalid parameters for checkinSeries', {
       id: idInput,
       season,
@@ -1307,7 +1370,7 @@ async function fetchSimklListBlock(accessToken: string, listId: string, blockPag
   }, simklListBlockTtl(), { maxRetries: 0 });
 }
 
-async function fetchSimklListPage(accessToken: string, listId: string, page: number, limit: number): Promise<{ list: any; items: any[]; totalPages: number; hasMore: boolean; error?: SimklListsError }> {
+async function fetchSimklListPage(accessToken: string, listId: string, page: number, limit: number): Promise<{ list: any; items: any[]; totalPages: number; hasMore: boolean; totalItems?: number; error?: SimklListsError }> {
   if (!isSimklV2Token(accessToken)) return { list: null, items: [], totalPages: 0, hasMore: false, error: 'needs_v2' };
 
   const blockSize = simklListBlockSize(limit);
@@ -1336,6 +1399,7 @@ async function fetchSimklListPage(accessToken: string, listId: string, page: num
     items,
     totalPages: totalItems !== undefined ? Math.ceil(totalItems / limit) : 0,
     hasMore,
+    ...(totalItems !== undefined ? { totalItems } : {}),
   };
 }
 

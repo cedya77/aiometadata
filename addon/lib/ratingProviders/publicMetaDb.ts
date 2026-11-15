@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { envInt } from '../../utils/envNumber';
 import { throttlePublicMetaDb } from '../../utils/publicmetadbUtils';
 import { RatingsPaused, ratingKey, type RatingRef, type RatingSource, type RatingsProvider, type Scores } from './types';
@@ -18,6 +20,8 @@ const LABELS: Record<string, RatingSource> = {
   ML: 'mal',
   MAL: 'mal',
 };
+
+const AVERAGES_OF_VOTES = new Set<RatingSource>(['tmdb', 'trakt', 'letterboxd', 'mal']);
 
 interface Row {
   tmdb_id: number;
@@ -74,8 +78,8 @@ function consensus(rows: Row[]): Scores {
   const byLabel = new Map<RatingSource, Map<number, { count: number; latest: string }>>();
   for (const row of rows) {
     const source = LABELS[String(row.label ?? '').trim().toUpperCase()];
-    const score = Number(row.score);
-    if (!source || !Number.isFinite(score) || score <= 0 || score > 100) continue;
+    const score = row.score === null || row.score === undefined || String(row.score).trim() === '' ? NaN : Number(row.score);
+    if (!source || !Number.isFinite(score) || score < 0 || score > 100 || (score === 0 && AVERAGES_OF_VOTES.has(source))) continue;
     const value = Math.round(score * 10) / 10;
     const tally = byLabel.get(source) ?? new Map();
     const seen = tally.get(value) ?? { count: 0, latest: '' };

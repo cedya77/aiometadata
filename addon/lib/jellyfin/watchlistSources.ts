@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
 import { ACCOUNT_SERVICES, credentialOf, ownTokenId, trackerConfig } from '../accounts';
@@ -145,7 +147,9 @@ async function shelfEntries(userUUID: string, config: any, catalog: Shelf, need:
   const { profileTags } = require('./profiles');
   const max = Math.min(envInt('JELLYFIN_WATCHLIST_MAX_ITEMS', 5000, 100), Math.max(1, need));
   try {
-    const window = await fetchWindow(userUUID, { id: catalog.id, type: catalog.type, name: catalog.id, pageSize: 0, extra: [] }, 0, max, {}, catalog.keep, profileTags(config));
+    // A shelf keeping one kind of a mixed list counts and places its own walk, apart from a browse of the whole list.
+    const keepKey = catalog.keep ? `#shelf:${catalog.kind ?? 'kept'}` : '';
+    const window = await fetchWindow(userUUID, { id: catalog.id, type: catalog.type, name: catalog.id, pageSize: 0, extra: [] }, 0, max, {}, catalog.keep, profileTags(config), keepKey);
     const rows: WatchlistEntry[] = [];
     window.items.forEach((meta: any, rank: number) => {
       if (!meta?.id) return;

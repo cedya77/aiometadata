@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
 import consola from 'consola';
 import { isDiscoverCatalogId, applyDiscoverSignature } from './discoverCatalogSignature';
 import { defaultsToNoneGenre } from './genreNoneDefault';
+import { isMovieLensExploreId } from './movielensCatalogIds';
 import { envInt } from '../utils/envNumber';
 
 const logger = consola.withTag('Catalog');
@@ -104,7 +107,17 @@ export async function applyCatalogKeyStamps(args: Record<string, any>, catalogId
     }
   }
 
-  if (catalogId.startsWith('movielens.explore')) {
+  if (catalogId.startsWith('mdblist.watchlist') && config.apiKeys?.mdblist) {
+    try {
+      const { watchlistActivityStamp } = require('../utils/mdbList');
+      const watchlistedAt = await watchlistActivityStamp(config.apiKeys.mdblist);
+      if (watchlistedAt) args._mdblistAct = watchlistedAt;
+    } catch (e: any) {
+      logger.warn(`MDBList activity stamp failed for ${catalogId}: ${e.message}`);
+    }
+  }
+
+  if (isMovieLensExploreId(catalogId)) {
     try {
       const credId = config.apiKeys?.movieLensCredId;
       const explicitTags = String(catalogConfig?.metadata?.tags || '')

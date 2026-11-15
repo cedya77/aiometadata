@@ -41,6 +41,7 @@ Describe exactly how you tested this change.
 - [ ] I read and followed `CONTRIBUTING.md`.
 - [ ] I can explain every code change in this PR.
 - [ ] I will respond to review feedback myself.
+- [ ] I wrote this change or have the right to submit it, and I license it under the license of each file it touches, as `LICENSING.md` maps it (see "Licenses" in `docs/contributing.md`). Every co-author agrees too.
 
 ## AI usage disclosure
 

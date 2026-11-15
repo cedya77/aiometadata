@@ -126,18 +126,16 @@ node addon/server.js
 > client ids are public by design and their secrets are not published.) See
 > [Environment Variables](ENVIRONMENT_VARIABLES.md#api-keys).
 
-> **Connecting SimKL without a public URL?** The configure page can show a short
-> code to enter at https://simkl.com/pin, and the server polls SimKL for the token.
-> Only `SIMKL_CLIENT_ID` is required, no client secret and no inbound callback to
-> your instance. For a private instance:
+> **Private instance?** Simkl can be connected with a code the user enters at
+> simkl.com/pin. That needs only `SIMKL_CLIENT_ID`: no client secret, and no
+> callback URL that Simkl has to reach. Set the mode explicitly, so the sign-in
+> does not switch back to OAuth if a secret is added later:
 >
-> ```
+> ```bash
 > SIMKL_CLIENT_ID=your_client_id
 > SIMKL_AUTH_MODE=pin
 > ```
 >
-> `pin` is already the default when no `SIMKL_CLIENT_SECRET` is set, but setting it
-> explicitly keeps the flow from switching back to OAuth if a secret is ever added.
 > See [`SIMKL_AUTH_MODE`](ENVIRONMENT_VARIABLES.md#simkl_auth_mode).
 
 ## Getting API Keys

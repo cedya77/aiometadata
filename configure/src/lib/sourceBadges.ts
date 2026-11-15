@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 export const sourceBadgeStyles: Record<string, string> = {
   tmdb: "bg-blue-800/80 text-blue-200 border-blue-600/50 hover:bg-blue-800",
   tvdb: "bg-green-800/80 text-green-200 border-green-600/50 hover:bg-green-800",

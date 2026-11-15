@@ -1,3 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 /.github/workflows/docker-deploy.yml merge=ours
+# Shell scripts run under bash in CI and containers.
+*.sh text eol=lf

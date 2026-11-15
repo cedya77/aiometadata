@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import consola from 'consola';
 import { RECOMMENDATION_CATALOGS } from './catalog';
 
@@ -93,7 +95,6 @@ export function startJob(config: any, userUUID: string, catalogId: string, force
         : await recommend(config, userUUID, profile, entry.kind);
       job.picks = picks.length;
       if (!picks.length) throw new Error(picksFailure(config));
-      if (force) await require('./refresh').bumpRowStamp(viewer);
 
       // Warms the meta caches the row will read, so the first open is not the
       // first time every poster and rating is fetched.

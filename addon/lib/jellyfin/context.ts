@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import consola from 'consola';
 import { readTokenSession, revokeToken } from './tokens';
 import { listProfiles, profileKey, scopeConfigToProfile } from './profiles';
@@ -149,6 +151,14 @@ export function clientInfo(req: any): { client: string; device: string; deviceId
     deviceId: header.deviceid || 'unknown',
     version: header.version || '0.0.0',
   };
+}
+
+/** The request a Jellyfin client would have made, for work that reaches the server another way. */
+export function clientRequest(userUUID: string, profileId: string | null, client?: { name: string; deviceId: string }): any {
+  const headers: Record<string, string> = client
+    ? { 'x-emby-authorization': `MediaBrowser Client="${client.name}", Device="${client.name}", DeviceId="${client.deviceId}", Version=""`, 'user-agent': client.name }
+    : {};
+  return { params: { userUUID }, jellyfin: { userUUID, profileId }, query: {}, headers, get: (name: string) => headers[name.toLowerCase()] };
 }
 
 export function serverIdFor(userUUID: string): string {

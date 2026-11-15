@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 /**
  * Which credential the Trakt proxy has to present for a given endpoint. Trakt
  * rejects an unauthenticated call to a private route and ignores a token on a

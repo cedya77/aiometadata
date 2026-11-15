@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 const js = require("@eslint/js");
 const globals = require("globals");
 const reactHooks = require("eslint-plugin-react-hooks");
@@ -60,6 +62,17 @@ module.exports = tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "commonjs",
+      globals: globals.node,
+    },
+    rules: legacyJsRules,
+  },
+  {
+    // .mjs files are ES modules wherever they live.
+    files: ["scripts/**/*.mjs"],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
       globals: globals.node,
     },
     rules: legacyJsRules,

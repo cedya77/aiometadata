@@ -1,184 +1,464 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { createHash } from 'crypto';
-import { envInt } from '../utils/envNumber';
 import { httpGet } from '../utils/httpClient';
+import { envInt } from '../utils/envNumber';
+import { withGlobalEpoch } from './cacheEpoch';
+import { decodeCachePayload, encodeCachePayload } from './cacheCodec';
+const redis: any = require('./redisClient');
+const consola: any = require('consola');
 
+const logger = consola.withTag('Trailer-Addon');
+
+const MANIFEST_FILE = 'manifest.json';
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+const HTTP_URL = /^https?:\/\//i;
+/** A link that expires is dropped from the cache this long before it does. */
+const EXPIRY_MARGIN_SECONDS = 5 * 60;
+const MIN_TTL_SECONDS = 60;
 
-export interface TrailerStream {
+interface AddonTrailer {
   title: string;
   ytId?: string;
   url?: string;
 }
 
-export function trailerStreamUrl(manifestUrl: unknown, type: string, id: string, resource: 'stream' | 'meta' = 'stream'): string | null {
-  const trimmed = typeof manifestUrl === 'string' ? manifestUrl.trim() : '';
-  if (!trimmed.endsWith('/manifest.json')) return null;
-  return `${trimmed.slice(0, -'manifest.json'.length)}${resource}/${type}/${encodeURIComponent(id)}.json`;
+type AddonResource = 'stream' | 'meta';
+
+interface TitleTarget {
+  type: 'movie' | 'series';
+  imdbId: string;
 }
 
-function imdbIdOf(meta: any): string | null {
-  const direct = meta?.imdb_id || meta?._imdbId;
-  if (typeof direct === 'string' && direct.startsWith('tt')) return direct;
-  const fromId = typeof meta?.id === 'string' ? meta.id.match(/^tt\d+/)?.[0] : null;
-  return fromId || null;
+type Fetched =
+  | { outcome: 'ok'; data: any }
+  /** The addon said it has nothing at this address. */
+  | { outcome: 'missing' }
+  /** It answered, but not with JSON. */
+  | { outcome: 'odd' }
+  | { outcome: 'failed' };
+
+function requestTimeoutMs(): number {
+  return envInt('TRAILER_ADDON_TIMEOUT_MS', 6000, 500);
 }
 
-function toStream(raw: any): TrailerStream | null {
-  const title = typeof raw?.title === 'string' && raw.title.trim() ? raw.title.trim() : typeof raw?.name === 'string' && raw.name.trim() ? raw.name.trim() : 'Trailer';
-  if (typeof raw?.ytId === 'string' && YOUTUBE_ID.test(raw.ytId)) return { title, ytId: raw.ytId };
-  if (typeof raw?.url === 'string' && /^https?:\/\//i.test(raw.url)) return { title, url: raw.url };
+function answerTtl(): number {
+  return envInt('TRAILER_ADDON_TTL', 86400, MIN_TTL_SECONDS);
+}
+
+function emptyAnswerTtl(): number {
+  return envInt('TRAILER_ADDON_EMPTY_TTL', 86400, MIN_TTL_SECONDS);
+}
+
+function catalogWaitMs(): number {
+  return envInt('TRAILER_ADDON_CATALOG_WAIT_MS', 1500, 0);
+}
+
+function warmConcurrency(): number {
+  return envInt('TRAILER_ADDON_WARM_CONCURRENCY', 4, 1);
+}
+
+/** The manifest URL of the config's trailer addon, or null when it takes trailers from the metadata provider. */
+function trailerAddonManifestUrl(config: any): string | null {
+  if (config?.trailerProvider !== 'addon') return null;
+  const url = typeof config.trailerAddonUrl === 'string' ? config.trailerAddonUrl.trim() : '';
+  if (!HTTP_URL.test(url) || !url.endsWith(`/${MANIFEST_FILE}`)) return null;
+  return url;
+}
+
+function usesTrailerAddon(config: any): boolean {
+  return trailerAddonManifestUrl(config) !== null;
+}
+
+function addonHash(manifestUrl: string): string {
+  return createHash('sha1').update(manifestUrl).digest('hex').slice(0, 12);
+}
+
+function resourceCacheKey(hash: string): string {
+  return withGlobalEpoch(`trailer-addon:resource:${hash}`);
+}
+
+function titleCacheKey(hash: string, target: TitleTarget): string {
+  return withGlobalEpoch(`trailer-addon:title:${hash}:${target.type}:${target.imdbId}`);
+}
+
+function resourceUrl(manifestUrl: string, resource: AddonResource, target: TitleTarget): string {
+  const base = manifestUrl.slice(0, -MANIFEST_FILE.length);
+  return `${base}${resource}/${target.type}/${encodeURIComponent(target.imdbId)}.json`;
+}
+
+function titleTargetOf(meta: any): TitleTarget | null {
+  if (!meta || typeof meta !== 'object') return null;
+  let imdbId: string | null = null;
+  for (const candidate of [meta.imdb_id, meta._imdbId]) {
+    if (typeof candidate === 'string' && /^tt\d+$/.test(candidate)) {
+      imdbId = candidate;
+      break;
+    }
+  }
+  if (!imdbId && typeof meta.id === 'string') imdbId = meta.id.match(/^tt\d+/)?.[0] || null;
+  if (!imdbId) return null;
+  const type = meta.type === 'movie' || meta.type === 'anime.movie' ? 'movie' : 'series';
+  return { type, imdbId };
+}
+
+const inFlight = new Map<string, Promise<any>>();
+
+function shared<T>(key: string, work: () => Promise<T>): Promise<T> {
+  const running = inFlight.get(key);
+  if (running) return running;
+  const started: Promise<T> = Promise.resolve()
+    .then(work)
+    .finally(() => {
+      if (inFlight.get(key) === started) inFlight.delete(key);
+    });
+  inFlight.set(key, started);
+  return started;
+}
+
+async function readCached(key: string): Promise<any> {
+  if (!redis) return null;
+  try {
+    const stored = await redis.getBuffer(key);
+    return stored ? await decodeCachePayload(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeCached(key: string, value: any, ttl: number): Promise<void> {
+  if (!redis) return;
+  try {
+    await redis.set(key, await encodeCachePayload(value), 'EX', ttl);
+  } catch (error: any) {
+    logger.warn(`Could not store ${key}: ${error?.message}`);
+  }
+}
+
+async function fetchJson(url: string): Promise<Fetched> {
+  const limit = requestTimeoutMs();
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`no answer within ${limit}ms`)), limit);
+  });
+  const request = httpGet(url, { timeout: limit, headers: { Accept: 'application/json' } });
+  // Still settles after the deadline has won the race.
+  request.catch(() => {});
+
+  try {
+    const response = await Promise.race([request, deadline]);
+    let data = response.data;
+    if (typeof data === 'string') {
+      try {
+        data = JSON.parse(data);
+      } catch {
+        return { outcome: 'odd' };
+      }
+    }
+    return { outcome: 'ok', data };
+  } catch (error: any) {
+    if (error?.response?.status === 404) return { outcome: 'missing' };
+    logger.debug(`Request failed: ${error?.message}`);
+    return { outcome: 'failed' };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function offersStreams(manifest: any): boolean {
+  if (!Array.isArray(manifest?.resources)) return false;
+  return manifest.resources.some((entry: any) => (typeof entry === 'string' ? entry : entry?.name) === 'stream');
+}
+
+/** Which resource the addon is asked for; null when its manifest could not be read this time. */
+async function resourceOf(manifestUrl: string, hash: string): Promise<AddonResource | null> {
+  const key = resourceCacheKey(hash);
+  return shared(key, async () => {
+    const cached = await readCached(key);
+    if (cached?.resource === 'stream' || cached?.resource === 'meta') return cached.resource as AddonResource;
+
+    const fetched = await fetchJson(manifestUrl);
+    // A manifest that could not be read (404, other error, timeout) is not remembered; it is read again next time.
+    if (fetched.outcome === 'failed' || fetched.outcome === 'missing') return null;
+    const resource: AddonResource = fetched.outcome === 'ok' && offersStreams(fetched.data) ? 'stream' : 'meta';
+    await writeCached(key, { resource }, answerTtl());
+    return resource;
+  });
+}
+
+function textOf(...candidates: any[]): string {
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const text = candidate.trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function toTrailer(title: string, ytId: any, url: any): AddonTrailer | null {
+  const name = title || 'Trailer';
+  if (typeof ytId === 'string' && YOUTUBE_ID.test(ytId.trim())) return { title: name, ytId: ytId.trim() };
+  if (typeof url === 'string' && HTTP_URL.test(url.trim())) return { title: name, url: url.trim() };
   return null;
 }
 
-// A signed link is not kept past its own expiry.
-function ttlFor(streams: TrailerStream[]): number {
-  const base = envInt('TRAILER_ADDON_TTL', 24 * 60 * 60, 60);
-  let ttl = base;
-  for (const stream of streams) {
-    const expire = stream.url ? /[?&]expire=(\d{9,10})(?:&|$)/.exec(stream.url) : null;
-    if (expire) ttl = Math.min(ttl, Math.max(60, Number(expire[1]) - Math.floor(Date.now() / 1000) - 300));
+function trailersFromEntries(entries: any): AddonTrailer[] {
+  if (!Array.isArray(entries)) return [];
+  const trailers: AddonTrailer[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const trailer = toTrailer(textOf(entry.title, entry.name), entry.ytId, entry.url);
+    if (trailer) trailers.push(trailer);
+  }
+  return trailers;
+}
+
+function trailersFromMeta(meta: any): AddonTrailer[] {
+  if (!meta || typeof meta !== 'object') return [];
+  const trailers = trailersFromEntries(meta.trailerStreams);
+  for (const link of Array.isArray(meta.links) ? meta.links : []) {
+    if (!link || typeof link !== 'object') continue;
+    const trailer = toTrailer(textOf(link.title, link.provider, link.name), undefined, link.trailers);
+    if (trailer) trailers.push(trailer);
+  }
+  if (trailers.length) return trailers;
+
+  for (const entry of Array.isArray(meta.trailers) ? meta.trailers : []) {
+    if (!entry || typeof entry !== 'object') continue;
+    const trailer = toTrailer(textOf(entry.title, entry.name), entry.source ?? entry.ytId, undefined);
+    if (trailer) trailers.push(trailer);
+  }
+  return trailers;
+}
+
+/** Seconds an answer may be kept: the configured lifetime, cut short of the first link to expire. */
+function lifetimeOf(trailers: AddonTrailer[]): number {
+  let ttl = answerTtl();
+  const now = Math.floor(Date.now() / 1000);
+  for (const trailer of trailers) {
+    if (!trailer.url) continue;
+    let expire: string | null = null;
+    try {
+      expire = new URL(trailer.url).searchParams.get('expire');
+    } catch {
+      continue;
+    }
+    if (!expire || !/^\d+$/.test(expire)) continue;
+    const usable = Number(expire) - now - EXPIRY_MARGIN_SECONDS;
+    ttl = Math.min(ttl, Math.max(MIN_TTL_SECONDS, usable));
   }
   return ttl;
 }
 
-const pending = new Map<string, Promise<TrailerStream[]>>();
-function inflight(key: string, work: () => Promise<TrailerStream[]>): Promise<TrailerStream[]> {
-  const running = pending.get(key);
-  if (running) return running;
-  const started = work().finally(() => pending.delete(key));
-  pending.set(key, started);
-  return started;
+/** Asks the addon and stores what it said. Null when it gave no answer this time, and then nothing is stored. */
+async function fetchTitleTrailers(manifestUrl: string, hash: string, target: TitleTarget): Promise<AddonTrailer[] | null> {
+  const resource = await resourceOf(manifestUrl, hash);
+  if (!resource) return null;
+
+  const fetched = await fetchJson(resourceUrl(manifestUrl, resource, target));
+  if (fetched.outcome === 'failed' || fetched.outcome === 'odd') return null;
+
+  let trailers: AddonTrailer[] = [];
+  if (fetched.outcome === 'ok') {
+    trailers = resource === 'stream' ? trailersFromEntries(fetched.data?.streams) : trailersFromMeta(fetched.data?.meta);
+  }
+  await writeCached(titleCacheKey(hash, target), { trailers }, trailers.length ? lifetimeOf(trailers) : emptyAnswerTtl());
+  return trailers;
 }
 
-async function addonResource(manifestUrl: string): Promise<'stream' | 'meta'> {
-  const { cacheWrapGlobal, classifyResultAllowEmpty } = require('./getCache');
-  const addonHash = createHash('sha256').update(manifestUrl).digest('hex').slice(0, 12);
-  const shape = await cacheWrapGlobal(
-    `trailer_addon:manifest:v1:${addonHash}`,
-    async () => {
-      const response = await httpGet(manifestUrl, { timeout: envInt('TRAILER_ADDON_TIMEOUT_MS', 6000, 500) });
-      const resources = Array.isArray(response?.data?.resources) ? response.data.resources : [];
-      const names = resources.map((r: any) => (typeof r === 'string' ? r : r?.name));
-      return { resource: names.includes('stream') ? 'stream' : 'meta' };
-    },
-    envInt('TRAILER_ADDON_TTL', 24 * 60 * 60, 60),
-    { upstream: true, resultClassifier: classifyResultAllowEmpty }
-  );
-  return shape?.resource === 'stream' ? 'stream' : 'meta';
-}
-
-function streamsFromMeta(meta: any): TrailerStream[] {
-  const out: TrailerStream[] = [];
-  for (const raw of Array.isArray(meta?.trailerStreams) ? meta.trailerStreams : []) {
-    const stream = toStream(raw);
-    if (stream) out.push(stream);
-  }
-  for (const link of Array.isArray(meta?.links) ? meta.links : []) {
-    const stream = toStream({ url: link?.trailers, title: link?.provider ?? link?.name });
-    if (stream) out.push(stream);
-  }
-  if (!out.length) {
-    for (const raw of Array.isArray(meta?.trailers) ? meta.trailers : []) {
-      const stream = toStream({ ytId: raw?.source ?? raw?.ytId, title: raw?.name });
-      if (stream) out.push(stream);
-    }
-  }
-  return out;
-}
-
-async function fetchAddonTrailers(manifestUrl: string, type: string, id: string): Promise<TrailerStream[]> {
-  const resource = await addonResource(manifestUrl);
-  const url = trailerStreamUrl(manifestUrl, type, id, resource);
-  if (!url) return [];
-  let response: any;
+/** The addon's trailers for a title, from the cache when it holds them. Null when there is no answer to go by. */
+async function trailersFor(manifestUrl: string, target: TitleTarget): Promise<AddonTrailer[] | null> {
+  const hash = addonHash(manifestUrl);
+  const key = titleCacheKey(hash, target);
   try {
-    response = await httpGet(url, { timeout: envInt('TRAILER_ADDON_TIMEOUT_MS', 6000, 500) });
+    return await shared(key, async () => {
+      const cached = await readCached(key);
+      if (Array.isArray(cached?.trailers)) return cached.trailers as AddonTrailer[];
+      return fetchTitleTrailers(manifestUrl, hash, target);
+    });
   } catch (error: any) {
-    if (error?.response?.status === 404) return [];
-    throw error;
-  }
-  if (resource === 'meta') return streamsFromMeta(response?.data?.meta);
-  const streams = Array.isArray(response?.data?.streams) ? response.data.streams : [];
-  return streams.map(toStream).filter((s: TrailerStream | null): s is TrailerStream => s !== null);
-}
-
-function addonTarget(meta: any, config: any): { manifestUrl: string; type: string; id: string; key: string } | null {
-  if (!meta || config?.trailerProvider !== 'addon') return null;
-  const manifestUrl = typeof config?.trailerAddonUrl === 'string' ? config.trailerAddonUrl.trim() : '';
-  if (!manifestUrl) return null;
-
-  const type = meta.type === 'movie' || meta.type === 'anime.movie' ? 'movie' : 'series';
-  const id = imdbIdOf(meta);
-  if (!id) return null;
-
-  const addonHash = createHash('sha256').update(manifestUrl).digest('hex').slice(0, 12);
-  return { manifestUrl, type, id, key: `trailer_addon:v1:${addonHash}:${type}:${id}` };
-}
-
-async function fetchAndStore(target: { manifestUrl: string; type: string; id: string; key: string }): Promise<TrailerStream[] | null> {
-  const { writeGlobalCache } = require('./getCache');
-  let streams: TrailerStream[];
-  try {
-    streams = await inflight(target.key, () => fetchAddonTrailers(target.manifestUrl, target.type, target.id));
-  } catch {
+    logger.debug(`Lookup failed for ${target.imdbId}: ${error?.message}`);
     return null;
   }
-  await writeGlobalCache(target.key, streams, streams.length ? ttlFor(streams) : envInt('TRAILER_ADDON_EMPTY_TTL', 24 * 60 * 60, 60));
-  return streams;
 }
 
-async function addonTrailers(meta: any, config: any): Promise<TrailerStream[] | null> {
-  const target = addonTarget(meta, config);
-  if (!target) return null;
-
-  const { readGlobalCache } = require('./getCache');
-  const cached: TrailerStream[] | null = await readGlobalCache(target.key);
-  if (Array.isArray(cached)) return cached;
-  return fetchAndStore(target);
-}
-
-export async function warmTrailerAddon(metas: any[], config: any, refreshWithinSeconds: number): Promise<number> {
-  if (config?.trailerProvider !== 'addon' || !Array.isArray(metas) || !metas.length) return 0;
-  const redis = require('./redisClient');
-  const { withGlobalEpoch } = require('./cacheEpoch');
-  const { mapWithConcurrency } = require('../utils/concurrency');
-  const targets = metas.map((meta) => addonTarget(meta, config)).filter((t): t is NonNullable<typeof t> => t !== null);
-  if (!targets.length || !redis) return 0;
-
-  let remaining: any[] | null = null;
-  try {
-    remaining = await redis.pipeline(targets.map((t) => ['pttl', withGlobalEpoch(t.key)])).exec();
-  } catch {
-    return 0;
+function setTrailers(meta: any, trailers: AddonTrailer[] | null): void {
+  if (!trailers || trailers.length === 0) return;
+  meta.trailerStreams = trailers.map((trailer) => ({ ...trailer }));
+  const youtube = trailers.filter((trailer) => trailer.ytId);
+  if (youtube.length) {
+    meta.trailers = youtube.map((trailer) => ({ source: trailer.ytId, type: 'Trailer', name: trailer.title }));
   }
-  const due = targets.filter((_, i) => {
-    const pttl = remaining?.[i]?.[1];
-    return typeof pttl !== 'number' || pttl < refreshWithinSeconds * 1000;
-  });
-  const fetched = await mapWithConcurrency(due, envInt('TRAILER_ADDON_WARM_CONCURRENCY', 4, 1), (t: any) => fetchAndStore(t));
-  return fetched.filter(Array.isArray).length;
 }
 
-function attachTrailers(meta: any, streams: TrailerStream[] | null): any {
-  if (!streams?.length) return meta;
-  meta.trailerStreams = streams;
-  const youtube = streams.filter((s) => s.ytId);
-  if (youtube.length) meta.trailers = youtube.map((s) => ({ source: s.ytId, type: 'Trailer', name: s.title }));
+/**
+ * Applied as the meta goes out, never to what is cached: the cached components
+ * are shared by every config, and only some of them name a trailer addon.
+ */
+async function applyAddonTrailersProjection(meta: any, config: any): Promise<any> {
+  const manifestUrl = trailerAddonManifestUrl(config);
+  if (!manifestUrl) return meta;
+  const target = titleTargetOf(meta);
+  if (!target) return meta;
+  setTrailers(meta, await trailersFor(manifestUrl, target));
   return meta;
 }
 
-// Applied on the way out, like the IMDb rating: the cached components keep the provider's own.
-export async function applyTrailerAddonProjection(meta: any, config: any): Promise<any> {
-  return attachTrailers(meta, await addonTrailers(meta, config));
+/**
+ * A page waits only so long for the addon. Titles still unanswered keep the
+ * provider's trailer in this response; their lookups carry on and fill the cache.
+ */
+async function applyAddonTrailersToList(metas: any[], config: any): Promise<any[]> {
+  const manifestUrl = trailerAddonManifestUrl(config);
+  if (!manifestUrl || !Array.isArray(metas) || metas.length === 0) return metas;
+
+  let open = true;
+  const lookups: Promise<void>[] = [];
+  for (const meta of metas) {
+    const target = titleTargetOf(meta);
+    if (!target) continue;
+    lookups.push(trailersFor(manifestUrl, target).then((trailers) => {
+      if (open) setTrailers(meta, trailers);
+    }));
+  }
+  if (lookups.length === 0) return metas;
+
+  let timer: NodeJS.Timeout | undefined;
+  const waited = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, catalogWaitMs());
+  });
+  await Promise.race([Promise.all(lookups), waited]);
+  if (timer) clearTimeout(timer);
+  open = false;
+  return metas;
 }
 
-export async function applyTrailerAddonWithin(metas: any[], config: any, waitMs: number): Promise<void> {
-  if (config?.trailerProvider !== 'addon' || !Array.isArray(metas) || !metas.length) return;
-  let timer: NodeJS.Timeout | undefined;
-  const deadline = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), waitMs); });
-  await Promise.all(metas.map(async (meta) => {
-    const streams = await Promise.race([addonTrailers(meta, config).catch(() => null), deadline]);
-    attachTrailers(meta, streams);
-  }));
-  clearTimeout(timer);
+interface WarmJob {
+  key: string;
+  manifestUrl: string;
+  hash: string;
+  target: TitleTarget;
 }
+
+// Catalog warming hands its titles over and moves on, so a slow addon never holds up the catalogs.
+const warmQueue: WarmJob[] = [];
+let warmHead = 0;
+const warmQueued = new Set<string>();
+let warmWorkers = 0;
+// An addon that has stopped answering is not asked again until the next warm run.
+const unansweredInARow = new Map<string, number>();
+let warmStats = { queued: 0, fetched: 0, unanswered: 0, skipped: 0 };
+
+function nextWarmJob(): WarmJob | undefined {
+  if (warmHead >= warmQueue.length) return undefined;
+  const job = warmQueue[warmHead++];
+  if (warmHead > 1024 && warmHead * 2 >= warmQueue.length) {
+    warmQueue.splice(0, warmHead);
+    warmHead = 0;
+  }
+  return job;
+}
+
+async function runWarmWorker(): Promise<void> {
+  warmWorkers += 1;
+  try {
+    for (let job = nextWarmJob(); job; job = nextWarmJob()) {
+      try {
+        if ((unansweredInARow.get(job.hash) ?? 0) >= warmConcurrency() * 2) {
+          warmStats.skipped += 1;
+          continue;
+        }
+        const { key, manifestUrl, hash, target } = job;
+        const trailers = await shared(`refresh:${key}`, () => fetchTitleTrailers(manifestUrl, hash, target)).catch(() => null);
+        if (trailers === null) {
+          warmStats.unanswered += 1;
+          unansweredInARow.set(hash, (unansweredInARow.get(hash) ?? 0) + 1);
+        } else {
+          warmStats.fetched += 1;
+          unansweredInARow.delete(hash);
+        }
+      } finally {
+        warmQueued.delete(job.key);
+      }
+    }
+  } finally {
+    warmWorkers -= 1;
+  }
+  if (warmWorkers === 0) logger.debug(`Warm queue empty: ${warmStats.fetched} fetched, ${warmStats.unanswered} unanswered, ${warmStats.skipped} skipped`);
+}
+
+/** This run's counts. Titles still queued when the catalogs finish are asked after them. */
+function trailerWarmStats(): { queued: number; fetched: number; unanswered: number; skipped: number; outstanding: number } {
+  return { ...warmStats, outstanding: warmQueue.length - warmHead };
+}
+
+/** A new warm run starts its counts again and gives an addon that stopped answering another chance. */
+function resetTrailerWarm(): void {
+  warmStats = { queued: 0, fetched: 0, unanswered: 0, skipped: 0 };
+  unansweredInARow.clear();
+}
+
+/**
+ * Queues the titles whose cached answer is missing or would lapse before
+ * `nextRunAt` (epoch ms), and returns how many were queued. They are asked in
+ * the background, a few at a time.
+ */
+async function queueTrailerWarm(metas: any[], config: any, nextRunAt: number): Promise<number> {
+  const manifestUrl = trailerAddonManifestUrl(config);
+  if (!manifestUrl || !redis || !Array.isArray(metas) || metas.length === 0) return 0;
+
+  const hash = addonHash(manifestUrl);
+  const targets = new Map<string, TitleTarget>();
+  for (const meta of metas) {
+    const target = titleTargetOf(meta);
+    if (!target) continue;
+    const key = titleCacheKey(hash, target);
+    if (!warmQueued.has(key)) targets.set(key, target);
+  }
+  if (targets.size === 0) return 0;
+
+  const keys = [...targets.keys()];
+  let due: string[];
+  try {
+    const replies = await redis.pipeline(keys.map((key) => ['pttl', key])).exec();
+    const readAt = Date.now();
+    due = keys.filter((_key, index) => {
+      const [error, remaining] = replies?.[index] || [];
+      if (error) throw error;
+      // -1 is a key that never expires, -2 one that is not there.
+      const lasts = remaining === -1 || (typeof remaining === 'number' && remaining > 0 && readAt + remaining > nextRunAt);
+      return !lasts;
+    });
+  } catch (error: any) {
+    logger.warn(`Could not read trailer lifetimes, warming none: ${error?.message}`);
+    return 0;
+  }
+
+  let queued = 0;
+  for (const key of due) {
+    if (warmQueued.has(key)) continue;
+    warmQueued.add(key);
+    warmQueue.push({ key, manifestUrl, hash, target: targets.get(key) as TitleTarget });
+    queued += 1;
+  }
+  warmStats.queued += queued;
+  while (warmWorkers < warmConcurrency() && warmHead < warmQueue.length) void runWarmWorker();
+  return queued;
+}
+
+export {
+  applyAddonTrailersProjection,
+  applyAddonTrailersToList,
+  queueTrailerWarm,
+  trailerWarmStats,
+  resetTrailerWarm,
+  usesTrailerAddon,
+};
+module.exports = {
+  applyAddonTrailersProjection,
+  applyAddonTrailersToList,
+  queueTrailerWarm,
+  trailerWarmStats,
+  resetTrailerWarm,
+  usesTrailerAddon,
+};

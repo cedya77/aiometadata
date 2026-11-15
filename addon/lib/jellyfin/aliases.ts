@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
 import { parseStremioId } from './ids';
 import { envInt } from '../../utils/envNumber';
@@ -261,9 +263,12 @@ export async function dedupeByAlias<T extends { videoId: string }>(rows: T[]): P
   return out;
 }
 
-/** Rows grouped by title: known aliases, and the spellings one play through this server wrote together. */
-export async function groupBySpelling<T extends { video_id: any; last_played_at?: any; origin?: any }>(rows: T[]): Promise<T[][]> {
-  const ids = rows.map((row) => String(row.video_id));
+const BREATH_EVERY = 500;
+
+/** Which title each id belongs to: known aliases, and the spellings one play through this server wrote together. */
+export async function spellingRoots(ids: string[], writtenAt: (i: number) => unknown, breathe = false): Promise<(id: string) => string> {
+  // A history longer than the memo would only push out what others are using, and find nothing it put there.
+  const aliasesOf = breathe && ids.length > aliasMemo.max / 2 ? (id: string) => aliasMemo.peek(id) ?? computeVideoIdAliases(id) : videoIdAliases;
   const parent = new Map<string, string>(ids.map((id) => [id, id]));
   const find = (id: string): string => {
     let root = id;
@@ -278,19 +283,53 @@ export async function groupBySpelling<T extends { video_id: any; last_played_at?
     if (ra !== rb) parent.set(ra, rb);
   };
 
-  const together = new Map<string, string>();
-  for (const [i, row] of rows.entries()) {
+  const together = new Map<string, Map<string, string>>();
+  for (let i = 0; i < ids.length; i += 1) {
     const id = ids[i];
-    for (const alias of await videoIdAliases(id).catch(() => [] as string[])) union(id, alias);
-    if (row.origin !== 'server' || !row.last_played_at) continue;
+    if (breathe && i % BREATH_EVERY === BREATH_EVERY - 1) await new Promise((resolve) => setImmediate(resolve));
+    for (const alias of await aliasesOf(id).catch(() => [] as string[])) union(id, alias);
+    const written = writtenAt(i);
+    if (!written) continue;
     const parsed = parseStremioId(id);
     const at = parsed && parsed.episode !== null && parsed.episode !== undefined ? `${parsed.season ?? ''}:${parsed.episode}` : 'title';
-    const key = `${row.last_played_at}|${at}`;
-    const first = together.get(key);
-    if (first) union(id, first);
-    else together.set(key, id);
+    const key = `${written}|${at}`;
+    const moment = together.get(key) ?? new Map<string, string>();
+    together.set(key, moment.set(id, parsed?.idType ?? id));
   }
+  // One play writes each provider's id once, so a moment naming a provider twice holds more than one title.
+  for (const moment of together.values()) {
+    if (moment.size < 2) continue;
+    if (new Set(moment.values()).size < moment.size) {
+      await pairFilmsByIds(moment, union);
+      continue;
+    }
+    const [first, ...rest] = moment.keys();
+    for (const id of rest) union(first, id);
+  }
+  return find;
+}
 
+/** Films sharing a moment, joined where a film's other spelling is written there too. */
+async function pairFilmsByIds(moment: Map<string, string>, union: (a: string, b: string) => void): Promise<void> {
+  const { movieSpellings } = require('./watched');
+  const paired = new Set<string>();
+  const films = [...moment].filter(([id, provider]) => (provider === 'imdb' || provider === 'tmdb') && parseStremioId(id)?.episode === null);
+  // IMDb ids first: each one answered pairs its TMDB spelling, which then needs no lookup of its own.
+  films.sort(([, a], [, b]) => Number(a === 'tmdb') - Number(b === 'tmdb'));
+  for (const [id] of films) {
+    if (paired.has(id)) continue;
+    for (const other of (await movieSpellings(id, {})) as string[]) {
+      if (!moment.has(other)) continue;
+      union(id, other);
+      paired.add(other);
+    }
+  }
+}
+
+/** Rows grouped by title. */
+export async function groupBySpelling<T extends { video_id: any; last_played_at?: any; origin?: any }>(rows: T[]): Promise<T[][]> {
+  const ids = rows.map((row) => String(row.video_id));
+  const find = await spellingRoots(ids, (i) => (rows[i].origin === 'server' ? rows[i].last_played_at : null));
   const groups = new Map<string, T[]>();
   for (const [i, row] of rows.entries()) {
     const root = find(ids[i]);

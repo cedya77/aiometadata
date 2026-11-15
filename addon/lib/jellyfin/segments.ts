@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import consola from 'consola';
 import { createHash } from 'crypto';
 import { envInt } from '../../utils/envNumber';
@@ -111,8 +113,9 @@ async function aniSkipQuery(malId: number, episode: number, episodeLength: numbe
     });
     return Array.isArray(response.data?.results) ? response.data.results : [];
   } catch (error: any) {
-    if (error?.response?.status === 404) return [];
-    throw error;
+    // AniSkip answers 404 for an episode it has no markers for.
+    if (error?.response?.status !== 404) throw error;
+    return [];
   }
 }
 

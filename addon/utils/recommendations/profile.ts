@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import consola from 'consola';
 import { collectWatchedRows, isWatched, type WatchedRow } from './history';
 import { formatHistory, isNegative, tuningFrom, DEFAULT_TUNING, type HistoryStats, type Tuning } from './rows';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 /**
  * AniList Watch Tracking Module
  * 
@@ -11,7 +13,7 @@ const consola = require('consola');
 const { httpPost } = require('../utils/httpClient');
 const database = require('./database');
 const idMapper = require('./id-mapper');
-const { resolveAnidbEpisodeFromTvdbEpisode } = require('./anime-list-mapper');
+const { resolveTrackedAnidbEpisode } = require('./anime-list-mapper');
 const { ownTokenId } = require('./accounts');
 
 
@@ -524,7 +526,7 @@ async function fetchAnimeList(accessToken) {
   const data = await anilistRequest(
     `query ($userId: Int) {
       MediaListCollection(userId: $userId, type: ANIME) {
-        lists { entries { mediaId status progress updatedAt media { idMal format episodes status nextAiringEpisode { episode airingAt } } } }
+        lists { entries { mediaId status progress score(format: POINT_10_DECIMAL) updatedAt media { idMal format episodes status nextAiringEpisode { episode airingAt } } } }
       }
     }`,
     { userId },
@@ -540,6 +542,7 @@ async function fetchAnimeList(accessToken) {
         ...(media.idMal ? { mal: Number(media.idMal) } : {}),
         status: ANILIST_STATUSES[entry.status] || 'planning',
         progress: Number(entry.progress) || 0,
+        ...(Number(entry.score) > 0 ? { score: Number(entry.score) } : {}),
         episodes: Number(media.episodes) || null,
         movie: media.format === 'MOVIE',
         updatedAt: (Number(entry.updatedAt) || 0) * 1000,
@@ -572,6 +575,15 @@ async function setPlanning(anilistId, listed, accessToken) {
     logger.error(`[AniList Tracker] Watchlist ${listed ? 'add' : 'remove'} failed for AniList ID ${anilistId}: ${error.message}`);
     return false;
   }
+}
+
+async function setDropped(anilistId, accessToken) {
+  await anilistRequest(
+    'mutation ($mediaId: Int) { SaveMediaListEntry(mediaId: $mediaId, status: DROPPED) { id } }',
+    { mediaId: parseInt(anilistId, 10) },
+    accessToken
+  );
+  return true;
 }
 
 /** The score, on AniList's own 0 to 100 whatever format the user shows, on a title already on the list; 0 clears it. */
@@ -629,11 +641,11 @@ async function resolveAniListId(parsedId) {
           return null;
         }
         
-        const seasonNumber = parsedId.season || 1;
+        const seasonNumber = parsedId.season ?? 1;
         const episodeNumber = parsedId.episode || 1;
         
         // Resolve TVDB episode to AniDB episode info
-        const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, seasonNumber, episodeNumber);
+        const anidbEpisodeInfo = await resolveTrackedAnidbEpisode(tvdbId, seasonNumber, episodeNumber);
         if (!anidbEpisodeInfo) {
           logger.debug(`[AniList Tracker] No AniDB episode info found for TVDB ${tvdbId} S${seasonNumber}E${episodeNumber}`);
           return null;
@@ -962,6 +974,7 @@ module.exports = {
   updateProgress,
   fetchPlanningIds,
   setPlanning,
+  setDropped,
   setScore,
   anilistIdForMal,
   resolveAniListId,

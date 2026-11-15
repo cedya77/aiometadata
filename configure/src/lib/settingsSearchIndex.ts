@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import type { SettingsSearchEntry } from './settingsSearch';
 
 export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
@@ -75,31 +77,97 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['rpdb', 'poster', 'rating', 'library'],
   },
   {
-    id: 'general.simklWatchTracking', section: 'general', anchor: 'simkl-watch-tracking',
+    id: 'people.list', section: 'people', anchor: null,
+    label: 'People',
+    description: 'Everyone watching: their trackers, watchlists, catalogs and sign-in.',
+    keywords: ['users', 'profiles', 'family', 'household', 'viewer', 'add person', 'add user'],
+  },
+  {
+    id: 'people.pin', section: 'people', anchor: 'main.jellyfin', requires: 'jellyfin',
+    label: 'PIN',
+    description: 'Asked when someone switches to a person, and on the viewing page.',
+    keywords: ['pin', 'lock', 'kids', 'children', 'password', 'protect'],
+  },
+  {
+    id: 'people.watchedAfter', section: 'people', anchor: 'main.jellyfin', requires: 'jellyfin',
+    label: 'Watched After',
+    description: 'How far a play has to get before a title is marked watched.',
+    keywords: ['watched', 'percent', 'threshold', 'played', 'counts as watched', 'finished'],
+  },
+  {
+    id: 'people.ownStreamAddon', section: 'people', anchor: null, requires: 'jellyfin',
+    label: "A Person's Own Stream Addon",
+    description: 'An addon one person plays from instead of the one set for everyone.',
+    keywords: ['stream', 'addon', 'aiostreams', 'override', 'per person'],
+  },
+  {
+    id: 'people.continueWatching', section: 'people', anchor: 'main.tracking',
+    label: 'Continue Watching From',
+    description: 'Which tracker Continue Watching and Next Up read from.',
+    keywords: ['continue watching', 'resume', 'next up', 'tracker', 'source'],
+  },
+  {
+    id: 'people.watchlist', section: 'people', anchor: 'main.tracking',
+    label: 'Watchlist',
+    description: 'Where a heart in an app goes, and which shelves the Watchlist shows.',
+    keywords: ['heart', 'favourite', 'favorite', 'shelf', 'watchlist'],
+  },
+  {
+    id: 'people.catalogTags', section: 'people', anchor: 'main.catalogs',
+    label: 'Catalogs per Person',
+    description: 'The catalog tags each person sees, and their content rating.',
+    keywords: ['tags', 'kids', 'children', 'rating', 'catalogs', 'age'],
+  },
+  {
+    id: 'people.alsoKnownAs', section: 'people', anchor: null,
+    label: 'Also Known As',
+    description: 'Names AIOStreams and other apps use for a person.',
+    keywords: ['handoff', 'aiostreams', 'names', 'alias'],
+  },
+  {
+    id: 'watch-tracking.playbackDetection', section: 'watch-tracking', anchor: 'playback-detection',
+    label: 'When a Title Counts as Watched',
+    description: 'As soon as it is opened, or once it is finished.',
+    keywords: ['watched', 'opened', 'finished', 'record', 'scrobble', 'counts as watched'],
+  },
+  {
+    id: 'watch-tracking.stremioScrobbling', section: 'watch-tracking', anchor: 'stremio-scrobbling',
+    label: 'Addon Apps',
+    description: 'Record plays, pauses and watched marks that addon apps report.',
+    keywords: ['scrobble', 'stremio', 'playback', 'watched', 'library', 'watchlist'],
+  },
+  {
+    id: 'watch-tracking.jellyfinScrobbling', section: 'watch-tracking', anchor: 'jellyfin-scrobbling',
+    label: 'Jellyfin Apps',
+    description: 'Record plays reported by apps on this addon\'s Jellyfin server and AIOStreams\' Jellyfin server.',
+    keywords: ['scrobble', 'jellyfin', 'playback', 'aiostreams'],
+  },
+  {
+    id: 'watch-tracking.simklWatchTracking', section: 'watch-tracking', anchor: 'simkl-watch-tracking',
     label: 'Simkl Checkin',
     description: 'Automatically sync your watch progress to external services when you play content.',
     keywords: ['scrobble', 'checkin', 'progress', 'watched'],
   },
   {
-    id: 'general.anilistWatchTracking', section: 'general', anchor: 'anilist-watch-tracking',
+    id: 'watch-tracking.anilistWatchTracking', section: 'watch-tracking', anchor: 'anilist-watch-tracking',
     label: 'AniList Tracking',
     description: 'Automatically sync your watch progress to external services when you play content.',
     keywords: ['scrobble', 'anime', 'progress', 'watched'],
   },
   {
-    id: 'general.malWatchTracking', section: 'general', anchor: 'mal-watch-tracking',
+    id: 'watch-tracking.malWatchTracking', section: 'watch-tracking', anchor: 'mal-watch-tracking',
     label: 'MyAnimeList Tracking',
     description: 'Automatically sync your watch progress to external services when you play content.',
     keywords: ['scrobble', 'anime', 'mal', 'progress', 'watched'],
   },
   {
-    id: 'general.mdblistWatchTracking', section: 'general', anchor: 'mdblist-watch-tracking',
+    id: 'watch-tracking.mdblistWatchTracking', section: 'watch-tracking', anchor: 'mdblist-watch-tracking',
     label: 'MDBList Tracking',
     description: 'Automatically sync your watch progress to external services when you play content.',
     keywords: ['scrobble', 'progress', 'watched'],
   },
   {
-    id: 'general.publicmetadbWatchTracking', section: 'general', anchor: 'publicmetadb-watch-tracking',
+    id: 'watch-tracking.publicmetadbWatchTracking', section: 'watch-tracking', anchor: 'publicmetadb-watch-tracking',
     label: 'PublicMetaDB Tracking',
     description: 'Automatically sync your watch progress to external services when you play content.',
     keywords: ['scrobble', 'progress', 'watched'],
@@ -276,8 +344,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   {
     id: 'providers.trailerProvider', section: 'providers', anchor: 'trailer-provider',
     label: 'Trailers',
-    description: "Where a title's trailer comes from: the metadata provider or a trailer addon.",
-    keywords: ['trailer', 'trailers', 'youtube', 'addon'],
+    description: "Where a title's trailer comes from.",
+    keywords: ['trailer', 'trailers', 'trailer addon', 'youtube', 'video', 'manifest'],
   },
   {
     id: 'providers.tvdbSeasonOrder', section: 'providers', anchor: 'tvdb-season-order',
@@ -550,6 +618,80 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['ai', 'web search', 'gemini'],
   },
 
+  // ── Jellyfin — sections/JellyfinSettings.tsx ──
+  {
+    id: 'jellyfin.serverAddress', section: 'jellyfin', anchor: 'server-address',
+    label: 'Jellyfin Server Address',
+    description: 'The address to add as a server in a Jellyfin app.',
+    keywords: ['jellyfin', 'server', 'url', 'address', 'connect'],
+  },
+  {
+    id: 'jellyfin.quickConnect', section: 'jellyfin', anchor: 'quick-connect',
+    label: 'Quick Connect',
+    description: 'Sign a Jellyfin app in with the code it shows.',
+    keywords: ['jellyfin', 'code', 'sign in', 'device', 'tv', 'approve'],
+  },
+  {
+    id: 'jellyfin.clientPassword', section: 'jellyfin', anchor: 'client-password',
+    label: 'Jellyfin Client Password',
+    description: 'A password for Jellyfin apps without Quick Connect.',
+    keywords: ['jellyfin', 'password', 'sign in', 'infuse'],
+  },
+  {
+    id: 'jellyfin.streamUrl', section: 'jellyfin', anchor: 'stream-addon',
+    label: 'Jellyfin Stream Addon',
+    description: 'The addon everyone plays titles from in Jellyfin apps, such as AIOStreams.',
+    keywords: ['jellyfin', 'stream', 'aiostreams', 'playback', 'play'],
+  },
+  {
+    id: 'jellyfin.skipMarkers', section: 'jellyfin', anchor: 'skip-markers',
+    label: 'Skip Intro and Credits',
+    description: 'Where skip markers come from for everyone.',
+    keywords: ['jellyfin', 'skip', 'intro', 'credits', 'recap', 'markers', 'aniskip', 'introdb'],
+  },
+  {
+    id: 'jellyfin.resolveOnOpen', section: 'jellyfin', anchor: 'resolve-on-open',
+    label: 'Wait for Streams on Open',
+    description: "Load a title's versions as soon as it opens.",
+    keywords: ['jellyfin', 'versions', 'picker', 'preload'],
+  },
+  {
+    id: 'jellyfin.matchReleases', section: 'jellyfin', anchor: 'match-releases',
+    label: 'Match Releases in SyncPlay',
+    description: 'List the release others in the group are playing first.',
+    keywords: ['jellyfin', 'syncplay', 'group', 'watch together'],
+  },
+  {
+    id: 'jellyfin.latestRows', section: 'jellyfin', anchor: 'latest-rows',
+    label: 'Latest Row per Catalog',
+    description: "A row of each catalog's first page on the Jellyfin home screen.",
+    keywords: ['jellyfin', 'home', 'rows', 'latest'],
+  },
+  {
+    id: 'jellyfin.markUnaired', section: 'jellyfin', anchor: 'mark-unaired',
+    label: 'Mark Unaired Episodes',
+    description: "Show episodes that haven't aired as upcoming.",
+    keywords: ['jellyfin', 'upcoming', 'missing', 'episodes'],
+  },
+  {
+    id: 'jellyfin.upcomingRow', section: 'jellyfin', anchor: 'upcoming-row',
+    label: 'Upcoming Row',
+    description: 'What the Jellyfin Upcoming row lists.',
+    keywords: ['jellyfin', 'next up', 'airing', 'calendar'],
+  },
+  {
+    id: 'jellyfin.similarTitles', section: 'jellyfin', anchor: 'similar-titles',
+    label: 'Similar Titles',
+    description: 'Where More Like This suggestions come from.',
+    keywords: ['jellyfin', 'more like this', 'recommendations', 'simkl', 'tmdb'],
+  },
+  {
+    id: 'jellyfin.viewingPage', section: 'jellyfin', anchor: null,
+    label: 'Your Viewing Page',
+    description: 'Your watching, shows, calendar, year and trackers on one page.',
+    keywords: ['jellyfin', 'own page', 'stats', 'year'],
+  },
+
   // ── Configuration — ConfigurationManager.tsx ──
   {
     id: 'configuration.catalogModeOnly', section: 'configuration', anchor: 'catalog-mode-only',
@@ -559,9 +701,9 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   },
   {
     id: 'configuration.hideStremioCatalogs', section: 'configuration', anchor: 'hide-stremio-catalogs',
-    label: 'Hide Stremio-Specific Catalogs',
-    description: 'Leaves catalogs only Stremio uses, such as Calendar videos, out of the manifest. Clients that do not use them can flicker while they render them and then drop them.',
-    keywords: ['stremio', 'catalog', 'manifest', 'metadata', 'calendar', 'calendar videos', 'nuvio', 'flicker'],
+    label: 'Hide Stremio Catalogs',
+    description: "Leaves Stremio-specific catalogs, such as Calendar videos, out of the manifest for clients that don't use them.",
+    keywords: ['stremio', 'calendar', 'calendar videos', 'hide', 'manifest', 'catalogs', 'clients'],
   },
   {
     id: 'configuration.password', section: 'configuration', anchor: 'cfgmgr-password',

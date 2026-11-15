@@ -1,10 +1,14 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
-import { sourceFor } from './trackerSource';
+import { yieldEvery } from '../../utils/yieldEvery';
+import { credentialFor, resumeSourcesFor, sourceFor } from './trackerSource';
 import { filmsHeldElsewhere, getPlaystatesAcross, upsertPlaystateEverywhere } from './aliases';
 import { profileKey, scopeConfigToProfile } from './profiles';
 import { accountOwner } from '../accounts';
 import { runAsAccountOwner } from './viewer';
+import { bulkTimes, rewatchGapMs } from './bulkMarks';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -33,7 +37,9 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
     : '';
   const passKey = `jellyfin_playstate_pass_v2:${userUUID}${profile ? `:${profile}` : ''}`;
   if (digest && (await readGlobalCache(passKey))?.digest === digest) return { added, skipped, unchanged: true };
+  const pause = yieldEvery();
   for (const row of resume) {
+    await pause();
     // The most recent action wins: a point the tracker set after this row's last
     // change replaces it, whether the row is a point, a mark or a rewatch; an
     // older one is what the row already replaced.
@@ -68,12 +74,19 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
   const known = await getPlaystatesAcross(userUUID, finished, profile);
   for (const [videoId, row] of await filmsHeldElsewhere(userUUID, finished.filter((id: string) => !known.has(id)), profile)) known.set(videoId, row);
   const logged = await database.watchedVideoIds(userUUID, profile);
+  // A tracker dates a mark sent to it without one by when it came, so a bulk of them is no viewing date.
+  const bulk = bulkTimes(finished.map((videoId: string) => ({ at: watched.at.get(videoId) ?? 0, videoId })));
   for (const videoId of finished) {
+    await pause();
     const row = known.get(videoId);
     const heldAs = row && String(row.video_id) !== videoId ? [String(row.video_id)] : [];
     const trackerAt = watched.at.get(videoId);
     // An import written without a date takes the tracker's once it has one.
     if (row && row.played && !row.last_played_at && !Number(row.position_ms) && trackerAt) {
+      if (bulk.has(trackerAt)) {
+        skipped += 1;
+        continue;
+      }
       await upsertPlaystateEverywhere(userUUID, videoId, { lastPlayedAt: trackerAt, origin, watch: { at: trackerAt, kind: 'dated' } }, profile, heldAs);
       added += 1;
       continue;
@@ -81,8 +94,7 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
     const watchedAt = trackerAt ?? 0;
     if (row && row.played && Number(row.position_ms) > 0 && !paused.has(videoId) && watchedAt > Number(row.updated_at)) {
       const runtimeMs = Number(row.runtime_ms) || 0;
-      const gapMs = runtimeMs > 0 ? runtimeMs / 2 : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
-      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: watchedAt, origin, watch: { at: watchedAt, kind: 'finish', gapMs } }, profile, heldAs);
+      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: watchedAt, lastPlayedKind: bulk.has(watchedAt) ? 'mark' : 'viewing', origin, watch: { at: watchedAt, kind: 'finish', gapMs: rewatchGapMs(runtimeMs) } }, profile, heldAs);
       added += 1;
       continue;
     }
@@ -104,7 +116,7 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
       continue;
     }
     const watch = trackerAt ? { watch: { at: trackerAt, kind: 'first' } } : {};
-    await upsertPlaystateEverywhere(userUUID, videoId, row ? { positionMs: 0, played: true, origin, ...watch } : { positionMs: 0, played: true, lastPlayedAt: trackerAt ?? null, origin, ...watch }, profile, heldAs);
+    await upsertPlaystateEverywhere(userUUID, videoId, row ? { positionMs: 0, played: true, origin, ...watch } : { positionMs: 0, played: true, lastPlayedAt: trackerAt ?? null, lastPlayedKind: trackerAt && bulk.has(trackerAt) ? 'mark' : 'viewing', origin, ...watch }, profile, heldAs);
     added += 1;
   }
 
@@ -145,6 +157,7 @@ export async function forgetImported(userUUID: string, profile: string): Promise
   const { invalidateResume } = require('./resume');
   invalidateResume(userUUID);
   logger.info(`Forgot ${removed} imported playstate row(s) of ${userUUID}${profile ? ` (${profile})` : ''}`);
+  if (syncOnForgetEnabled()) queueSync(userUUID, 'forgetting imported history');
   return removed;
 }
 
@@ -213,6 +226,64 @@ async function syncConfiguration(userUUID: string): Promise<{ added: number } | 
     });
   }
   return { added };
+}
+
+export const syncOnSaveEnabled = (): boolean => String(process.env.JELLYFIN_PLAYSTATE_SYNC_ON_SAVE ?? '').toLowerCase() === 'true';
+const syncOnForgetEnabled = (): boolean => String(process.env.JELLYFIN_PLAYSTATE_SYNC_ON_FORGET ?? '').toLowerCase() === 'true';
+
+// What the sync reads for a configuration and each user keeping its own history.
+function syncInputs(userUUID: string, config: any): string {
+  if (!config || typeof config !== 'object') return '';
+  const cards = Array.isArray(config.jellyfinUsers) ? config.jellyfinUsers : [];
+  const scoped = [config, ...cards.filter((card: any) => typeof card?.id === 'string' && card.id).map((card: any) => scopeConfigToProfile(config, userUUID, card.id))];
+  const inputs = scoped.map((one: any) => [profileKey(one), sourceFor(one), resumeSourcesFor(one).map((service) => [service, credentialFor(one, service) ?? null])]);
+  const { createHash } = require('crypto');
+  return createHash('sha256').update(JSON.stringify(inputs)).digest('hex');
+}
+
+interface SaveSync { userUUID: string; notBefore: number; after: string }
+const saveQueue: SaveSync[] = [];
+const lastSaveSync = new Map<string, number>();
+let saveDraining = false;
+
+/** A save that changes what the sync reads has it read again soon. */
+export function noteConfigSaved(userUUID: string, before: any, after: any): void {
+  if (!syncOnSaveEnabled()) return;
+  if (syncInputs(userUUID, before) === syncInputs(userUUID, after) || !syncInputs(userUUID, after)) return;
+  queueSync(userUUID, 'a save');
+}
+
+/** Has a configuration read again soon, one at a time, at most once a cooldown each. */
+function queueSync(userUUID: string, after: string): void {
+  const cooldownMs = envInt('JELLYFIN_PLAYSTATE_SYNC_ON_SAVE_COOLDOWN', 600, 60) * 1000;
+  const notBefore = (lastSaveSync.get(userUUID) ?? -Infinity) + cooldownMs;
+  if (saveQueue.some((entry) => entry.userUUID === userUUID)) return;
+  saveQueue.push({ userUUID, notBefore, after });
+  void drainSaveQueue();
+}
+
+async function drainSaveQueue(): Promise<void> {
+  if (saveDraining) return;
+  saveDraining = true;
+  try {
+    while (saveQueue.length) {
+      const now = Date.now();
+      // The interval pass may already be reading this configuration, so it waits for it to finish.
+      const ready = running ? -1 : saveQueue.findIndex((entry) => entry.notBefore <= now);
+      if (ready < 0) {
+        await new Promise((resolve) => setTimeout(resolve, 10_000).unref?.());
+        continue;
+      }
+      const [{ userUUID, after }] = saveQueue.splice(ready, 1);
+      lastSaveSync.set(userUUID, Date.now());
+      for (const [key, at] of lastSaveSync) if (Date.now() - at > envInt('JELLYFIN_PLAYSTATE_SYNC_ON_SAVE_COOLDOWN', 600, 60) * 1000) lastSaveSync.delete(key);
+      const outcome = await withinTime(syncConfiguration(userUUID), envInt('JELLYFIN_PLAYSTATE_SYNC_USER_TIMEOUT', 120, 10) * 1000).catch(() => null);
+      if (outcome === TIMED_OUT) logger.warn(`Playstate sync after ${after} gave up waiting on ${userUUID}`);
+      else logger.info(`Playstate sync after ${after} of ${userUUID}: ${outcome?.added ?? 0} title(s) taken from trackers`);
+    }
+  } finally {
+    saveDraining = false;
+  }
 }
 
 /**

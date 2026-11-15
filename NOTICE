@@ -1,0 +1,97 @@
+AIOMetadata
+Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors
+
+Licensed under AGPL-3.0-or-later (with an additional permission) and
+FSL-1.1-ALv2, as LICENSING.md sets out. The licensor is cedya77.
+
+This product includes work that was published under other licenses before it
+became part of AIOMetadata. Those notices are reproduced here, as the licenses
+require. The full license texts are in the LICENSES folder.
+
+-------------------------------------------------------------------------------
+1. Earlier versions of this project
+-------------------------------------------------------------------------------
+
+20 January 2021 to 12 August 2021: MIT License
+  Copyright (c) 2021 Silas Alves
+  Contributors in this period: Silas Alves, TheBeastLT.
+  License text: LICENSES/MIT.txt
+
+13 August 2021 to 19 August 2025: Apache License, Version 2.0
+  Licensed by Silas Alves (mrcanelas). Contributors in this period include
+  Silas Alves, cedya77, Alexandru Branza, Oleg lučić, Bimal Timilsina,
+  TwilightMercy, stekc, janowakps, dexter21767, Viren070 and TheBeastLT.
+  License text: LICENSES/Apache-2.0.txt
+  Files from this period have been modified since: by the AIOMetadata
+  contributors, from 20 August 2025 onward. Their history is in this
+  repository's git log.
+
+20 August 2025 to 10 April 2026: MIT License
+  Copyright (c) 2024 cedya77
+  Contributors in this period include cedya77, 0xConstant1, Andy, skoruppa,
+  ljstadler, Vidhin05, Nuclei8234, Nolzy, Damian-11, Crunging, AndreaBezio and
+  Alexandru Branza.
+  License text: LICENSES/MIT.txt
+
+11 April 2026 to the v4.0 relicense: GPL-3.0
+  Releases v3.9.0 and earlier remain available under GPL-3.0. Code that third
+  parties contributed in this period under GPL-3.0 only is not part of v4: it
+  was removed and the features were re-implemented from behavior
+  specifications. The licensor keeps a record of each one.
+
+-------------------------------------------------------------------------------
+2. Bundled third-party material
+-------------------------------------------------------------------------------
+
+shadcn/ui
+  The UI primitives in configure/src/components/ui are based on shadcn/ui.
+  Copyright (c) 2023 shadcn. MIT License, LICENSES/MIT.txt.
+
+Jellyfin icon (public/jellyfin_icon.svg)
+  Part of the Jellyfin project (https://jellyfin.media). All copyright belongs
+  to the Jellyfin contributors. Licensed under the Creative Commons
+  Attribution-ShareAlike 4.0 International License, LICENSES/CC-BY-SA-4.0.txt.
+  It is not covered by AIOMetadata's licenses.
+
+libvips (in container images, through the sharp package)
+  libvips is distributed under the GNU Lesser General Public License,
+  version 3 or later (LICENSES/LGPL-3.0.txt, which refers to
+  LICENSES/GPL-3.0.txt). It is dynamically linked and unmodified. Its source
+  code is available at https://github.com/libvips/libvips, and the exact
+  build sharp uses at https://github.com/lovell/sharp-libvips.
+
+Featured collections
+  The community collection designs the Collection Builder offers, in
+  public/featured/, belong to their designers: Anime Essentials by Cedya, with
+  studio, genre and decade cards by Jeor (jeor.github.io/Anime); Starter Kit by
+  Renoria; Callandt95 by Callandt; Snoak by snoak; TVGenie by tvgeniekodi; and
+  the nobnobz design by nobnobz. They are not under this product's licenses;
+  ask the designer before reusing one elsewhere. The studio logos in
+  public/featured/studio-logos/ come from Wikimedia Commons and are trademarks
+  of their owners.
+
+npm dependencies
+  The licenses and notices of the production dependencies are in
+  THIRD_PARTY_NOTICES.txt, generated for each release.
+
+-------------------------------------------------------------------------------
+3. Data providers
+-------------------------------------------------------------------------------
+
+This product uses TMDB and the TMDB APIs but is not endorsed, certified, or
+otherwise approved by TMDB.
+
+Metadata, images and ratings shown by the software come from the providers an
+instance is configured with (TMDB, TheTVDB, IMDb datasets, Trakt, Simkl,
+MyAnimeList, AniList, Kitsu, Fanart.tv, MDBList and others), under those
+providers' own terms. See "Operator obligations" in README.md.
+
+-------------------------------------------------------------------------------
+4. Trademarks
+-------------------------------------------------------------------------------
+
+The logos of streaming services, metadata providers and rating sources in
+public/ and configure/src/assets/ratings are trademarks of their owners. They are used only to identify those services, and
+they are not covered by AIOMetadata's licenses. LICENSING.md lists the files.
+
+The AIOMetadata name and logo are covered by TRADEMARKS.md.

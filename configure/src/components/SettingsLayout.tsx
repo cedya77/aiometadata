@@ -1,23 +1,29 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ComponentType, type LazyExoticComponent } from "react";
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
+import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentType, type LazyExoticComponent } from "react";
 import { motion } from "framer-motion";
 import {
   ChevronLeft, ChevronRight,
   Sparkles, SlidersHorizontal, KeyRound, Film, Paintbrush,
-  Filter, Search, LayoutGrid, Settings2,
+  Filter, Search, LayoutGrid, Eye, Settings2, Users,
 } from "lucide-react";
 import { SectionSkeleton } from '@/components/settings/SectionSkeleton';
 import { SectionErrorBoundary } from '@/components/settings/SectionErrorBoundary';
 import { SECTION_SKELETONS, GENERIC_SKELETON } from '@/lib/sectionSkeletons';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import * as SelectPrimitive from "@radix-ui/react-select";
+import { Select, SelectContent, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 import { useSettingsRoute } from '@/hooks/useSettingsRoute';
 import { useAnchorFocus } from '@/hooks/useAnchorFocus';
 import { SettingsSearch } from '@/components/settings/SettingsSearch';
 import { useConfig } from '@/contexts/ConfigContext';
+import { useJellyfinServer } from '@/hooks/useJellyfinServer';
+import { JellyfinGlyph } from '@/components/settings/JellyfinGlyph';
 import { MobileSaveBar } from '@/components/layout/MobileSaveBar';
 import { SidebarSaveButton } from '@/components/layout/SidebarSaveButton';
 import { SupportLink } from '@/components/layout/SupportLink';
 import {
+  DEFAULT_SECTION,
   SETTINGS_SECTIONS,
   adjacentSections,
   hasExplicitSection,
@@ -25,6 +31,8 @@ import {
   isExistingConfigUrl,
   isSettingsSectionId,
   parseRoute,
+  visibleSettingsSections,
+  type SettingsSection,
   type SettingsSectionId,
 } from '@/lib/settingsRoute';
 import { cn } from '@/lib/utils';
@@ -38,6 +46,9 @@ const SECTION_IMPORTS: Record<SettingsSectionId, () => Promise<{ default: Compon
   'filters': () => import('./sections/FiltersSettings').then((m) => ({ default: m.FiltersSettings as ComponentType })),
   'search': () => import('./sections/SearchSettings').then((m) => ({ default: m.SearchSettings as ComponentType })),
   'catalogs': () => import('./sections/CatalogsSettings').then((m) => ({ default: m.CatalogsSettings as ComponentType })),
+  'watch-tracking': () => import('./sections/WatchTrackingSettings').then((m) => ({ default: m.WatchTrackingSettings as ComponentType })),
+  'people': () => import('./sections/PeopleSettings').then((m) => ({ default: m.PeopleSettings as ComponentType })),
+  'jellyfin': () => import('./sections/JellyfinSettings').then((m) => ({ default: m.JellyfinSettings as ComponentType })),
   'configuration': () => import('./ConfigurationManager').then((m) => ({ default: m.ConfigurationManager as ComponentType })),
 };
 
@@ -55,10 +66,21 @@ const SETTINGS_LAYOUT_NAVIGATE_EVENT = 'settings-layout:navigate';
 
 const SECTION_SCROLL_MARGIN = 24;
 
+
+/** Sections split where the route model starts a group, each with its label. */
+function navGroups(sections: SettingsSection[]): Array<{ label: string; items: SettingsSection[] }> {
+  const groups: Array<{ label: string; items: SettingsSection[] }> = [];
+  for (const section of sections) {
+    if (section.group !== undefined || !groups.length) groups.push({ label: section.group ?? '', items: [] });
+    groups[groups.length - 1].items.push(section);
+  }
+  return groups;
+}
+
 /** Joined to SETTINGS_SECTIONS by id — the route model cannot hold components. */
 const SECTION_VIEWS: Record<SettingsSectionId, {
   Component: LazyExoticComponent<ComponentType>;
-  icon: typeof Sparkles;
+  icon: ComponentType<{ className?: string }>;
 }> = {
   'presets': { Component: lazy(SECTION_IMPORTS['presets']), icon: Sparkles },
   'general': { Component: lazy(SECTION_IMPORTS['general']), icon: SlidersHorizontal },
@@ -68,6 +90,9 @@ const SECTION_VIEWS: Record<SettingsSectionId, {
   'filters': { Component: lazy(SECTION_IMPORTS['filters']), icon: Filter },
   'search': { Component: lazy(SECTION_IMPORTS['search']), icon: Search },
   'catalogs': { Component: lazy(SECTION_IMPORTS['catalogs']), icon: LayoutGrid },
+  'watch-tracking': { Component: lazy(SECTION_IMPORTS['watch-tracking']), icon: Eye },
+  'people': { Component: lazy(SECTION_IMPORTS['people']), icon: Users },
+  'jellyfin': { Component: lazy(SECTION_IMPORTS['jellyfin']), icon: JellyfinGlyph },
   'configuration': { Component: lazy(SECTION_IMPORTS['configuration']), icon: Settings2 },
 };
 
@@ -75,6 +100,11 @@ export function SettingsLayout() {
   const { isMobile } = useBreakpoint();
   const { section, anchor, navigate, focusNonce, refocus } = useSettingsRoute();
   const { config } = useConfig();
+  const modes = window as Window & { DASHBOARD_MODE?: boolean; RATING_MODE?: boolean };
+  const pageMode = Boolean(modes.DASHBOARD_MODE || modes.RATING_MODE);
+  const jellyfinServer = useJellyfinServer(!pageMode);
+  const sections = useMemo(() => visibleSettingsSections({ jellyfin: jellyfinServer.enabled }), [jellyfinServer.enabled]);
+  const jellyfinOff = section === 'jellyfin' && jellyfinServer.loaded && !jellyfinServer.enabled;
   const [setupDismissed, setSetupDismissed] = useState(false);
   // Latched once the user applies, because that flips catalogSetupComplete and would
   // otherwise unmount the page they are still standing on.
@@ -96,7 +126,7 @@ export function SettingsLayout() {
   useEffect(() => {
     // Writing a section into the URL during first run would make a refresh look like an
     // explicit request for that section, skipping setup.
-    if (isFirstRun) return;
+    if (isFirstRun || (window as Window & { DASHBOARD_MODE?: boolean }).DASHBOARD_MODE) return;
     const route = parseRoute(window.location.hash);
     const canonical = hashFor(route.section, route.anchor);
     if (window.location.hash !== canonical) {
@@ -122,9 +152,15 @@ export function SettingsLayout() {
   }, [section]);
 
   useEffect(() => {
+    if (!jellyfinOff) return;
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hashFor(DEFAULT_SECTION)}`);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  }, [jellyfinOff]);
+
+  useEffect(() => {
     const handleNavigate = (event: Event) => {
-      const tab = (event as CustomEvent<{ tab?: string }>).detail?.tab;
-      if (tab && isSettingsSectionId(tab)) navigate(tab);
+      const { tab, anchor } = (event as CustomEvent<{ tab?: string; anchor?: string }>).detail ?? {};
+      if (tab && isSettingsSectionId(tab)) navigate(tab, anchor ?? null);
     };
     window.addEventListener(SETTINGS_LAYOUT_NAVIGATE_EVENT, handleNavigate as EventListener);
     return () => window.removeEventListener(SETTINGS_LAYOUT_NAVIGATE_EVENT, handleNavigate as EventListener);
@@ -181,11 +217,11 @@ export function SettingsLayout() {
 
   const current = SETTINGS_SECTIONS.find(s => s.id === section)!;
   const { Component } = SECTION_VIEWS[section];
-  const { prev, next } = adjacentSections(section);
+  const { prev, next } = adjacentSections(section, sections);
 
   const sectionSkeleton = <SectionSkeleton spec={SECTION_SKELETONS[section]} label={current.title} />;
 
-  const sectionContent = (
+  const sectionContent = section === 'jellyfin' && !jellyfinServer.enabled ? sectionSkeleton : (
     <SectionErrorBoundary key={section} label={current.title} fallback={sectionSkeleton}>
       <Suspense fallback={sectionSkeleton}>
         <Component />
@@ -197,7 +233,7 @@ export function SettingsLayout() {
     return (
       <div ref={(el) => { mainRef.current = el; }} className="w-full">
         <div className="mb-3">
-          <SettingsSearch onSelect={handleSearchSelect} />
+          <SettingsSearch onSelect={handleSearchSelect} sections={sections} />
         </div>
 
         <div className="mb-4">
@@ -206,8 +242,14 @@ export function SettingsLayout() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {SETTINGS_SECTIONS.map(s => (
-                <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>
+              {navGroups(sections).map((group, i) => (
+                <Fragment key={group.items[0].id}>
+                  {i > 0 ? <SelectSeparator /> : null}
+                  <SelectPrimitive.Group>
+                    {group.label ? <SelectLabel className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{group.label}</SelectLabel> : null}
+                    {group.items.map((s) => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}
+                  </SelectPrimitive.Group>
+                </Fragment>
               ))}
             </SelectContent>
           </Select>
@@ -254,15 +296,22 @@ export function SettingsLayout() {
       <aside className="w-52 shrink-0">
         <nav className="sticky top-6 z-50 space-y-1 py-2" aria-label="Settings sections">
           <div className="mb-3">
-            <SettingsSearch onSelect={handleSearchSelect} />
+            <SettingsSearch onSelect={handleSearchSelect} sections={sections} />
           </div>
 
-          {SETTINGS_SECTIONS.map((s) => {
+          {sections.map((s, i) => {
             const Icon = SECTION_VIEWS[s.id].icon;
             const isActive = section === s.id;
             return (
+              <Fragment key={s.id}>
+              {s.group !== undefined ? (
+                s.group ? (
+                  <p className={cn('px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70', i > 0 && 'pt-4')}>{s.group}</p>
+                ) : (
+                  <div className="mx-3 my-3 border-t" aria-hidden="true" />
+                )
+              ) : null}
               <button
-                key={s.id}
                 onClick={() => navigate(s.id)}
                 onPointerEnter={() => preloadSection(s.id)}
                 onFocus={() => preloadSection(s.id)}
@@ -284,6 +333,7 @@ export function SettingsLayout() {
                 <Icon className="relative z-10 h-4 w-4 shrink-0" />
                 <span className="relative z-10 font-medium">{s.title}</span>
               </button>
+              </Fragment>
             );
           })}
 

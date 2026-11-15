@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import consola from 'consola';
 import { createHash } from 'crypto';
 import { envInt } from '../../utils/envNumber';
@@ -39,13 +41,38 @@ const running = new Map<string, Promise<number>>();
  * and returns its version, which moves only when something did. The first sync of an
  * account reads its whole library once.
  */
-export function syncMirror(service: MirrorService, credential: string, config: any): Promise<number> {
+export function syncMirror(service: MirrorService, credential: string, config: any, options: { full?: boolean; fresh?: boolean } = {}): Promise<number> {
   const key = sourceKeyFor(service, credential);
   const held = running.get(key);
-  if (held) return held;
-  const work = runSync(service, key, credential, config).finally(() => running.delete(key));
+  if (held && !options.full) return held;
+  const work = (held ? held.catch(() => 0) : Promise.resolve(0))
+    .then(async () => {
+      const { recordingTrackerCalls } = require('../../utils/trackerCalls');
+      let version = 0;
+      const { calls, error } = await recordingTrackerCalls(async () => { version = await runSync(service, key, credential, config, options.full === true, options.fresh === true); });
+      if (!error) return version;
+      const said = readFailure(calls, error);
+      require('../trackerActivity').noteRead(key, service, { error: said });
+      if (error && typeof error === 'object') error.trackerSaid = said;
+      throw error;
+    })
+    .finally(() => { if (running.get(key) === work) running.delete(key); });
   running.set(key, work);
   return work;
+}
+
+function readFailure(calls: Array<{ status: number; body?: string }>, error: any): string {
+  const failed = [...calls].reverse().find((call) => call.status >= 400 || call.status === 0);
+  if (!failed) return String(error?.message || error).slice(0, 300);
+  if (failed.status === 0) return 'The tracker did not answer';
+  let said: string | null = null;
+  try {
+    const data = failed.body ? JSON.parse(failed.body) : null;
+    said = data?.errors?.[0]?.message ?? data?.error_description ?? data?.message ?? (typeof data?.error === 'string' ? data.error : null);
+  } catch {
+    said = failed.body?.match(/"(?:message|error_description|error)"\s*:\s*"([^"]+)"/)?.[1] ?? (failed.body ? failed.body.slice(0, 160) : null);
+  }
+  return `${failed.status}${said ? `: ${said}` : ''}`.slice(0, 300);
 }
 
 /** The version a mirror was last left at, without syncing; 0 when never imported. */
@@ -54,7 +81,7 @@ export async function mirrorVersion(service: MirrorService, credential: string):
   return Number(state?.version) || 0;
 }
 
-async function runSync(service: MirrorService, key: string, credential: string, config: any): Promise<number> {
+async function runSync(service: MirrorService, key: string, credential: string, config: any, full = false, fresh = false): Promise<number> {
   const state = await database.getTrackerSync(key);
   let watermark: any = null;
   try {
@@ -64,27 +91,28 @@ async function runSync(service: MirrorService, key: string, credential: string, 
   }
   let version = Number(state?.version) || 0;
   // A mirror never filled starts from a full read, whatever its watermark says.
-  if (!version) watermark = null;
+  if (!version || full) watermark = null;
 
   const started = Date.now();
   const outcome = service === 'simkl'
-    ? await syncSimkl(key, credential, config, watermark)
+    ? await syncSimkl(key, credential, config, watermark, fresh)
     : service === 'mdblist'
-      ? await syncMdblist(key, credential, watermark)
+      ? await syncMdblist(key, credential, watermark, fresh)
       : service === 'publicmetadb'
-        ? await syncPmdb(key, credential, watermark)
-        : await syncAnimeList(service, key, credential, watermark);
+        ? await syncPmdb(key, credential, watermark, fresh)
+        : await syncAnimeList(service, key, credential, watermark, fresh);
 
-  if (outcome.changed) version += 1;
-  await database.setTrackerSync(key, service, {
+  version = await database.setTrackerSync(key, service, {
     watermark: JSON.stringify(outcome.watermark ?? null),
-    version,
+    bump: outcome.changed ? 1 : 0,
     syncedAt: Date.now(),
     fullAt: outcome.full ? Date.now() : Number(state?.full_at) || 0,
   });
   if (outcome.changed) {
     logger.debug(`${service} mirror ${key} ${outcome.full ? 'imported in full' : 'updated'} to version ${version} in ${Date.now() - started}ms`);
   }
+  require('../trackerActivity').noteRead(key, service, { changed: Boolean(outcome.changed), full: Boolean(outcome.full), ms: Date.now() - started });
+  void require('./trackerDrift').recoverFailed(key, service).catch((error: any) => logger.debug(`Could not resend the writes ${service} missed: ${error?.message || error}`));
   return version;
 }
 
@@ -114,7 +142,7 @@ function simklRows(type: string, entries: any[]): MirrorRow[] {
   return rows;
 }
 
-async function syncSimkl(key: string, tokenId: string, config: any, watermark: any): Promise<SyncOutcome> {
+async function syncSimkl(key: string, tokenId: string, config: any, watermark: any, fresh = false): Promise<SyncOutcome> {
   const { getSimklToken, fetchSimklLastActivities, makeAuthenticatedSimklRequest } = require('../../utils/simklUtils');
   const token = await getSimklToken(tokenId);
   const accessToken = token?.access_token;
@@ -123,7 +151,7 @@ async function syncSimkl(key: string, tokenId: string, config: any, watermark: a
   const get = async (path: string) =>
     (await makeAuthenticatedSimklRequest(`https://api.simkl.com${path}`, accessToken, 'Simkl mirror'))?.data ?? {};
 
-  const activities = await fetchSimklLastActivities(accessToken, config);
+  const activities = await fetchSimklLastActivities(accessToken, config, fresh);
   if (!activities?.all) throw new Error('Simkl activities could not be read');
 
   if (!watermark?.all) {
@@ -147,6 +175,7 @@ async function syncSimkl(key: string, tokenId: string, config: any, watermark: a
   // A delta carries arrivals and changes, never departures: those are found by comparing
   // ids, and only when Simkl says something left.
   const bucket: Record<string, string> = { movies: 'movies', shows: 'tv_shows', anime: 'anime' };
+  let left = 0;
   const departed = SIMKL_TYPES.some(
     (type) => (activities?.[bucket[type]]?.removed_from_list ?? null) !== (watermark?.[bucket[type]]?.removed_from_list ?? null)
   );
@@ -160,9 +189,11 @@ async function syncSimkl(key: string, tokenId: string, config: any, watermark: a
         .map((row: any) => String(row.item_key))
         .filter((itemKey: string) => SIMKL_TYPES.some((type) => itemKey.startsWith(`${type}:`)) && !present.has(itemKey));
       if (gone.length) await database.deleteTrackerMirror(key, gone);
+      left = gone.length;
     }
   }
-  return { changed: true, watermark: activities, full: false };
+  // Simkl's clock moves for ratings and for this server's own scrobbles too; only rows that came or went rebuild the index.
+  return { changed: rows.length > 0 || left > 0, watermark: activities, full: false };
 }
 
 // --- MDBList ------------------------------------------------------------------------
@@ -200,8 +231,8 @@ function mdblistShowRow(entry: any): MirrorRow | null {
   return id ? { key: `showinfo:${id}`, group: `show:${id}`, data: entry } : null;
 }
 
-function mdblistActivities(apiKey: string): Promise<any> {
-  return require('../../utils/mdbList').fetchMdblistLastActivities(apiKey);
+function mdblistActivities(apiKey: string, fresh = false): Promise<any> {
+  return require('../../utils/mdbList').fetchMdblistLastActivities(apiKey, fresh);
 }
 
 async function mdblistUpNextMark(apiKey: string): Promise<{ upnext_at: number; upnext_next: number | null }> {
@@ -248,9 +279,7 @@ async function mdblistCutShort(key: string, apiKey: string, watermark: any): Pro
   return remaining === null || remaining - pages >= Math.max(50, (limit ?? 0) / 5) ? 'read' : 'later';
 }
 
-const later = (a: unknown, b: unknown): unknown => (String(a ?? '') > String(b ?? '') ? a : b);
-
-async function journalRows(key: string, rows: any[]): Promise<MirrorRow[]> {
+async function journalRows(key: string, rows: any[], apiKey: string): Promise<MirrorRow[]> {
   const groups = new Map<string, Map<string, any>>();
   const heldIn = async (group: string): Promise<Map<string, any>> => {
     if (!groups.has(group)) {
@@ -264,6 +293,17 @@ async function journalRows(key: string, rows: any[]): Promise<MirrorRow[]> {
     }
     return groups.get(group)!;
   };
+  const plays = new Map<string, Promise<any[] | null>>();
+  const latest = async (held: unknown, row: any): Promise<unknown> => {
+    if (String(held ?? '') <= String(row.value_at ?? '')) return row.value_at;
+    const tmdb = Number(row.ids?.tmdb);
+    if (!tmdb) return held;
+    const kind = row.item_type === 'movie' ? 'movie' : 'show';
+    if (!plays.has(`${kind}:${tmdb}`)) plays.set(`${kind}:${tmdb}`, require('../../utils/mdbList').historyPlays(kind, tmdb, apiKey));
+    const all = await plays.get(`${kind}:${tmdb}`);
+    const dates = (all ?? []).filter((play: any) => kind === 'movie' || (play.season_num === row.season && play.episode_num === row.episode)).map((play: any) => String(play.watched_at ?? '')).filter(Boolean).sort();
+    return all && dates.length ? dates[dates.length - 1] : held;
+  };
   const out: MirrorRow[] = [];
   for (const row of rows) {
     const id = row?.ids?.mdblist;
@@ -271,7 +311,7 @@ async function journalRows(key: string, rows: any[]): Promise<MirrorRow[]> {
     if (row.item_type === 'movie') {
       const group = `movie:${id}`;
       const existing = (await heldIn(group)).get(group);
-      out.push({ key: group, group, data: existing ? { ...existing, last_watched_at: later(existing.last_watched_at, row.value_at) } : { movie: { ids: row.ids }, last_watched_at: row.value_at } });
+      out.push({ key: group, group, data: existing ? { ...existing, last_watched_at: await latest(existing.last_watched_at, row) } : { movie: { ids: row.ids }, last_watched_at: row.value_at } });
       continue;
     }
     const group = `show:${id}`;
@@ -281,14 +321,14 @@ async function journalRows(key: string, rows: any[]): Promise<MirrorRow[]> {
       key: itemKey,
       group,
       sub: String(row.season),
-      data: existing ? { ...existing, last_watched_at: later(existing.last_watched_at, row.value_at) } : { episode: { show: { ids: row.ids }, season: row.season, number: row.episode }, last_watched_at: row.value_at },
+      data: existing ? { ...existing, last_watched_at: await latest(existing.last_watched_at, row) } : { episode: { show: { ids: row.ids }, season: row.season, number: row.episode }, last_watched_at: row.value_at },
     });
   }
   return out;
 }
 
-async function syncMdblist(key: string, apiKey: string, watermark: any): Promise<SyncOutcome> {
-  const activities = await mdblistActivities(apiKey);
+async function syncMdblist(key: string, apiKey: string, watermark: any, fresh = false): Promise<SyncOutcome> {
+  const activities = await mdblistActivities(apiKey, fresh);
   if (!activities?.server_time) throw new Error('MDBList activities could not be read');
   if (watermark?.server_time && watermark.format === 3) {
     const verdict = await mdblistCutShort(key, apiKey, watermark);
@@ -349,7 +389,7 @@ async function syncMdblist(key: string, apiKey: string, watermark: any): Promise
       read.add(cursor);
     }
     if (backdated.some((row) => row?.item_type !== 'episode' && row?.item_type !== 'movie')) return mdblistFull(key, apiKey, activities);
-    if (backdated.length) await database.upsertTrackerMirror(key, await journalRows(key, backdated));
+    if (backdated.length) await database.upsertTrackerMirror(key, await journalRows(key, backdated, apiKey));
 
     // A season or show is journaled as removed when it stops being complete.
     for (const row of removals) {
@@ -400,11 +440,13 @@ function parseHead(value: string): PmdbHead {
   return { total: Number(total) || 0, firstId: firstId ?? '', firstAt: firstAt ?? '', droppedTotal: Number(droppedTotal) || 0 };
 }
 
-async function pmdbHead(apiKey: string): Promise<string> {
-  const { cacheWrapGlobal, classifyResultAllowEmpty } = require('../getCache');
+async function pmdbHead(apiKey: string, fresh = false): Promise<string> {
+  const { cacheWrapGlobal, classifyResultAllowEmpty, redis } = require('../getCache');
+  const cacheKey = `pmdb_watched_head:${credentialHash(apiKey)}`;
+  if (fresh) await redis?.del(`global:${cacheKey}`).catch(() => undefined);
   // The same cache the watched digest reads, which a watch recorded here clears.
   return cacheWrapGlobal(
-    `pmdb_watched_head:${credentialHash(apiKey)}`,
+    cacheKey,
     async () => {
       const { fetchWatched, fetchDropped } = require('../../utils/publicmetadbUtils');
       const [page, dropped] = await Promise.all([
@@ -433,8 +475,8 @@ async function pmdbAllPlays(key: string, apiKey: string): Promise<void> {
   await replaceMirror(key, plays.map(pmdbPlayRow).filter(Boolean) as MirrorRow[], (itemKey) => itemKey.startsWith('play:'));
 }
 
-async function syncPmdb(key: string, apiKey: string, watermark: any): Promise<SyncOutcome> {
-  const headValue = await pmdbHead(apiKey);
+async function syncPmdb(key: string, apiKey: string, watermark: any, fresh = false): Promise<SyncOutcome> {
+  const headValue = await pmdbHead(apiKey, fresh);
   const head = parseHead(headValue);
   const { fetchPmdbDropped } = require('./watched');
 
@@ -501,10 +543,12 @@ export function animeListCacheKey(service: 'anilist' | 'mal', tokenId: string): 
   return `${service}_list:${credentialHash(tokenId)}`;
 }
 
-async function readAnimeList(service: 'anilist' | 'mal', tokenId: string): Promise<any[]> {
-  const { cacheWrapGlobal, classifyResultAllowEmpty } = require('../getCache');
+async function readAnimeList(service: 'anilist' | 'mal', tokenId: string, fresh = false): Promise<any[]> {
+  const { cacheWrapGlobal, classifyResultAllowEmpty, redis } = require('../getCache');
+  const cacheKey = animeListCacheKey(service, tokenId);
+  if (fresh) await redis?.del(`global:${cacheKey}`).catch(() => undefined);
   return cacheWrapGlobal(
-    animeListCacheKey(service, tokenId),
+    cacheKey,
     async () => {
       const tracker: any = service === 'anilist' ? require('../anilistTracker') : require('../malTracker');
       const accessToken = await tracker.getAccessTokenById(tokenId);
@@ -516,8 +560,8 @@ async function readAnimeList(service: 'anilist' | 'mal', tokenId: string): Promi
   );
 }
 
-async function syncAnimeList(service: 'anilist' | 'mal', key: string, tokenId: string, watermark: any): Promise<SyncOutcome> {
-  const entries = await readAnimeList(service, tokenId);
+async function syncAnimeList(service: 'anilist' | 'mal', key: string, tokenId: string, watermark: any, fresh = false): Promise<SyncOutcome> {
+  const entries = await readAnimeList(service, tokenId, fresh);
   if (!Array.isArray(entries)) throw new Error(`${service} list could not be read`);
   const digest = createHash('sha256').update(JSON.stringify(entries)).digest('hex').substring(0, 32);
   if (watermark?.digest === digest) return { changed: false, watermark, full: false };

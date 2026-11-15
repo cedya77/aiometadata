@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 /**
  * A client has no error channel for a catalog or a meta: an empty list reads as
  * "nothing found", whatever went wrong. A notice is a placeholder item carrying

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -388,7 +390,7 @@ export function ArtProviderSettings() {
               <summary className="text-xs font-medium cursor-pointer">Available placeholders</summary>
               <div className="text-xs text-muted-foreground space-y-1 mt-2">
                 <p>
-                  <strong>ID placeholders:</strong> <code>{'{id}'}</code> <code>{'{imdb_id}'}</code> <code>{'{tmdb_id}'}</code> <code>{'{tvdb_id}'}</code> <code>{'{mal_id}'}</code> <code>{'{kitsu_id}'}</code> <code>{'{anilist_id}'}</code> <code>{'{anidb_id}'}</code> <code>{'{type}'}</code>
+                  <strong>ID placeholders:</strong> <code>{'{id}'}</code> (raw meta id, e.g. mal:16498) <code>{'{imdb_id}'}</code> <code>{'{tmdb_id}'}</code> <code>{'{tvdb_id}'}</code> <code>{'{mal_id}'}</code> <code>{'{kitsu_id}'}</code> <code>{'{anilist_id}'}</code> <code>{'{anidb_id}'}</code> <code>{'{type}'}</code>
                 </p>
                 <p>
                   <strong>API keys:</strong> <code>{'{rpdb_key}'}</code> <code>{'{top_key}'}</code> <code>{'{tmdb_key}'}</code> <code>{'{mdblist_key}'}</code> <code>{'{fanart_key}'}</code> <code>{'{user_agent}'}</code>

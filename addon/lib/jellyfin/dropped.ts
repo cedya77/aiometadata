@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import consola from 'consola';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
@@ -15,6 +17,12 @@ const changed = new LRUCache<string, Map<string, { keys: string[]; dropped: bool
   max: envInt('JELLYFIN_RESUME_CACHE_MAX', 500, 1),
   ttl: envInt('JELLYFIN_DROP_HOLD', 600, 10) * 1000,
 });
+
+export function forgetHeldDrops(userUUID: string): void {
+  for (const key of [...held.keys()]) {
+    if (key.startsWith(`${userUUID}:`)) held.delete(key);
+  }
+}
 
 export function withHeldDrops(userUUID: string, config: any, dropped: Set<string>): Set<string> {
   const { profileKey } = require('./profiles');

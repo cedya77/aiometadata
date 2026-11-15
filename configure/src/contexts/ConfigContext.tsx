@@ -1,12 +1,16 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { setSimklListMinTTL } from '@/lib/catalogTTL';
 import { AppConfig, CatalogConfig, SearchConfig } from "./config";
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { allCatalogDefinitions, allSearchProviders } from "@/data/catalogs";
+import { canonicalTimezone } from '@/data/timezones';
 import { LoadingScreen } from "@/components/LoadingScreen"; 
-import { hasAnyWatchTrackingEnabled } from '@/lib/watchTracking';
+import { declaresStremioEvents, hasAnyWatchTrackingEnabled } from '@/lib/watchTracking';
 import { reconcileTagRegistry } from '@/lib/catalogShare';
 import { keepCollectionsInPlace } from '@shared/homeOrder';
+import type { CollectionDraft } from '@shared/types';
 
 interface AuthState {
   authenticated: boolean;
@@ -188,7 +192,7 @@ const initialConfig: AppConfig = {
   searchEnabled: true,
   sessionId: "",
   catalogSetupComplete: false,
-  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+  timezone: canonicalTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
   catalogs: allCatalogDefinitions
     .map(c => ({
       id: c.id,
@@ -264,22 +268,24 @@ function getManifestFingerprint(config: AppConfig): string {
   }));
 
   const subtitlesResource = hasAnyWatchTrackingEnabled(config);
+  const stremioEvents = declaresStremioEvents(config);
   const collectionCatalogs = !config.catalogModeOnly && config.collectionCatalogs !== false;
   const collections = collectionCatalogs
     ? (config.collections || [])
-        .filter((entry) => entry.kind === 'collection')
-        .map((entry) => ({ id: entry.id, title: entry.title }))
+        .filter((entry): entry is CollectionDraft => entry.kind === 'collection')
+        .map((entry) => ({ id: entry.id, title: entry.title, after: entry.after ? { id: entry.after.id, type: entry.after.type } : null }))
     : [];
 
   return JSON.stringify({
     catalogs: catalogFingerprint,
     addonName: config.addonName,
     catalogModeOnly: config.catalogModeOnly,
-    hideStremioCatalogs: config.hideStremioCatalogs,
     collectionCatalogs,
     collections,
+    hideStremioCatalogs: config.hideStremioCatalogs === true,
     showRateMeButton: config.showRateMeButton,
     subtitlesResource,
+    stremioEvents,
     showPrefix: config.showPrefix,
     language: config.language,
     search: {

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { MERGE_MODES, type MergeMode } from '@shared/mergeModes';
 
 /** The merge modes as a set of choices, wherever several catalogs combine into one. */

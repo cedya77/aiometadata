@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import consola from 'consola';
 import { fetchMeta, metaToBaseItem } from './items';
 import { clientHasOwnWatchlist } from './context';
@@ -30,7 +32,7 @@ const ROW_BYTES = 256;
 // the budget bounds what an instance with many users holds.
 const trackerMemo = new LRUCache<string, MemoWatchlist>({
   max: envInt('JELLYFIN_RESUME_CACHE_MAX', 500, 1),
-  maxSize: envInt('JELLYFIN_WATCHLIST_MEMORY_MB', 32, 1) * 1024 * 1024,
+  maxSize: Math.max(1, Math.floor(envInt('JELLYFIN_WATCHLIST_MEMORY_MB', 32, 1) * 1024 * 1024 * 3 / 4)),
   sizeCalculation: (held) => ROW_BYTES * (held.rows.length + 1),
   ttlAutopurge: true,
 });
@@ -38,6 +40,31 @@ const trackerInFlight = new Map<string, Promise<HeldWatchlist>>();
 
 const memoFreshMs = () => envInt('JELLYFIN_WATCHLIST_MEMO_TTL', 60, 1) * 1000;
 const memoHeldMs = () => Math.max(envInt('JELLYFIN_WATCHLIST_HELD_TTL', 21600, 60) * 1000, memoFreshMs());
+
+// A quarter of the watchlist budget, the rest staying with the tracker copies.
+const listedMemo = new LRUCache<string, Set<string>>({
+  max: envInt('JELLYFIN_RESUME_CACHE_MAX', 500, 1),
+  maxSize: Math.max(1, Math.floor(envInt('JELLYFIN_WATCHLIST_MEMORY_MB', 32, 1) * 1024 * 1024 / 4)),
+  sizeCalculation: (ids) => 128 * (ids.size + 1),
+});
+let listedGeneration = 0;
+
+function forgetListed(userUUID: string): void {
+  listedGeneration++;
+  for (const key of [...listedMemo.keys()]) if (key.startsWith(`${userUUID}:`)) listedMemo.delete(key);
+}
+
+/** Every watchlisted title's id, held briefly for a flag asked on every progress save. */
+export async function listedIds(userUUID: string, config: any): Promise<Set<string>> {
+  const key = trackerMemoKey(config, userUUID);
+  const held = listedMemo.get(key);
+  if (held) return held;
+  const generation = listedGeneration;
+  const { entries } = await watchlistEntries(userUUID, config, Number.MAX_SAFE_INTEGER, true);
+  const ids = new Set(entries.map((entry) => String(entry.metaId)));
+  if (generation === listedGeneration) listedMemo.set(key, ids, { ttl: memoFreshMs() });
+  return ids;
+}
 
 const covers = (held: HeldWatchlist, need: number): boolean => held.exhausted || held.rows.length >= need;
 
@@ -99,6 +126,7 @@ const sameTitle = (a: string, b: string): boolean => a === b || showOf(a) === b 
 
 /** The held copies count as past their time; a change made here is already in the server's own rows. */
 export function invalidateWatchlist(userUUID: string): void {
+  forgetListed(userUUID);
   for (const [key, held] of trackerMemo.entries()) {
     if (String(key).startsWith(`${userUUID}:`)) held.readAt = 0;
   }
@@ -183,14 +211,14 @@ async function itemIdentities(item: any, descriptor: any, config: any, resolve: 
   return [...new Set([...(known ? [known] : []), resolved])];
 }
 
-export async function applyWatchlistState(items: any[], userUUID: string, config: any, descriptors: Map<string, any>): Promise<void> {
+export async function applyWatchlistState(items: any[], userUUID: string, config: any, descriptors: Map<string, any>, held?: WatchlistEntry[]): Promise<void> {
   const titles = items.filter((item: any) => {
     const kind = descriptors.get(String(item?.Id))?.k;
     return item?.UserData && (kind === 'movie' || kind === 'series');
   });
   if (!titles.length) return;
 
-  const entries = (await watchlistEntries(userUUID, config, Number.MAX_SAFE_INTEGER, true)).entries;
+  const entries = held ?? (await watchlistEntries(userUUID, config, Number.MAX_SAFE_INTEGER, true)).entries;
   const listed = new Set(entries.map((entry) => entry.metaId));
   const identities = new Set(entries.flatMap((entry) => (entry.identity ? [entry.identity] : [])));
   const shows = new Set([...identities].map(showOf));
@@ -268,6 +296,7 @@ export async function setWatchlisted(userUUID: string, config: any, descriptor: 
   for (const entry of siblings) {
     await database.setWatchlisted(userUUID, profile, entry.metaId, entry.mediaType, false, entry.mediaType === 'movie' || entry.film ? 'movie' : 'series');
   }
+  forgetListed(userUUID);
   invalidateDatedShelves(userUUID);
   if (writesTrackers(config)) {
     const { enqueueTrackerWrites, hasCredential } = require('../trackerOutbox');
@@ -293,6 +322,8 @@ export function leaveWatchlistOnWatch(userUUID: string, config: any, descriptors
     const listed: any[] = (await database.listWatchlist(userUUID, profile)).filter((row: any) => Number(row.listed));
     if (!listed.length) return;
     const isFilm = (row: any) => row.media_type === 'movie' || row.meta_type === 'movie';
+    // While the list is not picked, the row keeps its date, or a fresh removal would hide the title on the trackers' lists.
+    const keepsServer = keepsServerWatchlist(config);
     let removed = 0;
     for (const title of titles) {
       const film = title.k === 'movie';
@@ -302,7 +333,7 @@ export function leaveWatchlistOnWatch(userUUID: string, config: any, descriptors
       for (const row of rows) {
         const same = String(row.meta_id) === String(title.i) || sameTitle(await identityOf(String(row.meta_id), mediaTypeOf(row.media_type), config), target);
         if (!same) continue;
-        await database.setWatchlisted(userUUID, profile, String(row.meta_id), row.media_type, false, isFilm(row) ? 'movie' : 'series');
+        await database.setWatchlisted(userUUID, profile, String(row.meta_id), row.media_type, false, isFilm(row) ? 'movie' : 'series', keepsServer ? undefined : Number(row.updated_at) || 0);
         row.listed = 0;
         removed++;
       }

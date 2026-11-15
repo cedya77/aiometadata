@@ -174,9 +174,60 @@ We welcome community contributions! However, to keep review times manageable, we
 
 ---
 
+## 📋 Operator obligations
+
+The license of this code does not cover the data it fetches. Whoever runs an
+instance is bound by the terms of every provider it talks to, and is the API
+licensee for any server-wide keys it configures (the `BUILT_IN_*_API_KEY`
+settings serve every user of that instance under the operator's account).
+
+The main obligations, as published on 14 Nov 2026 (details, sources and the
+providers not covered here are in [docs/provider-terms.md](docs/provider-terms.md)):
+
+- **Commercial use is not allowed** by TMDB's standard license (a written
+  agreement with TMDB is required) or by the IMDb datasets, which are for
+  personal and non-commercial use only.
+- **Commercial use needs a license above $150/month** of revenue on Simkl and
+  AniList, and **written authorization** on MyAnimeList's official API.
+- **Scraping:** Letterboxd's terms prohibit automated extraction, and Jikan
+  scrapes MyAnimeList, whose agreement prohibits scraping. A commercial
+  instance should get permission or switch these off (`JIKAN_ENABLED=false`).
+- **Attribution shown to users:** the configure page's About dialog (click
+  the version number) shows what each provider asks for: TMDB's logo and
+  notice (also below), TheTVDB with a link, a "not endorsed by Trakt" line, a
+  visible Simkl link, and a credit to TVmaze, whose data is CC BY-SA 4.0.
+- **Caching:** TMDB content may be cached for at most 6 months, including in
+  the meta cold store and the image cache.
+- **AI providers:** Gemini and OpenRouter users must be 18 or older. Only the
+  paid Gemini tier may serve users in the EEA, UK and Switzerland. OpenRouter
+  forbids reselling model access.
+
+### TMDB attribution
+
+<img src="public/tmdb_icon.png" alt="TMDB" height="24">
+
+This product uses TMDB and the TMDB APIs but is not endorsed, certified, or
+otherwise approved by TMDB.
+
+---
+
 ## 📄 License
 
-GPL-3.0 — see [LICENSE](LICENSE).
+AIOMetadata v4 is source-available. The core is under the
+[GNU AGPL-3.0-or-later](LICENSE), with an additional permission that lets it be
+combined with the v4 feature modules. The feature modules (the Jellyfin server,
+the trackers and the dashboard) are under the
+[Functional Source License 1.1, ALv2 Future License](LICENSE-FSL.md). Each
+release of them becomes Apache-2.0 two years after it is published.
+
+In short: running it for yourself, your household or your organization is
+fine, and so is modifying it. Offering v4 as a commercial hosted service is
+not, until the release you run turns Apache-2.0. v3.9.0 and earlier keep the
+GPL-3.0 they were released under.
+
+[LICENSING.md](LICENSING.md) says which files are under which license and
+answers common questions. [NOTICE](NOTICE) carries the notices for earlier and
+bundled work, and [TRADEMARKS.md](TRADEMARKS.md) covers the name and logo.
 
 ---
 

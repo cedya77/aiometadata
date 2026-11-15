@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { buildProxyArtUrl } from './posterCache/proxyArt';
 import { extractIdsFromMeta } from '../utils/metaIds';
 
@@ -82,6 +84,7 @@ export function applyMetaArt(meta: any, config: any, type: string, userAgent: st
   // Apply thumbnail pattern to episode videos
   const thumbnailPattern = resolveThumbnailPattern(config);
   if (thumbnailPattern && meta.videos && Array.isArray(meta.videos)) {
+    const thumbnailProxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
     for (const video of meta.videos) {
       const idParts = video.id?.split(':');
       if (idParts && idParts.length >= 3) {
@@ -101,12 +104,9 @@ export function applyMetaArt(meta: any, config: any, type: string, userAgent: st
             userAgent,
           });
           if (resolved) {
-            if (config.usePosterProxy) {
-              const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
-              // Episode thumbnails share the show's proxyId; the per-episode url param keeps the proxy cache/etag distinct.
-              video.thumbnail = proxyId
-                ? buildProxyArtUrl({ base: `${host}/poster-cache/proxy`, imageClass: 'background', type: metaType, id: proxyId, fallback: originalThumb, url: resolved })
-                : resolved;
+            if (config.usePosterProxy && thumbnailProxyId) {
+              // All episodes share the show's id; the per-episode url keeps proxy cache entries distinct.
+              video.thumbnail = buildProxyArtUrl({ base: `${host}/poster-cache/proxy`, imageClass: 'background', type: metaType, id: thumbnailProxyId, fallback: originalThumb || '', url: resolved });
             } else {
               video.thumbnail = resolved;
             }

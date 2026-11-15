@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import express from 'express';
 
 /**
@@ -8,8 +10,6 @@ import express from 'express';
 const EMPTY_LIST = { Items: [] as unknown[], TotalRecordCount: 0, StartIndex: 0 };
 
 const LIST_ROUTES = [
-  '/Years',
-  '/Studios',
   '/Artists',
   '/Artists/AlbumArtists',
   '/MusicGenres',
@@ -49,7 +49,6 @@ const ARRAY_ROUTES = [
   '/Environment/Drives',
   '/Library/PhysicalPaths',
   '/Sessions/SyncPlay/List',
-  '/SyncPlay/List',
   '/Items/:itemId/SpecialFeatures',
   '/Users/:userId/Items/:itemId/SpecialFeatures',
   '/Items/:itemId/LocalTrailers',
@@ -67,6 +66,9 @@ export function registerStubs(router: any): void {
   for (const path of ARRAY_ROUTES) {
     router.get(path, (_req: any, res: any) => res.json([]));
   }
+
+  router.post('/Sessions/Viewing', (_req: any, res: any) => res.status(204).end());
+  router.post('/ClientLog/Document', (_req: any, res: any) => res.json({ FileName: `client-${Date.now()}.log` }));
 
   router.get('/Items/:itemId/ThemeMedia', (req: any, res: any) => {
     const empty = { ...EMPTY_LIST, OwnerId: req.params.itemId };

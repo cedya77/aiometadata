@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 const RELOAD_STAMP_KEY = 'aiom:chunk-reload-at';
 
 export const RELOAD_GUARD_WINDOW_MS = 60_000;

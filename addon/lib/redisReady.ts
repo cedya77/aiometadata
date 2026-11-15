@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import redis from './redisClient';
 
 const READY_EVENT_TIMEOUT_MS = parseInt(process.env.REDIS_READY_TIMEOUT_MS || '15000', 10);

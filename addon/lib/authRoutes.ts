@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import crypto from 'crypto';
 import consola from 'consola';
 import redis from './redisClient';
@@ -104,7 +106,7 @@ function trustedProxyHops(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-function clientAddress(req: any): string {
+export function clientAddress(req: any): string {
   const hops = trustedProxyHops();
   if (hops > 0) {
     const forwarded = String(req.headers['x-forwarded-for'] || '')

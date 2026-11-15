@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 /**
  * MyAnimeList Watch Tracking Module
  *
@@ -14,7 +16,7 @@ import { noteTrackerCall } from '../utils/trackerCalls';
 
 const database: any = require('./database');
 const idMapper: any = require('./id-mapper');
-const { resolveAnidbEpisodeFromTvdbEpisode } = require('./anime-list-mapper');
+const { resolveTrackedAnidbEpisode } = require('./anime-list-mapper');
 import { ownTokenId } from './accounts';
 
 const logger = consola.withTag('MALTracker');
@@ -398,7 +400,7 @@ const MAL_LIST_STATUSES: Record<string, string> = {
 async function fetchAnimeList(accessToken: string): Promise<any[]> {
   const entries: any[] = [];
   const params = new URLSearchParams({
-    fields: 'list_status{status,num_episodes_watched,is_rewatching,updated_at},num_episodes,media_type',
+    fields: 'list_status{status,score,num_episodes_watched,is_rewatching,updated_at},num_episodes,media_type',
     limit: '1000',
     nsfw: 'true',
   });
@@ -413,6 +415,7 @@ async function fetchAnimeList(accessToken: string): Promise<any[]> {
         mal: Number(node.id),
         status: list.is_rewatching ? 'watching' : MAL_LIST_STATUSES[list.status] || 'planning',
         progress: Number(list.num_episodes_watched) || 0,
+        ...(Number(list.score) > 0 ? { score: Number(list.score) } : {}),
         episodes: Number(node.num_episodes) || null,
         movie: node.media_type === 'movie',
         updatedAt: Date.parse(list.updated_at ?? '') || 0,
@@ -459,10 +462,10 @@ async function resolveMalId(parsedId: ParsedMediaId): Promise<{ malId: number; e
           return null;
         }
 
-        const seasonNumber = parsedId.season || 1;
+        const seasonNumber = parsedId.season ?? 1;
         const episodeNumber = parsedId.episode || 1;
 
-        const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, seasonNumber, episodeNumber);
+        const anidbEpisodeInfo = await resolveTrackedAnidbEpisode(tvdbId, seasonNumber, episodeNumber);
         if (!anidbEpisodeInfo) {
           logger.debug(`[MAL Tracker] No AniDB episode info found for TVDB ${tvdbId} S${seasonNumber}E${episodeNumber}`);
           return null;
@@ -628,6 +631,13 @@ async function setPlanToWatch(malId: number, listed: boolean, accessToken: strin
 }
 
 /** The score on a title already on the list; 0 clears it. An anime not on the list is left alone. */
+async function setDropped(malId: number, accessToken: string): Promise<boolean> {
+  await makeRateLimitedRequest(() =>
+    malRequest(`${MAL_API_BASE}/anime/${malId}/my_list_status`, { method: 'PUT', form: { status: 'dropped' }, accessToken })
+  );
+  return true;
+}
+
 async function setScore(malId: number, score: number, accessToken: string): Promise<boolean> {
   const current = await getAnimeStatus(malId, accessToken);
   if (!current?.listStatus) return false;
@@ -733,6 +743,7 @@ export {
   getAnimeStatus,
   fetchPlanToWatchIds,
   setPlanToWatch,
+  setDropped,
   setScore,
   determineStatus,
   updateProgress,

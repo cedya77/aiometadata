@@ -1,20 +1,77 @@
-import React, { useEffect, useRef, useState } from "react";
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2, Repeat } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleCheck, CircleDashed, CircleX, Film, Layers, Loader2, MoreHorizontal, Play, Repeat, ThumbsDown, Tv } from "lucide-react";
 import { type JellyfinPlayRow } from "@/hooks/useDashboardQueries";
-import { Art, Sentinel } from "./JellyfinShared";
-import { when, clock, percentOf, duration } from "./jellyfinUtils";
+import { ActionMenu, Art, Sentinel, type MenuItem } from "./JellyfinShared";
+import { when, clock, percentOf, duration, useOpenTitle, titleRefOf } from "./jellyfinUtils";
 
-export function ProgressCard({ row }: { row: JellyfinPlayRow }) {
+export type ProgressAction = "played" | "unplayed" | "clear" | "drop";
+
+export function ProgressCard({ row, onAction, onPlayOn }: { row: JellyfinPlayRow; onAction?: (action: ProgressAction) => Promise<void>; onPlayOn?: (at: { x: number; y: number }) => void }) {
   const pct = percentOf(row);
   const left = row.runtimeMs > row.positionMs ? duration(row.runtimeMs - row.positionMs) : "";
   const code = episodeCode(row, true);
   const subtitle = code ? `${code}${row.episodeTitle ? ` · ${row.episodeTitle}` : ""}` : row.episode;
+  const open = useOpenTitle();
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const run = (action: ProgressAction) => {
+    if (!onAction) return;
+    setBusy(true);
+    void onAction(action).finally(() => setBusy(false));
+  };
+  const isEpisode = row.seriesId !== null;
+  const items: MenuItem[] = menu ? [
+    ...(onPlayOn ? [{ icon: <Play className="size-4" />, label: "Play on a device", onSelect: () => onPlayOn(menu) }] : []),
+    ...(open ? [{ icon: isEpisode ? <Tv className="size-4" /> : <Film className="size-4" />, label: isEpisode ? "Go to series" : "Go to film", onSelect: () => open(titleRefOf(row)) }] : []),
+    ...(open && isEpisode && row.season !== null ? [{ icon: <Layers className="size-4" />, label: row.season === 0 ? "Go to specials" : "Go to season", onSelect: () => open(titleRefOf(row), row.season) }] : []),
+    ...(onAction ? [
+      { icon: <CircleCheck className="size-4" />, label: "Mark as watched", onSelect: () => run("played"), divider: true },
+      { icon: <CircleDashed className="size-4" />, label: "Mark unwatched and reset progress", onSelect: () => run("unplayed") },
+      { icon: <CircleX className="size-4" />, label: "Clear resume position", onSelect: () => run("clear") },
+      ...(isEpisode ? [{ icon: <ThumbsDown className="size-4" />, label: "Drop show", onSelect: () => run("drop") }] : []),
+    ] : []),
+  ] : [];
+  const showMenu = (at: { x: number; y: number }) => { if (onAction || onPlayOn) setMenu(at); };
   return (
-    <div className="group relative overflow-hidden rounded-lg bg-muted/40 ring-1 ring-white/[0.06] transition hover:ring-white/20" title={`${row.title}${row.episode ? ` · ${row.episode}` : ""}`}>
+    <div role={open ? "button" : undefined} tabIndex={open ? 0 : undefined} onClick={open ? () => open(titleRefOf(row)) : undefined} onKeyDown={open ? (event) => { if (event.key === "Enter") open(titleRefOf(row)); } : undefined} onContextMenu={onAction || onPlayOn ? (event) => { event.preventDefault(); showMenu({ x: event.clientX, y: event.clientY }); } : undefined} className={`group relative overflow-hidden rounded-lg bg-muted/40 ring-1 ring-white/[0.06] transition hover:ring-white/20 ${open ? "cursor-pointer" : ""}`} title={`${row.title}${row.episode ? ` · ${row.episode}` : ""}`}>
       <div className="transition-transform duration-500 group-hover:scale-[1.03]"><Art src={row.backdropUrl && !row.seriesId ? row.backdropUrl : row.imageUrl ?? row.backdropUrl} title="" wide /></div>
       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/45 to-black/0" />
       <span className="glass absolute top-2 left-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] text-white/85">{row.rewatch && <><Repeat className="size-2.5" /> Rewatching ·</>} {row.profile} · {when(row.lastPlayedAt ?? row.updatedAt)}</span>
+      {(onAction || onPlayOn) && (
+        <button
+          type="button"
+          disabled={busy}
+          onMouseDown={(event) => { if (menu) event.stopPropagation(); }}
+          onClick={(event) => { event.stopPropagation(); const box = event.currentTarget.getBoundingClientRect(); if (menu) setMenu(null); else showMenu({ x: box.right - 224, y: box.bottom + 4 }); }}
+          onKeyDown={(event) => event.stopPropagation()}
+          aria-label="More"
+          className={`glass absolute top-2 right-2 z-10 flex size-7 items-center justify-center rounded-full text-white/90 transition hover:bg-black/70 focus-visible:opacity-100 ${menu || busy ? "opacity-100" : "md:opacity-0 md:group-hover:opacity-100"}`}
+        >
+          {busy ? <Loader2 className="size-3.5 animate-spin" /> : <MoreHorizontal className="size-4" />}
+        </button>
+      )}
+      {menu && (
+        <span className="contents" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()}>
+        <ActionMenu
+          at={menu}
+          onClose={closeMenu}
+          items={items}
+          header={(
+            <div className="flex max-w-72 items-center gap-3">
+              <div className="w-20 shrink-0 overflow-hidden rounded-md"><Art src={row.imageUrl ?? row.backdropUrl} title="" wide /></div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{row.title}</p>
+                {(subtitle || left) && <p className="truncate text-xs text-muted-foreground">{subtitle || `${left} left`}</p>}
+              </div>
+            </div>
+          )}
+        />
+        </span>
+      )}
       <div className="absolute inset-x-0 bottom-0 space-y-1.5 p-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold leading-tight text-white">{row.title}</p>
@@ -69,10 +126,14 @@ export function Row({ children, onEnd, loading }: { children: React.ReactNode; o
     </div>
   );
 }
+const STAMP_DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
+const STAMP_TIME = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const DAY_HEADING = new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric", year: "numeric" });
+const WEEKDAY = new Intl.DateTimeFormat(undefined, { weekday: "long" });
+
 function stamp(value: number | null): string {
   if (!value) return "—";
-  const d = new Date(value);
-  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} at ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+  return `${STAMP_DAY.format(value)} at ${STAMP_TIME.format(value)}`;
 }
 function episodeCode(row: JellyfinPlayRow, spaced = false): string {
   if (row.number === null) return "";
@@ -150,13 +211,14 @@ function EpisodeLine({ row }: { row: JellyfinPlayRow }) {
 }
 function DayTileCard({ tile }: { tile: DayTile }) {
   const [open, setOpen] = useState(false);
+  const openTitle = useOpenTitle();
   const many = tile.rows.length > 1;
   const first = tile.rows[0];
   const last = tile.rows[tile.rows.length - 1];
   return (
     <div className={`rounded-lg border border-white/[0.06] bg-muted/30 ${open ? "sm:col-span-2 lg:col-span-3" : ""}`}>
       <div className="flex gap-3 p-3">
-        <div className="w-16 shrink-0"><Art src={tile.posterUrl} title={tile.title} wide={false} /></div>
+        <button type="button" disabled={!openTitle} onClick={() => openTitle?.(titleRefOf(tile.rows[0]))} className="w-16 shrink-0 transition hover:opacity-80" aria-label={`Open ${tile.title}`}><Art src={tile.posterUrl} title={tile.title} wide={false} /></button>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold leading-tight truncate" title={tile.title}>{tile.title}</p>
           <p className="text-[11px] text-muted-foreground">{tile.profile}</p>
@@ -198,7 +260,7 @@ function PlayedDay({ day }: { day: DayGroup }) {
     <div className="space-y-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <p className="text-sm font-semibold">
-          {day.date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} · {day.date.toLocaleDateString(undefined, { weekday: "long" })}
+          {DAY_HEADING.format(day.date)} · {WEEKDAY.format(day.date)}
           {day.runtimeMs > 0 && <span className="ml-2 text-xs font-normal text-muted-foreground">{duration(day.runtimeMs)}</span>}
         </p>
         <p className="text-xs text-muted-foreground tabular-nums">

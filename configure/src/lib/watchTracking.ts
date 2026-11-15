@@ -1,5 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import type { AppConfig, WatchTrackingService } from '@/contexts/config';
-import type { SettingsSectionId } from '@/lib/settingsRoute';
+import { navigateToSettingsSection, requestIntegrationDialog, type IntegrationDialog, type SettingsSectionId } from './settingsRoute';
 
 export type WatchTrackingMediaType = 'movie' | 'series';
 type WatchTrackingMasterKey =
@@ -77,6 +79,90 @@ export const WATCH_TRACKING_SERVICE_DEFINITIONS: Record<
     connectHint: 'Add your PublicMetaDB API key in the Integrations tab.',
   },
 };
+
+export function scrobblesJellyfin(config: AppConfig): boolean {
+  return config.playbackReporting === true && config.jellyfinScrobbling !== false;
+}
+
+export function scrobblesStremio(config: AppConfig): boolean {
+  return config.playbackReporting === true && config.stremioScrobbling === true;
+}
+
+export type ConnectTarget = { section: SettingsSectionId; dialog?: IntegrationDialog; anchor?: string };
+
+/** Where a service is connected: its sign-in in Catalogs, or its key field in Integrations. */
+export function connectTargetFor(service: WatchTrackingService): ConnectTarget {
+  if (service === 'simkl' || service === 'anilist' || service === 'mal') return { section: 'catalogs', dialog: service };
+  return { section: 'integrations', anchor: service };
+}
+
+export function openServiceConnect(service: WatchTrackingService): void {
+  const target = connectTargetFor(service);
+  if (target.dialog) requestIntegrationDialog(target.dialog);
+  navigateToSettingsSection(target.section, target.anchor);
+}
+
+export function anyServiceConnected(config: AppConfig): boolean {
+  return WATCH_TRACKING_SERVICES.some((service) => WATCH_TRACKING_SERVICE_DEFINITIONS[service].hasCredential(config));
+}
+
+/** Mirrors the manifest: the Stremio events are declared with the switch alone. */
+export function declaresStremioEvents(config: AppConfig): boolean {
+  return scrobblesStremio(config);
+}
+
+/** What a missing key already means, so setting one back to it is no change. */
+const WATCH_TRACKING_DEFAULTS = {
+  playbackReporting: false,
+  jellyfinScrobbling: true,
+  stremioScrobbling: false,
+  stremioLibraryWatchlist: false,
+} as const;
+
+/** The config less watch tracking values that only restate their default, for telling whether anything changed. */
+export function withoutWatchTrackingDefaults(config: AppConfig): AppConfig {
+  const out: Record<string, unknown> = { ...config };
+  for (const [key, value] of Object.entries(WATCH_TRACKING_DEFAULTS)) {
+    if (out[key] === value) delete out[key];
+  }
+  // The sources only count while a title counts once finished.
+  if (config.playbackReporting !== true) {
+    delete out.jellyfinScrobbling;
+    delete out.stremioScrobbling;
+    delete out.stremioLibraryWatchlist;
+  }
+  // Retaken whenever the events are declared again, so turning them off and on restamps it.
+  delete out.stremioScrobblingSince;
+  const left = Object.entries(config.watchTracking ?? {}).flatMap(([service, types]) => {
+    const off = Object.fromEntries(Object.entries(types ?? {}).filter(([, on]) => on === false));
+    return Object.keys(off).length ? [[service, off]] : [];
+  });
+  if (left.length) out.watchTracking = Object.fromEntries(left);
+  else delete out.watchTracking;
+  return out as unknown as AppConfig;
+}
+
+export function withStremioEventsSince<T extends AppConfig>(prev: T, next: T): T {
+  return !declaresStremioEvents(prev) && declaresStremioEvents(next) ? { ...next, stremioScrobblingSince: Date.now() } : next;
+}
+
+export type StremioLinkState = 'reinstall' | 'waiting' | 'ok';
+
+export function stremioLinkState(
+  since: number | undefined,
+  status?: { manifestAt: number | null; eventAt: number | null },
+): StremioLinkState {
+  const from = since ?? 0;
+  if (status?.eventAt && status.eventAt >= from) return 'ok';
+  if (status?.manifestAt && status.manifestAt >= from) return 'waiting';
+  return 'reinstall';
+}
+
+export function withViewer(installUrl: string, cardId: string): string {
+  const url = new URL(installUrl);
+  url.searchParams.set('viewer', cardId);
+  return url.toString();
+}
 
 export function isWatchTrackingMediaTypeSelected(
   config: AppConfig,

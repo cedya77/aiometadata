@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 const TRANSLATION_NAME_KEYS = ['language', 'name'];
 const TRANSLATION_OVERVIEW_KEYS = ['language', 'overview'];
 const ARTWORK_KEYS = ['id', 'image', 'type', 'language', 'thumbnail', 'width', 'height', 'score', 'includesText'];
@@ -41,7 +43,7 @@ const SERIES_EXTENDED_KEYS = [
   'nameTranslations',
   'overviewTranslations',
 ];
-const COMPANY_KEYS = ['name'];
+const COMPANY_KEYS = ['id', 'name'];
 const MOVIE_COMPANY_KINDS = ['studio', 'production'];
 
 function normalizeTvdbCompanyForCache(company: any) {

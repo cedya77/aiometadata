@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -315,7 +317,7 @@ export function ImageCachePolicyDialog({
               onValueChange={(policy) => updateRow(row.domain, { explicit: true, policy: policy as TtlPolicy })}
             >
               <SelectTrigger className="w-[150px] h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
+              <SelectContent sheet>
                 {(Object.keys(labels) as TtlPolicy[]).map((policy) => (
                   <SelectItem key={policy} value={policy}>{labels[policy]}</SelectItem>
                 ))}

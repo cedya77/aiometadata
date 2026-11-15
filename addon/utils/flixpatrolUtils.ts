@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { httpGet, BOOTSTRAP_HTTP_OPTIONS } from "./httpClient.js";
 import { cacheWrapGlobal, cacheWrapMetaSmart } from "../lib/getCache.js";
 import { getMeta } from "../lib/getMeta.js";

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useConfig } from '../../contexts/ConfigContext';
 import { Button } from '@/components/ui/button';
@@ -6,6 +8,7 @@ import { Bell, LogIn, LogOut, Eye, EyeOff, BarChart3, Pencil, Check, X } from 'l
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { AboutLicensesDialog } from '@/components/AboutLicensesDialog';
 
 const LazyChangelogModal = lazy(() =>
   import('../ChangelogBox').then((module) => ({ default: module.ChangelogModal }))
@@ -18,6 +21,7 @@ export function Header() {
   const [shouldLoadChangelog, setShouldLoadChangelog] = useState(false);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [profiles, setProfiles] = useState<Array<{ userUUID: string; label: string }>>([]);
@@ -84,7 +88,7 @@ export function Header() {
                            sessionStorage.getItem('fromStremioSettings') === 'true';
       
       // Don't prompt for login on dashboard route
-      const isDashboardRoute = window.location.pathname === '/dashboard' || window.location.pathname === '/dashboard/';
+      const isDashboardRoute = /^\/dashboard(\/|$)/.test(window.location.pathname);
       
       if (!auth.authenticated && isFromStremio && !isDashboardRoute) {
         sessionStorage.removeItem('fromStremioSettings');
@@ -425,7 +429,14 @@ export function Header() {
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
-                  <span className="text-sm text-muted-foreground shrink-0 max-w-[120px] sm:max-w-none truncate" title={`v${addonVersion}`}>v{addonVersion}</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsAboutOpen(true)}
+                    className="text-sm text-muted-foreground hover:text-foreground hover:underline shrink-0 max-w-[120px] sm:max-w-none truncate"
+                    title={`v${addonVersion}: about, source code and licenses`}
+                  >
+                    v{addonVersion}
+                  </button>
                 </>
               )}
             </div>
@@ -738,6 +749,7 @@ export function Header() {
           </form>
         </DialogContent>
       </Dialog>
+      <AboutLicensesDialog open={isAboutOpen} onOpenChange={setIsAboutOpen} version={addonVersion} />
     </header>
   );
 }

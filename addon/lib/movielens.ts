@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 const { fetch, FormData }: any = require('undici');
 const { Blob }: any = require('node:buffer');
 const crypto: any = require('crypto');
@@ -155,7 +157,6 @@ interface MovieLensUserMeta {
 async function getUserMeta(credId: string): Promise<MovieLensUserMeta> {
   const empty: MovieLensUserMeta = { groupTags: [], engineId: null, engineWeight: null, popWeight: null, numRatings: null };
   const res = await apiFetch(credId, 'users/me');
-  // return empty metadata on failure, to avoid breaking otherwise working catalogs.
   if (res.status !== 200) return empty;
   const json: any = await res.json();
   const prefs = json?.data?.preferences || {};

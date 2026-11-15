@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 /** Stamps `_listedAt` on catalog metas from the list entries they were built from, matched on any id both carry. */
 export function stampListedAt(metas: any[], entries: any[], idsOf: (entry: any) => Record<string, any>, dateOf: (entry: any) => any): any[] {
   const byId = new Map<string, string>();

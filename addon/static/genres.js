@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 // Standard genres for movies and series (44 genres) - using slug format for MDBList API compatibility
 const STANDARD_GENRES = [
   "action",

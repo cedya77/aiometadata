@@ -1,4 +1,7 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import consola from 'consola';
+import { LRUCache } from 'lru-cache';
 import { createHash, randomUUID } from 'crypto';
 import { envInt } from '../../utils/envNumber';
 import redis from '../redisClient';
@@ -73,14 +76,40 @@ function readFrame(buffer: Buffer): { opcode: number; payload: Buffer; size: num
 
 interface Listener {
   userId: string;
+  userUUID: string;
+  profile: string;
+  deviceId: string | null;
+  tokenKey?: string;
   send: (MessageType: string, Data?: any) => void;
+}
+
+type DeviceHook = (userUUID: string, profile: string, deviceId: string) => unknown;
+const goneHooks: DeviceHook[] = [];
+const backHooks: DeviceHook[] = [];
+
+export const onDeviceGone = (fn: DeviceHook): void => void goneHooks.push(fn);
+export const onDeviceBack = (fn: DeviceHook): void => void backHooks.push(fn);
+
+function fire(hooks: DeviceHook[], listener: Listener): void {
+  const deviceId = listener.deviceId;
+  if (!deviceId) return;
+  for (const hook of hooks) {
+    try {
+      Promise.resolve(hook(listener.userUUID, listener.profile, deviceId)).catch((error: any) => logger.debug(`Device hook failed: ${error?.message || error}`));
+    } catch (error: any) {
+      logger.debug(`Device hook failed: ${error?.message || error}`);
+    }
+  }
 }
 
 const listeners = new Map<string, Set<Listener>>();
 const pending = new Map<string, Map<string, any>>();
 
 const CHANNEL = 'jf:userdata';
+const COMMANDS = 'jf:commands';
 const LISTENING = 'jf:userdata:listening:';
+const DEVICES = 'jf:devices:';
+const CAPABILITIES = 'jf:capabilities:';
 const ORIGIN = randomUUID();
 const PUSH_PART = 100;
 let subscribed = false;
@@ -96,15 +125,17 @@ function subscribe(): void {
   subscribed = true;
   const subscriber = redis.duplicate();
   subscriber.on('error', (error: Error) => logger.debug(`User data subscriber: ${error.message}`));
-  subscriber.on('message', (_channel: string, raw: string) => {
+  subscriber.on('message', (channel: string, raw: string) => {
     try {
       const message = JSON.parse(raw);
-      if (message?.o !== ORIGIN && typeof message?.s === 'string' && Array.isArray(message.l)) deliver(message.s, message.l);
+      if (message?.o === ORIGIN || typeof message?.s !== 'string') return;
+      if (channel === CHANNEL && Array.isArray(message.l)) deliver(message.s, message.l);
+      else if (channel === COMMANDS && typeof message.d === 'string' && typeof message.t === 'string') command(message.s, message.d, message.t, message.p);
     } catch {
       /* not ours */
     }
   });
-  subscriber.subscribe(CHANNEL).catch((error: Error) => {
+  subscriber.subscribe(CHANNEL, COMMANDS).catch((error: Error) => {
     subscribed = false;
     subscriber.disconnect();
     logger.debug(`User data subscribe failed: ${error.message}`);
@@ -127,13 +158,184 @@ function pingMs(): number {
   return envInt('JELLYFIN_SOCKET_PING_MS', 30000, 1000);
 }
 
+function detailsMs(): number {
+  return envInt('JELLYFIN_DEVICE_DETAILS_DAYS', 7, 1) * 24 * 60 * 60 * 1000;
+}
+
+const TOKEN_DEVICE = 'jf:tokendevice:';
+const DEVICE_NAME = 'jf:devicename:';
+const tokenDevices = new LRUCache<string, string>({ max: 5000, ttl: detailsMs() });
+const deviceNames = new LRUCache<string, string>({ max: 5000, ttl: detailsMs() });
+const tokenKey = (token: string) => createHash('sha256').update(token).digest('hex').substring(0, 32);
+
+interface ClientNames {
+  deviceId: string;
+  client: string;
+  device: string;
+  version: string;
+}
+
+// Names are kept per account, as any client can claim any device id.
+function rememberDeviceNames(userUUID: string, info: ClientNames): void {
+  const key = `${userUUID}:${info.deviceId}`;
+  const names = JSON.stringify({ client: info.client.slice(0, 128), device: info.device.slice(0, 128), version: info.version.slice(0, 32) });
+  if (deviceNames.get(key) === names) return;
+  deviceNames.set(key, names);
+  if (redis) redis.set(`${DEVICE_NAME}${key}`, names, 'PX', detailsMs()).catch(() => undefined);
+}
+
+export function rememberTokenDevice(userUUID: string, token: string | undefined, info: ClientNames): void {
+  const deviceId = info.deviceId;
+  if (!token || !deviceId || deviceId === 'unknown') return;
+  if (info.client !== 'Unknown') rememberDeviceNames(userUUID, info);
+  const key = tokenKey(token);
+  if (tokenDevices.get(key) === deviceId) return;
+  tokenDevices.set(key, deviceId);
+  if (redis) redis.set(`${TOKEN_DEVICE}${key}`, deviceId, 'PX', detailsMs()).catch(() => undefined);
+  for (const [scope, followers] of listeners) {
+    for (const listener of followers) {
+      if (listener.tokenKey !== key || listener.deviceId) continue;
+      listener.deviceId = deviceId;
+      markListening(scope, deviceId);
+      fire(backHooks, listener);
+    }
+  }
+}
+
+async function tokenDevice(token: string): Promise<string | null> {
+  const key = tokenKey(token);
+  const held = tokenDevices.get(key);
+  if (held) return held;
+  if (!redis) return null;
+  const stored = await redis.get(`${TOKEN_DEVICE}${key}`).catch(() => null);
+  if (stored) tokenDevices.set(key, stored);
+  return stored;
+}
+
 function maxFrameBytes(): number {
   const value = Number(require('../settingsService').getSetting('JELLYFIN_SOCKET_MAX_MESSAGE_KB'));
   return (Number.isFinite(value) && value >= 1 ? Math.floor(value) : 64) * 1024;
 }
 
-function markListening(scope: string): void {
-  redis?.set(`${LISTENING}${scope}`, '1', 'PX', pingMs() * 3).catch(() => undefined);
+function markListening(scope: string, deviceId: string | null): void {
+  const ttl = pingMs() * 3;
+  redis?.set(`${LISTENING}${scope}`, '1', 'PX', ttl).catch(() => undefined);
+  if (!deviceId || !redis) return;
+  redis
+    .multi()
+    .hset(`${DEVICES}${scope}`, deviceId, String(Date.now()))
+    .pexpire(`${DEVICES}${scope}`, ttl)
+    .pexpire(`${CAPABILITIES}${scope}:${deviceId}`, detailsMs())
+    .exec()
+    .catch(() => undefined);
+}
+
+function command(scope: string, deviceId: string, MessageType: string, Data: any): number {
+  let sent = 0;
+  for (const listener of listeners.get(scope) ?? []) {
+    if (listener.deviceId !== deviceId) continue;
+    listener.send(MessageType, Data);
+    sent++;
+  }
+  return sent;
+}
+
+export interface DeviceCapabilities {
+  client: string;
+  device: string;
+  version: string;
+  /** Left out when the client did not say, which is not the same as saying none or false. */
+  playableMediaTypes?: string[];
+  supportedCommands: string[];
+  supportsMediaControl?: boolean;
+}
+
+export interface LiveDevice extends DeviceCapabilities {
+  deviceId: string;
+  lastSeen: number;
+}
+
+const localCapabilities = new LRUCache<string, DeviceCapabilities>({ max: 2000 });
+
+const short = (value: unknown, size = 128): string => String(value ?? '').slice(0, size);
+const shortList = (values: string[], count: number): string[] => values.slice(0, count).map((value) => short(value, 64));
+
+export async function saveCapabilities(userUUID: string, profile: string, deviceId: string, details: DeviceCapabilities): Promise<void> {
+  const key = `${userUUID}:${profile}:${deviceId}`;
+  // A client names these itself, so what is kept of them is bounded.
+  const capabilities: DeviceCapabilities = {
+    ...details,
+    client: short(details.client),
+    device: short(details.device),
+    version: short(details.version, 32),
+    playableMediaTypes: details.playableMediaTypes && shortList(details.playableMediaTypes, 10),
+    supportedCommands: shortList(details.supportedCommands, 100),
+  };
+  if (!redis) return void localCapabilities.set(key, capabilities, { ttl: detailsMs() });
+  await redis.set(`${CAPABILITIES}${key}`, JSON.stringify(capabilities), 'PX', detailsMs()).catch(() => undefined);
+}
+
+export async function liveDevices(userUUID: string, profile: string): Promise<LiveDevice[]> {
+  const scope = `${userUUID}:${profile}`;
+  const now = Date.now();
+  const seen = new Map<string, number>();
+  for (const listener of listeners.get(scope) ?? []) if (listener.deviceId) seen.set(listener.deviceId, now);
+  if (redis) {
+    try {
+      const stored: Record<string, string> = await redis.hgetall(`${DEVICES}${scope}`);
+      const fresh = now - pingMs() * 3;
+      for (const [deviceId, at] of Object.entries(stored)) {
+        const time = Number(at);
+        if (time > fresh && !seen.has(deviceId)) seen.set(deviceId, time);
+      }
+    } catch {
+    }
+  }
+  const ids = [...seen.keys()];
+  let stored: Array<string | null> = [];
+  let named: Array<string | null> = [];
+  if (redis && ids.length) {
+    [stored, named] = await Promise.all([
+      redis.mget(ids.map((id) => `${CAPABILITIES}${scope}:${id}`)).catch(() => []),
+      redis.mget(ids.map((id) => `${DEVICE_NAME}${userUUID}:${id}`)).catch(() => []),
+    ]);
+  }
+  const parse = (value: string | null | undefined): any => {
+    try {
+      return value ? JSON.parse(value) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  return ids.map((deviceId, i) => {
+    const capabilities: DeviceCapabilities | undefined = parse(stored[i]) ?? localCapabilities.get(`${scope}:${deviceId}`);
+    const names: Partial<ClientNames> | undefined = parse(named[i] ?? deviceNames.get(`${userUUID}:${deviceId}`));
+    return {
+      client: capabilities?.client ?? names?.client ?? 'Unknown',
+      device: capabilities?.device ?? names?.device ?? 'Unknown',
+      version: capabilities?.version ?? names?.version ?? '0.0.0',
+      playableMediaTypes: capabilities?.playableMediaTypes,
+      supportedCommands: capabilities?.supportedCommands ?? [],
+      supportsMediaControl: capabilities?.supportsMediaControl,
+      deviceId,
+      lastSeen: seen.get(deviceId)!,
+    };
+  });
+}
+
+export async function sendToDevice(userUUID: string, profile: string, deviceId: string, MessageType: string, Data: any): Promise<boolean> {
+  const scope = `${userUUID}:${profile}`;
+  if (!(await liveDevices(userUUID, profile)).some((device) => device.deviceId === deviceId)) return false;
+  command(scope, deviceId, MessageType, Data);
+  redis?.publish(COMMANDS, JSON.stringify({ o: ORIGIN, s: scope, d: deviceId, t: MessageType, p: Data })).catch(() => undefined);
+  return true;
+}
+
+/** Unlike sendToDevice, this does not first check that the device is live. */
+export function pushToDevice(userUUID: string, profile: string, deviceId: string, MessageType: string, Data: any): void {
+  const scope = `${userUUID}:${profile}`;
+  command(scope, deviceId, MessageType, Data);
+  redis?.publish(COMMANDS, JSON.stringify({ o: ORIGIN, s: scope, d: deviceId, t: MessageType, p: Data })).catch(() => undefined);
 }
 
 export async function hasListeners(userUUID: string, profile: string): Promise<boolean> {
@@ -192,7 +394,10 @@ export function attachJellyfinSocket(server: any): void {
     if (!match) return;
 
     const query = new URLSearchParams(url.split('?')[1] ?? '');
-    const token = query.get('api_key') ?? query.get('ApiKey') ?? undefined;
+    const { parseMediaBrowserHeader } = require('./context');
+    const header = parseMediaBrowserHeader(req.headers.authorization || req.headers['x-emby-authorization']);
+    const token = header.token || req.headers['x-emby-token'] || req.headers['x-mediabrowser-token'] || query.get('api_key') || query.get('ApiKey') || undefined;
+    const deviceId: string | null = query.get('deviceId') || query.get('DeviceId') || header.deviceid || (token ? await tokenDevice(token) : null) || null;
     const key = req.headers['sec-websocket-key'];
 
     if (!key) {
@@ -219,7 +424,8 @@ export function attachJellyfinSocket(server: any): void {
       return;
     }
 
-    const scope = `${userUUID}:${await historyOf(userUUID, session.profileId)}`;
+    const profile = await historyOf(userUUID, session.profileId);
+    const scope = `${userUUID}:${profile}`;
     if (socket.destroyed) return;
 
     socket.write(
@@ -237,7 +443,14 @@ export function attachJellyfinSocket(server: any): void {
       if (!socket.destroyed) socket.write(textFrame(JSON.stringify({ MessageType, MessageId: randomUUID().replace(/-/g, ''), Data })));
     };
 
-    const listener: Listener = { userId: dashedGuid(profileUserId(userUUID, session.profileId)), send };
+    const listener: Listener = {
+      userId: dashedGuid(profileUserId(userUUID, session.profileId)),
+      userUUID,
+      profile,
+      deviceId,
+      tokenKey: token ? tokenKey(token) : undefined,
+      send,
+    };
     let followers = listeners.get(scope);
     if (!followers) {
       followers = new Set();
@@ -245,7 +458,8 @@ export function attachJellyfinSocket(server: any): void {
     }
     followers.add(listener);
     subscribe();
-    markListening(scope);
+    markListening(scope, deviceId);
+    fire(backHooks, listener);
 
     send('ForceKeepAlive', 60);
     let heardAt = Date.now();
@@ -256,7 +470,16 @@ export function attachJellyfinSocket(server: any): void {
       }
       send('KeepAlive');
       if (!socket.destroyed) socket.write(Buffer.from([0x89, 0x00]));
-      markListening(scope);
+      markListening(scope, listener.deviceId);
+      // Another replica may since have learnt which device this token belongs to.
+      if (!listener.deviceId && token) {
+        void tokenDevice(token).then((found) => {
+          if (!found || listener.deviceId || socket.destroyed) return;
+          listener.deviceId = found;
+          markListening(scope, found);
+          fire(backHooks, listener);
+        });
+      }
     }, pingMs());
 
     const maxPending = maxFrameBytes();
@@ -299,6 +522,12 @@ export function attachJellyfinSocket(server: any): void {
       const held = listeners.get(scope);
       held?.delete(listener);
       if (held && held.size === 0) listeners.delete(scope);
+      const gone = listener.deviceId;
+      if (gone && ![...(held ?? [])].some((other) => other.deviceId === gone)) {
+        localCapabilities.delete(`${scope}:${gone}`);
+        redis?.hdel(`${DEVICES}${scope}`, gone).catch(() => undefined);
+        fire(goneHooks, listener);
+      }
       const left = (perUser.get(userUUID as string) ?? 1) - 1;
       if (left <= 0) perUser.delete(userUUID as string);
       else perUser.set(userUUID as string, left);

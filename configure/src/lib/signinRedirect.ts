@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 const REDIRECT_STAMP_KEY = 'aiom:signin-redirect-at';
 const REDIRECT_GUARD_WINDOW_MS = 60_000;
 const SIGNIN_REQUIRED = 'Sign-in required';
@@ -42,7 +44,8 @@ async function isSigninRequired(response: Response): Promise<boolean> {
  */
 export function installSigninRedirect(): void {
   if (typeof window === 'undefined' || typeof window.fetch !== 'function') return;
-  if ((window as Window & { DASHBOARD_MODE?: boolean }).DASHBOARD_MODE) return;
+  if ((window as Window & { DASHBOARD_MODE?: boolean; OWN_PAGE_MODE?: boolean }).DASHBOARD_MODE) return;
+  if ((window as Window & { OWN_PAGE_MODE?: boolean }).OWN_PAGE_MODE) return;
 
   const original = window.fetch.bind(window);
   let redirecting = false;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 export type SettingsSectionId =
   | 'presets'
   | 'general'
@@ -7,16 +9,21 @@ export type SettingsSectionId =
   | 'filters'
   | 'search'
   | 'catalogs'
+  | 'people'
+  | 'watch-tracking'
+  | 'jellyfin'
   | 'configuration';
 
 export interface SettingsSection {
   id: SettingsSectionId;
   title: string;
+  /** Starts a group in the nav: a label, or '' for an unlabelled divider. */
+  group?: string;
 }
 
 /** Nav order. The layout renders in this order and joins components by id. */
 export const SETTINGS_SECTIONS: SettingsSection[] = [
-  { id: 'presets', title: 'Presets' },
+  { id: 'presets', title: 'Presets', group: 'Metadata' },
   { id: 'general', title: 'General' },
   { id: 'integrations', title: 'Integrations' },
   { id: 'providers', title: 'Meta Providers' },
@@ -24,8 +31,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: 'filters', title: 'Filters' },
   { id: 'search', title: 'Search' },
   { id: 'catalogs', title: 'Catalogs' },
-  { id: 'configuration', title: 'Configuration' },
+  { id: 'people', title: 'People', group: 'Watching' },
+  { id: 'jellyfin', title: 'Jellyfin' },
+  { id: 'watch-tracking', title: 'Watch Tracking' },
+  { id: 'configuration', title: 'Configuration', group: '' },
 ];
+
+/** The sections this instance offers; the route still accepts every id so a deep link survives loading. */
+export function visibleSettingsSections({ jellyfin }: { jellyfin: boolean }): SettingsSection[] {
+  return jellyfin ? SETTINGS_SECTIONS : SETTINGS_SECTIONS.filter((section) => section.id !== 'jellyfin');
+}
 
 export const DEFAULT_SECTION: SettingsSectionId = 'general';
 
@@ -55,6 +70,7 @@ export interface SettingsRoute {
 
 
 const ANCHOR_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
+const OLD_PEOPLE_ANCHOR = 'household-users';
 
 export function parseRoute(hash: string): SettingsRoute {
   const raw = (hash || '').trim().replace(/^#/, '');
@@ -65,6 +81,10 @@ export function parseRoute(hash: string): SettingsRoute {
     return { section: DEFAULT_SECTION, anchor: null };
   }
   const anchorPart = slash === -1 ? '' : raw.slice(slash + 1);
+  if (sectionPart === 'watch-tracking' && (anchorPart === OLD_PEOPLE_ANCHOR || anchorPart.startsWith(`${OLD_PEOPLE_ANCHOR}.`))) {
+    const key = anchorPart.slice(OLD_PEOPLE_ANCHOR.length + 1);
+    return { section: 'people', anchor: ANCHOR_PATTERN.test(key) ? key : null };
+  }
   return {
     section: sectionPart,
     anchor: ANCHOR_PATTERN.test(anchorPart) ? anchorPart : null,
@@ -78,10 +98,27 @@ export function hashFor(id: SettingsSectionId, anchor?: string | null): string {
 export const SETTINGS_LAYOUT_NAVIGATE_EVENT = 'settings-layout:navigate';
 
 /** Lets components outside the layout switch sections without threading a prop through. */
-export function navigateToSettingsSection(tab: SettingsSectionId): void {
+export function navigateToSettingsSection(tab: SettingsSectionId, anchor?: string): void {
   window.dispatchEvent(
-    new CustomEvent(SETTINGS_LAYOUT_NAVIGATE_EVENT, { detail: { tab, scrollToTop: true } })
+    new CustomEvent(SETTINGS_LAYOUT_NAVIGATE_EVENT, { detail: { tab, scrollToTop: true, ...(anchor ? { anchor } : {}) } })
   );
+}
+
+export type IntegrationDialog = 'simkl' | 'anilist' | 'mal';
+export const OPEN_INTEGRATION_EVENT = 'settings:open-integration';
+
+let pendingIntegration: IntegrationDialog | null = null;
+
+/** Asks Catalogs to open a service's sign-in, now if it is showing or as soon as it mounts. */
+export function requestIntegrationDialog(service: IntegrationDialog): void {
+  pendingIntegration = service;
+  window.dispatchEvent(new CustomEvent(OPEN_INTEGRATION_EVENT, { detail: service }));
+}
+
+export function consumeIntegrationDialogRequest(): IntegrationDialog | null {
+  const requested = pendingIntegration;
+  pendingIntegration = null;
+  return requested;
 }
 
 let pendingCollectionBuilder = false;
@@ -96,14 +133,14 @@ export function consumeCollectionBuilderRequest(): boolean {
   return requested;
 }
 
-export function adjacentSections(id: SettingsSectionId): {
+export function adjacentSections(id: SettingsSectionId, sections: SettingsSection[] = SETTINGS_SECTIONS): {
   prev: SettingsSection | null;
   next: SettingsSection | null;
 } {
-  const index = SETTINGS_SECTIONS.findIndex((section) => section.id === id);
+  const index = sections.findIndex((section) => section.id === id);
   if (index === -1) return { prev: null, next: null };
   return {
-    prev: index > 0 ? SETTINGS_SECTIONS[index - 1] : null,
-    next: index < SETTINGS_SECTIONS.length - 1 ? SETTINGS_SECTIONS[index + 1] : null,
+    prev: index > 0 ? sections[index - 1] : null,
+    next: index < sections.length - 1 ? sections[index + 1] : null,
   };
 }

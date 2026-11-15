@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import React, { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { motion } from 'framer-motion';
@@ -23,6 +25,7 @@ import { CacheTTLField } from '@/components/CacheTTLField';
 import { useConfig } from '@/contexts/ConfigContext';
 import type { CatalogConfig } from '@/contexts/config';
 import { mergedSourcesShape } from '@/lib/posterShape';
+import { isMovieLensExploreId } from '@/lib/movielensCatalogIds';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -44,7 +47,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { streamingServices, regions } from "@/data/streamings";
-import { consumeCollectionBuilderRequest } from '@/lib/settingsRoute';
+import { consumeCollectionBuilderRequest, consumeIntegrationDialogRequest, OPEN_INTEGRATION_EVENT, type IntegrationDialog } from '@/lib/settingsRoute';
 import { allCatalogDefinitions, isJikanCatalog } from '@/data/catalogs';
 import { resolveCatalogTTL, minCacheTTLFor, hasEditableCacheTTL, formatTTL } from '@/lib/catalogTTL';
 import { GenreSelection } from '@/data/genres';
@@ -1302,6 +1305,9 @@ const MOVIELENS_SORT_OPTIONS = [
   { value: 'userRatedDate', label: 'Your Rating Date' },
 ];
 
+// Sorting by your own rating or rating date only makes sense over titles you rated.
+const MOVIELENS_RATED_ONLY_SORTS = new Set(['userRating', 'userRatedDate']);
+
 const MovieLensSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, catalogTTL, config } = useConfig();
   const [cacheTTL, setCacheTTL] = useState<number | null>(catalog.cacheTTL ?? null);
@@ -1349,7 +1355,7 @@ const MovieLensSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
                   tags: tags.trim() ? tags.trim() : undefined,
                   minYear: Number.isFinite(minYearNum) ? minYearNum : undefined,
                   maxYear: Number.isFinite(maxYearNum) ? maxYearNum : undefined,
-                  includeRated: includeRated ? true : undefined,
+                  includeRated: (includeRated || MOVIELENS_RATED_ONLY_SORTS.has(sortBy)) ? true : undefined,
                   maxDaysAgo: Number.isFinite(maxDaysAgoNum) && maxDaysAgoNum > 0 ? maxDaysAgoNum : undefined,
                 }),
                 hideWatchedTrakt: hideTraktValue,
@@ -1431,9 +1437,17 @@ const MovieLensSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Include Rated Movies</Label>
-                  <p className="text-xs text-muted-foreground">Show movies you've already rated on MovieLens</p>
+                  <p className="text-xs text-muted-foreground">
+                    {MOVIELENS_RATED_ONLY_SORTS.has(sortBy)
+                      ? 'Always on when sorting by your rating: only movies you rated are shown'
+                      : "Show movies you've already rated on MovieLens"}
+                  </p>
                 </div>
-                <Switch checked={includeRated} onCheckedChange={setIncludeRated} />
+                <Switch
+                  checked={includeRated || MOVIELENS_RATED_ONLY_SORTS.has(sortBy)}
+                  disabled={MOVIELENS_RATED_ONLY_SORTS.has(sortBy)}
+                  onCheckedChange={setIncludeRated}
+                />
               </div>
             </>
           )}
@@ -3457,7 +3471,7 @@ const SortableCatalogItem = React.memo(({ catalog, onEditDiscover, onCustomize, 
 
   const hasRatingPosters = config.posterRatingProvider !== 'none' && !!(config.apiKeys?.rpdb || config.apiKeys?.topPoster || config.customPosterUrlPattern);
   const isDiscover = catalog.id.includes('.discover.') && !!catalog.metadata?.discover?.formState;
-  const isMovieLensExplore = catalog.source === 'movielens' && catalog.id.startsWith('movielens.explore');
+  const isMovieLensExplore = catalog.source === 'movielens' && isMovieLensExploreId(catalog.id);
   const canDuplicate = isDiscover || isMovieLensExplore;
   const canDelete = true;
 
@@ -4297,12 +4311,26 @@ function CatalogsSettingsContent({
   useEffect(() => {
     if (consumeCollectionBuilderRequest()) setIsCollectionBuilderOpen(true);
   }, []);
+
   const [editingDiscoverCatalog, setEditingDiscoverCatalog] = useState<CatalogConfig | null>(null);
   const [customizeTemplate, setCustomizeTemplate] = useState<CustomizeTemplate | null>(null);
   const [isLetterboxdOpen, setIsLetterboxdOpen] = useState(false);
   const [isTvdbListOpen, setIsTvdbListOpen] = useState(false);
   const [isAniListOpen, setIsAniListOpen] = useState(false);
   const [isMalOpen, setIsMalOpen] = useState(false);
+
+  // Connect on the Watch Tracking tab opens the service's sign-in here.
+  useEffect(() => {
+    const open = (service: IntegrationDialog | null) => {
+      if (service === 'simkl') setIsSimklOpen(true);
+      else if (service === 'anilist') setIsAniListOpen(true);
+      else if (service === 'mal') setIsMalOpen(true);
+    };
+    open(consumeIntegrationDialogRequest());
+    const onRequest = () => open(consumeIntegrationDialogRequest());
+    window.addEventListener(OPEN_INTEGRATION_EVENT, onRequest);
+    return () => window.removeEventListener(OPEN_INTEGRATION_EVENT, onRequest);
+  }, []);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
   const [isStreamingTop10Open, setIsStreamingTop10Open] = useState(false);
   const [isAIOMetadataOpen, setIsAIOMetadataOpen] = useState(false);
@@ -6002,18 +6030,6 @@ function CatalogsSettingsContent({
         selectedProviders={tempSelectedProviders}
         setSelectedProviders={setTempSelectedProviders}
         onSave={handleCloseStreamingDialog}
-      />
-      <MDBListIntegration
-        isOpen={isMdbListOpen}
-        onClose={() => setIsMdbListOpen(false)}
-      />
-      <TraktIntegration
-        isOpen={isTraktOpen}
-        onClose={() => setIsTraktOpen(false)}
-      />
-      <SimklIntegration
-        isOpen={isSimklOpen}
-        onClose={() => setIsSimklOpen(false)}
       />
       <MovieLensIntegration
         isOpen={isMovieLensOpen}

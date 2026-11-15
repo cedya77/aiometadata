@@ -10,9 +10,10 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version to build, e.g. 2.13.0. Leave empty for the newest release.'
+        description: 'Version to build, such as 2.13.0. Leave empty to build the newest release.'
         required: false
         type: string
+        default: ''
 
 env:
   REGISTRY: ghcr.io
@@ -26,28 +27,50 @@ jobs:
       packages: write
 
     steps:
+      # Resolves the version to build and the parts the image tags are made of.
+      # `latest` is only granted to the newest release, so rebuilding an older
+      # version by hand never moves it backwards.
       - name: Resolve version
         id: version
+        shell: bash
         env:
-          REQUESTED: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          NEWEST="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)"
-          VERSION="${REQUESTED:-$NEWEST}"
-          VERSION="${VERSION#v}"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::'$VERSION' is not a release version (X.Y.Z)"
+
+          newest_tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)"
+          newest="${newest_tag#v}"
+
+          requested="$REQUESTED_VERSION"
+          if [ -z "$requested" ]; then
+            if [ -z "$newest" ]; then
+              echo "::error title=Version::No version was given and no GitHub release was found to fall back on."
+              exit 1
+            fi
+            requested="$newest_tag"
+          fi
+
+          version="${requested#v}"
+          if ! [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error title=Version::'$requested' is not a release version; expected X.Y.Z such as 2.13.0 (a leading v is allowed)."
             exit 1
           fi
-          # latest must never move backwards when an older version is rebuilt by hand.
-          IS_LATEST=false
-          [ "$VERSION" = "${NEWEST#v}" ] && IS_LATEST=true
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[2]}"
+
+          if [ -n "$newest" ] && [ "$version" = "$newest" ]; then
+            is_latest=true
+          else
+            is_latest=false
+          fi
+
+          echo "Building $version (newest release: ${newest:-none}, latest tag: $is_latest)"
           {
-            echo "version=$VERSION"
-            echo "major=${VERSION%%.*}"
-            echo "minor=$(echo "$VERSION" | cut -d. -f2)"
-            echo "is_latest=$IS_LATEST"
+            echo "version=$version"
+            echo "major=$major"
+            echo "minor=$minor"
+            echo "is_latest=$is_latest"
           } >> "$GITHUB_OUTPUT"
 
       # The tag, not the branch: a dispatch runs from dev, whose HEAD is not the release.

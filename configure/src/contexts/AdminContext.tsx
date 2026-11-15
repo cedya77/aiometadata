@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 export interface AuthSession {
@@ -27,7 +29,7 @@ interface AdminContextType {
   jellyfinEnabled: boolean;     // The Jellyfin server is switched on for this instance
 }
 
-const AdminContext = createContext<AdminContextType | undefined>(undefined);
+export const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
 const ADMIN_KEY_STORAGE = 'admin-key';
 const ADMIN_SESSION_STORAGE = 'admin-session';

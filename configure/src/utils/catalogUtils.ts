@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 /**
  * Shared Catalog Creation Utilities for Quick Add and Integration components
  * Provides reusable functions for creating catalog configurations from various services

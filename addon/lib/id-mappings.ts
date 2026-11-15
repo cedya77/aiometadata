@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import consola from 'consola';
 import { IdField, IdMap, IndexStats, MappingIndex, ParsedMappings, buildIndex, lookup, parseMappingCsv } from './id-mapping-index';
 import { MappingSource, SOURCES, downloadCsv, readCachedCsv } from './mapping-sources';
@@ -151,6 +153,8 @@ export function getSeriesByTvmaze(tvmazeId: string): IdMap | undefined {
   return lookup(indexFor('series'), 'tvmazeId', tvmazeId);
 }
 
+export const mappingsReady = (): boolean => indexes !== null;
+
 export function getMappingStats() {
   ensureInitialized();
   const { series, movie } = indexes;
@@ -217,6 +221,7 @@ export const mappings = {
 };
 
 module.exports = {
+  mappingsReady,
   mappings,
   initializeMappings,
   refreshChangedMappings,

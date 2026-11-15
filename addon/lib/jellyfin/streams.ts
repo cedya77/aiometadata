@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import consola from 'consola';
 import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
@@ -31,6 +33,8 @@ export interface PlayableStream {
   bingeGroup: string | null;
   needsHeaders: boolean;
   requestHeaders: Record<string, string> | null;
+  /** The same release under any debrid service, for SyncPlay members to match on. */
+  release: string | null;
 }
 
 // The stream addon adds what it parsed from a release only for a user agent it knows.
@@ -146,6 +150,19 @@ export function mediaSourceIdFor(stream: any): string {
   return createHash('md5').update(parts.join('\u0000')).digest('hex');
 }
 
+// Unlike mediaSourceIdFor, the service is left out, and so are labels, which
+// differ between addons for the same file.
+export function releaseIdentity(stream: any): string | null {
+  const data = stream?.streamData && typeof stream.streamData === 'object' ? stream.streamData : {};
+  if (data?.torrent?.infoHash) return `ih:${String(data.torrent.infoHash).toLowerCase()}:${data.torrent.fileIdx ?? ''}`;
+  if (typeof data?.nzbUrl === 'string' && data.nzbUrl) return `nzb:${data.nzbUrl}`;
+  if (typeof data?.releaseKey === 'string' && data.releaseKey) return `rk:${data.releaseKey}`;
+  const filename = String(stream?.behaviorHints?.filename || '');
+  if (!filename) return null;
+  const size = Number(stream?.behaviorHints?.videoSize);
+  return `fn:${filename}:${Number.isFinite(size) && size > 0 ? size : ''}`;
+}
+
 /**
  * The playback URL each source id was handed out with. The stream addon's URL
  * is self-contained, it names the file and needs no search to serve it, so
@@ -204,6 +221,40 @@ export async function recallDuration(id: string | undefined): Promise<number | n
   }
 }
 
+const releases = new LRUCache<string, string>({
+  max: envInt('JELLYFIN_ISSUED_SOURCE_MAX', 5000, 1),
+  ttl: envInt('JELLYFIN_ISSUED_SOURCE_TTL', 12 * 60 * 60, 60) * 1000,
+});
+
+export function rememberRelease(key: string, identity: string | null): void {
+  if (!key || !identity || releases.get(key) === identity) return;
+  if (!require('./syncplay/settings').syncPlayEnabled()) return;
+  releases.set(key, identity);
+  if (redis) redis.set(`jf:sp:rel:${key}`, identity, 'EX', issuedTtlSeconds()).catch(() => undefined);
+}
+
+export async function recallReleases(keys: string[]): Promise<Array<string | null>> {
+  const found: Array<string | null> = keys.map((key) => releases.get(key) ?? null);
+  const missing = keys.filter((_, i) => found[i] === null);
+  if (!redis || !missing.length) return found;
+  try {
+    const stored: Array<string | null> = await redis.mget(missing.map((key) => `jf:sp:rel:${key}`));
+    let at = 0;
+    return found.map((value, i) => {
+      if (value !== null) return value;
+      const hit = stored[at++] ?? null;
+      if (hit) releases.set(keys[i], hit);
+      return hit;
+    });
+  } catch {
+    return found;
+  }
+}
+
+export async function recallRelease(key: string): Promise<string | null> {
+  return (await recallReleases([key]))[0];
+}
+
 export async function recallIssued(id: string): Promise<string | undefined> {
   const local = issued.get(id);
   if (local) return local;
@@ -249,10 +300,13 @@ function requestHeadersOf(stream: any): Record<string, string> | null {
   return entries.length ? Object.fromEntries(entries) : null;
 }
 
+export function canPlay(stream: any, allowHeaders = false): boolean {
+  return Boolean(stream && typeof stream.url === 'string' && stream.url) && (allowHeaders || !needsHeaders(stream));
+}
+
 export function toPlayable(stream: any, allowHeaders = false): PlayableStream | null {
-  if (!stream || typeof stream.url !== 'string' || !stream.url) return null;
+  if (!canPlay(stream, allowHeaders)) return null;
   const headers = needsHeaders(stream);
-  if (headers && !allowHeaders) return null;
 
   const label = [stream.name, stream.title || stream.description]
     .filter(Boolean)
@@ -262,8 +316,6 @@ export function toPlayable(stream: any, allowHeaders = false): PlayableStream | 
   const id = mediaSourceIdFor(stream);
   const filename = String(stream?.behaviorHints?.filename || '');
   const durationMs = Number.isFinite(Number(stream?.streamData?.duration)) && Number(stream.streamData.duration) > 0 ? Number(stream.streamData.duration) : null;
-  rememberIssued(id, stream.url, durationMs);
-
   return {
     id,
     url: stream.url,
@@ -281,6 +333,7 @@ export function toPlayable(stream: any, allowHeaders = false): PlayableStream | 
     bingeGroup: typeof stream?.behaviorHints?.bingeGroup === 'string' && stream.behaviorHints.bingeGroup ? stream.behaviorHints.bingeGroup : null,
     needsHeaders: headers,
     requestHeaders: headers ? requestHeadersOf(stream) : null,
+    release: releaseIdentity(stream),
   };
 }
 
@@ -605,6 +658,7 @@ export function mediaSourceFor(
     },
     { ttl: subtitleTtlMs() }
   );
+  rememberRelease(playable.id, playable.release);
   return {
     Protocol: 'Http',
     Id: playable.id,

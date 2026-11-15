@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 const fs = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
@@ -458,6 +460,12 @@ async function resolveAnidbEpisodeFromTvdbEpisode(tvdbId, tvdbSeason, tvdbEpisod
   return null;
 }
 
+/** As resolveAnidbEpisodeFromTvdbEpisode, but a TVDB special counts only when it is a regular episode of its AniDB entry, since trackers count those alone. */
+async function resolveTrackedAnidbEpisode(tvdbId, tvdbSeason, tvdbEpisode) {
+  const found = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, tvdbSeason, tvdbEpisode);
+  return tvdbSeason === 0 && found?.anidbSeason !== 1 ? null : found;
+}
+
 /**
  * Handle absolute episode numbering (like One Piece)
  */
@@ -876,6 +884,7 @@ module.exports = {
   parseEpisodeMapping,
   getSeasonMappings,
   resolveAnidbEpisodeFromTvdbEpisode,
+  resolveTrackedAnidbEpisode,
   resolveTvdbEpisodeFromAnidbEpisode,
   forceUpdateAnimeListXml,
   getAnimeListXmlStats,

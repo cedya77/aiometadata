@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
+import { isOwnPage, ownPageToken } from "@/lib/ownPage";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -89,6 +92,8 @@ function useApiHeaders() {
     if (isAdmin && adminKey) {
       headers['x-admin-key'] = adminKey;
     }
+    const ownPage = ownPageToken();
+    if (ownPage) headers['x-own-page'] = ownPage;
     return headers;
   }, [isAdmin, adminKey]);
 }
@@ -1506,19 +1511,31 @@ export interface JellyfinSessionRow {
   profile: string;
   profileKey: string;
   viewer: string | null;
+  videoId: string | null;
+  seriesId: string | null;
   imageUrl: string | null;
   backdropUrl: string | null;
+  logoUrl: string | null;
   title: string;
   episode: string | null;
+  season: number | null;
+  number: number | null;
+  episodeTitle: string | null;
+  year: string | null;
+  genres: string[];
   positionMs: number;
   runtimeMs: number;
   paused: boolean;
   at: number;
+  /** The trackers this play reports to as it runs. */
+  trackers: string[];
 }
 
 export interface JellyfinPlayRow {
   profile: string;
+  profileKey: string;
   videoId: string;
+  itemId: string;
   imageUrl: string | null;
   posterUrl: string | null;
   backdropUrl: string | null;
@@ -1578,13 +1595,16 @@ export interface JellyfinSyncRow {
   oldestPendingAt: number | null;
   attempts: number;
   lastError: string | null;
+  readError?: string | null;
 }
 
 export interface JellyfinConfiguration {
   userUUID: string;
   label: string;
   profile: string | null;
+  history: string | null;
   profiles: JellyfinProfileSummary[];
+  viewers: Array<{ key: string; name: string; avatar: string | null; historyKey: string }>;
   sync: JellyfinSyncRow[];
   sessions: JellyfinSessionRow[];
   rows: number;
@@ -1593,25 +1613,37 @@ export interface JellyfinConfiguration {
   totals: { progress: number; played: number };
 }
 
-function useJellyfinQuery<T>(key: readonly unknown[], path: string, options: DashboardQueryOptions & { enabledWhen?: boolean; poll?: boolean } = {}) {
+type Revalidation<T> = { pathFor: (held: T) => string | null; merge: (fresh: T, held: T) => T };
+
+function useJellyfinQuery<T>(key: readonly unknown[], path: string, options: DashboardQueryOptions & { enabledWhen?: boolean; poll?: boolean; pollEvery?: (data: T | undefined) => number | false; revalidate?: Revalidation<T> } = {}) {
   const { isAdmin, logout } = useAdmin();
   const getHeaders = useApiHeaders();
   const isVisible = usePageVisibility();
-  const { activeTab = 'overview', enabled = true, enabledWhen = true, poll = true } = options;
+  const queryClient = useQueryClient();
+  const { activeTab = 'overview', enabled = true, enabledWhen = true, poll = true, pollEvery, revalidate } = options;
   const isActiveTab = activeTab === 'jellyfin';
 
   return useQuery({
     queryKey: key,
     queryFn: async () => {
       try {
-        return await fetchDashboardData<T>(path, getHeaders());
+        const held = revalidate ? queryClient.getQueryData<T>(key) : undefined;
+        const asked = held !== undefined && revalidate ? revalidate.pathFor(held) : null;
+        const fresh = await fetchDashboardData<T>(asked ?? path, getHeaders());
+        return held !== undefined && asked && revalidate ? revalidate.merge(fresh, held) : fresh;
       } catch (error) {
         if (error instanceof Error && error.message === 'UNAUTHORIZED') logout();
         throw error;
       }
     },
     enabled: enabled && enabledWhen && isAdmin && isActiveTab,
-    refetchInterval: poll && isVisible && isActiveTab && isAdmin ? POLLING_INTERVALS.JELLYFIN : false,
+    refetchInterval: (query) => {
+      if (!isVisible || !isActiveTab || !isAdmin) return false;
+      if (pollEvery) return pollEvery(query.state.data as T | undefined);
+      if (!poll) return false;
+      // A page anyone can keep open asks less often than the operator's.
+      return isOwnPage() ? POLLING_INTERVALS.JELLYFIN * 3 : POLLING_INTERVALS.JELLYFIN;
+    },
     refetchIntervalInBackground: false,
     placeholderData: (previous) => previous,
   });
@@ -1627,6 +1659,15 @@ export function useJellyfinSearch(query: string, options: DashboardQueryOptions 
     `/api/dashboard/jellyfin/search?q=${encodeURIComponent(query)}`,
     { ...options, enabledWhen: query.length > 0, poll: false }
   );
+}
+
+/** Reads art for an image the dashboard draws, through its own route, so a canvas may use it. */
+export function useDashboardArt(): (url: string) => Promise<Blob | null> {
+  const getHeaders = useApiHeaders();
+  return useCallback(async (url: string) => {
+    const res = await fetch(`/api/dashboard/art?url=${encodeURIComponent(url)}`, { headers: getHeaders() });
+    return res.ok ? res.blob() : null;
+  }, [getHeaders]);
 }
 
 export function useJellyfinConfiguration(userUUID: string | null, profile: string | null, rows: number | null, options: DashboardQueryOptions = {}) {
@@ -1677,6 +1718,172 @@ export function useJellyfinShows(userUUID: string | null, profile: string | null
   );
 }
 
+export type JellyfinYearPlay = [videoId: string, at: number, runtimeMs: number, runtimeSource: string, overfull: 0 | 1, spellings: string[]];
+
+export interface JellyfinShowProgress {
+  aired: number;
+  seen: number;
+  seasons: number;
+  finishedAt: number | null;
+}
+
+export interface JellyfinYearTitle {
+  key: string;
+  kind: 'movie' | 'series';
+  name: string | null;
+  anime: boolean;
+  watchMs: number;
+  ids: string[];
+  episodes: number;
+  progress: JellyfinShowProgress | null;
+  facts: {
+    source: string;
+    year: number | null;
+    status: string | null;
+    runtimeMs: number;
+    genres: string[];
+    countries: string[];
+    networks: string[];
+    studios: string[];
+    language: string | null;
+    poster: string | null;
+    background?: string | null;
+    logo?: string | null;
+  } | null;
+  plays: JellyfinYearPlay[];
+}
+
+export interface JellyfinAnimeEntry {
+  malId: number;
+  titleKey: string;
+  name: string;
+  title: string | null;
+  japanese: string | null;
+  type: string | null;
+  year: number | null;
+  season: string | null;
+  airedFrom: string | null;
+  airedTo: string | null;
+  status: string | null;
+  episodesTotal: number | null;
+  episodes: number;
+  plays: number;
+  watchMs: number;
+  firstAt: number;
+  image: string | null;
+  rank: number | null;
+  score: number | null;
+  source: string | null;
+  studios: string[];
+  genres: string[];
+  themes: string[];
+  demographics: string[];
+}
+
+export interface JellyfinAnimeVoice {
+  malId: number;
+  id: string;
+  name: string;
+  japanese: string | null;
+  image: string | null;
+  episodes: number;
+  roles: Array<{ character: string; image: string | null; entries: number[] }>;
+}
+
+export interface JellyfinYearTitleRef {
+  name: string;
+  key: string;
+  kind: 'movie' | 'series';
+  poster: string | null;
+}
+
+export interface JellyfinYearPersonRef {
+  id: string;
+  name: string;
+  photo: string | null;
+}
+
+export interface JellyfinPeopleCard extends JellyfinYearPersonRef {
+  titles: number;
+  shown: JellyfinYearTitleRef[];
+  voiced: boolean;
+}
+
+export interface JellyfinYearPeople {
+  cast: JellyfinPeopleCard[];
+  directors: Array<JellyfinYearPersonRef & { films: number }>;
+  together: { people: [JellyfinYearPersonRef, JellyfinYearPersonRef]; films: number } | null;
+  link: (JellyfinYearPersonRef & { show: JellyfinYearTitleRef; films: JellyfinYearTitleRef[] }) | null;
+  themes: Array<[string, number]>;
+  themeTitles?: Record<string, string[]>;
+  books: number;
+  manga: number;
+  networks: Array<{ name: string; logo: string | null; plays: number }>;
+}
+
+export interface JellyfinYearData {
+  taste?: { watchlist: number | null; dropped: number };
+  version: number;
+  year: number;
+  timeZone: string;
+  totals: {
+    plays: number;
+    watchMs: number;
+    films: { titles: number; plays: number; watchMs: number };
+    shows: { titles: number; plays: number; watchMs: number };
+    anime: { titles: number; plays: number };
+    rhythmPlays: number;
+    bulk: { plays: number; titles: number };
+  };
+  topShows: string[];
+  network: { name: string; logo: string | null } | null;
+  anime: { entries: JellyfinAnimeEntry[]; voices: JellyfinAnimeVoice[]; missing: number; unmatched: number } | null;
+  people: JellyfinYearPeople | null;
+  titles: JellyfinYearTitle[];
+}
+
+export type JellyfinYearBuild = 'queued' | 'building' | 'busy' | 'failed';
+
+export interface JellyfinYearReview {
+  year: number;
+  years: number[];
+  status: 'ready' | JellyfinYearBuild;
+  ahead?: number;
+  retryAt?: number;
+  stale: boolean;
+  staleBecause?: 'settings' | 'plays' | null;
+  rebuilding: JellyfinYearBuild | null;
+  builtAt: number | null;
+  data: JellyfinYearData | null;
+  ratings: Record<string, number>;
+  unchanged?: boolean;
+}
+
+const YEAR_BUILD_POLL_MS = 2000;
+const YEAR_BUSY_POLL_MS = 15000;
+
+export function useJellyfinYear(userUUID: string | null, profile: string | null, year: number, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams({ year: String(year) });
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<JellyfinYearReview>(
+    ['dashboard', 'jellyfin', 'year', userUUID, profile, year] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/year?${params}`,
+    {
+      ...options,
+      enabledWhen: Boolean(userUUID),
+      pollEvery: (data) => {
+        const build = data?.status === 'ready' ? data.rebuilding : data?.status;
+        if (build === 'busy' || build === 'failed') return YEAR_BUSY_POLL_MS;
+        return build ? YEAR_BUILD_POLL_MS : false;
+      },
+      revalidate: {
+        pathFor: (held) => (held.data && held.builtAt ? `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/year?${params}&have=${held.builtAt}` : null),
+        merge: (fresh, held) => (fresh.unchanged ? { ...fresh, unchanged: undefined, data: held.data, ratings: fresh.ratings ?? held.ratings } : fresh),
+      },
+    }
+  );
+}
+
 export interface JellyfinCalendarRow {
   id: string;
   seriesId: string | null;
@@ -1699,11 +1906,51 @@ export function useJellyfinCalendar(userUUID: string | null, profile: string | n
   if (profile !== null) params.set('profile', profile);
   params.set('from', String(start.getTime() - CALENDAR_DAY_MS));
   params.set('to', String(start.getTime() + (days + 1) * CALENDAR_DAY_MS));
-  return useJellyfinQuery<{ rows: JellyfinCalendarRow[] }>(
+  return useJellyfinQuery<{ rows: JellyfinCalendarRow[]; pending?: boolean }>(
     ['dashboard', 'jellyfin', 'calendar', userUUID, profile, start.getTime(), days] as const,
     `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/calendar?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID), pollEvery: (data) => (data?.pending ? 5000 : false) }
+  );
+}
+
+const calendarFeedKey = (userUUID: string | null, profile: string | null) => ['dashboard', 'jellyfin', 'calendar-feed', userUUID, profile] as const;
+
+export function useJellyfinCalendarFeed(userUUID: string | null, profile: string | null, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<{ secret: string | null }>(
+    calendarFeedKey(userUUID, profile),
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/calendar/feed?${params}`,
     { ...options, enabledWhen: Boolean(userUUID), poll: false }
   );
+}
+
+export function useJellyfinCalendarFeedActions() {
+  const getHeaders = useApiHeaders();
+  const queryClient = useQueryClient();
+  return {
+    issue: async (userUUID: string, profile: string | null): Promise<string> => {
+      const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/calendar/feed`, {
+        method: 'POST',
+        headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile: profile ?? undefined }),
+      });
+      if (!response.ok) throw new Error(`Could not make a calendar link (${response.status})`);
+      const { secret } = await response.json();
+      queryClient.setQueryData(calendarFeedKey(userUUID, profile), { secret });
+      return secret;
+    },
+    revoke: async (userUUID: string, profile: string | null): Promise<void> => {
+      const params = new URLSearchParams();
+      if (profile !== null) params.set('profile', profile);
+      const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/calendar/feed?${params}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      if (!response.ok) throw new Error(`Could not turn off the calendar link (${response.status})`);
+      queryClient.setQueryData(calendarFeedKey(userUUID, profile), { secret: null });
+    },
+  };
 }
 
 export interface JellyfinLibraryRow {
@@ -1762,6 +2009,688 @@ export function useJellyfinUndrop() {
   };
 }
 
+export interface JellyfinTitleEpisode {
+  id: string;
+  season: number | null;
+  number: number | null;
+  name: string | null;
+  overview: string | null;
+  airsAt: number | null;
+  runtimeMs: number;
+  still: string | null;
+  played: boolean;
+  playCount: number;
+  lastPlayedAt: number | null;
+  positionMs: number;
+  watches: number[];
+}
+
+export interface JellyfinTitleRating {
+  source: string;
+  value: number;
+  scale: number;
+  url?: string;
+}
+
+export interface JellyfinTitle {
+  id: string;
+  metaId: string;
+  type: 'movie' | 'series';
+  linkable?: boolean;
+  title: string;
+  year: string | null;
+  overview: string | null;
+  genres: string[];
+  certification?: string | null;
+  studios?: string[];
+  tags?: string[];
+  ratings?: JellyfinTitleRating[];
+  score: string | null;
+  runtime: string | null;
+  releasedAt: number | null;
+  status: 'Continuing' | 'Ended' | null;
+  posterUrl: string | null;
+  backdropUrl: string | null;
+  logoUrl: string | null;
+  /** Direct video links first, then YouTube, as the Jellyfin item lists them. */
+  trailers?: Array<{ name: string; url: string }>;
+  ids: { imdb: string | null; tmdb: string | number | null; tvdb: string | number | null; mal?: string | null; kitsu?: string | null; anilist?: string | null; anidb?: string | null };
+  onWatchlist: boolean;
+  dropped: boolean;
+  rating: number | null;
+  played: boolean;
+  playCount: number;
+  lastPlayedAt: number | null;
+  positionMs: number;
+  watches: number[];
+  episodes: JellyfinTitleEpisode[];
+  seasons: Array<{ season: number; id: string; name: string | null; tag: string | null; poster: string | null; count: number }>;
+  people: JellyfinTitlePerson[];
+  watched: number;
+  aired: number;
+}
+
+export interface JellyfinTitlePerson {
+  id: string;
+  name: string;
+  role: string | null;
+  type: string;
+  photo: string | null;
+}
+
+export type JellyfinPersonRole = 'all' | 'Actor' | 'Director' | 'Writer' | 'Producer' | 'Composer';
+
+export interface JellyfinPerson {
+  id: string;
+  name: string;
+  overview: string | null;
+  born: string | null;
+  died: string | null;
+  birthplace: string | null;
+  knownFor: string | null;
+  photo: string | null;
+  credits: Array<{ type: 'movie' | 'series'; year: number | null; roles: string[] }>;
+}
+
+export interface JellyfinPersonTitle {
+  id: string;
+  type: 'movie' | 'series';
+  title: string;
+  year: number | null;
+  posterUrl: string | null;
+  played: boolean;
+  progress: number;
+}
+
+export const JELLYFIN_PERSON_PAGE = 40;
+
+export function useJellyfinPerson(userUUID: string | null, profile: string | null, personId: string | null, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams({ item: personId ?? '' });
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<JellyfinPerson>(
+    ['dashboard', 'jellyfin', 'person', userUUID, profile, personId] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/person?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID && personId), poll: false }
+  );
+}
+
+export function useJellyfinPersonTitles(userUUID: string | null, profile: string | null, personId: string | null, kind: JellyfinLibraryKind, role: JellyfinPersonRole, order: 'newest' | 'oldest', offset: number, options: DashboardQueryOptions & { enabledWhen?: boolean } = {}) {
+  const params = new URLSearchParams({ item: personId ?? '', kind, role, order, offset: String(offset), limit: String(JELLYFIN_PERSON_PAGE) });
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<{ offset: number; total: number; next?: number; rows: JellyfinPersonTitle[] }>(
+    ['dashboard', 'jellyfin', 'person-titles', userUUID, profile, personId, kind, role, order, offset] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/person/titles?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID && personId) && options.enabledWhen !== false, poll: false }
+  );
+}
+
+export type JellyfinTitleRef = { item: string } | { id: string; type: 'movie' | 'series' };
+
+export function useJellyfinTitle(userUUID: string | null, profile: string | null, ref: JellyfinTitleRef | null, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  if (ref && 'item' in ref) params.set('item', ref.item);
+  if (ref && 'id' in ref) { params.set('id', ref.id); params.set('type', ref.type); }
+  return useJellyfinQuery<JellyfinTitle>(
+    ['dashboard', 'jellyfin', 'title', userUUID, profile, params.toString()] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/title?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID && ref), poll: false }
+  );
+}
+
+export type JellyfinTitleAction = 'played' | 'unplayed' | 'playedUpTo' | 'watchlist' | 'unwatchlist' | 'drop' | 'undrop' | 'rate';
+
+export interface JellyfinFoundTitle {
+  id: string;
+  type: 'movie' | 'series';
+  title: string;
+  year: string | null;
+  posterUrl: string | null;
+}
+
+export interface JellyfinSearchCatalog {
+  id: string;
+  type: string;
+  name: string;
+}
+
+export function useJellyfinSearches(userUUID: string | null, profile: string | null, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<{ quick: boolean; catalogs: JellyfinSearchCatalog[] }>(
+    ['dashboard', 'jellyfin', 'searches', userUUID, profile] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/searches?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID), poll: false }
+  );
+}
+
+export function useJellyfinFind(userUUID: string | null, profile: string | null, query: string, catalog: string | null, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams({ q: query });
+  if (profile !== null) params.set('profile', profile);
+  if (catalog) params.set('catalog', catalog);
+  return useJellyfinQuery<{ query: string; available: boolean; results: JellyfinFoundTitle[] }>(
+    ['dashboard', 'jellyfin', 'find', userUUID, profile, catalog, query] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/find?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID) && query.length >= 2, poll: false }
+  );
+}
+
+export function useJellyfinTitleAction() {
+  const getHeaders = useApiHeaders();
+  return async (userUUID: string, profile: string | null, action: JellyfinTitleAction, itemIds: string[], rating: number | null = null): Promise<void> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/title/action`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, itemIds, profile: profile ?? undefined, rating }),
+    });
+    if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || `Could not save the change (${response.status})`);
+  };
+}
+
+export interface JellyfinPlaylistLimits {
+  playlists: number;
+  items: number;
+}
+
+export interface JellyfinPlaylistSummary {
+  id: string;
+  name: string;
+  count: number;
+  createdAt: number;
+  updatedAt: number;
+  image: string | null;
+}
+
+export interface JellyfinPlaylistEntry {
+  id: string;
+  kind: 'movie' | 'episode';
+  title: string;
+  subtitle: string | null;
+  image: string | null;
+  wide: string | null;
+  backdropUrl: string | null;
+  logoUrl: string | null;
+  overview: string | null;
+  year: string | null;
+  score: string | null;
+  genres: string[];
+  open: string;
+  played: boolean;
+  positionMs: number;
+  runtimeMs: number;
+  position: number;
+}
+
+export interface JellyfinPlaylistDetail extends JellyfinPlaylistSummary {
+  offset: number;
+  entries: JellyfinPlaylistEntry[];
+  more: boolean;
+  limits: JellyfinPlaylistLimits;
+}
+
+export interface JellyfinPlaylistPreview {
+  titles: number;
+  more?: boolean;
+  playlists: Array<{ id: string; name: string; count: number; has: number; adds: number; fits: boolean }>;
+}
+
+export type JellyfinPlaylistChange =
+  | { op: 'create'; name: string; itemIds: string[] }
+  | { op: 'rename'; id: string; name: string }
+  | { op: 'delete'; id: string }
+  | { op: 'add'; id: string; itemIds: string[]; position?: number }
+  | { op: 'remove'; id: string; itemIds: string[] }
+  | { op: 'move'; id: string; itemId: string; to: number };
+
+export function useJellyfinPlaylists(userUUID: string | null, profile: string | null, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<{ playlists: JellyfinPlaylistSummary[]; limits: JellyfinPlaylistLimits }>(
+    ['dashboard', 'jellyfin', 'playlists', userUUID, profile] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/playlists?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID), poll: false }
+  );
+}
+
+export const JELLYFIN_PLAYLIST_PAGE = 20;
+
+/** One page of a playlist's entries, with the playlist itself. */
+export function useJellyfinPlaylist(userUUID: string | null, profile: string | null, id: string | null, offset: number, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams({ offset: String(offset), limit: String(JELLYFIN_PLAYLIST_PAGE) });
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<JellyfinPlaylistDetail>(
+    ['dashboard', 'jellyfin', 'playlists', userUUID, profile, id, offset] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/playlists/${encodeURIComponent(id ?? '')}?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID && id), poll: false }
+  );
+}
+
+export function useJellyfinPlaylistPreview() {
+  const getHeaders = useApiHeaders();
+  return async (userUUID: string, profile: string | null, itemIds: string[]): Promise<JellyfinPlaylistPreview> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/playlists/preview`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemIds, profile: profile ?? undefined }),
+    });
+    if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || `Could not read the playlists (${response.status})`);
+    return response.json();
+  };
+}
+
+/** One change to a user's playlists; every playlist view reads again after it. */
+export function useJellyfinPlaylistChange() {
+  const getHeaders = useApiHeaders();
+  const queryClient = useQueryClient();
+  return async (userUUID: string, profile: string | null, change: JellyfinPlaylistChange): Promise<{ id?: string; added?: number; left?: number; more?: boolean }> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/playlists/change`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...change, profile: profile ?? undefined }),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(body?.error || `Could not change the playlist (${response.status})`);
+    void queryClient.invalidateQueries({ queryKey: ['dashboard', 'jellyfin', 'playlists', userUUID] });
+    return body ?? {};
+  };
+}
+
+export function useJellyfinClearResume() {
+  const getHeaders = useApiHeaders();
+  return async (userUUID: string, profileKey: string, videoId: string): Promise<void> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/progress/remove`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileKey, videoId }),
+    });
+    if (!response.ok) throw new Error(`Could not remove it (${response.status})`);
+  };
+}
+
+export type JellyfinSyncKind = 'read' | 'readFailed' | 'sent' | 'retry' | 'failed' | 'dropped';
+
+export interface JellyfinSyncPulse {
+  at: number;
+  kind: JellyfinSyncKind;
+  verb: string | null;
+  video: string | null;
+  reason: string | null;
+  changed: boolean | null;
+  full: boolean | null;
+}
+
+export interface JellyfinSyncLane {
+  key: string;
+  service: string;
+  profiles: string[];
+  syncedAt: number | null;
+  fullAt: number | null;
+  imported: boolean;
+  readError: string | null;
+  pending: number;
+  nextTryAt: number | null;
+  lastError: string | null;
+  sent: number;
+  failed: number;
+  pulse: JellyfinSyncPulse[];
+}
+
+export interface JellyfinSyncWrite {
+  id: number;
+  lane: string;
+  service: string;
+  op: string;
+  verb: string;
+  count: number;
+  video: string | null;
+  attempts: number;
+  createdAt: number;
+  nextAt: number;
+  sending: boolean;
+  lastError: string | null;
+  title: string | null;
+  episode: string | null;
+  imageUrl: string | null;
+}
+
+export interface JellyfinSyncFeedItem {
+  at: number;
+  verb: string;
+  count: number;
+  video: string | null;
+  services: Array<{ service: string; lane: string; kind: JellyfinSyncKind; reason: string | null }>;
+  title: string | null;
+  episode: string | null;
+  imageUrl: string | null;
+}
+
+export interface JellyfinSync {
+  now: number;
+  lanes: JellyfinSyncLane[];
+  queue: JellyfinSyncWrite[];
+  feed: JellyfinSyncFeedItem[];
+}
+
+export type TrackerMark = 'ratings' | 'watchlist' | 'dropped';
+
+export interface TrackerInfo {
+  id: string;
+  name: string;
+  color: string;
+  animeOnly: boolean;
+  datedHistory: boolean;
+  matchable: boolean;
+  wholeRatings: boolean;
+  redates: 'all' | 'episodes' | null;
+  marks: { from: TrackerMark[]; to: TrackerMark[] };
+  pace: { perSecond: number; ratingsPerHour?: number } | null;
+  notes?: { watchlist?: string; redate?: string };
+}
+
+export function useTrackerInfo() {
+  const { isAdmin, logout } = useAdmin();
+  const getHeaders = useApiHeaders();
+  return useQuery({
+    queryKey: ['dashboard', 'trackers'] as const,
+    queryFn: async () => {
+      try {
+        return (await fetchDashboardData<{ trackers: TrackerInfo[] }>('/api/dashboard/trackers', getHeaders())).trackers;
+      } catch (error) {
+        if (error instanceof Error && error.message === 'UNAUTHORIZED') logout();
+        throw error;
+      }
+    },
+    enabled: isAdmin,
+    staleTime: Infinity,
+  });
+}
+
+export function useJellyfinSync(userUUID: string, profile: string | null, open: boolean, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<JellyfinSync>(
+    ['dashboard', 'jellyfin', 'sync', userUUID, profile],
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync${params.size ? `?${params}` : ''}`,
+    { ...options, enabledWhen: open }
+  );
+}
+
+export interface JellyfinDriftItem {
+  id: string;
+  kind: 'movie' | 'episode';
+  title: string | null;
+  imageUrl: string | null;
+  open: { id: string; type: 'movie' | 'series' };
+  views: Array<{ at: number; season: number | null; episode: number | null; video?: string; theirs?: number }>;
+  lastAt: number;
+  video?: string;
+  bases?: string[];
+  seasons?: number[];
+  unmatched?: string | null;
+  matchedTo?: string | null;
+}
+
+export interface JellyfinMatchCandidate {
+  ids: Record<string, string | number>;
+  title: string;
+  year: number | null;
+  posterUrl: string | null;
+  kind: string;
+  episodes: number | null;
+}
+
+export interface JellyfinMatchSeason {
+  number: number;
+  episodes: Array<{ number: number; title: string | null; airedAt: number | null; sends?: { season: number; episode: number } }>;
+}
+
+export interface JellyfinMatchDetail {
+  ids: Record<string, string | number>;
+  seasons: JellyfinMatchSeason[];
+  tvdbSeasons?: JellyfinMatchSeason[];
+  tvdbDefault?: boolean;
+}
+
+/** An 'episode' match sends one episode here as a film there: its bases are the episode's spellings, its target the film. */
+export interface JellyfinTrackerMatch {
+  group: string;
+  bases: string[];
+  kind: 'movie' | 'series' | 'episode';
+  title: string | null;
+  open: { id: string; type: 'movie' | 'series' } | null;
+  target: JellyfinMatchCandidate;
+  seasons: Record<string, { season: number; offset: number }>;
+  episodes?: Record<string, { season: number; episode: number } | null>;
+  episode?: { season: number; episode: number };
+  updatedAt: number;
+}
+
+export interface JellyfinDriftDetail {
+  service: string;
+  side: 'behind' | 'ahead';
+  video: string;
+  aliases: string[];
+  sendsAs: { ids: Record<string, string | number>; season: number | null; episode: number | null; film?: boolean } | null;
+  sendError: string | null;
+  match: { title: string; year: number | null; seasons: Record<string, { season: number; offset: number }>; film?: boolean } | null;
+  holds: { kind: 'movie'; found: boolean; watchedAt: number | null } | { kind: 'series'; found: boolean; watched: number; total: number; at: number | null; season?: number; numbers?: number[]; upTo?: number } | null;
+  attempts: Array<{ at: number; kind: 'sent' | 'failed' | 'dropped'; video: string; verb: string | null; reason: string | null }>;
+}
+
+export function useJellyfinDriftDetail(userUUID: string, key: string, side: 'behind' | 'ahead', item: JellyfinDriftItem, open: boolean, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams({ key, side, video: item.video ?? '', bases: (item.bases ?? []).join(',') });
+  return useJellyfinQuery<JellyfinDriftDetail>(
+    ['dashboard', 'jellyfin', 'sync', 'drift-item', userUUID, key, side, item.id],
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/drift/item?${params}`,
+    { ...options, enabledWhen: open && Boolean(item.video), poll: false }
+  );
+}
+
+export function useJellyfinTrackerMatches(userUUID: string, key: string | null, open: boolean, options: DashboardQueryOptions = {}) {
+  return useJellyfinQuery<{ matches: JellyfinTrackerMatch[] }>(
+    ['dashboard', 'jellyfin', 'sync', 'matches', userUUID, key],
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/matches?key=${encodeURIComponent(key ?? '')}`,
+    { ...options, enabledWhen: open && Boolean(key), poll: false }
+  );
+}
+
+export interface JellyfinDriftImport {
+  origin: string;
+  name: string;
+  plays: number;
+  titles: number;
+  undated: number;
+  left: number;
+  preview: Array<{ id: string; title: string | null; imageUrl: string | null }>;
+}
+
+export function useJellyfinDriftImported(userUUID: string, key: string, origin: string, profile: string | null, open: boolean, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams({ key, origin });
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<{ items: JellyfinDriftItem[] }>(
+    ['dashboard', 'jellyfin', 'sync', 'drift-imported', userUUID, key, origin, profile],
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/drift/imported?${params}`,
+    { ...options, enabledWhen: open, poll: false }
+  );
+}
+
+export interface JellyfinDriftLane {
+  key: string;
+  behind: JellyfinDriftItem[];
+  imported?: JellyfinDriftImport[];
+  ahead: JellyfinDriftItem[];
+  rewatched?: JellyfinDriftItem[];
+  rewatchNote?: 'free' | null;
+  unread: number;
+  readAt: number | null;
+  error: string | null;
+}
+
+export interface JellyfinDrift {
+  checkedAt: number;
+  days: number;
+  lanes: JellyfinDriftLane[];
+}
+
+export function useJellyfinSyncDrift(userUUID: string, profile: string | null, open: boolean, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<JellyfinDrift>(
+    ['dashboard', 'jellyfin', 'sync', 'drift', userUUID, profile],
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/drift${params.size ? `?${params}` : ''}`,
+    { ...options, enabledWhen: open }
+  );
+}
+
+export type JellyfinCopyWhat = 'watches' | 'ratings' | 'watchlist' | 'dropped';
+
+export interface JellyfinCopyTitle {
+  id: string;
+  kind: 'movie' | 'episode' | 'series' | 'season';
+  count: number;
+  lastAt: number | null;
+  video: string;
+  rating?: number | null;
+  season?: number | null;
+  episode?: number | null;
+}
+
+export interface JellyfinCopyNamed {
+  title: string | null;
+  imageUrl: string | null;
+  posterUrl: string | null;
+}
+
+export interface JellyfinCopyPreview {
+  from: string;
+  to: string;
+  since: number;
+  what: JellyfinCopyWhat;
+  checkedAt: number;
+  totals: { films: number; episodes: number; titles: number; excluded: number; undated: number; shows?: number; seasons?: number; reasons?: Record<string, number>; blocked?: { noId: number; refused: number } };
+  titles: JellyfinCopyTitle[];
+  named: Record<string, JellyfinCopyNamed>;
+}
+
+export interface JellyfinCopyJob {
+  id: number;
+  from: string;
+  to: string;
+  fromService: string;
+  toService: string;
+  what: JellyfinCopyWhat;
+  status: 'running' | 'paused' | 'done' | 'stopped' | 'failed';
+  total: number;
+  done: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  nextAt: number | null;
+  lastError: string | null;
+  createdAt: number;
+  finishedAt: number | null;
+}
+
+export function useJellyfinCopyJobs(userUUID: string, open: boolean, options: DashboardQueryOptions = {}) {
+  return useJellyfinQuery<{ jobs: JellyfinCopyJob[] }>(
+    ['dashboard', 'jellyfin', 'sync', 'copy', userUUID],
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/copy`,
+    { ...options, enabledWhen: open }
+  );
+}
+
+export function useJellyfinSyncActions() {
+  const getHeaders = useApiHeaders();
+  return useMemo(() => syncActions(getHeaders), [getHeaders]);
+}
+
+function syncActions(getHeaders: () => Record<string, string>) {
+  const post = async <T,>(userUUID: string, path: string, body: unknown): Promise<T> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/${path}`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error || `The request failed (${response.status})`);
+    return data as T;
+  };
+  return {
+    run: (userUUID: string, key: string, full = false) => post<{ ms: number; changed: boolean }>(userUUID, 'run', { key, full }),
+    outbox: (userUUID: string, action: 'retry' | 'drop', ids: number[]) => post<{ count: number }>(userUUID, 'outbox', { action, ids }),
+    drift: (userUUID: string, key: string, action: 'push' | 'pull' | 'leave' | 'restore', items: string[] | null, origin: string | null = null, profile: string | null = null) => post<{ count: number }>(userUUID, 'drift', { key, action, items, ...(origin ? { origin } : {}), ...(profile !== null ? { profile } : {}) }),
+    sameViewing: (userUUID: string, body: { profile: string; video: string; at: number; theirs: number }) => post<{ done: boolean }>(userUUID, 'same-viewing', body),
+    copyPreview: (userUUID: string, body: { profile: string | null; from: string; to: string; since: number; what: JellyfinCopyWhat; retry: boolean }) => post<JellyfinCopyPreview>(userUUID, 'copy/preview', body),
+    copyDescribe: (userUUID: string, videos: string[]) => post<Record<string, JellyfinCopyNamed>>(userUUID, 'copy/describe', { videos }),
+    copyStart: (userUUID: string, body: { profile: string | null; from: string; to: string; since: number; titles: string[] | null; what: JellyfinCopyWhat; retry: boolean }) => post<{ id: number }>(userUUID, 'copy', body),
+    copyControl: (userUUID: string, id: number, action: 'pause' | 'resume' | 'stop') => post<{ ok: boolean }>(userUUID, `copy/${id}`, { action }),
+    matchSearch: async (userUUID: string, key: string, query: string, kind: 'movie' | 'series'): Promise<JellyfinMatchCandidate[]> => {
+      const params = new URLSearchParams({ key, q: query, kind });
+      const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/sync/match/search?${params}`, { headers: getHeaders() });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || `The search failed (${response.status})`);
+      return Array.isArray(data?.results) ? data.results : [];
+    },
+    matchDetail: (userUUID: string, key: string, candidate: JellyfinMatchCandidate) => post<JellyfinMatchDetail>(userUUID, 'match/detail', { key, candidate }),
+    matchSave: (userUUID: string, body: { key: string; item: string | null; bases: string[]; kind: 'movie' | 'series' | 'episode'; title: string | null; open: { id: string; type: 'movie' | 'series' } | null; target: JellyfinMatchCandidate; seasons: Record<string, { season: number; offset: number }>; episodes?: Record<string, { season: number; episode: number } | null>; video?: string }) => post<{ match: JellyfinTrackerMatch; sent: number }>(userUUID, 'match', body),
+    matchRemove: (userUUID: string, key: string, group: string) => post<{ ok: boolean }>(userUUID, 'match/remove', { key, group }),
+  };
+}
+
+export function useJellyfinWatchDate() {
+  const getHeaders = useApiHeaders();
+  return async (userUUID: string, profile: string | null, itemId: string, from: number | null, to: number): Promise<void> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/title/watch-date`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemId, from, to, profile: profile ?? undefined }),
+    });
+    if (response.status === 409) throw new Error('That viewing is no longer in the history');
+    if (!response.ok) throw new Error(`Could not change the date (${response.status})`);
+  };
+}
+
+export interface JellyfinDevice {
+  deviceId: string;
+  client: string;
+  device: string;
+  version: string;
+  lastSeen: number;
+  canOpen: boolean;
+  canPlay: boolean;
+}
+
+export function useJellyfinDevices(userUUID: string | null, profile: string | null, open: boolean, options: DashboardQueryOptions = {}) {
+  const params = new URLSearchParams();
+  if (profile !== null) params.set('profile', profile);
+  return useJellyfinQuery<{ devices: JellyfinDevice[] }>(
+    ['dashboard', 'jellyfin', 'devices', userUUID, profile] as const,
+    `/api/dashboard/jellyfin/${encodeURIComponent(userUUID ?? '')}/devices?${params}`,
+    { ...options, enabledWhen: Boolean(userUUID) && open }
+  );
+}
+
+export interface JellyfinOpenOn {
+  itemId: string;
+  itemType: string;
+  itemName: string;
+  play: boolean;
+}
+
+export function useJellyfinOpenOn() {
+  const getHeaders = useApiHeaders();
+  return async (userUUID: string, profile: string | null, deviceId: string, target: JellyfinOpenOn): Promise<boolean> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/devices/open`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...target, deviceId, profile: profile ?? undefined }),
+    });
+    if (response.status === 409) return false;
+    if (!response.ok) throw new Error(`Could not reach the device (${response.status})`);
+    return true;
+  };
+}
+
 export function useJellyfinShowRefresh() {
   const getHeaders = useApiHeaders();
   return async (userUUID: string, metaId: string): Promise<boolean> => {
@@ -1787,6 +2716,95 @@ export function useJellyfinPlays(userUUID: string | null, profile: string | null
   );
 }
 
+export type HistoryImportSection = 'playstate' | 'watches' | 'ratings' | 'watchlist' | 'dropped' | 'matches' | 'playlists';
+
+export interface HistoryImportPreview {
+  source: string;
+  about: string;
+  sources: Array<{ key: string; name: string }>;
+  targets: Array<{ key: string; name: string }>;
+  mapping: Record<string, string | null>;
+  counts: Record<HistoryImportSection, { added: number; updated: number; unchanged: number }>;
+  writes: number;
+  skipped?: HistoryImportSection[];
+  unmatched: Array<{ name: string; reason: string }>;
+  unmatchedCount: number;
+  ambiguous?: Array<{
+    key: string;
+    name: string;
+    options: Array<{ tmdb: number; title: string; originalTitle: string | null; year: number | null; poster: string | null; overview: string }>;
+    picked: number | null;
+  }>;
+}
+
+export interface HistoryImportJob {
+  status: 'running' | 'done' | 'failed' | 'interrupted';
+  fileName: string | null;
+  done: number;
+  total: number;
+  counts: HistoryImportPreview['counts'] | null;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export function useJellyfinHistoryImport() {
+  const getHeaders = useApiHeaders();
+  const send = useCallback(async (
+    userUUID: string,
+    file: File,
+    mapping: Record<string, string | null> | null,
+    picks: Record<string, number>,
+    apply: boolean,
+    onMatching?: (progress: { done: number; total: number; label: string }) => void,
+    skip: HistoryImportSection[] = [],
+    signal?: AbortSignal,
+  ): Promise<HistoryImportPreview & { job?: HistoryImportJob }> => {
+    const params = new URLSearchParams();
+    if (mapping) params.set('map', JSON.stringify(mapping));
+    if (skip.length) params.set('skip', skip.join(','));
+    if (Object.keys(picks).length) params.set('picks', JSON.stringify(picks));
+    if (apply) params.set('apply', '1');
+    params.set('name', file.name);
+    for (;;) {
+      const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/import?${params}`, {
+        method: 'POST',
+        headers: { ...getHeaders(), 'Content-Type': 'application/octet-stream' },
+        body: file,
+        signal,
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error || (response.status === 413 ? 'This file is larger than the import limit' : `Import failed (${response.status})`));
+      if (!result?.matching) return result;
+      onMatching?.(result.matching);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      signal?.throwIfAborted();
+    }
+  }, [getHeaders]);
+  const status = useCallback(async (userUUID: string): Promise<HistoryImportJob | null> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/import`, { headers: getHeaders() });
+    if (!response.ok) throw new Error(`Could not read the import (${response.status})`);
+    return (await response.json())?.job ?? null;
+  }, [getHeaders]);
+  const dismiss = useCallback(async (userUUID: string): Promise<void> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/import`, { method: 'DELETE', headers: getHeaders() });
+    if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || `Could not clear the import (${response.status})`);
+  }, [getHeaders]);
+  return { send, status, dismiss };
+}
+
+export function useJellyfinHistoryImportJob(userUUID: string) {
+  const { isAdmin } = useAdmin();
+  const { status } = useJellyfinHistoryImport();
+  const isVisible = usePageVisibility();
+  return useQuery({
+    queryKey: [...DASHBOARD_QUERY_KEYS.jellyfin, 'import', userUUID],
+    queryFn: () => status(userUUID),
+    enabled: isAdmin && Boolean(userUUID),
+    refetchInterval: (query) => (isVisible && query.state.data?.status === 'running' ? 1000 : false),
+  });
+}
+
 export function useJellyfinExport() {
   const getHeaders = useApiHeaders();
   return async (userUUID: string): Promise<void> => {
@@ -1796,7 +2814,7 @@ export function useJellyfinExport() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `jellyfin-playback-${userUUID.slice(0, 8)}.json`;
+    link.download = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? `aiometadata-history-${userUUID.slice(0, 8)}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();

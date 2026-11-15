@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import type { SettingsSectionId } from './settingsRoute';
 
 /** Which control silhouette a card's rows should draw. */
@@ -87,7 +89,6 @@ export const SECTION_SKELETONS: Record<SettingsSectionId, SkeletonSpec> = {
           { descriptionLines: 2, control: 'switch-list', controlCount: 3 },
         ],
       },
-      { kind: 'card', card: { descriptionLines: 1, control: 'switch-list', controlCount: 6 } },
     ],
   },
 
@@ -200,6 +201,48 @@ export const SECTION_SKELETONS: Record<SettingsSectionId, SkeletonSpec> = {
   },
 
   // ConfigurationManager opens straight onto cards — it has no page h2.
+  'watch-tracking': {
+    className: 'space-y-8',
+    blocks: [
+      {
+        kind: 'heading',
+        title: 'Watch Tracking',
+        description: 'Follow a watch from your app to your trackers.',
+      },
+      { kind: 'card', card: { descriptionLines: 2, control: 'switch-list', controlCount: 3 } },
+      { kind: 'card', card: { descriptionLines: 1, control: 'switch-list', controlCount: 5 } },
+      { kind: 'card', card: { descriptionLines: 2, control: 'text' } },
+    ],
+  },
+
+  'people': {
+    className: 'space-y-8',
+    blocks: [
+      {
+        kind: 'heading',
+        title: 'People',
+        description: 'Everyone who watches here, each with their own catalogs, trackers and sign-in.',
+      },
+      { kind: 'grid', className: 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4', cards: [{ descriptionLines: 1, control: 'text' }, { descriptionLines: 1, control: 'text' }] },
+      { kind: 'card', card: { descriptionLines: 2, control: 'switch-list', controlCount: 4 } },
+    ],
+  },
+
+  'jellyfin': {
+    className: 'space-y-8',
+    blocks: [
+      {
+        kind: 'heading',
+        title: 'Jellyfin',
+        description: 'Connect Jellyfin apps to this configuration and choose how they play and browse.',
+      },
+      { kind: 'callout' },
+      { kind: 'card', card: { descriptionLines: 1, control: 'input', controlCount: 1 } },
+      { kind: 'grid', className: 'grid grid-cols-1 gap-3 md:grid-cols-2', cards: [{ descriptionLines: 1, control: 'input', controlCount: 1 }, { descriptionLines: 2, control: 'text' }] },
+      { kind: 'card', card: { descriptionLines: 1, control: 'switch-list', controlCount: 4 } },
+    ],
+  },
+
   'configuration': {
     className: 'space-y-6',
     blocks: [

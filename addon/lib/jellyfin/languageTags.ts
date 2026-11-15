@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { ISO_639 } from './iso639';
 
 const languageNames = new Intl.DisplayNames(['en'], { type: 'language', fallback: 'none' });

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 require("dotenv").config();
 const Utils = require("../utils/parseProps");
 const moviedb = require("./getTmdb");
@@ -16,7 +18,7 @@ const { isAnime: isAnimeFunc } = require('../utils/isAnime');
 const { tmdbImageUrl, tmdbLogoSize, tmdbBackdropSize, tmdbLandscapeSize, tmdbPosterSize } = require('../utils/tmdbImageSize');
 const e = require("express");
 const { resolveAllIds } = require('./id-resolver');
-const { cacheWrapMeta, cacheWrapJikanApi, cacheWrapGlobal } = require('./getCache');
+const { cacheWrapMeta, cacheWrapGlobal } = require('./getCache');
 const { deriveStabilityStamp } = require('./metaColdStore');
 function CATALOG_TTL() { return parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10); }
 const kitsu = require('./kitsu');
@@ -27,6 +29,7 @@ const idMappings = require('./id-mappings.js');
 const { withEpisodeOrder } = require('../utils/episodeOrder');
 const { buildCertificationMap } = require('../utils/contentRating');
 const { tmdbDetails, tvdbSeriesDetails, tvdbMovieDetails, tvmazeDetails, jikanDetails } = require('./metaDetails');
+const { resolveSeriesRuntime } = require('./tmdbSeriesRuntime');
 
 
 const logger = consola.withTag('Meta');
@@ -1194,7 +1197,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       logger.debug(`[AnimeMeta] Using provider 'mal' for ${stremioId}`);
       const [details, characters, episodes] = await Promise.all([
         jikan.getAnimeDetailsCached(allIds.malId),
-        includeVideos ? cacheWrapJikanApi(`anime-characters-${allIds.malId}`, () => jikan.getAnimeCharacters(allIds.malId), null) : null,
+        includeVideos ? jikan.getAnimeCharactersCached(allIds.malId) : null,
         includeVideos ? jikan.getAnimeEpisodes(allIds.malId) : null,
       ]);
       if (!details) {
@@ -1673,10 +1676,11 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     if (season.poster_path) tmdbSeasonPosters[season.season_number] = tmdbImageUrl(tmdbPosterSize(), season.poster_path);
   });
 
+  let loadedSeasonDetails = null;
   if(includeVideos) {
     const seasonToKitsuIdMap = new Map();
     const seasonToImdbIdMap = new Map();
-    
+
     if (kitsuId && idProvider === 'kitsu') {
       const officialSeasons = (seasons || [])
         .filter(season => season.season_number > 0 && season.episode_count > 0)
@@ -1721,6 +1725,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           seasonDetails.push(seasonData);
         });
     });
+    loadedSeasonDetails = seasonDetails;
     const isAnimeContent = isAnimeFunc(seriesData, seriesData.genres) || kitsuId || malId;
     logger.debug(`[TmdbSeriesMeta] isAnimeContent: ${isAnimeContent}`);
     
@@ -1959,7 +1964,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     
     videos = (await Promise.all(videosPromises)).filter(Boolean);
   }
-  const runtime = seriesData.episode_run_time?.[0] ?? seriesData.last_episode_to_air?.runtime ?? seriesData.next_episode_to_air?.runtime ?? null;
+  const runtime = await resolveSeriesRuntime(seriesData, loadedSeasonDetails);
   let overview = seriesData.overview;
   overview = Utils.processOverviewTranslations(seriesData.translations, language, overview);
   let finalName = seriesData.name;
@@ -2134,7 +2139,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   }));
   
   const { trailers: allTrailers } = Utils.parseTvdbTrailers(movieData.trailers, translatedName);
-  const trailers = Utils.pickTrailersByLanguage(allTrailers, langCode3);
+  const trailers = Utils.selectTvdbTrailersByLanguage(allTrailers, langCode3, language);
 
   if(!logoUrl && imdbId && await imdb.metahubImageExists(imdbId, 'logo')){
     logoUrl =  imdb.getLogoFromImdb(imdbId);
@@ -2394,7 +2399,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   }));
 
   const { trailers: allTrailers } = Utils.parseTvdbTrailers(tvdbShow.trailers, translatedName);
-  const trailers = Utils.pickTrailersByLanguage(allTrailers, langCode3);
+  const trailers = Utils.selectTvdbTrailersByLanguage(allTrailers, langCode3, language);
 
 
 

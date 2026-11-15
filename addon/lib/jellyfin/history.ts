@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { listProfiles, type Profile } from './profiles';
 import { encodeJellyfinId, normaliseJellyfinId, parseStremioId } from './ids';
 import { groupBySpelling } from './aliases';
@@ -6,7 +8,7 @@ import { createHash } from 'crypto';
 
 const ANIME_IDS = /^(kitsu|mal|anilist|anidb):/;
 // The tracker an imported row came from, by the origin it was written with.
-const TRACKER_NAMES: Record<string, string> = { mdblist: 'MDBList', simkl: 'Simkl', publicmetadb: 'PublicMetaDB', anilist: 'AniList', mal: 'MyAnimeList' };
+const TRACKER_NAMES: Record<string, string> = { mdblist: 'MDBList', simkl: 'Simkl', publicmetadb: 'PublicMetaDB', anilist: 'AniList', mal: 'MyAnimeList', trakt: 'Trakt', letterboxd: 'Letterboxd' };
 
 export interface HistoryUser {
   profile: Profile;
@@ -227,6 +229,7 @@ export function exportRow(row: any): any {
     positionMs: Number(row.position_ms) || 0,
     durationMs: Number(row.runtime_ms) || 0,
     lastPlayedAt: iso(row.last_played_at),
+    lastPlayedKind: row.last_played_at ? row.last_played_kind ?? null : null,
     updatedAt: iso(row.updated_at),
     origin: originOf(row).origin,
   };

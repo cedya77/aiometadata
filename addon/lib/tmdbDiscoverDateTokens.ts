@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 const TMDB_DISCOVER_DATE_TOKEN_PREFIX = '__tmdb_date__';
 
 const RELATIVE_DATE_PRESET_KEYS = new Set([

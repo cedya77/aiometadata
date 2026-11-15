@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 const crypto = require('crypto');
 const { request, Agent, ProxyAgent } = require("undici");
 const database = require('./database');
@@ -65,13 +67,6 @@ const {
 const { deleteKeysByPattern } = require('./redisUtils');
 
 const MAX_TAG_NAME_LENGTH = 32;
-
-function getMaxCatalogs() {
-  const raw = process.env.MAX_CATALOGS;
-  if (!raw) return null;
-  const max = Number.parseInt(raw, 10);
-  return (Number.isFinite(max) && max > 0) ? max : null;
-}
 
 class ConfigApi {
   constructor() {
@@ -198,21 +193,27 @@ class ConfigApi {
     };
   }
 
+  // The instance's MAX_CATALOGS cap, or null when no cap applies. Anything other
+  // than a positive whole number (unset, empty, 'abc', '0', '-5', '1.5') means
+  // no cap.
+  getMaxCatalogs() {
+    const raw = String(require('./settingsService').getSetting('MAX_CATALOGS') ?? '').trim();
+    if (raw === '') return null;
+    const value = Number(raw);
+    return Number.isInteger(value) && value > 0 ? value : null;
+  }
+
+  // A catalog counts toward the cap unless it is explicitly disabled.
   validateCatalogCount(config) {
-    const maxCatalogs = getMaxCatalogs();
-    if (!maxCatalogs) return { valid: true };
-    const catalogs = config && config.catalogs;
-    if (!Array.isArray(catalogs)) return { valid: true };
-
-    // Only count enabled catalogs
-    const enabledCount = catalogs.filter(c => c.enabled !== false).length;
-
-    if (enabledCount <= maxCatalogs) return { valid: true };
+    const max = this.getMaxCatalogs();
+    if (max === null || !Array.isArray(config?.catalogs)) return { valid: true };
+    const count = config.catalogs.filter(catalog => catalog?.enabled !== false).length;
+    if (count <= max) return { valid: true };
     return {
       valid: false,
-      count: enabledCount,
-      max: maxCatalogs,
-      message: `Too many enabled catalogs (${enabledCount}); the maximum allowed on this instance is ${maxCatalogs}. Disable some catalogs and try again.`,
+      count,
+      max,
+      message: `This configuration has ${count} enabled catalogs, but this instance allows at most ${max}. Disable some catalogs and try again.`,
     };
   }
 
@@ -320,6 +321,15 @@ class ConfigApi {
         return res.status(400).json({ error: 'Saving creates a new configuration; change an existing one through /api/config/update/:userUUID' });
       }
 
+      const catalogCountCheck = this.validateCatalogCount(config);
+      if (!catalogCountCheck.valid) {
+        return res.status(400).json({
+          error: catalogCountCheck.message,
+          catalogCount: catalogCountCheck.count,
+          maxCatalogs: catalogCountCheck.max,
+        });
+      }
+
       // Only worth asking on an instance that gates creation at all: with no addon
       // password, anyone may create a configuration and the permission decides
       // nothing. Signing in is likewise the only way to hold one, so a request
@@ -343,16 +353,6 @@ class ConfigApi {
         return res.status(400).json({
           error: validation.message,
           missingKeys: validation.missingKeys
-        });
-      }
-
-      // Optional catalog count ceiling (opt-in via MAX_CATALOGS env var)
-      const catalogCheck = this.validateCatalogCount(config);
-      if (!catalogCheck.valid) {
-        return res.status(400).json({
-          error: catalogCheck.message,
-          catalogCount: catalogCheck.count,
-          maxCatalogs: catalogCheck.max,
         });
       }
 
@@ -428,6 +428,8 @@ class ConfigApi {
       } catch (error) {
         logger.debug(`Could not start reading new tracker accounts for ${userUUID}: ${error.message}`);
       }
+
+      require('./jellyfin/yearReview').rebuildAfterSave(userUUID).catch(() => undefined);
 
       require('./collectionImageCacheSync')
         .syncCollectionImages(userUUID, configWithTimestamp)
@@ -746,6 +748,15 @@ class ConfigApi {
         return res.status(400).json({ error: 'Configuration data is required' });
       }
 
+      const catalogCountCheck = this.validateCatalogCount(config);
+      if (!catalogCountCheck.valid) {
+        return res.status(400).json({
+          error: catalogCountCheck.message,
+          catalogCount: catalogCountCheck.count,
+          maxCatalogs: catalogCountCheck.max,
+        });
+      }
+
       // Check if UUID is trusted. An owner signed in to this instance has
       // already been let in, so the shared addon password is not asked again.
       const isTrusted = await database.isUUIDTrusted(userUUID);
@@ -761,16 +772,6 @@ class ConfigApi {
         return res.status(400).json({
           error: validation.message,
           missingKeys: validation.missingKeys
-        });
-      }
-
-      // Optional catalog count ceiling (opt-in via MAX_CATALOGS env var)
-      const catalogCheck = this.validateCatalogCount(config);
-      if (!catalogCheck.valid) {
-        return res.status(400).json({
-          error: catalogCheck.message,
-          catalogCount: catalogCheck.count,
-          maxCatalogs: catalogCheck.max,
         });
       }
 
@@ -859,10 +860,12 @@ class ConfigApi {
         logger.debug(`Could not start reading new tracker accounts for ${userUUID}: ${error.message}`);
       }
 
+      require('./jellyfin/yearReview').rebuildAfterSave(userUUID).catch(() => undefined);
+
       require('./collectionImageCacheSync')
         .syncCollectionImages(userUUID, configWithTimestamp)
         .catch(() => undefined);
-      
+
       // Invalidate user's cache when config changes
       try {
         const redis = require('./getCache').redis;
