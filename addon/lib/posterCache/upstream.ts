@@ -1,4 +1,5 @@
 import * as dns from 'node:dns/promises';
+import { lookup as dnsLookup } from 'node:dns';
 import * as net from 'node:net';
 import * as http from 'node:http';
 import * as https from 'node:https';
@@ -213,8 +214,14 @@ export async function assertPublicUrl(rawUrl: string): Promise<URL> {
 }
 
 /** Pins DNS to already-validated addresses; the request still targets the hostname. */
-function pinnedAgents(addresses: string[], keepAlive: boolean): { httpAgent: http.Agent; httpsAgent: https.Agent } {
-  const lookup = (_hostname: string, options: any, callback: any) => {
+function pinnedAgents(host: string, addresses: string[], keepAlive: boolean): { httpAgent: http.Agent; httpsAgent: https.Agent } {
+  const lookup = (hostname: string, options: any, callback: any) => {
+    // Pin only the validated host. Other names (an HTTP(S)_PROXY axios tunnels
+    // through with these agents' options) resolve normally.
+    if (hostname.toLowerCase() !== host.toLowerCase()) {
+      dnsLookup(hostname, options, callback);
+      return;
+    }
     const cb = typeof options === 'function' ? options : callback;
     const opts = typeof options === 'function' ? {} : (options || {});
     if (opts.all) {
@@ -307,7 +314,7 @@ async function getHostEntry(host: string, rawUrl: string, opts: ResolveOptions):
       previous.expiresAt = Date.now() + getConnectionCacheTtlMs();
       return previous;
     }
-    const agents = pinnedAgents(addresses, true);
+    const agents = pinnedAgents(host, addresses, true);
     const entry: HostEntry = { addresses, ...agents, expiresAt: Date.now() + getConnectionCacheTtlMs() };
     storeHost(host, entry);
     return entry;
@@ -327,7 +334,7 @@ export async function resolveConnection(rawUrl: string, opts: ResolveOptions = {
 
   if (perRequestPrivate) {
     const { url, addresses } = await resolvePublicUrl(rawUrl, opts);
-    return { url, ...pinnedAgents(addresses, false) };
+    return { url, ...pinnedAgents(host, addresses, false) };
   }
 
   const entry = await getHostEntry(host, rawUrl, opts);
