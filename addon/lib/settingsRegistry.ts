@@ -2222,6 +2222,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 0,
   },
   {
+    key: 'JELLYFIN_YEAR_REVIEW_SAVE_REBUILD_DAYS',
+    envVar: 'JELLYFIN_YEAR_REVIEW_SAVE_REBUILD_DAYS',
+    label: 'Year in Review Rebuild on Save (days)',
+    description: 'A saved change to the language, metadata or timezone rebuilds this year\'s Year in Review straight away when it was opened within this many days. Others rebuild when next opened. 0 turns it off.',
+    category: 'Features',
+    type: 'number',
+    default: 7,
+    min: 0,
+  },
+  {
     key: 'JELLYFIN_YEAR_REVIEW_MEMORY',
     envVar: 'JELLYFIN_YEAR_REVIEW_MEMORY',
     label: 'Year in Review Memory Cache Size',

@@ -268,6 +268,11 @@ export class FeatureDatabase extends DatabaseCore {
     }
   }
 
+  async listYearReviews(userUUID: string): Promise<Array<{ profile: string; year: number; fingerprint: string }>> {
+    const rows = await this.allQuery(`SELECT profile, year, fingerprint FROM jellyfin_year_review WHERE user_uuid = ${this.type === 'sqlite' ? '?' : '$1'}`, [userUUID]);
+    return rows.map((row: any) => ({ profile: String(row.profile ?? ''), year: Number(row.year), fingerprint: String(row.fingerprint) }));
+  }
+
   async putYearReview(userUUID: string, profile: string, year: number, fingerprint: string, builtAt: number, data: any): Promise<void> {
     const query = this.type === 'sqlite'
       ? `INSERT INTO jellyfin_year_review (user_uuid, profile, year, fingerprint, built_at, data) VALUES (?, ?, ?, ?, ?, ?)

@@ -112,12 +112,13 @@ function BuildState({ review, year }: { review: JellyfinYearReview | undefined; 
 
 function Freshness({ review }: { review: JellyfinYearReview }) {
   if (!review.stale) return null;
+  const settings = review.staleBecause === "settings";
   return (
     <div className="px-4 pt-4 sm:px-6 lg:px-12">
       <p className="flex items-center gap-2 text-xs text-muted-foreground">
         {review.rebuilding && review.rebuilding !== "busy" && review.rebuilding !== "failed"
-          ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Adding your newest plays.</>
-          : <>Built {review.builtAt ? when(review.builtAt) : "earlier"}. Newer plays show up on the next update.</>}
+          ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> {settings ? "Updating to your new settings." : "Adding your newest plays."}</>
+          : <>Built {review.builtAt ? when(review.builtAt) : "earlier"}. {settings ? "Your new settings show" : "Newer plays show"} up on the next update.</>}
       </p>
     </div>
   );

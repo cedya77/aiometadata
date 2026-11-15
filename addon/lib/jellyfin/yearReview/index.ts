@@ -14,11 +14,12 @@ import { metaContextDigest } from './facts';
 import { networkLogo, peopleYear, type PeopleYear } from './people';
 import { safeTimeZone, yearBounds, yearPlays, type YearPlay } from './plays';
 import { showProgress, type ShowProgress } from './progress';
-import { enqueue, ticketFor } from './queue';
+import { enqueue, ticketFor, type Ticket } from './queue';
 import { timeYear, type TimedYear, type YearTitle } from './timed';
 
 const logger = consola.withTag('YearReview');
 const database: any = require('../../database');
+const redis: any = require('../../redisClient');
 
 const REVIEW_VERSION = 1;
 const RATING_BATCH = 500;
@@ -66,6 +67,34 @@ async function fingerprintOf(userUUID: string, historyKey: string, year: number,
 const digest = (parts: unknown[]): string => createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, SETUP_DIGEST);
 
 const sameSetup = (a: string, b: string): boolean => a.slice(0, SETUP_DIGEST) === b.slice(0, SETUP_DIGEST);
+
+type StaleReason = 'settings' | 'plays';
+
+// Kept for the polls made while it builds, which skip the fingerprint.
+const rebuildReasons = new Map<string, StaleReason>();
+
+const saveRebuildDays = () => envInt('JELLYFIN_YEAR_REVIEW_SAVE_REBUILD_DAYS', 7, 0);
+const openedKey = (key: string) => `jf:yearopened:${key}`;
+const openedMarks = new LRUCache<string, number>({ max: 2000 });
+
+// A save rebuilds only the reviews someone opened lately; the rest rebuild on their next visit.
+function markOpened(key: string): void {
+  const days = saveRebuildDays();
+  if (!redis || days === 0) return;
+  const now = Date.now();
+  if (now - (openedMarks.get(key) ?? 0) < 60 * 60 * 1000) return;
+  openedMarks.set(key, now);
+  Promise.resolve(redis.set(openedKey(key), '1', 'EX', days * 24 * 60 * 60)).catch(() => openedMarks.delete(key));
+}
+
+async function openedLately(key: string): Promise<boolean> {
+  if (!redis || saveRebuildDays() === 0) return false;
+  try {
+    return (await redis.exists(openedKey(key))) === 1;
+  } catch {
+    return false;
+  }
+}
 
 function episodesOf(title: YearTitle): number {
   return new Set(title.plays.filter((play) => play.episode !== null).map((play) => `${play.season ?? ''}:${play.episode}`)).size;
@@ -166,12 +195,42 @@ async function buildYear(userUUID: string, profile: string | null, year: number,
   });
 }
 
+function rebuild(key: string, userUUID: string, profile: string | null, year: number, reason: StaleReason): Ticket {
+  const held = ticketFor(key);
+  if (held) return held;
+  rebuildReasons.set(key, reason);
+  const ticket = enqueue(key, (waitedMs) => buildYear(userUUID, profile, year, waitedMs).finally(() => rebuildReasons.delete(key)));
+  if (ticket.state === 'busy') rebuildReasons.delete(key);
+  return ticket;
+}
+
+/** A save that changes how titles are named or dated starts this year's reviews again, so the next visit finds them done. */
+export async function rebuildAfterSave(userUUID: string): Promise<void> {
+  const rows: Array<{ profile: string; year: number; fingerprint: string }> = await database.listYearReviews(userUUID).catch(() => []);
+  for (const row of rows) {
+    const profile = row.profile || null;
+    await asProfile(userUUID, profile, async (config) => {
+      // A profile that has since started sharing the main history reads the main review.
+      if (profileKey(config) !== row.profile) return;
+      const timeZone = safeTimeZone(viewingTimeZone(config));
+      if (row.year !== localYear(Date.now(), timeZone)) return;
+      const key = reviewKey(userUUID, row.profile, row.year);
+      if (!(await openedLately(key))) return;
+      const held = memory.get(key)?.fingerprint ?? row.fingerprint;
+      if (sameSetup(held, await fingerprintOf(userUUID, row.profile, row.year, timeZone))) return;
+      const ticket = rebuild(key, userUUID, profile, row.year, 'settings');
+      logger.debug(`${userUUID.slice(0, 8)} ${row.year}: settings changed, review ${ticket.state}`);
+    });
+  }
+}
+
 export async function dashboardYear(userUUID: string, profile: string | null, year: number, have: number | null = null): Promise<any | null> {
   return asProfile(userUUID, profile, async (config) => {
     const timeZone = safeTimeZone(viewingTimeZone(config));
     if (year > localYear(Date.now(), timeZone)) return { notBegun: true };
     const historyKey = profileKey(config);
     const key = reviewKey(userUUID, historyKey, year);
+    markOpened(key);
     // While this review builds, a poll only asks how far it got, so what the build will settle is not worked out again.
     const inFlight = ticketFor(key);
     const building = inFlight?.state === 'queued' || inFlight?.state === 'building';
@@ -185,7 +244,8 @@ export async function dashboardYear(userUUID: string, profile: string | null, ye
     // A review a failed fetch or the build budget left short is built again once it has settled, though no play changed.
     const fresh = !building && stored?.fingerprint === fingerprint && !(stored.data?.incomplete && Date.now() - stored.builtAt >= settleMs);
     const recent = !building && !!stored && sameSetup(stored.fingerprint, fingerprint!) && Date.now() - stored.builtAt < settleMs;
-    const ticket = building ? inFlight : fresh || recent ? ticketFor(key) : enqueue(key, (waitedMs) => buildYear(userUUID, profile, year, waitedMs));
+    const settingsChanged = !!stored && !!fingerprint && !sameSetup(stored.fingerprint, fingerprint);
+    const ticket = building ? inFlight : fresh || recent ? ticketFor(key) : rebuild(key, userUUID, profile, year, settingsChanged ? 'settings' : 'plays');
     const unchanged = !!stored && stored.builtAt === have;
     return {
       year,
@@ -194,6 +254,7 @@ export async function dashboardYear(userUUID: string, profile: string | null, ye
       ...(ticket?.state === 'queued' ? { ahead: ticket.ahead } : {}),
       ...(ticket?.state === 'failed' ? { retryAt: ticket.retryAt } : {}),
       stale: !!stored && !fresh,
+      staleBecause: stored && !fresh ? (rebuildReasons.get(key) ?? (settingsChanged ? 'settings' : 'plays')) : null,
       rebuilding: stored && ticket ? ticket.state : null,
       builtAt: stored?.builtAt ?? null,
       ...(unchanged ? { unchanged: true, data: null } : { data: stored?.data ?? null }),

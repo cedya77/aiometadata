@@ -429,6 +429,8 @@ class ConfigApi {
         logger.debug(`Could not start reading new tracker accounts for ${userUUID}: ${error.message}`);
       }
 
+      require('./jellyfin/yearReview').rebuildAfterSave(userUUID).catch(() => undefined);
+
       require('./collectionImageCacheSync')
         .syncCollectionImages(userUUID, configWithTimestamp)
         .catch(() => undefined);
@@ -858,10 +860,12 @@ class ConfigApi {
         logger.debug(`Could not start reading new tracker accounts for ${userUUID}: ${error.message}`);
       }
 
+      require('./jellyfin/yearReview').rebuildAfterSave(userUUID).catch(() => undefined);
+
       require('./collectionImageCacheSync')
         .syncCollectionImages(userUUID, configWithTimestamp)
         .catch(() => undefined);
-      
+
       // Invalidate user's cache when config changes
       try {
         const redis = require('./getCache').redis;

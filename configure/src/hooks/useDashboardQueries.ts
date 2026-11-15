@@ -1851,6 +1851,7 @@ export interface JellyfinYearReview {
   ahead?: number;
   retryAt?: number;
   stale: boolean;
+  staleBecause?: 'settings' | 'plays' | null;
   rebuilding: JellyfinYearBuild | null;
   builtAt: number | null;
   data: JellyfinYearData | null;
