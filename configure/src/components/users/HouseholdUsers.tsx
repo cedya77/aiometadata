@@ -462,7 +462,7 @@ function PersonDetail({ person, allTags, hasPmdb, mainSkipSource, showHandoff, j
             ) : null}
             <SettingRow
               label="Continue Watching from"
-              description={resumeSourceCaption(trackerValue, trackerOptions)}
+              description="Where Continue Watching, Next Up and the watched ticks come from."
               control={
                 <Select value={trackerValue} onValueChange={(v) => onChange({ trackerSource: v === 'inherit' ? undefined : (v as JellyfinUser['trackerSource']) })}>
                   <SelectTrigger className="h-9 text-sm sm:max-w-xs" aria-label={`Continue Watching of ${name}`}><SelectValue /></SelectTrigger>
@@ -474,7 +474,14 @@ function PersonDetail({ person, allTags, hasPmdb, mainSkipSource, showHandoff, j
                   </SelectContent>
                 </Select>
               }
-            />
+            >
+              <div className="space-y-1.5 leading-relaxed">
+                <Note>{resumeSourceCaption(trackerValue, trackerOptions)}</Note>
+                {canForget ? (
+                  <Note>The tracker read here is also imported into this server, history and resume points alike. What is imported stays when the choice changes, even to This server only; Forget imported history in the … menu clears it.</Note>
+                ) : null}
+              </div>
+            </SettingRow>
             {watchlistOptions.length > 0 ? (
               <SettingRow
                 label="Watchlist"
@@ -627,14 +634,23 @@ function WatchlistPicker({ value, options, onChange, inheritLabel, borrowed }: {
 
 function resumeSourceCaption(value: string, options: Array<{ value: string; label: string; animeOnly?: boolean }>): string {
   if (value === 'inherit') return 'Follows yours.';
-  if (value === 'off') return 'Only plays here. Trackers are told about plays but never read.';
+  if (value === 'off') {
+    return 'This server only: Continue Watching, Next Up and the watched ticks come from what you play through this server, on this configuration. Nothing watched elsewhere appears, and nothing is read from your trackers; plays are still reported to them. Favourites follow the Watchlist picks below, which have their own "Keep a list on this server".';
+  }
   if (value === 'auto') {
     const names = options.filter((o) => !o.animeOnly).map((o) => o.label);
-    return names.length ? `Paused titles from ${names.join(' and ')}, merged with plays here.` : 'Plays here, until a tracker that keeps positions is connected.';
+    if (!names.length) {
+      return 'Automatic: Continue Watching, Next Up and the watched ticks come from what you play here until a tracker that keeps positions (MDBList, Simkl or PublicMetaDB) is connected. AniList and MyAnimeList are only read when picked.';
+    }
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+    return `Automatic: Continue Watching merges the paused titles of every connected tracker (${list}), newest first. The watched ticks, Next Up and Upcoming come from one of them, the first connected in the order MDBList, Simkl, PublicMetaDB. AniList and MyAnimeList are only read when picked.`;
   }
   const option = options.find((o) => o.value === value);
-  if (option?.animeOnly) return `The ${option.label} anime list plus plays here. It keeps no positions.`;
-  return `${option?.label ?? 'That tracker'} plus plays here. Pick one when trackers disagree.`;
+  if (option?.animeOnly) {
+    return `${option.label} only: the watched ticks, Next Up and Upcoming come from your ${option.label} anime list, on top of what you play here. It covers anime alone, so other shows only appear from your plays here, and it keeps no positions, so Continue Watching is what you pause here. It also keeps a count of episodes watched rather than each one, so unwatching the latest episode lowers the count, while unwatching an earlier one leaves the count as it is and shows that episode unwatched here only.`;
+  }
+  const name = option?.label ?? 'that tracker';
+  return `${name} only: Continue Watching, the watched ticks, Next Up and Upcoming all come from ${name}, on top of what you play here. Pick this when two trackers disagree and you want one to win.`;
 }
 
 
