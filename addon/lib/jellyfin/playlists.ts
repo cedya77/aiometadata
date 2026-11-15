@@ -1,9 +1,10 @@
 import { randomBytes } from 'crypto';
+import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { mapWithConcurrency } from '../../utils/concurrency';
 import { encodeJellyfinId, decodeJellyfinId, flushPendingJellyfinIds } from './ids';
 import { normaliseJellyfinId, type Descriptor } from './idsCodec';
-import { buildEpisodes, fetchMeta, metaToBaseItem, recallImages, rememberImages } from './items';
+import { buildEpisodes, fetchMeta, metaToBaseItem, recallImages, rememberImages, type ItemImages } from './items';
 import { boxSetMembers, collectionById, folderById } from './collections';
 import { collectionFolder, itemList, EMPTY_USER_DATA } from './dto';
 import { imageTag } from './imageTags';
@@ -45,7 +46,7 @@ export function playlistItemId(playlist: Pick<Playlist, 'id'>): string {
 }
 
 function ownerOf(req: any, config: any): Owner {
-  return { userUUID: String(req.params.userUUID), profile: profileKey(config) };
+  return ownerFor(String(req.params.userUUID), config);
 }
 
 function fromRow(row: any): Playlist {
@@ -68,12 +69,26 @@ async function getPlaylist(owner: Owner, id: string): Promise<Playlist | null> {
   return row ? fromRow(row) : null;
 }
 
-export async function hasPlaylists(req: any, config: any): Promise<boolean> {
-  return (await listPlaylists(ownerOf(req, config)).catch(() => [])).length > 0;
+async function anyProfilePlaylist(userUUID: string, id: string): Promise<Playlist | null> {
+  const row = await database.findPlaylist(userUUID, id);
+  return row ? fromRow(row) : null;
 }
 
-// One owner's edits run one after another, so two devices changing a playlist at once never overwrite each other.
+async function countPlaylists(owner: Owner): Promise<number> {
+  return database.countPlaylists(owner.userUUID, owner.profile);
+}
+
+export async function hasPlaylists(req: any, config: any): Promise<boolean> {
+  const owner = ownerOf(req, config);
+  return database.hasPlaylists(owner.userUUID, owner.profile).catch(() => false);
+}
+
+// One owner's edits run one after another here; a write is kept only if no other instance changed the playlist since it was read.
 const turns = new Map<string, Promise<unknown>>();
+
+const WRITE_ATTEMPTS = 5;
+
+const nextVersion = (playlist: Pick<Playlist, 'updatedAt'>): number => Math.max(Date.now(), playlist.updatedAt + 1);
 
 function inTurn<T>(owner: Owner, work: () => Promise<T>): Promise<T> {
   const key = `${owner.userUUID}|${owner.profile}`;
@@ -88,13 +103,15 @@ function inTurn<T>(owner: Owner, work: () => Promise<T>): Promise<T> {
 /** Applies a change to the stored playlist; null from the change leaves it as it is. */
 async function changePlaylist(owner: Owner, id: string, change: (playlist: Playlist) => Partial<Pick<Playlist, 'name' | 'items'>> | null): Promise<Playlist | null> {
   return inTurn(owner, async () => {
-    const playlist = await getPlaylist(owner, id);
-    if (!playlist) return null;
-    const patch = change(playlist);
-    if (!patch) return playlist;
-    const next = { ...playlist, ...patch, updatedAt: Date.now() };
-    await database.savePlaylist(owner.userUUID, owner.profile, next);
-    return next;
+    for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
+      const playlist = await getPlaylist(owner, id);
+      if (!playlist) return null;
+      const patch = change(playlist);
+      if (!patch) return playlist;
+      const next = { ...playlist, ...patch, updatedAt: nextVersion(playlist) };
+      if (await database.updatePlaylist(owner.userUUID, owner.profile, next, playlist.updatedAt)) return next;
+    }
+    throw new Error('The playlist kept changing while it was saved');
   });
 }
 
@@ -123,20 +140,39 @@ function withoutRepeats(ids: string[], taken: Iterable<string> = []): string[] {
   return ids.filter((id) => !seen.has(id) && Boolean(seen.add(id)));
 }
 
+interface TitlesRead {
+  ids: string[];
+  more: boolean;
+}
+
 const aired = (episode: any): boolean => !(Date.parse(String(episode?.PremiereDate ?? '')) > Date.now());
 
 /** The titles that play, in order. As in Jellyfin, a show or a season adds its aired episodes, and a folder what its titles add. */
-async function playableIds(req: any, config: any, serverId: string, raw: string[]): Promise<string[]> {
-  const limit = itemsPerPlaylist();
-  const userUUID = String(req.params.userUUID);
-  const found = await mapWithConcurrency(raw.slice(0, limit), playlistConcurrency(), async (id: string) => {
-    const descriptor = await decodeJellyfinId(id).catch(() => null);
-    return descriptor ? titlesOf(userUUID, config, serverId, id, descriptor).catch(() => [] as string[]) : [];
-  });
-  return found.flat().slice(0, limit);
+async function playableIds(userUUID: string, config: any, serverId: string, raw: string[]): Promise<string[]> {
+  return (await titlesRead(userUUID, config, serverId, raw)).ids.slice(0, itemsPerPlaylist());
 }
 
-async function titlesOf(userUUID: string, config: any, serverId: string, id: string, descriptor: Descriptor): Promise<string[]> {
+/** Every title read, which can pass the limit so an add can tell what it left out; `more` when reading stopped short of them all. */
+async function titlesRead(userUUID: string, config: any, serverId: string, raw: string[]): Promise<TitlesRead> {
+  const limit = itemsPerPlaylist();
+  const unique = [...new Set(raw.map(normaliseJellyfinId))];
+  const asked = unique.slice(0, limit);
+  const width = playlistConcurrency();
+  const read: TitlesRead = { ids: [], more: unique.length > limit };
+  // Read a few at a time, in order, and stop once a playlist could hold no more.
+  let at = 0;
+  for (; at < asked.length && read.ids.length < limit; at += width) {
+    const found = await mapWithConcurrency(asked.slice(at, at + width), width, async (id: string) => {
+      const descriptor = await decodeJellyfinId(id).catch(() => null);
+      return descriptor ? titlesOf(userUUID, config, serverId, id, descriptor, read).catch(() => [] as string[]) : [];
+    });
+    read.ids.push(...found.flat());
+  }
+  if (at < asked.length) read.more = true;
+  return read;
+}
+
+async function titlesOf(userUUID: string, config: any, serverId: string, id: string, descriptor: Descriptor, read: TitlesRead): Promise<string[]> {
   if (descriptor.k === 'episode') return [id];
   if (descriptor.k === 'movie') {
     const meta = await fetchMeta(userUUID, 'movie', descriptor.i);
@@ -146,9 +182,12 @@ async function titlesOf(userUUID: string, config: any, serverId: string, id: str
     const meta = await fetchMeta(userUUID, 'series', descriptor.i);
     if (!meta) return [];
     const seriesId = encodeJellyfinId({ k: 'series', t: descriptor.t, i: descriptor.i });
-    // A whole show plays its seasons in order; its specials come in only when their own season is added.
-    return buildEpisodes(meta, descriptor.t, seriesId, serverId, descriptor.k === 'season' ? descriptor.s : null)
-      .filter((episode: any) => aired(episode) && (descriptor.k === 'season' || Number(episode.ParentIndexNumber) > 0))
+    // A whole show plays its seasons in order; its specials come in only when their own season is added, and
+    // episodes with no season only when the show has no seasons, as an absolute-numbered one does.
+    const episodes = buildEpisodes(meta, descriptor.t, seriesId, serverId, descriptor.k === 'season' ? descriptor.s : null);
+    const seasoned = episodes.some((episode: any) => Number(episode.ParentIndexNumber) > 0);
+    return episodes
+      .filter((episode: any) => aired(episode) && (descriptor.k === 'season' || (seasoned ? Number(episode.ParentIndexNumber) > 0 : episode.ParentIndexNumber !== 0)))
       .sort((a: any, b: any) => (Number(a.ParentIndexNumber) || 0) - (Number(b.ParentIndexNumber) || 0) || (Number(a.IndexNumber) || 0) - (Number(b.IndexNumber) || 0))
       .map((episode: any) => String(episode.Id));
   }
@@ -165,10 +204,12 @@ async function titlesOf(userUUID: string, config: any, serverId: string, id: str
       const found = await mapWithConcurrency(page.items.slice(at, at + width), width, async (member: any) => {
         if (member?.Type === 'Movie') return [String(member.Id)];
         const inner = member?.Type === 'Series' ? await decodeJellyfinId(String(member.Id)).catch(() => null) : null;
-        return inner?.k === 'series' ? titlesOf(userUUID, config, serverId, String(member.Id), inner).catch(() => [] as string[]) : [];
+        return inner?.k === 'series' ? titlesOf(userUUID, config, serverId, String(member.Id), inner, read).catch(() => [] as string[]) : [];
       });
       out.push(...found.flat());
+      if (out.length >= limit && (at + width < page.items.length || out.length > limit)) read.more = true;
     }
+    if (page.hasMore) read.more = true;
     return out.slice(0, limit);
   }
   return [];
@@ -181,13 +222,37 @@ export function playlistsFolder(serverId: string, count: number): any {
   };
 }
 
+export interface PlaylistCover {
+  /** The item whose art pictures the playlist: its first title, or that episode's show. */
+  pictured: string;
+  images: ItemImages | undefined;
+}
+
+// A cover changes only with the playlist's first title, so it is read once per first title, not on every listing.
+const covers = new LRUCache<string, PlaylistCover>({ max: envInt('JELLYFIN_RESUME_CACHE_MAX', 500, 1) * 4, ttlAutopurge: true });
+const coverTtlMs = () => envInt('JELLYFIN_PLAYLIST_COVER_TTL', 21600, 60) * 1000;
+
+export async function playlistCover(req: any, buildItems: PlaylistRouteDeps['buildItems'], playlist: Pick<Playlist, 'items'>): Promise<PlaylistCover | null> {
+  const firstId = playlist.items[0];
+  if (!firstId) return null;
+  const serverId = serverIdFor(String(req.params.userUUID));
+  const key = `${serverId}:${firstId}`;
+  const held = covers.get(key);
+  if (held) return held;
+  const [first] = await buildItems(req, [firstId]).catch(() => []);
+  if (!first) return null;
+  const pictured = first.Type === 'Episode' && first.SeriesId ? String(first.SeriesId) : String(first.Id);
+  const images = (await recallImages(serverId, pictured)) ?? (await recallImages(serverId, String(first.Id)));
+  const cover = { pictured, images };
+  covers.set(key, cover, { ttl: images ? coverTtlMs() : 60_000 });
+  return cover;
+}
+
 /** A playlist, pictured by its first title, or that episode's show. */
 async function playlistDto(req: any, deps: PlaylistRouteDeps, playlist: Playlist): Promise<any> {
   const serverId = serverIdFor(String(req.params.userUUID));
   const id = playlistItemId(playlist);
-  const [first] = playlist.items[0] ? await deps.buildItems(req, [playlist.items[0]]).catch(() => []) : [];
-  const pictured = first?.Type === 'Episode' && first.SeriesId ? String(first.SeriesId) : first?.Id ? String(first.Id) : null;
-  const images = pictured ? (await recallImages(serverId, pictured)) ?? (first?.Id ? await recallImages(serverId, String(first.Id)) : undefined) : undefined;
+  const images = (await playlistCover(req, deps.buildItems, playlist))?.images;
   if (images) rememberImages(serverId, id, images);
   const primary = images?.primary ?? images?.thumb;
   const count = playlist.items.length;
@@ -230,22 +295,22 @@ async function playlistDto(req: any, deps: PlaylistRouteDeps, playlist: Playlist
 export async function playlistImages(req: any, deps: PlaylistRouteDeps, descriptor: Descriptor): Promise<any | undefined> {
   if (descriptor.k !== 'playlist') return undefined;
   const config = await loadConfig(req);
-  const playlist = config ? await getPlaylist(ownerOf(req, config), descriptor.p) : null;
+  const playlist = config ? (await getPlaylist(ownerOf(req, config), descriptor.p)) ?? (await anyProfilePlaylist(String(req.params.userUUID), descriptor.p)) : null;
   if (!playlist) return undefined;
   await playlistDto(req, deps, playlist);
   return recallImages(serverIdFor(String(req.params.userUUID)), playlistItemId(playlist));
 }
 
-function pageOf(req: any, total: number): { start: number; end: number } {
+function pageOf(req: any, total: number, cap = Infinity): { start: number; end: number } {
   const start = Math.max(0, parseInt(String(param(req, 'StartIndex') ?? 0), 10) || 0);
   const asked = param(req, 'Limit');
-  const limit = asked === undefined ? total : Math.max(0, parseInt(String(asked), 10) || 0);
+  const limit = Math.min(cap, asked === undefined ? total : Math.max(0, parseInt(String(asked), 10) || 0));
   return { start, end: start + limit };
 }
 
 /** Its entries as list rows, each with PlaylistItemId; one that no longer builds is left out. */
 async function entries(req: any, deps: PlaylistRouteDeps, playlist: Playlist): Promise<any> {
-  const { start, end } = pageOf(req, playlist.items.length);
+  const { start, end } = pageOf(req, playlist.items.length, itemsPerPlaylist());
   const ids = playlist.items.slice(start, end);
   const built = await deps.buildItems(req, ids);
   const byId = new Map(built.map((item) => [normaliseJellyfinId(String(item.Id)), item]));
@@ -296,10 +361,104 @@ export async function playlistAsItem(req: any, deps: PlaylistRouteDeps, descript
   if (!config) return null;
   const owner = ownerOf(req, config);
   const serverId = serverIdFor(owner.userUUID);
-  if (descriptor.k === 'playlists') return playlistsFolder(serverId, (await listPlaylists(owner)).length);
+  if (descriptor.k === 'playlists') return playlistsFolder(serverId, await countPlaylists(owner));
   const playlist = await getPlaylist(owner, descriptor.p);
   return playlist ? playlistDto(req, deps, playlist) : null;
 }
+
+/** Whose playlists these are: a configuration and one of its users. */
+export function ownerFor(userUUID: string, config: any): Owner {
+  return { userUUID, profile: profileKey(config) };
+}
+
+export { listPlaylists, getPlaylist, withoutRepeats };
+
+/** The titles these ids would add, in order, before any already held are left out. */
+export function titlesToAdd(owner: Owner, config: any, ids: string[]): Promise<TitlesRead> {
+  return titlesRead(owner.userUUID, config, serverIdFor(owner.userUUID), ids);
+}
+
+export type AddOutcome = { playlist: Playlist; added: number; left: number; more: boolean } | 'missing' | 'full';
+
+/** Null when the user already has as many as allowed. */
+export async function createPlaylist(owner: Owner, config: any, name: string, ids: string[]): Promise<Playlist | null> {
+  const items = withoutRepeats(await playableIds(owner.userUUID, config, serverIdFor(owner.userUUID), ids));
+  const created = await inTurn(owner, async () => {
+    if ((await countPlaylists(owner)) >= playlistsPerUser()) return null;
+    const now = Date.now();
+    const playlist: Playlist = { id: randomBytes(8).toString('hex'), name: nameOf(name), items, createdAt: now, updatedAt: now };
+    await database.savePlaylist(owner.userUUID, owner.profile, playlist);
+    return playlist;
+  });
+  // Its id is read back through the id table, so it is written now rather than with the next batch.
+  if (created) {
+    playlistItemId(created);
+    await flushPendingJellyfinIds();
+  }
+  return created;
+}
+
+/** A rename, and with ids a new list of titles; null when the playlist is gone. */
+export async function editPlaylist(owner: Owner, config: any, id: string, change: { name?: string; ids?: string[] }): Promise<Playlist | null> {
+  const name = nameOf(change.name);
+  const items = change.ids ? withoutRepeats(await playableIds(owner.userUUID, config, serverIdFor(owner.userUUID), change.ids)) : null;
+  return changePlaylist(owner, id, () => (name || items ? { ...(name ? { name } : {}), ...(items ? { items } : {}) } : null));
+}
+
+/** Adds what is not there yet at a position, or at the end. */
+export async function addTitles(owner: Owner, config: any, id: string, ids: string[], position: number | null = null): Promise<AddOutcome> {
+  const { ids: added, more } = await titlesRead(owner.userUUID, config, serverIdFor(owner.userUUID), ids);
+  let full = false;
+  let count = 0;
+  let left = 0;
+  const updated = await changePlaylist(owner, id, (current) => {
+    full = false;
+    count = 0;
+    left = 0;
+    const room = itemsPerPlaylist() - current.items.length;
+    const fresh = withoutRepeats(added, current.items);
+    if (!fresh.length) return null;
+    if (room <= 0) {
+      full = true;
+      return null;
+    }
+    left = Math.max(0, fresh.length - room);
+    fresh.splice(room);
+    const at = position === null || !Number.isFinite(position) ? current.items.length : Math.min(Math.max(0, position), current.items.length);
+    const items = [...current.items];
+    items.splice(at, 0, ...fresh);
+    count = fresh.length;
+    return { items };
+  });
+  if (!updated) return 'missing';
+  if (full) return 'full';
+  return { playlist: updated, added: count, left, more };
+}
+
+export async function removeTitles(owner: Owner, id: string, entryIds: string[]): Promise<Playlist | null> {
+  const removed = new Set(entryIds.map(normaliseJellyfinId));
+  return changePlaylist(owner, id, (current) => {
+    const items = current.items.filter((entry) => !removed.has(entry));
+    return items.length === current.items.length ? null : { items };
+  });
+}
+
+export async function moveTitle(owner: Owner, id: string, entryId: string, to: number): Promise<Playlist | null> {
+  const entry = normaliseJellyfinId(entryId);
+  return changePlaylist(owner, id, (current) => {
+    const from = current.items.indexOf(entry);
+    if (from < 0 || !Number.isInteger(to)) return null;
+    const items = current.items.filter((held) => held !== entry);
+    items.splice(Math.min(Math.max(0, to), items.length), 0, entry);
+    return { items };
+  });
+}
+
+export async function deletePlaylist(owner: Owner, id: string): Promise<boolean> {
+  return inTurn(owner, () => database.deletePlaylist(owner.userUUID, owner.profile, id));
+}
+
+export const playlistLimits = () => ({ playlists: playlistsPerUser(), items: itemsPerPlaylist() });
 
 export function registerPlaylistRoutes(router: any, deps: PlaylistRouteDeps): void {
   const withPlaylist = (handler: (req: any, res: any, owner: Owner, playlist: Playlist, config: any) => Promise<void>) => async (req: any, res: any) => {
@@ -325,20 +484,7 @@ export function registerPlaylistRoutes(router: any, deps: PlaylistRouteDeps): vo
       res.status(400).json({ Message: 'A playlist needs a name' });
       return;
     }
-    const owner = ownerOf(req, config);
-    const items = withoutRepeats(await playableIds(req, config, serverIdFor(owner.userUUID), idsOf(req, 'Ids')));
-    const created = await inTurn(owner, async () => {
-      if ((await listPlaylists(owner)).length >= playlistsPerUser()) return null;
-      const now = Date.now();
-      const playlist: Playlist = { id: randomBytes(8).toString('hex'), name, items, createdAt: now, updatedAt: now };
-      await database.savePlaylist(owner.userUUID, owner.profile, playlist);
-      return playlist;
-    });
-    // Its id is read back through the id table, so it is written now rather than with the next batch.
-    if (created) {
-      playlistItemId(created);
-      await flushPendingJellyfinIds();
-    }
+    const created = await createPlaylist(ownerOf(req, config), config, name, idsOf(req, 'Ids'));
     if (!created) {
       res.status(400).json({ Message: `You can have up to ${playlistsPerUser()} playlists` });
       return;
@@ -352,10 +498,7 @@ export function registerPlaylistRoutes(router: any, deps: PlaylistRouteDeps): vo
 
   // A rename, and with Ids a new list of titles.
   router.post('/Playlists/:playlistId', withPlaylist(async (req, res, owner, playlist, config) => {
-    const name = nameOf(param(req, 'Name'));
-    const replacing = param(req, 'Ids') !== undefined;
-    const items = replacing ? withoutRepeats(await playableIds(req, config, serverIdFor(owner.userUUID), idsOf(req, 'Ids'))) : null;
-    const updated = await changePlaylist(owner, playlist.id, () => (name || items ? { ...(name ? { name } : {}), ...(items ? { items } : {}) } : null));
+    const updated = await editPlaylist(owner, config, playlist.id, { name: param(req, 'Name') as string | undefined, ids: param(req, 'Ids') !== undefined ? idsOf(req, 'Ids') : undefined });
     if (!updated) missing(res);
     else res.status(204).end();
   }));
@@ -365,48 +508,21 @@ export function registerPlaylistRoutes(router: any, deps: PlaylistRouteDeps): vo
   }));
 
   router.post('/Playlists/:playlistId/Items', withPlaylist(async (req, res, owner, playlist, config) => {
-    const added = await playableIds(req, config, serverIdFor(owner.userUUID), idsOf(req, 'Ids'));
     const asked = param(req, 'Position');
     const position = asked === undefined || asked === '' ? null : parseInt(String(asked), 10);
-    let full = false;
-    const updated = await changePlaylist(owner, playlist.id, (current) => {
-      const fresh = withoutRepeats(added, current.items);
-      if (!fresh.length) return null;
-      if (current.items.length + fresh.length > itemsPerPlaylist()) {
-        full = true;
-        return null;
-      }
-      const at = position === null || !Number.isFinite(position) ? current.items.length : Math.min(Math.max(0, position), current.items.length);
-      const items = [...current.items];
-      items.splice(at, 0, ...fresh);
-      return { items };
-    });
-    if (!updated) missing(res);
-    else if (full) res.status(400).json({ Message: `A playlist holds up to ${itemsPerPlaylist()} titles` });
+    const outcome = await addTitles(owner, config, playlist.id, idsOf(req, 'Ids'), position);
+    if (outcome === 'missing') missing(res);
+    else if (outcome === 'full') res.status(400).json({ Message: `A playlist holds up to ${itemsPerPlaylist()} titles` });
     else res.status(204).end();
   }));
 
   router.delete('/Playlists/:playlistId/Items', withPlaylist(async (req, res, owner, playlist) => {
-    const removed = new Set(idsOf(req, 'EntryIds'));
-    const updated = await changePlaylist(owner, playlist.id, (current) => {
-      const items = current.items.filter((id) => !removed.has(id));
-      return items.length === current.items.length ? null : { items };
-    });
-    if (!updated) missing(res);
+    if (!(await removeTitles(owner, playlist.id, idsOf(req, 'EntryIds')))) missing(res);
     else res.status(204).end();
   }));
 
   router.post('/Playlists/:playlistId/Items/:entryId/Move/:newIndex', withPlaylist(async (req, res, owner, playlist) => {
-    const entry = normaliseJellyfinId(String(req.params.entryId));
-    const to = Number(req.params.newIndex);
-    const updated = await changePlaylist(owner, playlist.id, (current) => {
-      const from = current.items.indexOf(entry);
-      if (from < 0 || !Number.isInteger(to)) return null;
-      const items = current.items.filter((id) => id !== entry);
-      items.splice(Math.min(Math.max(0, to), items.length), 0, entry);
-      return { items };
-    });
-    if (!updated) missing(res);
+    if (!(await moveTitle(owner, playlist.id, String(req.params.entryId), Number(req.params.newIndex)))) missing(res);
     else res.status(204).end();
   }));
 
@@ -436,11 +552,93 @@ export function registerPlaylistRoutes(router: any, deps: PlaylistRouteDeps): vo
     const owner = ownerOf(req, config);
     let removed = 0;
     for (const descriptor of descriptors) {
-      if (descriptor?.k === 'playlist' && (await inTurn(owner, () => database.deletePlaylist(owner.userUUID, owner.profile, descriptor.p)))) removed++;
+      if (descriptor?.k === 'playlist' && (await deletePlaylist(owner, descriptor.p))) removed++;
     }
     if (removed) res.status(204).end();
     else res.status(404).json({ Message: 'Item not found' });
   };
   router.delete('/Items/:itemId', (req: any, res: any, next: any) => removePlaylists(req, res, next, [String(req.params.itemId)]));
   router.delete('/Items', (req: any, res: any, next: any) => removePlaylists(req, res, next, idsOf(req, 'Ids')));
+}
+
+/** An entry as a history file carries it: the title itself, so the file reads back on any server. */
+export interface PlaylistTitle {
+  kind: 'movie' | 'episode';
+  type: string;
+  id: string;
+  season?: number | null;
+  episode?: number;
+}
+
+export interface PlaylistExport {
+  profile: string;
+  name: string;
+  items: PlaylistTitle[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export async function playlistsForExport(userUUID: string): Promise<PlaylistExport[]> {
+  const rows: any[] = await database.listAllPlaylists(userUUID);
+  return mapWithConcurrency(rows, playlistConcurrency(), async (row: any) => {
+    const playlist = fromRow(row);
+    const items: PlaylistTitle[] = [];
+    for (const id of playlist.items) {
+      const d = await decodeJellyfinId(id).catch(() => null);
+      if (d?.k === 'movie') items.push({ kind: 'movie', type: d.t, id: d.i });
+      else if (d?.k === 'episode') items.push({ kind: 'episode', type: d.t, id: d.i, season: d.s, episode: d.e });
+    }
+    return { profile: String(row.profile ?? ''), name: playlist.name, items, createdAt: playlist.createdAt, updatedAt: playlist.updatedAt };
+  });
+}
+
+export function playlistTitleId(title: PlaylistTitle): string {
+  return title.kind === 'movie'
+    ? encodeJellyfinId({ k: 'movie', t: title.type, i: title.id })
+    : encodeJellyfinId({ k: 'episode', t: title.type, i: title.id, s: title.season ?? null, e: Number(title.episode) });
+}
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** What importing a playlist does to the ones held: a name already there takes the titles it lacks, else it is made. */
+export function importOutcome<P extends Pick<Playlist, 'name' | 'items'>>(held: P[], incoming: { name: string; items: string[] }): { kind: 'added' | 'updated' | 'unchanged' | 'full'; adds: string[]; into?: P } {
+  const into = held.find((playlist) => sameName(playlist.name, incoming.name));
+  const room = itemsPerPlaylist() - (into?.items.length ?? 0);
+  const adds = withoutRepeats(incoming.items, into?.items ?? []).slice(0, Math.max(0, room));
+  if (into) return { kind: adds.length ? 'updated' : 'unchanged', adds, into };
+  if (held.length >= playlistsPerUser()) return { kind: 'full', adds: [] };
+  return { kind: 'added', adds };
+}
+
+export async function heldPlaylists(userUUID: string): Promise<Map<string, Playlist[]>> {
+  const out = new Map<string, Playlist[]>();
+  for (const row of await database.listAllPlaylists(userUUID)) {
+    const profile = String(row.profile ?? '');
+    out.set(profile, [...(out.get(profile) ?? []), fromRow(row)]);
+  }
+  return out;
+}
+
+/** Writes one imported playlist, deciding again against what is held by then. */
+export async function importPlaylist(userUUID: string, profile: string, incoming: { name: string; items: string[]; createdAt: number }): Promise<void> {
+  const owner = { userUUID, profile };
+  await inTurn(owner, async () => {
+    for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
+      const held = await listPlaylists(owner);
+      const { kind, adds, into } = importOutcome(held, incoming);
+      if (kind === 'updated' && into) {
+        if (await database.updatePlaylist(userUUID, profile, { ...into, items: [...into.items, ...adds], updatedAt: nextVersion(into) }, into.updatedAt)) return;
+        continue;
+      }
+      if (kind === 'added') {
+        const now = Date.now();
+        const playlist: Playlist = { id: randomBytes(8).toString('hex'), name: incoming.name.trim().slice(0, NAME_LENGTH), items: adds, createdAt: incoming.createdAt || now, updatedAt: now };
+        await database.savePlaylist(userUUID, profile, playlist);
+        playlistItemId(playlist);
+        await flushPendingJellyfinIds();
+      }
+      return;
+    }
+    throw new Error('The playlist kept changing while it was imported');
+  });
 }

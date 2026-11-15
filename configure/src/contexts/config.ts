@@ -266,6 +266,10 @@ export interface AppConfig {
   };
   tvdbSeasonType: string;
   animeEpisodeDates?: 'provider' | 'earliest' | 'dub';
+  /** Where trailers come from: the metadata provider ('default', also when absent) or a trailer addon */
+  trailerProvider?: 'default' | 'addon';
+  /** Manifest URL of the trailer addon; its own options travel in the URL */
+  trailerAddonUrl?: string;
   tvdbEpisodeOrders?: Record<string, string>;
   tvdbNormalizeYearSeasons?: boolean;
   tvdbShowSeasonNumbering?: Record<string, 'years' | 'sequential'>;
@@ -311,8 +315,6 @@ export interface AppConfig {
   managerAccounts?: ManagerAccount[];
   /** Poster rating provider: 'none' to disable rating posters, 'rpdb' for RatingPosterDB, 'top' for Top Poster API, or 'custom' for custom URL patterns */
   posterRatingProvider?: 'none' | 'rpdb' | 'top' | 'custom';
-  trailerProvider?: 'default' | 'addon';
-  trailerAddonUrl?: string;
   usePosterProxy: boolean;
   mdblistWatchTracking: boolean;
   anilistWatchTracking: boolean;
@@ -449,8 +451,9 @@ export interface AppConfig {
   showDisabledCatalogs?: boolean;
   tags?: TagDef[];
   catalogModeOnly?: boolean;
-  hideStremioCatalogs?: boolean;
   collectionCatalogs?: boolean;
+  /** Leave Stremio-only catalogs (such as Calendar videos) out of the manifest. */
+  hideStremioCatalogs?: boolean;
   /** Install URL of a stream addon the Jellyfin server delegates playback to. */
   jellyfinStreamUrl?: string;
   jellyfinResolveOnOpen?: boolean;
@@ -459,8 +462,17 @@ export interface AppConfig {
   jellyfinSimilarSource?: 'simkl';
   jellyfinLatestRows?: boolean;
   jellyfinMarkUnaired?: boolean;
+  /** SyncPlay lists the release another member is playing first. On when unset. */
+  jellyfinMatchReleases?: boolean;
   /** Playback is reported by the client, so the subtitle trigger is not used. */
   playbackReporting?: boolean;
+  /** Jellyfin plays reach the trackers under playback reporting. On when unset. */
+  jellyfinScrobbling?: boolean;
+  /** Stremio player and library events are received under playback reporting. */
+  stremioScrobbling?: boolean;
+  stremioLibraryWatchlist?: boolean;
+  /** When the Stremio switch was last turned on, to tell whether the installed manifest predates it. */
+  stremioScrobblingSince?: number;
   /** Password a Jellyfin client signs in with, for accounts that have no configuration password. */
   jellyfinAppPassword?: string;
   /** Tracker the Jellyfin resume shelf reads from. `auto` picks a capable one. */

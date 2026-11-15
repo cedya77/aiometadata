@@ -18,6 +18,7 @@ const {
   normalizeJikanAnimeCharactersForCache,
   normalizeJikanAnimeEpisodesForCache,
   normalizeJikanCatalogForCache,
+  normalizeJikanPersonNameForCache,
 }: any = require('./jikanCacheNormalizers');
 
 const DEFAULT_JIKAN_API_BASE = 'https://api.tenrai.org/v1';
@@ -409,9 +410,10 @@ function detailsTtl(details: any): number {
   return envInt('JIKAN_DETAILS_TTL', 30 * 24 * 60 * 60, 0);
 }
 
-async function getAnimeDetailsCached(malId: string | number): Promise<any> {
+async function getAnimeDetailsCached(malId: string | number, accept?: (cached: any) => boolean): Promise<any> {
   const { cacheWrapJikanApi, classifyResult }: any = require('./getCache');
   return cacheWrapJikanApi(`anime-details-${malId}`, () => getAnimeDetails(malId), null, {
+    ...(accept ? { accept } : {}),
     resultClassifier: (result: any, error: any = null, cacheKey: string | null = null) =>
       result && !error ? { type: 'SUCCESS', ttl: detailsTtl(result) } : classifyResult(result, error, cacheKey),
   });
@@ -496,6 +498,27 @@ async function getAnimeCharacters(malId: string | number): Promise<any[]> {
       logger.warn(`Could not fetch characters for MAL ID ${malId}:`, e.message);
       return [];
     });
+}
+
+async function jikanCached(key: string, path: string, normalize: (data: any) => any, ttl: (result: any) => number): Promise<any> {
+  const { cacheWrapJikanApi, classifyResult }: any = require('./getCache');
+  const url = `${jikanApiBase()}${path}`;
+  return cacheWrapJikanApi(key, () => enqueueRequest(() => _makeJikanRequest(url), url).then((response: any) => {
+    const data = response.data?.data;
+    return data ? normalize(data) : null;
+  }), null, {
+    resultClassifier: (result: any, error: any = null, cacheKey: string | null = null) =>
+      result && !error ? { type: 'SUCCESS', ttl: ttl(result) } : classifyResult(result, error, cacheKey),
+  });
+}
+
+async function getAnimeCharactersCached(malId: string | number, accept?: (cached: any) => boolean): Promise<any[]> {
+  const { cacheWrapJikanApi }: any = require('./getCache');
+  return cacheWrapJikanApi(`anime-characters-${malId}`, () => getAnimeCharacters(malId), null, accept ? { accept } : {});
+}
+
+async function getPersonNameCached(personId: string | number): Promise<any> {
+  return jikanCached(`person-name-${personId}`, `/people/${personId}`, normalizeJikanPersonNameForCache, () => envInt('JIKAN_PERSON_TTL', 30 * 24 * 60 * 60, 0)).catch(() => null);
 }
 
 async function getAnimeByVoiceActor(personId: string | number): Promise<any[]> {
@@ -945,6 +968,8 @@ export {
   searchAnime,
   getAnimeDetails,
   getAnimeDetailsCached,
+  getAnimeCharactersCached,
+  getPersonNameCached,
   getAnimeEpisodes,
   getAnimeEpisodeVideos,
   getAnimeCharacters,
@@ -974,6 +999,8 @@ module.exports = {
   searchAnime,
   getAnimeDetails,
   getAnimeDetailsCached,
+  getAnimeCharactersCached,
+  getPersonNameCached,
   getAnimeEpisodes,
   getAnimeEpisodeVideos,
   getAnimeCharacters,

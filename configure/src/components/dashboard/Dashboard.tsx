@@ -38,6 +38,8 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import { navigateDashboard, settleDashboardEntry, useDashboardRoute } from "@/lib/dashboardRoute";
+import { recall, profileKey, SELECTED_KEY } from "./jellyfinUtils";
 import { DashboardContent } from "./DashboardContent";
 import { DashboardAnalytics } from "./DashboardAnalytics";
 import { DashboardSystem } from "./DashboardSystem";
@@ -354,6 +356,7 @@ function AdminLoginModal({
 
 // Access level type for tracking current user access
 type AccessLevel = 'none' | 'guest' | 'admin';
+const ADMIN_TABS = new Set<DashboardTab>(['operations', 'users', 'jellyfin', 'logs', 'settings']);
 
 // Admin Status Badge Component - Shows admin/guest status and logout button
 interface AdminStatusBadgeProps {}
@@ -404,19 +407,24 @@ export function Dashboard() {
   const { isAdmin, isGuest, adminKey, isLoading, adminKeyConfigured, guestModeEnabled, ssoEnabled, jellyfinEnabled } = useAdmin();
   const { isMobile } = useBreakpoint();
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
-  const [activeMobileSection, setActiveMobileSection] = useState<DashboardTab | undefined>(undefined);
+  const route = useDashboardRoute();
   const [contentTimeframe, setContentTimeframe] = useState('today');
   const [logsPaused, setLogsPaused] = useState(false);
   const [logFilters, setLogFilters] = useState<LogStreamFilters>({});
 
-  const navigateToTab = (tab: string) => {
-    setActiveTab(tab as DashboardTab);
-    setActiveMobileSection((prev) => (prev !== undefined ? (tab as DashboardTab) : prev));
-  };
-
   // Access level state management - tracks current access level based on AdminContext state
   const accessLevel: AccessLevel = isAdmin ? 'admin' : isGuest ? 'guest' : 'none';
+
+  useEffect(settleDashboardEntry, []);
+  const routedTab = route.tab && (!ADMIN_TABS.has(route.tab) || (accessLevel === 'admin' && (route.tab !== 'jellyfin' || jellyfinEnabled))) ? route.tab : null;
+  const activeTab: DashboardTab = routedTab ?? 'overview';
+  const activeMobileSection = routedTab ?? undefined;
+  const setActiveTab = (tab: DashboardTab) => {
+    if (tab !== 'jellyfin') return navigateDashboard({ tab, config: null, profile: null, page: null });
+    const config = recall<string | null>(SELECTED_KEY, null);
+    navigateDashboard({ tab, config, profile: config ? recall<string | null>(profileKey(config), null) : null, page: null });
+  };
+  const navigateToTab = (tab: string) => setActiveTab(tab as DashboardTab);
 
   // TanStack Query hooks with tab-aware polling
   const queryOptions = { activeTab, enabled: isAdmin || isGuest };
@@ -667,6 +675,12 @@ export function Dashboard() {
     );
   }
 
+  // An open Jellyfin configuration sits in the same place for both layouts, so turning a phone across the
+  // breakpoint swaps only the chrome around it and keeps what is open in it, such as a playing trailer.
+  const openConfig = routedTab === 'jellyfin' && route.config
+    ? <div className="w-full overflow-x-clip"><DashboardJellyfin activeTab={activeTab} /></div>
+    : null;
+
   // Mobile layout with push/pop navigation
   if (isMobile) {
     const activePage = dashboardPages.find(p => p.value === activeMobileSection);
@@ -679,9 +693,12 @@ export function Dashboard() {
       : null;
     const goToSection = (value: DashboardTab) => {
       setActiveTab(value);
-      setActiveMobileSection(value);
       window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
     };
+
+    // An open Jellyfin configuration brings its own header and section bar, edge to edge.
+    // The null holds the desktop's Tabs slot, so React keeps the open configuration mounted across the switch.
+    if (openConfig) return <div className="min-h-screen">{null}{openConfig}</div>;
 
     return (
       <div className="w-full p-4 overflow-hidden">
@@ -708,10 +725,7 @@ export function Dashboard() {
                 {dashboardPages.map((page, index) => (
                   <button
                     key={page.value}
-                    onClick={() => {
-                      setActiveTab(page.value as DashboardTab);
-                      setActiveMobileSection(page.value as DashboardTab);
-                    }}
+                    onClick={() => setActiveTab(page.value as DashboardTab)}
                     className={`flex items-center justify-between w-full px-4 py-3.5 text-left transition-colors active:bg-white/[0.04] ${
                       index < dashboardPages.length - 1 ? 'border-b border-white/[0.04]' : ''
                     }`}
@@ -731,7 +745,7 @@ export function Dashboard() {
               transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
             >
               <button
-                onClick={() => setActiveMobileSection(undefined)}
+                onClick={() => navigateDashboard({ tab: null, config: null, profile: null, page: null })}
                 className="flex items-center gap-1 mb-4 -ml-1 py-1.5 px-2 rounded-lg text-muted-foreground active:bg-white/[0.04] transition-colors"
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -826,7 +840,7 @@ export function Dashboard() {
         </div>
 
         {/* Content area */}
-        <div className="px-4 sm:px-6 lg:px-8 py-6">
+        {!openConfig && <div className="px-4 sm:px-6 lg:px-8 py-6">
         <TabsContent value="overview" className="mt-0">
           <DashboardOverview
             data={dashboardData.overview}
@@ -883,7 +897,7 @@ export function Dashboard() {
               />
             </TabsContent>
 
-            {jellyfinEnabled && (
+            {jellyfinEnabled && !openConfig && (
               <TabsContent value="jellyfin" className="mt-0">
                 <DashboardJellyfin activeTab={activeTab} />
               </TabsContent>
@@ -905,8 +919,9 @@ export function Dashboard() {
             </TabsContent>
           </>
         )}
-        </div>
+        </div>}
       </Tabs>
+      {openConfig}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import consola from 'consola';
+import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
 import redis from './redisClient.js';
 import { envInt } from '../utils/envNumber';
@@ -23,6 +24,25 @@ export function isEndOfList(metas: unknown): boolean {
   return Array.isArray(metas) && metas.length === 0 && (metas as any)[END_OF_LIST] === true;
 }
 
+// How many entries the source says the whole list holds. Kept under a symbol so
+// the page stays a plain array of metas: JSON.stringify skips symbol keys.
+const LISTED_TOTAL = Symbol('listedTotal');
+
+/** Notes the source's own count of the whole list on a page. Anything but a finite number of 0 or more is ignored. */
+export function withListedTotal<T extends any[]>(metas: T, total: unknown): T {
+  if (!Array.isArray(metas)) return metas;
+  if (typeof total !== 'number' || !Number.isFinite(total) || total < 0) return metas;
+  (metas as any)[LISTED_TOTAL] = Math.floor(total);
+  return metas;
+}
+
+/** The count a source attached to this page, if it attached one. */
+export function listedTotalOf(metas: unknown): number | undefined {
+  if (!Array.isArray(metas)) return undefined;
+  const total = (metas as any)[LISTED_TOTAL];
+  return typeof total === 'number' ? total : undefined;
+}
+
 export function endPageTtlSeconds(): number {
   return envInt('CATALOG_END_PAGE_TTL', 24 * 60 * 60, 60);
 }
@@ -44,15 +64,30 @@ const memoryCursors = new LRUCache<string, Map<number, CatalogCursor>>({
   ttl: cursorTtlSeconds() * 1000,
 });
 
-/** `filteredFor` is the user, cap and tags the pages are filtered for; '' for the installation as it is. */
+/**
+ * Names who a filtered catalog's pages are filtered for: the user (a viewer
+ * profile, or the holder whose account serves the catalog), the rating cap the
+ * request tightened to, and the tags it resolved to. '' when it is none of
+ * those, which is the installation.
+ */
+export function cursorAudience(who: string = '', ratingOverride: unknown = '', tags: string[] = []): string {
+  const rating = typeof ratingOverride === 'string' ? ratingOverride.trim() : '';
+  const named = [...new Set(tags.map((tag) => String(tag).trim().toLowerCase()).filter(Boolean))].sort();
+  if (!rating && named.length === 0) return who;
+  // Hashed, since a tag name is free text and the key is a colon-separated one.
+  const filters = createHash('md5').update(JSON.stringify([rating, named])).digest('hex').slice(0, 12);
+  return `${who}~${filters}`;
+}
+
+/** `audience` is who the pages are filtered for, as `cursorAudience` names them; '' for the installation. */
 export function cursorKey(
   userUUID: string,
   cleanId: string,
   type: string,
   genre: string | undefined | null,
-  filteredFor: string = ''
+  audience: string = ''
 ): string {
-  const scope = filteredFor ? `${userUUID}@${filteredFor}` : userUUID;
+  const scope = audience ? `${userUUID}@${audience}` : userUUID;
   return `catalog-cursor:v3:${scope}:${cleanId}:${type}:${genre || 'all'}`;
 }
 

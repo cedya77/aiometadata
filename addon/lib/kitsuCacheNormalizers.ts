@@ -39,19 +39,20 @@ function pickDefined(source: any, keys: string[]) {
   return result;
 }
 
-//flatten to .original since we only consume it
-/** Kitsu presigns some storage urls; the query is signing parameters and expires in
- *  15 minutes, while the object stays public without them. */
-function stripExpiringSignature(url: string): string {
+// Kitsu can hand back presigned storage URLs whose signature expires in minutes,
+// far sooner than the cached meta. The object is public without the query, so
+// drop the query from signed URLs only; everything else passes through as-is.
+function stripExpiringImageSignature(url: any): any {
   if (typeof url !== 'string' || !url.includes('X-Amz-Signature')) return url;
-  const query = url.indexOf('?');
-  return query === -1 ? url : url.slice(0, query);
+  const queryStart = url.indexOf('?');
+  return queryStart === -1 ? url : url.slice(0, queryStart);
 }
 
+//flatten to .original since we only consume it
 function flattenImageToOriginal(image: any): { original: string } | null {
   if (!image || typeof image !== 'object') return image;
   if (!image.original) return null;
-  return { original: stripExpiringSignature(image.original) };
+  return { original: stripExpiringImageSignature(image.original) };
 }
 
 

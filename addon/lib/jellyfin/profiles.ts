@@ -245,18 +245,28 @@ export function viewerByName(config: any, userUUID: string, name: unknown): Prof
   const wanted = typeof name === 'string' ? name.trim().toLowerCase() : '';
   if (!wanted) return undefined;
   const matches = (candidate: string) => candidate.trim().toLowerCase() === wanted || personaIdOf(candidate) === wanted;
-  return listProfiles(config, userUUID).find((p) => matches(p.name) || p.handoffNames.some(matches));
+  const profiles = listProfiles(config, userUUID);
+  return profiles.find((p) => matches(p.name) || p.handoffNames.some(matches))
+    ?? profiles.find((p) => p.id !== null && p.id.toLowerCase() === wanted);
 }
+
+// A user card's install link names it by id; one that matches no card must not fall back to the installation.
+const CARD_ID = /^[0-9a-f]{12}$/i;
 
 export function hasNamedViewers(config: any, userUUID: string): boolean {
   const [main, ...others] = listProfiles(config, userUUID);
   return others.length > 0 || main.handoffNames.length > 0;
 }
 
-/** The user a handoff request names: null when it names nobody, undefined when it names nobody here while others could be named. */
+/**
+ * Who a request's `viewer` names. Null when it names nobody, so the request is the
+ * installation's; undefined when it names someone this configuration does not have.
+ */
 export function profileForViewer(config: any, userUUID: string, name: unknown): Profile | null | undefined {
-  if (name === undefined || name === null || (typeof name === 'string' && !name.trim())) return null;
-  if (!hasNamedViewers(config, userUUID)) return null;
+  if (name === undefined || name === null) return null;
+  if (typeof name === 'string' && !name.trim()) return null;
+  const byCardId = typeof name === 'string' && CARD_ID.test(name.trim());
+  if (!byCardId && !hasNamedViewers(config, userUUID)) return null;
   if (typeof name !== 'string') return undefined;
   return viewerByName(config, userUUID, name);
 }

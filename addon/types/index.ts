@@ -6,11 +6,20 @@ export interface UserConfig {
   jellyfinStreamUrl?: string;
   jellyfinLatestRows?: boolean;
   jellyfinMarkUnaired?: boolean;
+  /** SyncPlay lists the release another member is playing first. On when unset. */
+  jellyfinMatchReleases?: boolean;
   jellyfinUpcomingMode?: 'airing';
   /** Where a title's similar titles come from. TMDB when unset. */
   jellyfinSimilarSource?: 'simkl';
   /** Playback is reported by the client, so the subtitle trigger is not used. */
   playbackReporting?: boolean;
+  /** Jellyfin plays reach the trackers under playback reporting. On when unset. */
+  jellyfinScrobbling?: boolean;
+  /** Stremio player and library events are received under playback reporting. */
+  stremioScrobbling?: boolean;
+  stremioLibraryWatchlist?: boolean;
+  /** When the Stremio switch was last turned on, to tell whether the installed manifest predates it. */
+  stremioScrobblingSince?: number;
   /** Password a Jellyfin client signs in with, for accounts that have no configuration password. */
   jellyfinAppPassword?: string;
   /** Tracker the Jellyfin resume shelf reads from. `auto` picks a capable one. */
@@ -73,9 +82,7 @@ export interface UserConfig {
     { movie?: boolean; series?: boolean }
   >>;
   /** Poster rating provider: 'rpdb' for RatingPosterDB, 'top' for Top Poster API, or 'custom' for custom URL patterns */
-  trailerProvider?: 'default' | 'addon';
   criticRatings?: boolean;
-  trailerAddonUrl?: string;
   posterRatingProvider?: 'rpdb' | 'top' | 'custom';
   catalogs?: Catalog[];
   streaming?: StreamingConfig[];
@@ -104,6 +111,10 @@ export interface UserConfig {
   tvdbEpisodeOrders?: Record<string, string>;
   tvdbNormalizeYearSeasons?: boolean;
   tvdbShowSeasonNumbering?: Record<string, 'years' | 'sequential'>;
+  /** Where trailers come from: the metadata provider ('default', also when absent) or a trailer addon */
+  trailerProvider?: 'default' | 'addon';
+  /** Manifest URL of the trailer addon; its own options travel in the URL */
+  trailerAddonUrl?: string;
   castCount?: number;
   blurThumbs?: boolean;
   displayAgeRating?: boolean;

@@ -3,15 +3,17 @@ import { Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { searchSettings } from '@/lib/settingsSearch';
 import { SETTINGS_SEARCH_INDEX } from '@/lib/settingsSearchIndex';
-import { SETTINGS_SECTIONS, type SettingsSectionId } from '@/lib/settingsRoute';
+import { SETTINGS_SECTIONS, type SettingsSection, type SettingsSectionId } from '@/lib/settingsRoute';
 import { cn } from '@/lib/utils';
 
 const SECTION_TITLES = new Map(SETTINGS_SECTIONS.map((s) => [s.id, s.title]));
 
 export function SettingsSearch({
   onSelect,
+  sections = SETTINGS_SECTIONS,
 }: {
   onSelect: (section: SettingsSectionId, anchor: string | null) => void;
+  sections?: SettingsSection[];
 }) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -23,7 +25,7 @@ export function SettingsSearch({
   const optionRefs = useRef<Array<HTMLLIElement | null>>([]);
   const listId = useId();
 
-  const results = useMemo(() => searchSettings(query, SETTINGS_SEARCH_INDEX), [query]);
+  const results = useMemo(() => searchSettings(query, SETTINGS_SEARCH_INDEX, sections), [query, sections]);
   const expanded = open && results.length > 0;
 
   useEffect(() => setActive(0), [query]);

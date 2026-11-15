@@ -1,12 +1,8 @@
+import { TRACKERS } from './trackers';
+
 export type AccountService = 'simkl' | 'mdblist' | 'publicmetadb' | 'anilist' | 'mal';
 
-export const ACCOUNT_SERVICES: Record<AccountService, { key: string; master: string }> = {
-  simkl: { key: 'simklTokenId', master: 'simklWatchTracking' },
-  mdblist: { key: 'mdblist', master: 'mdblistWatchTracking' },
-  publicmetadb: { key: 'publicmetadb', master: 'publicmetadbWatchTracking' },
-  anilist: { key: 'anilistTokenId', master: 'anilistWatchTracking' },
-  mal: { key: 'malTokenId', master: 'malWatchTracking' },
-};
+export const ACCOUNT_SERVICES = Object.fromEntries(Object.values(TRACKERS).map((tracker) => [tracker.id, tracker.account])) as Record<AccountService, { key: string; master: string }>;
 
 export const ACCOUNT_SERVICE_LIST = Object.keys(ACCOUNT_SERVICES) as AccountService[];
 
@@ -43,8 +39,8 @@ export function trackerConfig(config: any, only?: AccountService): any {
     out.apiKeys[key] = accounts.apiKeys?.[key] || undefined;
     out[master] = accounts[master];
     out.watchTracking[service] = accounts.watchTracking?.[service];
+    for (const field of TRACKERS[service].account.fields ?? []) out[field] = accounts[field];
   }
-  if (!only || only === 'simkl') out.simklUser = accounts.simklUser;
   return out;
 }
 
@@ -59,14 +55,6 @@ export function ownTokenId(config: any, service: AccountService): string | null 
   return credential ?? (config?.jellyfinAccounts ? null : undefined);
 }
 
-const SLOTS: Array<[AccountService, RegExp]> = [
-  ['mdblist', /^mdblist\.(watchlist(\.(movies|series))?|upnext|recommended\..+)$/],
-  ['simkl', /^simkl\.(watchlist\..+|upnext(\.anime)?)$/],
-  ['mal', /^mal\.(userlist\..+|suggestions)$/],
-  ['anilist', /^anilist\.(?!trending$)[^.]+$/],
-  ['publicmetadb', /^publicmetadb\.(upnext|watchlist)$/],
-];
-
 export function rowOwner(catalog: { metadata?: any } | null | undefined): string {
   const owner = catalog?.metadata?.accountOwner;
   return typeof owner === 'string' ? owner : '';
@@ -75,11 +63,7 @@ export function rowOwner(catalog: { metadata?: any } | null | undefined): string
 /** The service a catalog belongs to as "this account's own list"; null for public and named lists. */
 export function slotServiceOf(catalog: { id?: string; metadata?: any } | null | undefined): AccountService | null {
   const id = String(catalog?.id ?? '').replace(/_(movie|series|anime|all)$/, '');
-  if (id.startsWith('publicmetadb.pick.')) return rowOwner(catalog) ? 'publicmetadb' : null;
-  if (id.startsWith('publicmetadb.list.') && catalog?.metadata?.listType === 'watchlist') return 'publicmetadb';
-  if (id.startsWith('anilist.') && catalog?.metadata?.isCustomList) return null;
-  for (const [service, pattern] of SLOTS) if (pattern.test(id)) return service;
-  return null;
+  return Object.values(TRACKERS).find((tracker) => tracker.ownList(id, catalog ?? {}))?.id ?? null;
 }
 
 export function servesCatalog(config: any, catalog: any): boolean {
@@ -110,17 +94,13 @@ export function pmdbListIdFor(config: any, catalogId: string): string {
   return catalogId.replace('publicmetadb.list.', '');
 }
 
-/** A catalog's entry under its id without the display suffix; a bare stand-in when the configuration has none. */
-export function catalogEntryFor(config: any, catalogId: string): any {
-  const bare = String(catalogId).replace(/_(movie|series|anime|all)$/, '');
-  return (config?.catalogs ?? []).find((c: any) => c?.id === bare) ?? { id: bare };
-}
-
 /** A holder's own account on its slots; the installation's keys everywhere else, still carrying the holder for filters and merged sources. */
 export function viewerConfigFor(config: any, owner: unknown, catalogId: string): any {
   const viewer = withAccountOwner(config, typeof owner === 'string' ? owner : '');
   if (!viewer.jellyfinAccounts) return config;
-  const service = slotServiceOf(catalogEntryFor(viewer, catalogId));
+  const bare = String(catalogId).replace(/_(movie|series|anime|all)$/, '');
+  const entry = (viewer.catalogs ?? []).find((c: any) => c?.id === bare) ?? { id: bare };
+  const service = slotServiceOf(entry);
   return service ? trackerConfig(viewer, service) : viewer;
 }
 
@@ -151,12 +131,10 @@ export function detachCardAccount(config: any, owner: string, service: AccountSe
   };
   const tokenId = accounts.apiKeys[key];
   delete accounts.apiKeys[key];
-  delete accounts[master];
   delete accounts.watchTracking[service];
   delete accounts.labels[service];
-  const fields = [master];
-  if (service === 'simkl') { delete accounts.simklUser; fields.push('simklUser'); }
-  if (service === 'publicmetadb') { delete accounts.publicmetadbWatchlist; fields.push('publicmetadbWatchlist'); }
+  const fields = [master, ...(TRACKERS[service].account.fields ?? [])];
+  for (const field of fields) delete accounts[field];
   card.accounts = accounts;
   return { tokenId, apiKeys: [key], fields };
 }

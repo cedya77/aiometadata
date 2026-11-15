@@ -45,25 +45,20 @@ interface SimklIntegrationProps {
 
 export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
   const [simklClientId, setSimklClientId] = useState<string>("");
-  const [simklAuthMode, setSimklAuthMode] = useState<'oauth' | 'pin' | 'both'>('oauth');
   const [simklV2Available, setSimklV2Available] = useState(false);
   const [serverSyncMinutes, setServerSyncMinutes] = useState(30);
-  
+  const [simklAuthMode, setSimklAuthMode] = useState<'oauth' | 'pin' | 'both'>('oauth');
+
   useEffect(() => {
     fetch("/api/config")
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (data && data.simkl) setSimklClientId(data.simkl);
         setSimklV2Available(Boolean(data?.simklV2));
+        if (data?.simklAuthMode === 'oauth' || data?.simklAuthMode === 'pin' || data?.simklAuthMode === 'both') setSimklAuthMode(data.simklAuthMode);
         if (Number(data?.simklActivitiesTTL) > 0) setServerSyncMinutes(Math.max(1, Math.round(data.simklActivitiesTTL / 60)));
-        if (data && (data.simklAuthMode === 'pin' || data.simklAuthMode === 'both' || data.simklAuthMode === 'oauth')) {
-          setSimklAuthMode(data.simklAuthMode);
-        }
       });
   }, []);
-
-  const pinEnabled = simklAuthMode === 'pin' || simklAuthMode === 'both';
-  const oauthEnabled = simklAuthMode === 'oauth' || simklAuthMode === 'both';
 
   const { config, setConfig, auth } = useConfig();
   const { markConfigPersisted, isDirty } = useSave();
@@ -311,56 +306,45 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
     toast.info("Complete the authorization in the new window and paste the Token ID below");
   };
 
-  const applyToken = (tokenId: string, connectedUsername: string) => {
-    setUsername(connectedUsername);
-    setTempTokenId(tokenId);
-    loadTokenInfo(tokenId);
-    setConfig(prev => ({
-      ...prev,
-      apiKeys: {
-        ...prev.apiKeys,
-        simklTokenId: tokenId,
-      },
-    }));
-
-    // Persisted straight away so navigating away cannot lose the connection
-    // and cannot strand the credential row with nothing pointing at it.
-    void persistIntegrationCredential({ provider: 'simkl', tokenId, userUUID: auth.userUUID, password: auth.password, authenticated: auth.authenticated })
-      .then(result => { if (result.error) toast.warning(`Connected, but the link was not saved: ${result.error}`); });
-
-    setIsConnected(true);
-    toast.success(`Connected as @${connectedUsername}`);
-  };
-
-  // No callback URL here, the server talks to Simkl directly while the user
-  // types the code on simkl.com/pin.
-  const pinAuth = useDeviceAuth({
-    startPath: "/api/auth/simkl/pin",
-    statusPath: "/api/auth/simkl/pin/status",
-    cancelPath: "/api/auth/simkl/pin/cancel",
-    active: isOpen,
-    providerLabel: "Simkl",
-    onAuthorized: applyToken,
-  });
-
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!tempTokenId.trim()) {
       toast.error("Please enter a valid Token ID");
       return;
     }
+    return connectWithTokenId(tempTokenId.trim());
+  };
 
+  // Shared by a pasted Token ID and by the PIN sign-in, so both connect the same way.
+  const connectWithTokenId = async (tokenId: string) => {
     // Fetch username from token to validate and display in UI
     try {
       const response = await fetch("/api/oauth/token/info", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tokenId: tempTokenId.trim() }),
+        body: JSON.stringify({ tokenId }),
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         if (data.provider === 'simkl') {
-          applyToken(tempTokenId.trim(), data.username);
+          setUsername(data.username);
+          loadTokenInfo(tokenId);
+
+          setConfig(prev => ({
+            ...prev,
+            apiKeys: {
+              ...prev.apiKeys,
+              simklTokenId: tokenId,
+            },
+          }));
+
+          // Persisted straight away so navigating away cannot lose the connection
+          // and cannot strand the credential row with nothing pointing at it.
+          void persistIntegrationCredential({ provider: 'simkl', tokenId, userUUID: auth.userUUID, password: auth.password, authenticated: auth.authenticated })
+            .then(result => { if (result.error) toast.warning(`Connected, but the link was not saved: ${result.error}`); });
+
+          setIsConnected(true);
+          toast.success(`Connected as @${data.username}`);
         } else {
           toast.error("Invalid Simkl token");
         }
@@ -372,6 +356,21 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
       toast.error("Failed to validate token");
     }
   };
+
+  const pinOffered = simklAuthMode === 'pin' || simklAuthMode === 'both';
+  const oauthOffered = simklAuthMode === 'oauth' || simklAuthMode === 'both';
+
+  const simklPin = useDeviceAuth({
+    startPath: '/api/auth/simkl/pin',
+    statusPath: '/api/auth/simkl/pin/status',
+    cancelPath: '/api/auth/simkl/pin/cancel',
+    active: isOpen,
+    providerLabel: 'Simkl',
+    onAuthorized: (tokenId) => {
+      setTempTokenId(tokenId);
+      void connectWithTokenId(tokenId);
+    },
+  });
 
   // Handlers to add trending catalogs
   const handleAddTrendingCatalog = (type: 'movies' | 'shows' | 'anime') => {
@@ -627,43 +626,47 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                     </div>
                   </div>
 
-                  {pinEnabled && (
+                  {pinOffered && (
                     <div className="space-y-2">
                       <Label>Connect with a PIN</Label>
                       <DeviceAuthCard
-                        code={pinAuth.code}
-                        requesting={pinAuth.requesting}
+                        code={simklPin.code}
+                        requesting={simklPin.requesting}
                         disabled={!simklClientId}
                         startLabel="Get a Simkl PIN"
                         hint="Opens simkl.com/pin in a new tab. No public callback URL needed."
-                        onStart={pinAuth.start}
-                        onCancel={pinAuth.cancel}
+                        onStart={simklPin.start}
+                        onCancel={simklPin.cancel}
                       />
+                      {!simklClientId && !oauthOffered && (
+                        <p className="text-xs text-red-500 mt-2">
+                          Instance owner has not yet set up the Simkl integration.
+                        </p>
+                      )}
                     </div>
                   )}
 
-                  {oauthEnabled && (
+                  {oauthOffered && (
                     <div className="space-y-2">
-                      <Label>{pinEnabled ? "Or authorize in a browser window" : "Step 1: Authorize Simkl"}</Label>
+                      <Label>{pinOffered ? 'Or authorize in a browser window' : 'Step 1: Authorize Simkl'}</Label>
                       <Button onClick={handleConnect} className="w-full" disabled={!simklClientId}>
                         <ExternalLink className="mr-2 h-4 w-4" />
                         Authorize with Simkl
                       </Button>
+                      {!simklClientId && (
+                        <p className="text-xs text-red-500 mt-2">
+                          Instance owner has not yet set up the Simkl integration.
+                        </p>
+                      )}
                       <p className="text-xs text-muted-foreground">
                         Opens a new window. You'll receive a Token ID to paste below.
                       </p>
                     </div>
                   )}
 
-                  {!simklClientId && (
-                    <p className="text-xs text-red-500">
-                      Instance owner has not yet set up the Simkl integration.
-                    </p>
-                  )}
-
                   <div className="space-y-2">
                     <Label htmlFor="simkl-token">
-                      {oauthEnabled ? "Step 2: Paste Token ID" : "Already have a Token ID?"}
+                      {oauthOffered ? 'Step 2: Paste Token ID' : 'Already have a Token ID?'}
                     </Label>
                     <Input
                       id="simkl-token"

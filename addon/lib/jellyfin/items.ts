@@ -4,10 +4,11 @@ import { countryName } from '../metaDetails';
 import { imageTag, wideTag } from './imageTags';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
-import { encodeJellyfinId, parseStremioId } from './ids';
+import { encodeJellyfinId, jellyfinIdQueued, parseStremioId } from './ids';
 import { normaliseJellyfinId } from './idsCodec';
 import { rememberSeriesRatingIds } from './seriesRatingIds';
 import { EMPTY_USER_DATA } from './dto';
+import { walkRecords } from './walkRecords';
 import { placeholderSources } from './streams';
 import redis from '../redisClient';
 import type { CatalogRef } from './views';
@@ -57,6 +58,10 @@ const ART_SCOPE_SKIPPED = new Set([
   'jellyfinUserPin',
   'jellyfinAppPassword',
   'playbackReporting',
+  'jellyfinScrobbling',
+  'stremioScrobbling',
+  'stremioLibraryWatchlist',
+  'stremioScrobblingSince',
 ]);
 const ART_SCOPE_SKIPPED_KEYS = new Set(['malTokenId', 'anilistTokenId', 'simklTokenId', 'traktTokenId', 'movieLensCredId', 'trakt', 'simkl']);
 const artSignatures = new WeakMap<object, string>();
@@ -261,6 +266,7 @@ export async function fetchCatalogPage(
     const metas = Array.isArray(body?.metas) ? body.metas : [];
     if (typeof body?.rawLength === 'number') rawLengths.set(metas, body.rawLength);
     if (typeof body?.pageSize === 'number' && body.pageSize > 0) pageSizes.set(metas, body.pageSize);
+    if (typeof body?.listed === 'number' && Number.isFinite(body.listed) && body.listed >= 0) listedCounts.set(metas, Math.floor(body.listed));
     if (body?.served === true) servedPages.add(metas);
     if (body?.randomize === true) randomizedPages.add(metas);
     return metas;
@@ -273,6 +279,8 @@ export async function fetchCatalogPage(
 
 const rawLengths = new WeakMap<any[], number>();
 const pageSizes = new WeakMap<any[], number>();
+// What the source said the whole list holds, on the pages that came with a count.
+const listedCounts = new WeakMap<any[], number>();
 const servedPages = new WeakSet<any[]>();
 const randomizedPages = new WeakSet<any[]>();
 const servedCatalogs = new LRUCache<string, true>({
@@ -294,7 +302,15 @@ export interface Window {
   items: any[];
   hasMore: boolean;
   failed?: boolean;
+  /** How long the list is, on a window that reached its end. */
+  length?: number;
+  /** How long the list is known to be, on a window with more behind it. */
+  listed?: number;
   randomize?: boolean;
+  /** A filtered walk that ran out of page budget before filling the window; more may follow. */
+  truncated?: boolean;
+  /** A filtered walk that reached its page ceiling and was taken as the end of the list. */
+  capped?: boolean;
 }
 
 export function servedOrder(items: any[], window: Partial<Window>): any[] {
@@ -350,6 +366,68 @@ export function knownCatalogLength(userUUID: string, catalog: CatalogRef, extras
   return catalogLengths.get(lengthKeyFor(userUUID, catalog, extras, tags, keepKey));
 }
 
+// The count a source gave for a whole catalog, held under the catalog's page key, and the catalogs whose first
+// page came without one.
+const sourceCounts = new LRUCache<string, number>({
+  max: envInt('JELLYFIN_PAGE_LENGTH_CACHE_MAX', 2000, 1),
+  ttl: envInt('JELLYFIN_CATALOG_LENGTH_TTL', 3600, 60) * 1000,
+});
+const countless = new LRUCache<string, true>({
+  max: envInt('JELLYFIN_PAGE_LENGTH_CACHE_MAX', 2000, 1),
+  ttl: envInt('JELLYFIN_CATALOG_LENGTH_TTL', 3600, 60) * 1000,
+});
+
+function noteSourceCount(pageKey: string, page: any[] | null): void {
+  const count = page ? listedCounts.get(page) : undefined;
+  if (count === undefined) return;
+  sourceCounts.set(pageKey, count);
+  countless.delete(pageKey);
+}
+
+/**
+ * Whether the source's count of a catalog is the length of the list asked for: it is when nothing narrows the
+ * list, or only item types do and every type the catalog serves is among them. A box set is not asked of it.
+ */
+function sourceCountStands(catalog: { id: string; type: string }, extras: Record<string, string>, keepKey: string): boolean {
+  if (extras.genre || extras.search) return false;
+  if (!keepKey) return true;
+  // A key holds the item types first; anything after a separator is another filter.
+  if (/[|#]/.test(keepKey)) return false;
+  const wanted = wantedTypes(keepKey);
+  if (!wanted) return true;
+  // A catalog not held to one type may hold films and shows alike.
+  const serves = (!EXTERNAL_CATALOG.test(catalog.id) && CATALOG_SERVES[catalog.type]) || ['Movie', 'Series'];
+  return serves.every((type) => type === 'BoxSet' || wanted.has(type));
+}
+
+function listLengthOf(lengthKey: string, pageKey: string, stands: boolean): number | undefined {
+  return catalogLengths.get(lengthKey) ?? (stands ? sourceCounts.get(pageKey) : undefined);
+}
+
+/** How long a list is known to be: measured by a walk to its end, or else counted by its source where that count stands. */
+export function knownListLength(userUUID: string, catalog: CatalogRef, extras: Record<string, string> = {}, tags: string[] = [], keepKey = ''): number | undefined {
+  return listLengthOf(lengthKeyFor(userUUID, catalog, extras, tags, keepKey), lengthKeyFor(userUUID, catalog, extras, tags), sourceCountStands(catalog, extras, keepKey));
+}
+
+/**
+ * The list's known length, read from the catalog's first page when it is not held and the source's count would
+ * stand. A source that answers without a count is not read again for one until the memo lapses.
+ */
+export async function learnListLength(userUUID: string, catalog: CatalogRef, extras: Record<string, string> = {}, tags: string[] = [], keepKey = ''): Promise<number | undefined> {
+  await warmCatalogLengths(userUUID, [catalog], extras, tags, keepKey);
+  const lengthKey = lengthKeyFor(userUUID, catalog, extras, tags, keepKey);
+  const pageKey = lengthKeyFor(userUUID, catalog, extras, tags);
+  const stands = sourceCountStands(catalog, extras, keepKey);
+  const held = listLengthOf(lengthKey, pageKey, stands);
+  if (held !== undefined || !stands || countless.has(pageKey)) return held;
+
+  const first = await fetchWindow(userUUID, catalog, 0, 1, extras, undefined, tags)
+    .catch((): Window => ({ items: [], hasMore: false, failed: true }));
+  const learned = listLengthOf(lengthKey, pageKey, stands);
+  if (learned === undefined && !first.failed) countless.set(pageKey, true);
+  return learned;
+}
+
 /** How many titles one page of the catalog holds, once a window has read one. */
 export function knownPageLength(userUUID: string, catalog: CatalogRef, extras: Record<string, string> = {}, tags: string[] = []): number | undefined {
   return pageLengths.get(lengthKeyFor(userUUID, catalog, extras, tags));
@@ -391,20 +469,23 @@ export async function warmCatalogLengths(userUUID: string, catalogs: CatalogRef[
 }
 
 // Where a client walking a catalog in order stopped: the catalog position after
-// its last item and what it has been shown. Repeats are dropped from a window, so
+// its last item, and what it has been shown. Repeats are dropped from a window, so
 // a client's position runs behind the catalog's, and mapping the next StartIndex
 // back by page would show the tail of the last page again and lose a title.
-interface WalkCursor {
-  raw: number;
-  seen: string[];
-}
+const WALK_CURSOR_MAX_IDS = 5000;
 
-const walkCursors = new LRUCache<string, WalkCursor>({
+const walks = walkRecords<{ raw: number }>({
+  max: envInt('JELLYFIN_PAGE_LENGTH_CACHE_MAX', 2000, 1),
+  maxIds: 200 * WALK_CURSOR_MAX_IDS,
+  ttlMs: envInt('JELLYFIN_WALK_CURSOR_TTL', 600, 60) * 1000,
+  seenCap: WALK_CURSOR_MAX_IDS,
+});
+
+const EMPTY_RESTARTS_MAX = 3;
+const emptyRestarts = new LRUCache<string, number>({
   max: envInt('JELLYFIN_PAGE_LENGTH_CACHE_MAX', 2000, 1),
   ttl: envInt('JELLYFIN_WALK_CURSOR_TTL', 600, 60) * 1000,
 });
-
-const WALK_CURSOR_MAX_IDS = 5000;
 
 /**
  * `skip` is an absolute offset, but the catalog route rounds it up to a whole
@@ -434,20 +515,26 @@ export async function fetchWindow(
 
   if (!pageLength && startIndex > 0 && !filtering) {
     const probe = await fetchCatalogPage(userUUID, catalog.type, catalog.id, extras, tags);
+    noteSourceCount(pageKey, probe);
     if (probe && advanceOf(probe) > 0) {
       pageLength = pageSizes.get(probe) ?? advanceOf(probe);
       rememberLength('page', pageKey, pageLength);
     }
   }
 
-  const cursor = pageLength && startIndex > 0 ? walkCursors.get(`${lengthKey}@${startIndex}`) : undefined;
+  // A window resumes where a walk stopped. Short of that place, only a filtered one reads on from an earlier place,
+  // as it has to count its way there anyway; any other jump goes straight to its page. A filtered walk that found
+  // nothing leaves a place at its own start, so asking again reads on instead of over the same pages.
+  const found = pageLength && (startIndex > 0 || filtering) ? walks.resume(lengthKey, startIndex) : null;
+  const resumed = found && (filtering || found.place.at === startIndex) ? found : null;
+  const cursor = resumed ? { raw: resumed.place.state.raw, seen: resumed.seen } : undefined;
   const minRaw = cursor ? cursor.raw : 0;
 
   let sequential = servedCatalogs.has(pageKey);
   const alignedSkip = sequential
     ? (cursor ? cursor.raw : filtering ? 0 : startIndex)
     : cursor ? Math.floor(cursor.raw / pageLength!) * pageLength! : filtering ? 0 : pageLength ? Math.floor(startIndex / pageLength) * pageLength : startIndex;
-  let offset = cursor ? 0 : startIndex - alignedSkip;
+  let offset = resumed ? startIndex - resumed.place.at : startIndex - alignedSkip;
 
   const collected: any[] = [];
   const rawAt: number[] = [];
@@ -457,17 +544,33 @@ export async function fetchWindow(
   let exhausted = false;
   let failed = false;
   let randomize = false;
-  let budget = maxPages((offset + limit) * (filtering ? 2 : 1), pageLength || 0);
 
   // A length counts what a client was shown, which runs behind the catalog's own
   // positions a cursor walks by, so it would end that walk early.
   const knownLength = filtering || cursor ? undefined : catalogLengths.get(lengthKey);
   const minPage = envInt('JELLYFIN_CATALOG_MIN_PAGE', 10, 1);
+  const ceilingPages = envInt('JELLYFIN_FILTER_SCAN_MAX_PAGES', 50, 1);
+  // A filter on item types alone keeps most of a catalog, as a plain browse does, so only the others stop at the ceiling.
+  const sparse = !!pick || keepKey.includes('|');
+  // One request reads only so many pages of such a filter, so a jump deep into one fills over a few requests rather
+  // than reading to the ceiling at once.
+  const perRequest = envInt('JELLYFIN_FILTER_PAGES_PER_REQUEST', 10, 1);
+  const budgetFor = (length: number): number => {
+    const wanted = maxPages((offset + limit) * (filtering ? 2 : 1), length);
+    return sparse ? Math.min(wanted, perRequest) : wanted;
+  };
+  let budget = budgetFor(pageLength || 0);
+  let capped = false;
   let stop = false;
   let staleRun = 0;
 
   while (!stop && collected.length < offset + limit && pages < budget) {
     if (knownLength !== undefined && skip >= knownLength) {
+      exhausted = true;
+      break;
+    }
+    if (sparse && pageLength && skip >= ceilingPages * pageLength) {
+      capped = true;
       exhausted = true;
       break;
     }
@@ -493,6 +596,7 @@ export async function fetchWindow(
         stop = true;
         break;
       }
+      noteSourceCount(pageKey, page);
       if (randomizedPages.has(page)) randomize = true;
       if (servedPages.has(page) && !sequential) {
         sequential = true;
@@ -508,7 +612,7 @@ export async function fetchWindow(
       if (first && i === 0 && !pageLength && (pageSizes.has(page) || advance >= minPage)) {
         pageLength = pageSizes.get(page) ?? advance;
         rememberLength('page', pageKey, pageLength);
-        budget = maxPages((offset + limit) * (filtering ? 2 : 1), pageLength);
+        budget = budgetFor(pageLength);
       }
 
       const candidates: Array<{ meta: any; at: number }> = [];
@@ -547,29 +651,66 @@ export async function fetchWindow(
     }
   }
 
-  if (exhausted && !failed) rememberLength('catalog', lengthKey, startIndex - offset + collected.length);
+  // Only a window placed exactly may record the list's length or leave a cursor: one mapped from a page number
+  // is off by the repeats before it, and would carry that into every later page.
+  const exact = filtering || startIndex === 0 || !!cursor;
+  const ended = exhausted && !failed;
+  const reached = startIndex - offset + collected.length;
+  if (ended && exact) rememberLength('catalog', lengthKey, reached);
+  // A filter known only by its function, or a pick on the viewer's own state, keeps less than the source counted.
+  const listLength = listLengthOf(lengthKey, pageKey, !pick && (!keep || !!keepKey) && sourceCountStands(catalog, extras, keepKey));
 
   // Duplicates are dropped above, so trimming by count would cut into the window
   // itself; the offset only ever covers items that came before startIndex.
   if (offset > collected.length) offset = collected.length;
   const items = collected.slice(offset, offset + limit);
 
-  // Only a window placed exactly may leave a cursor: one mapped from a page number
-  // is off by the repeats before it, and would carry that into every later page.
-  const exact = filtering || startIndex === 0 || !!cursor;
-  if (exact && items.length > 0) {
-    const shown = [...(cursor?.seen ?? []), ...collected.slice(0, offset + items.length).map((meta) => String(meta.id))];
-    if (shown.length <= WALK_CURSOR_MAX_IDS) {
-      walkCursors.set(`${lengthKey}@${startIndex + items.length}`, { raw: rawAt[offset + items.length - 1] + 1, seen: shown });
+  // A filtered walk that stopped without overfilling read everything before `skip`: what it did not keep there was
+  // filtered out. Stopping short of the window means the budget ran out first.
+  const scannedToSkip = filtering && !exhausted && !failed && collected.length <= offset + limit;
+  let truncated = scannedToSkip && collected.length < offset + limit;
+
+  // A filtered window that found nothing and leaves no place to read on from starts over each time, and a client told
+  // there is more keeps asking. After a few starts over at the same place, the list ends there instead.
+  let closed = false;
+  if (truncated && items.length === 0 && (!resumed || pick)) {
+    const restartKey = `${lengthKey}#${startIndex}`;
+    const restarts = (emptyRestarts.get(restartKey) ?? 0) + 1;
+    if (restarts >= EMPTY_RESTARTS_MAX) {
+      closed = true;
+      truncated = false;
+      capped = true;
+      emptyRestarts.delete(restartKey);
+    } else {
+      emptyRestarts.set(restartKey, restarts);
     }
   }
 
+  if (exact && items.length > 0) {
+    const shown = collected.slice(0, offset + items.length).map((meta) => String(meta.id));
+    const raw = scannedToSkip ? skip : rawAt[offset + items.length - 1] + 1;
+    walks.save(lengthKey, resumed, shown, startIndex + items.length, { raw });
+  } else if (truncated && !pick) {
+    // Not for a pick on the viewer's own state: a title marked after this read would sit before the place, unseen.
+    walks.save(lengthKey, resumed, collected.slice(0, offset).map((meta) => String(meta.id)), reached, { raw: skip });
+  }
+
+  if (closed) logger.debug(`Filtered walk of ${catalog.type}/${catalog.id} ended with nothing found and no place to read on from (${keepKey || 'no key'})`);
+  else if (capped) logger.debug(`Filtered walk of ${catalog.type}/${catalog.id} stopped at its ${ceilingPages}-page ceiling (${keepKey || 'no key'})`);
+
+  // A walk cut short by its page budget has more behind it, even if the window is short.
+  const hasMore = !closed && (collected.length > offset + limit || (!exhausted && !failed));
+
   return {
     items,
-    // A walk cut short by its page budget has more behind it, even if the window is short.
-    hasMore: collected.length > offset + limit || (!exhausted && !failed),
+    hasMore,
     ...(failed ? { failed: true } : {}),
+    // An exact window that ended has just recorded its own length; any other reports the one held.
+    ...(ended && listLength !== undefined ? { length: listLength } : {}),
+    ...(hasMore && listLength !== undefined ? { listed: listLength } : {}),
     ...(randomize ? { randomize: true } : {}),
+    ...(truncated ? { truncated: true } : {}),
+    ...(capped ? { capped: true } : {}),
   };
 }
 
@@ -619,11 +760,11 @@ function externalUrls(ids: Record<string, string>, show: boolean): Array<{ Name:
   return LINKS.filter(([key]) => ids[key]).map(([key, name, url]) => ({ Name: name, Url: url(ids[key], show) }));
 }
 
-const CONTINUING = new Set(['continuing', 'returning series', 'running', 'ongoing', 'currently_airing', 'current']);
-const ENDED = new Set(['ended', 'canceled', 'cancelled', 'finished_airing', 'finished']);
+const CONTINUING = new Set(['continuing', 'returning series', 'running', 'ongoing', 'currently airing', 'current', 'releasing']);
+const ENDED = new Set(['ended', 'canceled', 'cancelled', 'finished airing', 'finished']);
 
 export function seriesStatus(meta: any): 'Continuing' | 'Ended' | undefined {
-  const status = String(meta.status ?? '').trim().toLowerCase();
+  const status = String(meta.status ?? '').trim().toLowerCase().replace(/[\s_]+/g, ' ');
   if (CONTINUING.has(status)) return 'Continuing';
   if (ENDED.has(status)) return 'Ended';
   const info = String(meta.releaseInfo ?? '');
@@ -637,12 +778,16 @@ function endDate(meta: any): string | null {
   return end ? new Date(Date.UTC(Number(end), 11, 31)).toISOString() : null;
 }
 
+export function personIdOf(member: { name?: unknown; tmdbId?: unknown; tvdbId?: unknown } | null | undefined): string {
+  const source = Number(member?.tvdbId) > 0 ? { s: 'tvdb' as const, x: Number(member!.tvdbId) }
+    : Number(member?.tmdbId) > 0 ? { s: 'tmdb' as const, x: Number(member!.tmdbId) } : {};
+  return encodeJellyfinId({ k: 'person', n: String(member?.name || ''), ...source });
+}
+
 function peopleFrom(meta: any, serverId: string): any[] {
   const extras = meta.app_extras || {};
   const person = (member: any, type: string, role: string) => {
-    const source = Number(member?.tvdbId) > 0 ? { s: 'tvdb' as const, x: Number(member.tvdbId) }
-      : Number(member?.tmdbId) > 0 ? { s: 'tmdb' as const, x: Number(member.tmdbId) } : {};
-    const id = encodeJellyfinId({ k: 'person', n: String(member?.name || ''), ...source });
+    const id = personIdOf(member);
     // A client only asks for a portrait when the tag is present, so registering
     // the photo and setting it have to happen together.
     if (member?.photo) rememberImages(serverId, id, { primary: member.photo });
@@ -698,7 +843,7 @@ function premiereDate(meta: any): string | null {
   return Number.isFinite(year) ? new Date(Date.UTC(year, 0, 1)).toISOString() : null;
 }
 
-function productionYear(meta: any): number | null {
+export function productionYear(meta: any): number | null {
   const raw = String(meta.year || meta.releaseInfo || '').slice(0, 4);
   const year = parseInt(raw, 10);
   return Number.isFinite(year) ? year : null;
@@ -798,9 +943,41 @@ export function metaToBaseItem(
   };
 }
 
+export function studioNamesOf(meta: any): string[] {
+  return [...new Set([...(Array.isArray(meta?.studios) ? meta.studios : []), ...(Array.isArray(meta?.networks) ? meta.networks : [])].filter((name) => typeof name === 'string' && name))];
+}
+
+/** A title's studios as Id descriptors, carrying the provider and its id where the title's metadata named them. */
+export function studioDescriptorsOf(meta: any): Array<{ k: 'studio'; n: string; s?: 'tmdb-company' | 'tmdb-network' | 'tvdb' | 'mal'; x?: number }> {
+  const refs: any[] = Array.isArray(meta?._studioRefs) ? meta._studioRefs : [];
+  return studioNamesOf(meta).map((name) => {
+    const ref = refs.find((candidate) => candidate?.name === name);
+    return ref ? { k: 'studio' as const, n: name, s: ref.source, x: Number(ref.id) } : { k: 'studio' as const, n: name };
+  });
+}
+
+/** The Id titles carried for a studio before studio Ids could be decoded; still matched for links clients kept. */
+export function legacyStudioId(name: string): string {
+  return createHash('md5').update(`studio:${name}`).digest('hex');
+}
+
+// A page names the same few studios on many titles; each Id is worked out once, as encoding one costs several cache writes.
+const studioIds = new Map<string, string>();
+const STUDIO_IDS_MAX = 20000;
+
+function studioIdOf(descriptor: ReturnType<typeof studioDescriptorsOf>[number]): string {
+  const key = `${descriptor.n}\u0000${descriptor.s ?? ''}\u0000${descriptor.x ?? ''}`;
+  const known = studioIds.get(key);
+  // An Id whose save failed is encoded again, which queues it to be saved once more.
+  if (known && jellyfinIdQueued(known)) return known;
+  if (!known && studioIds.size >= STUDIO_IDS_MAX) studioIds.clear();
+  const id = encodeJellyfinId(descriptor);
+  studioIds.set(key, id);
+  return id;
+}
+
 function studiosOf(meta: any): any[] {
-  const names = [...new Set([...(Array.isArray(meta.studios) ? meta.studios : []), ...(Array.isArray(meta.networks) ? meta.networks : [])].filter((name) => typeof name === 'string' && name))];
-  return names.map((name) => ({ Name: name, Id: createHash('md5').update(`studio:${name}`).digest('hex') }));
+  return studioDescriptorsOf(meta).map((descriptor) => ({ Name: descriptor.n, Id: studioIdOf(descriptor) }));
 }
 
 function countriesOf(meta: any): string[] {
@@ -889,11 +1066,13 @@ const SORT_VALUES: Record<string, (item: any) => number | string | null> = {
   sortname: (item) => item?.SortName ?? item?.Name ?? null,
 };
 
+const NAME_ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
 // A missing value sorts lowest, so it comes last when descending.
 function compareSortValues(a: number | string | null, b: number | string | null): number {
   if (a === null || b === null) return a === b ? 0 : a === null ? -1 : 1;
   if (typeof a === 'number' && typeof b === 'number') return a - b;
-  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  return NAME_ORDER.compare(String(a), String(b));
 }
 
 /** Orders a list by SortBy and SortOrder; a key without its own order takes the first, and unknown keys change nothing. */
@@ -957,25 +1136,102 @@ export function officialRatingOf(meta: any): string | null {
   return ratingFields(meta).OfficialRating;
 }
 
-/** Keeps the titles of the asked types and, when asked, ratings; a title with no rating matches no rating. */
+/** The years a request keeps, from Jellyfin's comma or pipe separated Years; null keeps every title. */
+export function wantedYears(years: unknown): Set<number> | null {
+  const list = String(years ?? '').split(/[|,]/).map((year) => Number(year.trim())).filter((year) => Number.isInteger(year) && year > 0);
+  return list.length ? new Set(list) : null;
+}
+
+/** The studios a request keeps: lowercased names, Ids titles carried before studio Ids decoded, and provider ids where known. */
+export interface StudioFilter {
+  names: Set<string>;
+  legacy: Set<string>;
+  refs: Array<{ name: string; source: 'tmdb-company' | 'tmdb-network' | 'tvdb' | 'mal'; id: number }>;
+}
+
+function fromStudio(meta: any, studios: StudioFilter): boolean {
+  return studioNamesOf(meta).some((name) => studios.names.has(name.toLowerCase()) || studios.legacy.has(legacyStudioId(name)));
+}
+
+/** The keyword, rating, series status and folder filters a request names; each is null when it names none. */
+export interface ExtraFilters {
+  tags: Set<string> | null;
+  minRating: number | null;
+  statuses: Set<string> | null;
+  folders: 'folder' | 'item' | null;
+}
+
+// Jellyfin's series statuses as titles here carry them; one no title carries, such as Unreleased, matches none.
+const SERIES_STATUSES: Record<string, string> = { continuing: 'Continuing', ended: 'Ended', unreleased: 'Unreleased' };
+
+export function extraFiltersOf(query: Record<string, unknown>): ExtraFilters {
+  const rating = parseRating(query.MinCommunityRating ?? query.minCommunityRating);
+  const statuses = String(query.SeriesStatus ?? query.seriesStatus ?? '').split(',').map((s) => s.trim()).filter(Boolean).map((s) => SERIES_STATUSES[s.toLowerCase()] ?? s);
+  const filters = String(query.Filters ?? query.filters ?? '').split(',').map((f) => f.trim());
+  return {
+    tags: wantedTags(query.Tags ?? query.tags),
+    minRating: rating,
+    statuses: statuses.length ? new Set(statuses) : null,
+    folders: filters.includes('IsFolder') ? 'folder' : filters.includes('IsNotFolder') ? 'item' : null,
+  };
+}
+
+function passesExtra(meta: any, mediaType: string, extra: ExtraFilters): boolean {
+  if (extra.tags) {
+    const anime = extra.tags.has(ANIME_TAG) && (isAnimeCatalogType(mediaType) || PER_ENTRY_ANIME.test(String(meta?.id ?? '')));
+    const keywords = (Array.isArray(meta?.keywords) ? meta.keywords : []).map((k: unknown) => String(k).toLowerCase());
+    if (!anime && !keywords.some((k: string) => extra.tags!.has(k))) return false;
+  }
+  if (extra.minRating !== null && (parseRating(meta?.imdbRating) ?? -1) < extra.minRating) return false;
+  const type = itemTypeOf(meta, mediaType);
+  if (extra.statuses && !(type === 'Series' && extra.statuses.has(seriesStatus(meta) ?? ''))) return false;
+  if (extra.folders === 'folder' && type === 'Movie') return false;
+  if (extra.folders === 'item' && type !== 'Movie') return false;
+  return true;
+}
+
+const hasExtra = (extra?: ExtraFilters | null): extra is ExtraFilters =>
+  Boolean(extra && (extra.tags || extra.minRating !== null || extra.statuses || extra.folders));
+
+/** Keeps the titles of the asked types and, when asked, ratings, years, studios and the extra filters; a title lacking the field matches none. */
 export function includeTypesFilter(
   mediaType: string,
   includeItemTypes: string | undefined,
-  officialRatings?: unknown
+  officialRatings?: unknown,
+  years?: unknown,
+  studios?: StudioFilter | null,
+  extra?: ExtraFilters | null
 ): ((meta: any) => boolean) | undefined {
   const wanted = wantedTypes(includeItemTypes);
   const ratings = wantedRatings(officialRatings);
-  if (!wanted && !ratings) return undefined;
+  const yearSet = wantedYears(years);
+  const extras = hasExtra(extra) ? extra : null;
+  if (!wanted && !ratings && !yearSet && !studios && !extras) return undefined;
 
   return (meta: any) =>
     (!wanted || wanted.has(itemTypeOf(meta, mediaType)))
-    && (!ratings || ratings.has(String(officialRatingOf(meta) ?? '').toUpperCase()));
+    && (!ratings || ratings.has(String(officialRatingOf(meta) ?? '').toUpperCase()))
+    && (!yearSet || yearSet.has(productionYear(meta) ?? -1))
+    && (!studios || fromStudio(meta, studios))
+    && (!extras || passesExtra(meta, mediaType, extras));
 }
 
-/** What a filtered list's lengths and cursors are held under: its types, and its ratings when it names any. */
-export function listFilterKey(includeItemTypes: unknown, officialRatings?: unknown): string {
+function extraKey(extra?: ExtraFilters | null): string {
+  if (!hasExtra(extra)) return '';
+  return [
+    extra.tags ? `|tags:${[...extra.tags].sort().join('|')}` : '',
+    extra.minRating !== null ? `|minrating:${extra.minRating}` : '',
+    extra.statuses ? `|status:${[...extra.statuses].sort().join('|')}` : '',
+    extra.folders ? `|folders:${extra.folders}` : '',
+  ].join('');
+}
+
+/** What a filtered list's lengths and cursors are held under: its types, and each other filter only when it names one. */
+export function listFilterKey(includeItemTypes: unknown, officialRatings?: unknown, years?: unknown, studios?: StudioFilter | null, extra?: ExtraFilters | null): string {
   const ratings = wantedRatings(officialRatings);
-  return `${includeItemTypes ? String(includeItemTypes) : ''}${ratings ? `|ratings:${[...ratings].sort().join('|')}` : ''}`;
+  const yearSet = wantedYears(years);
+  const studioKey = studios ? `|studios:${[...[...studios.names].sort(), ...[...studios.legacy].sort()].join('|')}` : '';
+  return `${includeItemTypes ? String(includeItemTypes) : ''}${ratings ? `|ratings:${[...ratings].sort().join('|')}` : ''}${yearSet ? `|years:${[...yearSet].sort((a, b) => a - b).join('|')}` : ''}${studioKey}${extraKey(extra)}`;
 }
 
 // A catalog built here holds only its declared type: films and TVDB collections in a movie one, shows in a

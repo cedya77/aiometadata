@@ -4,6 +4,8 @@ import { AdminProvider } from './contexts/AdminContext';
 import { SaveProvider } from './contexts/SaveContext';
 import { Toaster } from "@/components/ui/sonner";
 import { useConfig } from './contexts/ConfigContext';
+import { isOwnPage } from './lib/ownPage';
+import OwnPage from './components/dashboard/OwnPage';
 
 function AppContent() {
   const { config } = useConfig();
@@ -40,6 +42,7 @@ function AppContent() {
 }
 
 function App() {
+  if (isOwnPage()) return <OwnPage />;
   return (
     <AdminProvider>
       <AppContent />

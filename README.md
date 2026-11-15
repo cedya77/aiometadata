@@ -174,9 +174,51 @@ We welcome community contributions! However, to keep review times manageable, we
 
 ---
 
+## 📋 Operator obligations
+
+The license of this code does not cover the data it fetches. Whoever runs an
+instance is bound by the terms of every provider it talks to, and is the API
+licensee for any server-wide keys it configures (the `BUILT_IN_*_API_KEY`
+settings serve every user of that instance under the operator's account).
+
+- **TMDB.** The standard TMDB API license does not permit commercial use; that
+  needs a separate written agreement with TMDB. Any instance must show TMDB's
+  attribution (see below).
+- **IMDb datasets** (`datasets.imdbws.com`, used for IMDb ratings). Available
+  for personal and non-commercial use only. An instance run commercially must
+  not use this feature.
+- **TVDB, Trakt, Simkl, MyAnimeList, AniList, Kitsu, Fanart.tv, MDBList, RPDB,
+  MovieLens, Letterboxd, Gemini and OpenRouter** each have their own API terms.
+  Several restrict commercial use or require you to register your own app.
+  Read the current terms of every provider you enable before you offer an
+  instance to anyone else.
+
+### TMDB attribution
+
+<img src="public/tmdb_icon.png" alt="TMDB" height="24">
+
+This product uses TMDB and the TMDB APIs but is not endorsed, certified, or
+otherwise approved by TMDB.
+
+---
+
 ## 📄 License
 
-GPL-3.0 — see [LICENSE](LICENSE).
+AIOMetadata v4 is source-available. The core is under the
+[GNU AGPL-3.0-or-later](LICENSE), with an additional permission that lets it be
+combined with the v4 feature modules. The feature modules (the Jellyfin server,
+the trackers and the dashboard) are under the
+[Functional Source License 1.1, ALv2 Future License](LICENSE-FSL.md). Each
+release of them becomes Apache-2.0 two years after it is published.
+
+In short: running it for yourself, your household or your organization is
+fine, and so is modifying it. Offering v4 as a commercial hosted service is
+not, until the release you run turns Apache-2.0. v3.8.3 and earlier keep the
+GPL-3.0 they were released under.
+
+[LICENSING.md](LICENSING.md) says which files are under which license and
+answers common questions. [NOTICE](NOTICE) carries the notices for earlier and
+bundled work, and [TRADEMARKS.md](TRADEMARKS.md) covers the name and logo.
 
 ---
 

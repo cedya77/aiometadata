@@ -11,6 +11,7 @@ import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
 import { fetchResume, parseResumeItems, fetchListPage, parseListItems, fetchPickItems, parsePickItems, publicMetaDBListType, publicMetaDBListId, WATCHLIST_CATALOG_ID } from "../utils/publicmetadbUtils.js";
 import { mapWithLimit } from "../utils/concurrency.js";
 import { envInt } from '../utils/envNumber';
+import { MERGED_CATALOG_MODE, mergeModeOf } from './collectionBuilder/mergeModes';
 const anilist = require('./anilist');
 const idMapper = require('./id-mapper');
 import { createHash } from 'crypto';
@@ -24,11 +25,13 @@ import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
 import { cacheWrapTvdbApi, cacheWrap, cacheWrapCatalog, cacheWrapAniListCatalog, cacheWrapJikanApi, cacheWrapGlobal, classifyResultAllowEmpty, stableStringify, CATALOG_TTL } from './getCache.js';
 import { applyCatalogKeyArgs, applyCatalogKeyStamps, hiddenCatalogGenre } from './catalogKeyArgs.js';
-import { endOfList } from './catalogPagination';
+import { endOfList, withListedTotal } from './catalogPagination';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
+import { tmdbCertificationFilter } from '../utils/ageRating';
 import { getMeta } from './getMeta.js';
 import { fetchLumiereList, lumiereApiBase, lumiereListOf } from '../utils/lumiereLists.js';
 const { getSetting }: any = require('./settingsService');
+const { resolveSeriesRuntime }: any = require('./tmdbSeriesRuntime');
 import { resolveDynamicTmdbDiscoverParams } from './tmdbDiscoverDateTokens.js';
 import { roundRobinInterleaveTagged, mergedDedupKey, filterMetasByGenre, normalizeGenreKey } from '../utils/mergedCatalog.js';
 const { getTvmazeScheduleCatalog } = require('./tvmazeScheduleCatalog');
@@ -1066,6 +1069,9 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       metas = stampListedAt(metas, response.items, (item: any) => ({ imdb: item?.imdb_id, tmdb: item?.id, tvdb: item?.tvdb_id }), (item: any) => item?.watchlist_at);
     }
 
+    // A split catalog serves one type's share of a count that covers both.
+    if (unified !== false) withListedTotal(metas, response.totalItems);
+
     return metas;
   }
 
@@ -1107,6 +1113,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       }
     }
     const discoverPage = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
+    // TMDB discover serves no page past its 500th.
+    if (discoverPage > 500) return endOfList();
     const resolvedParams = resolveDynamicTmdbDiscoverParams(rawParams, { timezone: config.timezone });
     const parameters = sanitizeTmdbDiscoverParams(
       resolvedParams,
@@ -1136,6 +1144,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
     try {
       let results: any[];
+      // Left unset under a runtime filter, which narrows the list locally.
+      let reportedTotal: unknown;
       if (runtimeGte === null && runtimeLte === null) {
         const response = mediaType === 'movie'
           ? await moviedb.discoverMovie(parameters, config)
@@ -1146,6 +1156,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
           return Array.isArray(response?.results) && discoverPage > (response.total_pages ?? 0) ? endOfList() : [];
         }
         results = response.results;
+        reportedTotal = (response as any).total_results;
       } else {
         const filtered = await runtimeFilteredDiscoverPage({
           parameters, page: discoverPage, runtimeGte, runtimeLte, language, config,
@@ -1179,7 +1190,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
       const validMetas = metas.filter(meta => meta !== null);
       logger.success(`[TMDB Discover] Processed ${validMetas.length} items for ${id}`);
-      return validMetas;
+      return withTmdbListedTotal(validMetas, reportedTotal);
     } catch (error: any) {
       logger.error(`[TMDB Discover] Error fetching catalog ${id}: ${error.message}`);
       return [];
@@ -1365,6 +1376,10 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       let validMetas = metas.filter(meta => meta !== null);
 
       logger.success(`[TMDB List] Processed ${validMetas.length} items for list ${listId}`);
+      // The list's count covers every entry, so it only fits a page nothing was
+      // narrowed out of. A list that reports no count comes through as 0.
+      const narrowed = !isUnified || type !== 'all' || (!!genre && genre.toLowerCase() !== 'none');
+      if (!narrowed && result.total_results > 0) withListedTotal(validMetas, result.total_results);
       return validMetas;
       
     } catch (error: any) {
@@ -1373,6 +1388,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     }
   }
 
+  // TMDB discover serves no page past its 500th.
+  if (page > 500) return endOfList();
   const genreList = await getGenreList('tmdb', language, type as "movie" | "series", config);
   const parameters = await buildParameters(type, language, page, id, genre, genreList, config);
 
@@ -1426,14 +1443,21 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   }));
 
   let validMetas = metas.filter(meta => meta !== null);
-  
-  return validMetas;
+
+  return withTmdbListedTotal(validMetas, res.total_results);
   } else {
     return [];
   }
 }
 
 const TMDB_DISCOVER_PAGE_SIZE = 20;
+// TMDB serves at most 500 pages of 20, whatever total it reports.
+const TMDB_MAX_LISTED = 500 * TMDB_DISCOVER_PAGE_SIZE;
+
+function withTmdbListedTotal(metas: any[], totalResults: unknown): any[] {
+  if (typeof totalResults !== 'number') return metas;
+  return withListedTotal(metas, Math.min(totalResults, TMDB_MAX_LISTED));
+}
 
 async function runtimeFilteredDiscoverPage(opts: {
   parameters: Record<string, any>;
@@ -1452,19 +1476,16 @@ async function runtimeFilteredDiscoverPage(opts: {
 
   const kept: number[] = [];
   let ended = false;
-  for (let tmdbPage = 1; kept.length < wanted && tmdbPage <= lastScanned; tmdbPage++) {
+  // TMDB discover serves no page past its 500th, so the scan ends there however many pages TMDB says it has.
+  for (let tmdbPage = 1; kept.length < wanted && tmdbPage <= Math.min(lastScanned, 500); tmdbPage++) {
     const chunk = await cacheWrapGlobal(`tmdb-discover-runtime:v1:${signature}:${tmdbPage}`, async () => {
       const response = await moviedb.discoverTv({ ...parameters, page: tmdbPage }, config);
       if (!response || !Array.isArray(response.results)) throw new Error(`TMDB discover page ${tmdbPage} came back without results`);
       const checked = await mapWithLimit(response.results, async (item: any) => {
         try {
           const details = await moviedb.tvInfo({ id: item.id, language }, config);
-          const runtime = [
-            details?.episode_run_time?.[0],
-            details?.last_episode_to_air?.runtime,
-            details?.next_episode_to_air?.runtime,
-          ].find((r: any) => typeof r === 'number' && r > 0);
-          if (runtime === undefined) return item.id;
+          const runtime: number | null = await resolveSeriesRuntime(details);
+          if (runtime === null) return item.id;
           if (runtimeGte !== null && runtime < runtimeGte) return null;
           if (runtimeLte !== null && runtime > runtimeLte) return null;
           return item.id;
@@ -1475,7 +1496,7 @@ async function runtimeFilteredDiscoverPage(opts: {
       return { ids: checked.filter((tmdbId: any) => tmdbId !== null), totalPages: Number(response.total_pages) || 0 };
     }, ttl, { resultClassifier: classifyResultAllowEmpty });
     kept.push(...(chunk?.ids || []));
-    if (tmdbPage >= (chunk?.totalPages || 0)) {
+    if (tmdbPage >= Math.min(chunk?.totalPages || 0, 500)) {
       ended = true;
       break;
     }
@@ -1503,28 +1524,8 @@ async function buildParameters(type: string, language: string, page: number, id:
   }*/
   parameters.include_adult = config.includeAdult;
 
-  if (config.ageRating) {
-    switch (config.ageRating) {
-      case "G":
-        parameters.certification_country = "US";
-        parameters.certification = type === "movie" ? "G" : ["TV-Y", "TV-Y7", "TV-G"].join("|");
-        break;
-      case "PG":
-        parameters.certification_country = "US";
-        parameters.certification = type === "movie" ? ["G", "PG"].join("|") : ["TV-Y", "TV-Y7", "TV-G", "TV-PG"].join("|");
-        break;
-      case "PG-13":
-        parameters.certification_country = "US";
-        parameters.certification = type === "movie" ? ["G", "PG", "PG-13"].join("|") : ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14"].join("|");
-        break;
-      case "R":
-        parameters.certification_country = "US";
-        parameters.certification = type === "movie" ? ["G", "PG", "PG-13", "R"].join("|") : ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"].join("|");
-        break;
-      case "NC-17":
-        break;
-    }
-  }
+  const certificationFilter = tmdbCertificationFilter(config.ageRating, type === "movie" ? "movie" : "tv");
+  if (certificationFilter) Object.assign(parameters, certificationFilter);
 
   if (id.includes("streaming")) {
     const provider = findProvider(id.split(".")[1]);
@@ -2413,7 +2414,7 @@ async function getTraktCatalog(
     logger.info(`Up Next: parseTraktItems took ${parseTime}ms for ${response.items.length} items`);
     
     logger.success(`[Trakt] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
-    return metas;
+    return withListedTotal(metas, response.totalItems);
     
   } catch (err: any) {
     if (attempt === 0 && err.response?.status === 401 && config.apiKeys?.traktTokenId) {
@@ -2967,7 +2968,12 @@ async function getMovieLensCatalog(
     const genreName = genre && genre.toLowerCase() !== 'none' ? genre.toLowerCase() : undefined;
 
     const isList = catalogId.startsWith('movielens.list.');
+    const isWatchlist = catalogId === 'movielens.watchlist';
     const isExplore = catalogId.startsWith('movielens.explore');
+    if (!isList && !isWatchlist && !isExplore) {
+      logger.warn(`[MovieLens] Unknown catalog id ${catalogId}`);
+      return [];
+    }
 
     const metadata: any = catalogConfig?.metadata || {};
     const sortBy = metadata.sortBy || 'prediction';
@@ -2975,15 +2981,17 @@ async function getMovieLensCatalog(
     const maxYear = metadata.maxYear;
     const minPop = metadata.minPop ?? (sortBy === 'avgRating' ? 100 : sortBy === 'releaseDate' ? 20 : undefined);
     const maxDaysAgo = metadata.maxDaysAgo;
-    // always exclude unreleased titles from "explore" catalogs.
-    // but obey API rule: drop maxFutureDays if the user wants maxYear instead.
-    const maxFutureDays = maxYear !== undefined
+    // Explore catalogs never show unreleased titles unless the catalog says otherwise.
+    // The API ignores maxYear whenever maxFutureDays is present, so a maxYear wins.
+    const maxFutureDays = maxYear
       ? undefined
-      : (metadata.maxFutureDays ?? (isExplore ? 0 : undefined));
+      : (metadata.maxFutureDays ?? 0);
     const sortDirection = metadata.sortDirection;
-    // always include rated movies if sorting by "your rating".
-    const onlyIncludeRated = sortBy === 'userRating' || sortBy === 'userRatedDate';
-    const includeRated = onlyIncludeRated || metadata.includeRated === true;
+    // Sorting by your own rating (or its date) means "only titles you rated".
+    const ratedOnly = sortBy === 'userRating' || sortBy === 'userRatedDate';
+    const includeRated = ratedOnly || metadata.includeRated === true;
+    const hasRated: 'yes' | 'no' | undefined = ratedOnly ? 'yes' : (includeRated ? undefined : 'no');
+    const ratedKey = ratedOnly ? 'ronly' : (includeRated ? 'r1' : 'r0');
     let tag = String(metadata.tags || '')
       .split(',').map((s: string) => s.trim()).filter(Boolean).join(',') || undefined;
 
@@ -2991,13 +2999,13 @@ async function getMovieLensCatalog(
       const metaTtl = parseInt(
         process.env.MOVIELENS_USERMETA_TTL_SECONDS || process.env.MOVIELENS_GROUPTAGS_TTL_SECONDS || '43200', 10);
       const userMeta: any = await cacheWrapGlobal(`movielens-usermeta:${credId}`,
-        async () => movielens.getUserMeta(credId), metaTtl);
+        () => movielens.getUserMeta(credId), metaTtl);
       if (userMeta?.engineId === 'bard' && Array.isArray(userMeta.groupTags) && userMeta.groupTags.length) {
         tag = userMeta.groupTags.map((t: string) => t.trim()).filter(Boolean).join(',');
       }
     }
 
-    const filterKey = `${sortBy}:${sortDirection || ''}:${tag || ''}:${minYear || ''}:${maxYear || ''}:${minPop || ''}:${maxFutureDays ?? ''}:${maxDaysAgo || ''}:${includeRated ? (onlyIncludeRated ? 'r-y' : 'r-a') : 'r-n'}`;
+    const filterKey = `${sortBy}:${sortDirection || ''}:${tag || ''}:${minYear || ''}:${maxYear || ''}:${minPop || ''}:${maxFutureDays ?? ''}:${maxDaysAgo || ''}:${ratedKey}`;
     const cacheKey = `movielens-catalog:${credId}:${catalogId}:${genreName || 'all'}:${filterKey}:${page}:${pageSize}`;
     const items = await cacheWrapGlobal(cacheKey, async () => {
       if (isList) {
@@ -3018,13 +3026,11 @@ async function getMovieLensCatalog(
         }
         return collected.slice(offset, offset + pageSize);
       }
-      if (catalogId === 'movielens.watchlist') {
+      if (isWatchlist) {
         return movielens.wishlist(credId, { genre: genreName, page, pageSize });
       }
       return movielens.explore(credId, {
-        // "yes" = only rated, "no" = exclude rated, undefined = include both (all).
-        hasRated: includeRated ? (onlyIncludeRated ? 'yes' : undefined) : 'no',
-        sortBy, sortDirection, tag, genre: genreName, minYear, maxYear, minPop, maxFutureDays, maxDaysAgo, page, pageSize,
+        hasRated, sortBy, sortDirection, tag, genre: genreName, minYear, maxYear, minPop, maxFutureDays, maxDaysAgo, page, pageSize,
       });
     }, ttl, { resultClassifier: classifyResultAllowEmpty, sourceList: true });
     const windowItems = Array.isArray(items) ? items : [];
@@ -3109,6 +3115,8 @@ async function getSimklCatalog(
 
     let response: any;
     let listMediaType: string | undefined;
+    // Set by the catalogs that know the length of the whole list.
+    let listedTotal: number | undefined;
 
     if (catalogId.startsWith('simkl.discover.')) {
       const discoverMetadata = catalogConfig?.metadata?.discover || {};
@@ -3335,7 +3343,8 @@ async function getSimklCatalog(
         const endIndex = globalItemIndex + pageSize;
         const paginatedItems = allItems.slice(globalItemIndex, endIndex);
         const hasMore = endIndex < allItems.length;
-        
+        listedTotal = allItems.length;
+
         logger.debug(`[Simkl] Local pagination: ${allItems.length} total items, showing ${globalItemIndex}-${Math.min(endIndex, allItems.length)} (hasMore: ${hasMore})`);
         
         response = { items: paginatedItems, hasMore };
@@ -3371,6 +3380,8 @@ async function getSimklCatalog(
           type: it.type === 'movie' || it.anime_type === 'movie' ? 'movie' : 'series',
         }));
       response = { items, hasMore: result.hasMore };
+      // Known once the page falls in the list's last block, less what this page dropped.
+      if (result.totalItems !== undefined) listedTotal = result.totalItems - (result.items.length - items.length);
     } else {
       logger.warn(`[Simkl] Unknown catalog ID: ${catalogId}`);
       return [];
@@ -3398,7 +3409,7 @@ async function getSimklCatalog(
     logger.info(`[Simkl] parseSimklItems took ${parseTime}ms for ${response.items.length} items`);
     
     logger.success(`[Simkl] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
-    return metas;
+    return withListedTotal(metas, listedTotal);
     
   } catch (err: any) {
     const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
@@ -3533,7 +3544,7 @@ async function getPublicMetaDBCatalog(
       if (!listId) return [];
       const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
       const listType = catalogId === WATCHLIST_CATALOG_ID ? 'watchlist' : await publicMetaDBListType(config, catalogId);
-      const data = await fetchListPage(apiKey, listId, page, pageSize, listType === 'watchlist', publicMetaDBListTtl(catalogConfig)).catch((error: any) => {
+      const data = await fetchListPage(apiKey, listId, page, pageSize, listType === 'watchlist', publicMetaDBListTtl(catalogConfig)).catch((error: any): { items: any[]; total?: number } => {
         if (!String(error?.message || '').includes('403')) throw error;
         logger.warn(`[PublicMetaDB] List ${listId} is not on this account; it is a row left over from an older configuration. Remove it, or reinstall the addon in the client.`);
         return { items: [] };
@@ -3541,6 +3552,8 @@ async function getPublicMetaDBCatalog(
       let metas = await parseListItems(data.items || [], type, language, config);
       metas = stampListedAt(metas, data.items || [], (item: any) => ({ tmdb: item?.tmdb_id }), (item: any) => item?.created);
       logger.success(`[PublicMetaDB] ${listType === 'watchlist' ? 'Watchlist' : 'List'} ${listId}: ${metas.length} items (page ${page})`);
+      // The list counts films and shows together, which only an `all` catalog serves.
+      if (type === 'all') withListedTotal(metas, data.total);
       return metas;
     }
 
@@ -3551,6 +3564,7 @@ async function getPublicMetaDBCatalog(
       let metas = await parseListItems(data.items || [], type, language, config);
       metas = stampListedAt(metas, data.items || [], (item: any) => ({ tmdb: item?.tmdb_id }), (item: any) => item?.created);
       logger.success(`[PublicMetaDB] Public list ${listId}: ${metas.length} items (page ${page})`);
+      if (type === 'all') withListedTotal(metas, data.total);
       return metas;
     }
 
@@ -3607,7 +3621,7 @@ async function getMergedCatalog(
     logger.warn(`[Merged] No sources defined for ${catalogId}`);
     return [];
   }
-  const mergeMode: string = (catalogConfig as any).metadata?.mergeMode || 'interleaved';
+  const mergeMode = mergeModeOf((catalogConfig as any).metadata?.mergeMode, MERGED_CATALOG_MODE);
 
   const validSources = sources.filter((s: any) => {
     if (s.catalogId.startsWith('merged.')) {

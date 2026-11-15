@@ -21,7 +21,7 @@ const cache = new LRUCache<string, Descriptor>({
 });
 
 const persisted = new LRUCache<string, true>({
-  max: envInt('JELLYFIN_ID_PERSISTED_MAX', 50000, 1),
+  max: envInt('JELLYFIN_ID_PERSISTED_MAX', 100000, 1),
 });
 
 let pending: Array<{ id: string; payload: Descriptor; codecVersion: number }> = [];
@@ -65,6 +65,11 @@ export function encodeJellyfinId(raw: Descriptor): string {
   }
 
   return id;
+}
+
+/** Whether a hashed Id is saved or on its way to being saved; one whose save failed is not, until it is encoded again. */
+export function jellyfinIdQueued(id: string): boolean {
+  return persisted.has(id);
 }
 
 export async function decodeJellyfinId(raw: string): Promise<Descriptor | null> {

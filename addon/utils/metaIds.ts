@@ -1,6 +1,8 @@
 /**
  * The id vocabulary a meta can carry. Prefixed ids live in `meta.id`, and the
  * providers also hang their own resolved ids off `_`-prefixed properties.
+ * `id` is the meta's own id exactly as served (e.g. `mal:16498`, `tt0111161`),
+ * with no prefix stripped; custom art patterns expose it as `{id}`.
  */
 export interface MetaIds {
   id?: string;

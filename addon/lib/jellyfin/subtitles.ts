@@ -243,25 +243,37 @@ export function parseCues(input: string): Cue[] {
   return cues;
 }
 
+function withoutOverrideTags(text: string): string {
+  let out = '';
+  let at = 0;
+  for (;;) {
+    const open = text.indexOf('{', at);
+    const close = open === -1 ? -1 : text.indexOf('}', open);
+    if (close === -1) return out + text.slice(at);
+    out += text.slice(at, open);
+    at = close + 1;
+  }
+}
+
 /** The Dialogue lines of an ASS or SSA script, styling dropped. */
 export function parseAssCues(input: string): Cue[] {
   const cues: Cue[] = [];
   let textIndex = 9;
   for (const line of normaliseText(input).split('\n')) {
-    const format = /^\s*Format:\s*(.+)$/i.exec(line);
+    const format = /^\s*Format:\s*([\s\S]*)/i.exec(line);
     if (format) {
       const at = format[1].split(',').map((f) => f.trim().toLowerCase()).indexOf('text');
       if (at >= 0) textIndex = at;
       continue;
     }
-    const dialogue = /^\s*Dialogue:\s*(.+)$/i.exec(line);
+    const dialogue = /^\s*Dialogue:\s*([\s\S]*)/i.exec(line);
     if (!dialogue) continue;
     const parts = dialogue[1].split(',');
     if (parts.length <= textIndex) continue;
     const startMs = timeToMs(parts[1] ?? '');
     const endMs = timeToMs(parts[2] ?? '');
     if (startMs === null || endMs === null) continue;
-    const text = parts.slice(textIndex).join(',').replace(/\{[^}]*\}/g, '').replace(/\\[Nnh]/g, '\n').trim();
+    const text = withoutOverrideTags(parts.slice(textIndex).join(',')).replace(/\\[Nnh]/g, '\n').trim();
     if (text) cues.push({ startMs, endMs, text });
   }
   return cues.sort((a, b) => a.startMs - b.startMs);
@@ -299,8 +311,15 @@ export function cuesToJellyfinJson(cues: Cue[]): string {
   });
 }
 
+function formatInBody(body: string): string | undefined {
+  const head = normaliseText(body.slice(0, 4096));
+  if (/^\s*\[Script Info\]/i.test(head) || /^\[V4\+? Styles\]/im.test(head)) return 'ass';
+  if (/^\s*WEBVTT\b/.test(head)) return 'vtt';
+  return undefined;
+}
+
 export function convertSubtitle(body: string, fromExtension: string, to: SubtitleFormat): { body: string; contentType: string } {
-  const from = fromExtension.toLowerCase();
+  const from = formatInBody(body) ?? fromExtension.toLowerCase();
   const styled = from === 'ass' || from === 'ssa';
   const textual = from === 'srt' || from === 'vtt' || from === 'sub';
   const cuesOf = () => (styled ? parseAssCues(body) : textual ? parseCues(body) : []);
@@ -516,16 +535,16 @@ export async function subtitleBody(url: string, to: SubtitleFormat): Promise<{ b
   }
 }
 
-const offered = new LRUCache<string, SubtitleTrack[]>({
+const offered = new LRUCache<string, { tracks: SubtitleTrack[]; start: number }>({
   max: envInt('JELLYFIN_STREAM_CACHE_MAX', 2000, 1),
   ttl: envInt('JELLYFIN_SUBTITLE_TTL', 60 * 60, 60) * 1000,
 });
 
-/** The external tracks a source was sent with, by index, so the route serves what the client saw. */
-export function rememberOffered(key: string, tracks: SubtitleTrack[]): void {
-  offered.set(key, tracks);
+/** The external tracks a source was sent with, and the stream index the first took, so the route serves what the client saw. */
+export function rememberOffered(key: string, tracks: SubtitleTrack[], start: number): void {
+  offered.set(key, { tracks, start });
 }
 
-export function recallOffered(key: string): SubtitleTrack[] | undefined {
+export function recallOffered(key: string): { tracks: SubtitleTrack[]; start: number } | undefined {
   return offered.get(key);
 }

@@ -335,7 +335,7 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
       id: 'simkl',
       title: 'Simkl',
       description: hasSimkl ? 'Ratings and finished shows from the Simkl account.'
-        : isMain ? 'Connect Simkl in Integrations to read it here.' : `Link a Simkl account to ${viewer.name} in Jellyfin profiles.`,
+        : isMain ? 'Connect Simkl in Integrations to read it here.' : `Link a Simkl account to ${viewer.name} in People.`,
       available: hasSimkl,
       tag: hasSimkl ? 'Connected' : 'Not connected',
     },
@@ -343,7 +343,7 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
       id: 'mdblist',
       title: 'MDBList',
       description: hasMdblist ? 'Watch history from the MDBList key.'
-        : isMain ? 'Add an MDBList key in Integrations to read it here.' : `Link an MDBList key to ${viewer.name} in Jellyfin profiles.`,
+        : isMain ? 'Add an MDBList key in Integrations to read it here.' : `Link an MDBList key to ${viewer.name} in People.`,
       available: hasMdblist,
       tag: hasMdblist ? 'Connected' : 'Not connected',
     },
@@ -488,7 +488,7 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {selected?.description}
-                  {missing.length > 0 && !isMain ? ` ${missing.join(' and ')} can be linked to ${viewer.name} in Jellyfin profiles.` : ''}
+                  {missing.length > 0 && !isMain ? ` ${missing.join(' and ')} can be linked to ${viewer.name} in People.` : ''}
                 </p>
               </section>
 

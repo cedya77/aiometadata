@@ -23,7 +23,7 @@ Images are served from `https://your-addon-host/poster-cache/...` and stored und
 | `POSTER_CACHE_LANDSCAPE_POSTERS` | `false` | Landscape poster artwork |
 | `POSTER_CACHE_LOGOS` | `false` | Logo artwork |
 | `POSTER_CACHE_THUMBNAILS` | `false` | Episode thumbnails — by far the most numerous; a long-running series adds hundreds |
-| `POSTER_CACHE_CAST` | `false` | Cast/actor headshots, roughly ten to twenty per title, so the count climbs quickly |
+| `POSTER_CACHE_CAST` | `false` | Cast and actor headshots shown with meta and catalog results |
 | `POSTER_CACHE_COLLECTIONS` | `true` | Collection covers, backdrops, logos and focus GIFs, kept as they are rather than reshaped to 2:3 like posters; a collection's images are also pinned against eviction while it uses the cache |
 | `POSTER_CACHE_PROCESSED_IMAGES` | `true` | Images the addon renders itself: rating-overlaid posters and the blur/resize/banner-to-background transforms, so each one runs once |
 

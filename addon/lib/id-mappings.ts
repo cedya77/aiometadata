@@ -151,6 +151,8 @@ export function getSeriesByTvmaze(tvmazeId: string): IdMap | undefined {
   return lookup(indexFor('series'), 'tvmazeId', tvmazeId);
 }
 
+export const mappingsReady = (): boolean => indexes !== null;
+
 export function getMappingStats() {
   ensureInitialized();
   const { series, movie } = indexes;
@@ -217,6 +219,7 @@ export const mappings = {
 };
 
 module.exports = {
+  mappingsReady,
   mappings,
   initializeMappings,
   refreshChangedMappings,

@@ -1,4 +1,4 @@
-import { SETTINGS_SECTIONS, type SettingsSectionId } from './settingsRoute';
+import { SETTINGS_SECTIONS, type SettingsSection, type SettingsSectionId } from './settingsRoute';
 
 export interface SettingsSearchEntry {
   id: string;
@@ -7,6 +7,8 @@ export interface SettingsSearchEntry {
   label: string;
   description: string;
   keywords?: string[];
+  /** Shown only while this section is, for a setting that exists only with it. */
+  requires?: SettingsSectionId;
 }
 
 export const MAX_RESULTS = 10;
@@ -17,9 +19,6 @@ const RANK_KEYWORD_EXACT = 2;
 const RANK_DESCRIPTION = 1;
 const RANK_NONE = 0;
 
-const SECTION_ORDER = new Map<string, number>(
-  SETTINGS_SECTIONS.map((section, index) => [section.id, index])
-);
 
 function normalise(value: string): string {
   return value
@@ -41,14 +40,17 @@ function scoreToken(token: string, entry: SettingsSearchEntry): number {
 
 export function searchSettings(
   query: string,
-  entries: SettingsSearchEntry[]
+  entries: SettingsSearchEntry[],
+  sections: SettingsSection[] = SETTINGS_SECTIONS
 ): SettingsSearchEntry[] {
   const tokens = normalise(query).split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return [];
+  const order = new Map<string, number>(sections.map((section, index) => [section.id, index]));
 
   const scored: { entry: SettingsSearchEntry; rank: number }[] = [];
 
   for (const entry of entries) {
+    if (!order.has(entry.section) || (entry.requires && !order.has(entry.requires))) continue;
     let best = RANK_NONE;
     let all = true;
     for (const token of tokens) {
@@ -62,8 +64,8 @@ export function searchSettings(
 
   scored.sort((a, b) => {
     if (b.rank !== a.rank) return b.rank - a.rank;
-    const orderA = SECTION_ORDER.get(a.entry.section) ?? Number.MAX_SAFE_INTEGER;
-    const orderB = SECTION_ORDER.get(b.entry.section) ?? Number.MAX_SAFE_INTEGER;
+    const orderA = order.get(a.entry.section) ?? Number.MAX_SAFE_INTEGER;
+    const orderB = order.get(b.entry.section) ?? Number.MAX_SAFE_INTEGER;
     return orderA - orderB;
   });
 

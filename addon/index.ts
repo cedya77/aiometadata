@@ -11,7 +11,7 @@ const addon = express();
 
 const { getCatalog } = require("./lib/getCatalog");
 const { applyCatalogFilters, catalogFiltersActive } = require("./utils/catalogFilters");
-const { cursorKey, resolveStartPage, fillFilteredPage, fillOnce, isEndOfList } = require("./lib/catalogPagination");
+const { cursorKey, cursorAudience, resolveStartPage, fillFilteredPage, fillOnce, isEndOfList, listedTotalOf } = require("./lib/catalogPagination");
 const { registerInProcessRoute } = require("./lib/inProcessRoutes");
 const anilist = require("./lib/anilist");
 const { getSearch } = require("./lib/getSearch");
@@ -35,7 +35,7 @@ const { stripReleaseAvailabilityForResponse } = require('./utils/releaseAvailabi
 
 const configApi = require('./lib/configApi');
 const database = require('./lib/database');
-const { loadConfigFromDatabase, loadRouteConfig } = require('./lib/configApi');
+const { loadConfigFromDatabase, loadRouteConfig, loadSharedConfig } = require('./lib/configApi');
 const { getTrending } = require("./lib/getTrending");
 const { resolveProxyRatingPosterUrl, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
 const { extractIdsFromMeta, extractCanonicalIdFromDynamicUpNextId } = require("./utils/metaIds");
@@ -67,17 +67,10 @@ const {
   verifyTraktOAuthState,
 } = require('./lib/oauthState');
 const { renderOAuthPage, escapeHtml } = require('./lib/oauthPage');
-const { hasAnyWatchTrackingEnabled } = require('./lib/watchTracking');
+const { hasAnyWatchTrackingEnabled, scrobblesJellyfin } = require('./lib/watchTracking');
 const simklAuth = require('./lib/simkl');
+const { revokeSimklGrant } = require('./lib/accountLinks');
 const { SimklClient } = simklAuth;
-const {
-  createSessionId,
-  deleteDeviceAuthSession,
-  getDeviceAuthSession,
-  registerPoll,
-  saveDeviceAuthSession,
-  widenPollInterval,
-} = require('./lib/deviceAuthSessions');
 const jikan = require('./lib/mal');
 const buildInfo = require('./lib/buildInfo');
 const { clientDistDir, clientIndexPath, publicDir } = require('./lib/runtimePaths');
@@ -94,22 +87,6 @@ const TRAKT_OAUTH_STATE_TTL_MS = parseInt(process.env.TRAKT_OAUTH_STATE_TTL_MS |
 const usedAnilistCodes = new Set();
 const ANILIST_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const SIMKL_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
-
-// Which Simkl flows this instance offers. PIN needs only a client id, so it is
-// the default when no secret is set.
-function resolveSimklAuthMode() {
-  const configured = String(getSetting('SIMKL_AUTH_MODE') || '').trim().toLowerCase();
-  if (configured === 'pin' || configured === 'oauth' || configured === 'both') {
-    return configured;
-  }
-  if (simklAuth.simklV2Credentials().clientId) return simklAuth.simklV2Credentials().clientSecret ? 'oauth' : 'pin';
-  return getSetting('SIMKL_CLIENT_SECRET') ? 'oauth' : 'pin';
-}
-
-function simklPinEnabled() {
-  const mode = resolveSimklAuthMode();
-  return mode === 'pin' || mode === 'both';
-}
 
 const usedMalCodes = new Set();
 const MAL_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -281,62 +258,9 @@ async function testKeysRateLimitMiddleware(req, res, next) {
   next();
 }
 
-const REDIS_LIMITER_TIMEOUT_MS = 500;
-
-function DEVICE_AUTH_POLL_RATE_LIMIT_PER_MIN() {
-  const parsed = parseInt(getSetting('DEVICE_AUTH_POLL_RATE_LIMIT_PER_MIN'), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 240;
-}
-
 function getManagerSyncHostDelayMs() {
   const parsed = parseInt(getSetting('MANAGER_SYNC_HOST_DELAY_MS'), 10);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 400;
-}
-
-// Own bucket: a pending code polls every few seconds and would eat the much
-// tighter /api/test-keys budget.
-async function deviceAuthPollRateLimitMiddleware(req, res, next) {
-  if (!redis) {
-    return next();
-  }
-
-  try {
-    const minuteBucket = Math.floor(Date.now() / 60000);
-    // Keyed per caller, the way the config-load limiter is. A single bucket for
-    // the whole instance would let a handful of concurrent authorizations spend
-    // the budget, and would let anyone spend it deliberately: a pending code
-    // polls every few seconds and these routes need no session.
-    const target = (typeof req.query?.sessionId === 'string' && req.query.sessionId)
-      || (typeof req.body?.sessionId === 'string' && req.body.sessionId)
-      || req.session?.accountId
-      || req.ip
-      || 'unknown';
-    const rateKey = `rate-limit:device-auth-poll:${target}:${minuteBucket}`;
-
-    // Bounded: with no Redis listening, ioredis holds a command for the better
-    // part of a minute, and these routes are polled every few seconds. A count
-    // we can't read in time means the request is allowed through.
-    const currentCount = await Promise.race([
-      redis.incr(rateKey),
-      new Promise(resolve => setTimeout(() => resolve(null), REDIS_LIMITER_TIMEOUT_MS).unref()),
-    ]);
-
-    if (currentCount === null) {
-      return next();
-    }
-
-    if (currentCount === 1) {
-      redis.expire(rateKey, 70).catch(() => undefined);
-    }
-
-    if (currentCount > DEVICE_AUTH_POLL_RATE_LIMIT_PER_MIN()) {
-      return res.status(429).json({ error: 'Too many authorization status requests. Please try again shortly.' });
-    }
-  } catch (error) {
-    consola.warn('[Rate Limit] Device auth poll limiter failed, allowing request:', error.message);
-  }
-
-  next();
 }
 
 function CONFIG_LOAD_RATE_LIMIT_PER_MIN() {
@@ -504,21 +428,6 @@ const getCacheHeaders = function (opts) {
   return headerParts.length > 0 ? headerParts.join(", ") : false;
 };
 
-/** A named viewer's own tags take the place of the install URL's, as on this addon's own server. */
-function tagsAsked(req) {
-  return req.viewerTags ?? req.query.tag;
-}
-
-function withViewerAccounts(config, scoped) {
-  return { ...config, jellyfinAccounts: scoped.jellyfinAccounts, jellyfinAccountOwner: scoped.jellyfinAccountOwner };
-}
-
-/** A request naming nobody here is refused rather than served as yours. */
-function refuseUnknownViewer(res, area, userUUID, name, quiet = false) {
-  consola[quiet ? 'debug' : 'info'](`[${area}] Unknown viewer "${String(name).slice(0, 64)}" for ${userUUID}`);
-  return res.status(404).json({ error: "Unknown viewer" });
-}
-
 /**
  * The filtering an install URL asks for, from the profiles it names and from the raw
  * parameters. One UUID can then serve both an unrestricted and a family install.
@@ -526,10 +435,28 @@ function refuseUnknownViewer(res, area, userUUID, name, quiet = false) {
  * user are coalesced and hand back the same object.
  */
 
+// A household user named by `viewer` brings their own tags, which stand in for the
+// install URL's `tag` for the whole request. Set by the routes once the name is matched.
+function tagQueryOf(req) {
+  return Array.isArray(req.viewerTags) ? req.viewerTags : req.query.tag;
+}
+
+function refuseUnknownViewer(res, area, userUUID, name, level = 'info') {
+  const line = `[${area}] Unknown viewer "${String(name).slice(0, 64)}" for ${userUUID}`;
+  if (level === 'debug') consola.debug(line);
+  else consola.info(line);
+  return res.status(404).json({ error: "Unknown viewer" });
+}
+
+/** The stored config, read with the accounts of the household user it was scoped to. */
+function withViewerAccounts(stored, scoped) {
+  return { ...stored, jellyfinAccounts: scoped.jellyfinAccounts, jellyfinAccountOwner: scoped.jellyfinAccountOwner };
+}
+
 function applyRatingOverrides(config, req, userUUID) {
   const rawRating = req.query.contentrating ?? req.query.contentRating;
   const rawUnrated = req.query.unrated;
-  const rawTag = tagsAsked(req);
+  const rawTag = tagQueryOf(req);
   if (rawRating === undefined && rawUnrated === undefined && rawTag === undefined) return config;
 
   const { tags: urlTags } = resolveManifestTags(config, rawTag);
@@ -679,8 +606,8 @@ const respond = function (req, res, data, opts?) {
       gemini: getSetting('GEMINI_API_KEY'),
       trakt: getSetting('TRAKT_CLIENT_ID'),
       simkl: getSetting('SIMKL_CLIENT_ID') || getSetting('SIMKL_V2_CLIENT_ID'),
-      simklAuthMode: resolveSimklAuthMode(),
       simklV2: Boolean(getSetting('SIMKL_V2_CLIENT_ID')),
+      simklAuthMode: simklAuth.simklAuthMode(),
       simklListMinTTL: parseInt(getSetting('SIMKL_LIST_MIN_TTL'), 10) || 300,
       simklActivitiesTTL: parseInt(getSetting('SIMKL_ACTIVITIES_TTL'), 10) || 1800,
       customDescriptionBlurb: getSetting('CUSTOM_DESCRIPTION_BLURB'),
@@ -1132,8 +1059,12 @@ addon.post("/api/movielens/lists/:userUUID", async (req, res) => {
   }
 });
 
-// Saves a new Simkl access token and returns the token ID the user pastes into
-// their config. Used by both the OAuth callback and the PIN flow.
+/**
+ * Stores a Simkl token for a Simkl user, reusing the token id that user
+ * already has, and repoints configs that named the user's older token ids.
+ * Used by both OAuth callbacks and the code sign-in. Returns the token id, or
+ * null when the token could not be saved.
+ */
 async function persistSimklToken(user, accessToken, v2Tokens = null) {
   const refreshToken = v2Tokens?.refresh_token || '';
   const expiresAt = v2Tokens ? Date.now() + v2Tokens.expires_in * 1000 : 0;
@@ -1164,6 +1095,7 @@ async function persistSimklToken(user, accessToken, v2Tokens = null) {
   }
 
   if (!saved) {
+    consola.error(`[Simkl OAuth] Could not save the token for user ${user.username}`);
     return null;
   }
 
@@ -1186,12 +1118,126 @@ async function persistSimklToken(user, accessToken, v2Tokens = null) {
   return tokenId;
 }
 
-function revokeSimklGrant(token) {
-  const { clientId, clientSecret } = simklAuth.simklV2Credentials();
-  if (!clientId || !token) return;
-  simklAuth.revokeSimklV2Token(clientId, clientSecret, token)
-    .catch((error) => consola.debug(`[Simkl] Could not revoke a replaced grant: ${error?.message}`));
+// --- Simkl code sign-in (PIN / device flow) ---
+const {
+  createDeviceAuthSession,
+  getDeviceAuthSession,
+  saveDeviceAuthSession,
+  deleteDeviceAuthSession,
+  pollTooSoon,
+  widenPollGap,
+  deviceAuthRateLimit,
+} = require('./lib/deviceAuth');
+
+const SIMKL_PIN_NOT_ENABLED = 'Simkl PIN authentication is not enabled on this instance.';
+const SIMKL_PIN_NOT_CONFIGURED = 'Simkl is not configured on this instance. The instance owner needs to set SIMKL_CLIENT_ID.';
+
+/** The client id a new code is requested with: the V2 app when one is configured, else the V1 app. */
+function simklCodeFlowClient() {
+  const v2ClientId = simklAuth.simklV2Credentials().clientId;
+  if (v2ClientId) return { v2: true, clientId: v2ClientId };
+  const v1ClientId = String(process.env.SIMKL_CLIENT_ID || '').trim();
+  return v1ClientId ? { v2: false, clientId: v1ClientId } : null;
 }
+
+addon.post("/api/auth/simkl/pin", deviceAuthRateLimit, async (req, res) => {
+  if (!simklAuth.simklCodeFlowOffered()) {
+    return res.status(404).json({ error: SIMKL_PIN_NOT_ENABLED });
+  }
+  const client = simklCodeFlowClient();
+  if (!client) {
+    return res.status(500).json({ error: SIMKL_PIN_NOT_CONFIGURED });
+  }
+
+  try {
+    const code = client.v2
+      ? await simklAuth.requestSimklV2DeviceCode(client.clientId)
+      : await simklAuth.requestSimklPin(client.clientId);
+    const sessionId = createDeviceAuthSession('simkl', code);
+    res.json({
+      sessionId,
+      userCode: code.userCode,
+      verificationUrl: code.verificationUrl,
+      interval: code.interval,
+      expiresIn: code.expiresIn,
+    });
+  } catch (error) {
+    consola.error("[Simkl PIN] Could not request a PIN:", error);
+    res.status(500).json({
+      error: simklAuth.isUserSafeError(error) ? error.message : "Failed to request a Simkl PIN. Please try again.",
+    });
+  }
+});
+
+addon.get("/api/auth/simkl/pin/status", deviceAuthRateLimit, async (req, res) => {
+  if (!simklAuth.simklCodeFlowOffered()) {
+    return res.status(404).json({ error: SIMKL_PIN_NOT_ENABLED });
+  }
+  if (!simklCodeFlowClient()) {
+    return res.status(500).json({ error: SIMKL_PIN_NOT_CONFIGURED });
+  }
+
+  try {
+    const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : '';
+    const session = await getDeviceAuthSession('simkl', sessionId);
+    if (!session) {
+      return res.status(404).json({ status: 'expired' });
+    }
+
+    // Answered here so a fast poller never reaches Simkl sooner than it allows.
+    if (pollTooSoon(session)) {
+      return res.json({ status: 'pending' });
+    }
+    session.lastPolledAt = Date.now();
+    saveDeviceAuthSession(sessionId, session);
+
+    // A session started before V2 was switched on finishes on V1.
+    const v2ClientId = simklAuth.simklV2Credentials().clientId;
+    const v1ClientId = String(process.env.SIMKL_CLIENT_ID || '').trim();
+    const result = session.deviceCode && v2ClientId
+      ? await simklAuth.pollSimklV2DeviceToken(v2ClientId, session.deviceCode)
+      : await simklAuth.pollSimklPin(v1ClientId, session.userCode);
+
+    if (result.status === 'slow_down') {
+      widenPollGap(session);
+      saveDeviceAuthSession(sessionId, session);
+      return res.json({ status: 'slow_down' });
+    }
+    if (result.status === 'expired') {
+      deleteDeviceAuthSession(sessionId);
+      return res.json({ status: 'expired' });
+    }
+    if (result.status !== 'authorized') {
+      return res.json({ status: 'pending' });
+    }
+
+    const userClientId = result.tokens ? v2ClientId : v1ClientId;
+    const user = await new SimklClient(userClientId).getMe(result.accessToken);
+    const tokenId = await persistSimklToken(user, result.accessToken, result.tokens || null);
+    if (!tokenId) {
+      // The session stays, so the next poll can try storing the token again.
+      return res.status(500).json({ error: "Simkl authorized the connection, but this server could not store the token. Please try again." });
+    }
+
+    deleteDeviceAuthSession(sessionId);
+    res.json({ status: 'authorized', tokenId, username: user.username });
+  } catch (error) {
+    consola.error("[Simkl PIN] Status check failed:", error);
+    res.status(500).json({ error: "Failed to check the Simkl authorization status." });
+  }
+});
+
+addon.post("/api/auth/simkl/pin/cancel", async (req, res) => {
+  try {
+    const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+    const session = await getDeviceAuthSession('simkl', sessionId);
+    if (session) deleteDeviceAuthSession(sessionId);
+    res.json({ cancelled: Boolean(session) });
+  } catch (error) {
+    consola.error("[Simkl PIN] Cancel failed:", error);
+    res.status(500).json({ error: "Failed to cancel the Simkl authorization." });
+  }
+});
 
 function simklRedirectUri() {
   return normalizeRedirectUri(process.env.SIMKL_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/simkl/callback`);
@@ -1283,7 +1329,6 @@ addon.get("/api/auth/simkl/callback", async (req, res) => {
     const user = await simklClient.getMe(tokens.access_token);
     
     const tokenId = await persistSimklToken(user, tokens.access_token);
-    
     if (!tokenId) {
       return res.status(500).send(renderOAuthPage({
         provider: 'simkl',
@@ -1369,11 +1414,8 @@ addon.post("/api/auth/trakt/disconnect", async (req, res) => {
       return res.status(404).json({ error: "User config not found" });
     }
     
-    // Delete OAuth token from database if it exists
-    if (config.apiKeys?.traktTokenId) {
-      await database.deleteOAuthToken(config.apiKeys.traktTokenId);
-      delete config.apiKeys.traktTokenId;
-    }
+    const released = config.apiKeys?.traktTokenId;
+    if (released) delete config.apiKeys.traktTokenId;
     
     // Remove Trakt user info
     delete config.traktUser;
@@ -1393,6 +1435,9 @@ addon.post("/api/auth/trakt/disconnect", async (req, res) => {
     
     // Invalidate config cache
     configCache.del(userUUID);
+
+    // Released once this configuration no longer names it, and only if no other does.
+    if (released) await require('./lib/accountLinks').releaseFieldToken('traktTokenId', released);
     
     // `removed` says exactly what this disconnect took out, so a page holding
     // unsaved edits can apply the same removals instead of adopting the whole
@@ -1402,156 +1447,6 @@ addon.post("/api/auth/trakt/disconnect", async (req, res) => {
     consola.error("[Trakt] Disconnect error:", error);
     res.status(500).json({ error: "Failed to disconnect Trakt" });
   }
-});
-
-// Drops a pending session so a cancelled code doesn't linger until it expires.
-// Knowing the session id is the only thing needed, same as polling it.
-async function handleDeviceAuthCancel(req, res, provider) {
-  try {
-    const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
-    const session = await getDeviceAuthSession(sessionId, provider);
-    if (session) {
-      await deleteDeviceAuthSession(sessionId);
-    }
-    res.json({ cancelled: !!session });
-  } catch (error) {
-    consola.error(`[${provider}] Failed to cancel the authorization session:`, error);
-    res.status(500).json({ error: "Failed to cancel the authorization" });
-  }
-}
-
-// --- Simkl PIN (device) Routes ---
-// No client secret and no reachable callback URL needed, so these work on
-// private instances where the OAuth flow can't.
-addon.post("/api/auth/simkl/pin", deviceAuthPollRateLimitMiddleware, async (req, res) => {
-  try {
-    if (!simklPinEnabled()) {
-      return res.status(404).json({ error: "Simkl PIN authentication is not enabled on this instance." });
-    }
-
-    const v2ClientId = simklAuth.simklV2Credentials().clientId;
-    if (v2ClientId) {
-      const device = await simklAuth.requestSimklDeviceCode(v2ClientId);
-      const sessionId = createSessionId();
-      await saveDeviceAuthSession(sessionId, {
-        provider: 'simkl',
-        userCode: device.user_code,
-        deviceCode: device.device_code,
-        expiresAt: Date.now() + device.expires_in * 1000,
-        pollIntervalMs: device.interval * 1000,
-        lastPolledAt: 0,
-      });
-      return res.json({
-        sessionId,
-        userCode: device.user_code,
-        verificationUrl: device.verification_url,
-        interval: device.interval,
-        expiresIn: device.expires_in,
-      });
-    }
-
-    const clientId = getSetting('SIMKL_CLIENT_ID');
-    if (!clientId) {
-      return res.status(500).json({ error: "Simkl is not configured. Please set the SIMKL_CLIENT_ID environment variable." });
-    }
-
-    const simklClient = new SimklClient(clientId);
-    const pin = await simklClient.requestPin();
-
-    const sessionId = createSessionId();
-    const expiresAt = Date.now() + pin.expires_in * 1000;
-    await saveDeviceAuthSession(sessionId, {
-      provider: 'simkl',
-      userCode: pin.user_code,
-      expiresAt,
-      pollIntervalMs: pin.interval * 1000,
-      lastPolledAt: 0,
-    });
-
-    res.json({
-      sessionId,
-      userCode: pin.user_code,
-      verificationUrl: pin.verification_url,
-      interval: pin.interval,
-      expiresIn: pin.expires_in,
-    });
-  } catch (error) {
-    consola.error("[Simkl PIN] Failed to request a PIN:", error);
-    res.status(500).json({ error: error?.expose ? error.message : "Failed to request a Simkl PIN" });
-  }
-});
-
-addon.get("/api/auth/simkl/pin/status", deviceAuthPollRateLimitMiddleware, async (req, res) => {
-  try {
-    if (!simklPinEnabled()) {
-      return res.status(404).json({ error: "Simkl PIN authentication is not enabled on this instance." });
-    }
-
-    const v2ClientId = simklAuth.simklV2Credentials().clientId;
-    const clientId = v2ClientId || getSetting('SIMKL_CLIENT_ID');
-    if (!clientId) {
-      return res.status(500).json({ error: "Simkl is not configured. Please set the SIMKL_CLIENT_ID environment variable." });
-    }
-
-    const sessionIdParam = Array.isArray(req.query.sessionId) ? req.query.sessionId[0] : req.query.sessionId;
-    const sessionId = typeof sessionIdParam === 'string' ? sessionIdParam : '';
-
-    // The session id stays in the browser that started the flow, so guessing the
-    // short user code isn't enough to claim the token.
-    const session = await getDeviceAuthSession(sessionId, 'simkl');
-    if (!session) {
-      return res.status(404).json({ status: 'expired' });
-    }
-
-    // Simkl asks callers to respect the interval it handed out, so polls that
-    // arrive early are answered without bothering it.
-    if (!await registerPoll(sessionId, session)) {
-      return res.json({ status: 'pending' });
-    }
-
-    // A session started before V2 was switched on still finishes on V1.
-    const onV2 = Boolean(session.deviceCode && v2ClientId);
-    const simklClient = new SimklClient(onV2 ? v2ClientId : getSetting('SIMKL_CLIENT_ID'));
-    const poll = onV2
-      ? await simklAuth.pollSimklDeviceCode(v2ClientId, session.deviceCode)
-      : await simklClient.pollPin(session.userCode);
-
-    if (poll.status === 'pending') {
-      return res.json({ status: 'pending' });
-    }
-
-    if (poll.status === 'slow_down') {
-      await widenPollInterval(sessionId, session);
-      return res.json({ status: 'slow_down' });
-    }
-
-    if (poll.status === 'expired') {
-      await deleteDeviceAuthSession(sessionId);
-      return res.json({ status: 'expired' });
-    }
-
-    const accessToken = poll.tokens ? poll.tokens.access_token : poll.access_token;
-    const user = await simklClient.getMe(accessToken);
-    const tokenId = await persistSimklToken(user, accessToken, poll.tokens || null);
-
-    if (!tokenId) {
-      // Session left in place: storing the token is the only thing that failed,
-      // so the next poll can try again rather than making the user start over.
-      return res.status(500).json({ error: "Simkl authorized the connection, but this server could not store the token." });
-    }
-
-    await deleteDeviceAuthSession(sessionId);
-
-    consola.info(`[Simkl PIN] Connected user ${user.username} - tokenId: ${tokenId}`);
-    res.json({ status: 'authorized', tokenId, username: user.username });
-  } catch (error) {
-    consola.error("[Simkl PIN] Status check failed:", error);
-    res.status(500).json({ error: "Failed to check the Simkl PIN status" });
-  }
-});
-
-addon.post("/api/auth/simkl/pin/cancel", async (req, res) => {
-  await handleDeviceAuthCancel(req, res, 'simkl');
 });
 
 addon.post("/api/auth/simkl/disconnect", async (req, res) => {
@@ -4378,11 +4273,13 @@ addon.post("/api/integrations/credential", async (req, res) => {
       setAccountKey(config, profile, provider, tokenId);
       if (card.accounts[ACCOUNT_SERVICES[provider].master] === undefined) card.accounts[ACCOUNT_SERVICES[provider].master] = true;
     } else {
+      const previous = config.apiKeys?.[mapping.field];
+      if (previous && previous !== tokenId) replaced = previous;
       config.apiKeys = { ...(config.apiKeys || {}), [mapping.field]: tokenId };
     }
     await database.saveUserConfig(userUUID, access.passwordHash, config);
     configCache.del(userUUID);
-    if (replaced) await require('./lib/accountLinks').releaseTokenIfUnused(provider, replaced, provider === 'simkl' ? revokeSimklGrant : undefined);
+    if (replaced) await require('./lib/accountLinks').releaseFieldToken(mapping.field, replaced, profile && provider === 'simkl' ? revokeSimklGrant : undefined);
     require('./lib/jellyfin/watched').warmChangedSources(userUUID, before, config);
     res.json({ success: true, field: mapping.field, tokenId });
   } catch (error) {
@@ -4868,10 +4765,16 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
         
         const { profileForViewer, scopeConfigToProfile } = require('./lib/jellyfin/profiles');
         const profile = profileForViewer(config, userUUID, req.query.viewer);
-        if (profile === undefined) return refuseUnknownViewer(res, 'Manifest', userUUID, req.query.viewer);
-        if (profile?.tags.length) req.viewerTags = profile.tags;
+        if (profile === undefined) {
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Headers', '*');
+            return refuseUnknownViewer(res, 'Manifest', userUUID, req.query.viewer);
+        }
+        if (profile) req.viewerTags = profile.tags;
+        // Only which catalogs are listed follows the user's accounts; the rest is the stored config's.
+        const viewerConfig = profile?.id ? scopeConfigToProfile(config, userUUID, profile.id) : undefined;
 
-        const { tags, unknown: unknownTags } = resolveManifestTags(config, tagsAsked(req));
+        const { tags, unknown: unknownTags } = resolveManifestTags(config, tagQueryOf(req));
         req.manifestTags = tags;
         // The cap itself applies to catalog and search requests, not to the manifest.
         // It is resolved here anyway so an install URL can be checked before it is used.
@@ -4890,14 +4793,16 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
         if (unknownTags.length > 0) {
             consola.warn(`[Manifest] User ${userUUID} asked for ${unknownTags.join(', ')}, which no catalog is tagged with`);
         }
-        const viewer = profile?.id ? scopeConfigToProfile(config, userUUID, profile.id) : undefined;
-        const manifest = await getManifest(config, { tags, userUUID, viewer });
+        const manifest = await getManifest(config, { tags, userUUID, ...(viewerConfig ? { viewerConfig } : {}) });
             if (!manifest) {
                 res.setHeader('Access-Control-Allow-Origin', '*');
                 res.setHeader('Access-Control-Allow-Headers', '*');
                 return res.status(500).send({ err: "Failed to build manifest." });
             }
-            
+        if (manifest.resources?.includes('player')) {
+            require('./lib/stremioEventStatus').noteManifest(userUUID, profile?.id ?? '');
+        }
+
         // Pass config to request object for ETag generation
         req.userConfig = config;
         
@@ -4965,21 +4870,23 @@ function withCatalogCriticRatings(metas: any[], config: any, req: any): Promise<
 
 const catalogRoute = async function (req, res) {
   const { userUUID, type, id, extra } = req.params;
-  // `viewerConfig` is set only for a named viewer and `accountOwner` only by the Jellyfin server's reads, never from the request.
+  // Handed over by viewerCatalogRoute for a named household user, never from the request.
   const storedConfig = req.viewerConfig ?? await loadRouteConfig(userUUID);
 
   if (!storedConfig) {
     return res.status(404).send({ error: "User configuration not found" });
   }
   const { viewerConfigFor } = require('./lib/accounts');
+  // Set only by the Jellyfin server's in-process reads, never from the request.
   const config = applyRatingOverrides(viewerConfigFor(storedConfig, req.params.accountOwner, id), req, userUUID);
   config.userUUID = userUUID;
+  const { tags: requestTags } = resolveManifestTags(storedConfig, tagQueryOf(req));
 
   {
     const { collectionCatalogMetas, isCollectionCatalogId } = require('./lib/collectionBuilder/aiostreamsCollections');
     if (isCollectionCatalogId(id)) {
       const skip = parseInt(new URLSearchParams(extra || '').get('skip') || '0', 10) || 0;
-      const { tags } = resolveManifestTags(storedConfig, tagsAsked(req));
+      const tags = requestTags;
       const metas = await collectionCatalogMetas(userUUID, config, tags, id, skip);
       if (!metas) return res.status(404).send({ error: "Collection not found" });
       req.userConfig = config;
@@ -5381,7 +5288,9 @@ const catalogRoute = async function (req, res) {
             break;
           }
       }
-      return { metas: metas || [], ...(ended ? { endOfList: true } : {}) };
+      // Copied out of the array here because the page is cached as JSON, which drops it.
+      const listed = listedTotalOf(metas);
+      return { metas: metas || [], ...(ended ? { endOfList: true } : {}), ...(listed !== undefined ? { listed } : {}) };
     };
 
     const keyForPage = (page) => {
@@ -5401,9 +5310,9 @@ const catalogRoute = async function (req, res) {
     } else if (catalogFiltersActive({ config, catalogConfig, cleanId })) {
       const { accountOwner } = require('./lib/accounts');
       const { viewerProfile } = require('./lib/jellyfin/viewer');
-      const filteredFor = [viewerProfile() || accountOwner(config), config._ratingOverride, ...resolveManifestTags(storedConfig, tagsAsked(req)).tags]
-        .filter(Boolean).join('|');
-      const key = cursorKey(userUUID, cleanId, actualType, genreName, filteredFor);
+      // Each audience pages through its own filtered list, so it keeps its own positions.
+      const audience = cursorAudience(viewerProfile() || accountOwner(config), config._ratingOverride, requestTags);
+      const key = cursorKey(userUUID, cleanId, actualType, genreName, audience);
       const skipValue = legacySkip || 0;
       // Deduped here rather than after, so what a page serves, and so where the
       // next one starts, is the same whether it is filled for this request or on
@@ -5584,11 +5493,6 @@ const catalogRoute = async function (req, res) {
 
     if (req.params.forJellyfin === '1' && Array.isArray(responseData?.metas)) responseData.pageSize = catalogPageSize;
 
-    if (config.trailerProvider === 'addon' && req.params.forJellyfin !== '1' && Array.isArray(responseData?.metas)) {
-      const { applyTrailerAddonWithin } = require('./lib/trailerProjection');
-      await applyTrailerAddonWithin(responseData.metas, config, envInt('TRAILER_ADDON_CATALOG_WAIT_MS', 1500, 0));
-    }
-
     const isSearchCatalog = cleanId === 'search' || cleanId === 'people_search' || cleanId === 'gemini.search';
     if (isLandscapeCatalogConfig(config, catalogConfig) && !isSearchCatalog && req.params.forJellyfin !== '1' && Array.isArray(responseData?.metas)) {
       for (const meta of responseData.metas) {
@@ -5612,6 +5516,16 @@ const catalogRoute = async function (req, res) {
       }
     }
 
+    // The source's count of the whole list is for Jellyfin reads only.
+    if (req.params.forJellyfin !== '1' && responseData && typeof responseData === 'object' && 'listed' in responseData) {
+      const { listed: _listed, ...withoutListed } = responseData as any;
+      responseData = withoutListed;
+    }
+
+    if (req.params.forJellyfin !== '1' && Array.isArray(responseData?.metas)) {
+      await require('./lib/trailerProjection').applyAddonTrailersToList(responseData.metas, config);
+    }
+
     if (Array.isArray(responseData?.metas)) {
       const metas = await withCatalogCriticRatings(responseData.metas, config, req);
       if (metas !== responseData.metas) responseData = { ...responseData, metas };
@@ -5625,38 +5539,44 @@ const catalogRoute = async function (req, res) {
     return res.status(500).send("Internal Server Error");
   }
 };
-/** A read naming its household user, as watch state does, gets that user's history and accounts rows;
- *  a read naming nobody here is refused rather than served as yours. */
-const catalogRouteForViewer = async function (req, res) {
+// A read naming a household user is answered as that user: their tags, their
+// history and picks, their own accounts. Only the public route comes through here.
+const viewerCatalogRoute = async function (req, res) {
+  const { userUUID, id } = req.params;
   const named = req.query.viewer;
-  if (named === undefined || named === '') return catalogRoute(req, res);
-  const { userUUID } = req.params;
-  const storedConfig = await loadRouteConfig(userUUID);
-  if (!storedConfig) return catalogRoute(req, res);
+  if (named === undefined || named === null || (typeof named === 'string' && !named.trim())) return catalogRoute(req, res);
 
-  const { profileForViewer, profileKey, scopeConfigToProfile } = require('./lib/jellyfin/profiles');
-  const profile = profileForViewer(storedConfig, userUUID, named);
-  if (profile === undefined) return refuseUnknownViewer(res, 'Catalog', userUUID, named, true);
+  const stored = await loadRouteConfig(userUUID).catch(() => null);
+  if (!stored) return catalogRoute(req, res);
+
+  const { profileForViewer, scopeConfigToProfile, profileKey } = require('./lib/jellyfin/profiles');
+  const profile = profileForViewer(stored, userUUID, named);
+  if (profile === undefined) return refuseUnknownViewer(res, 'Catalog', userUUID, named, 'debug');
   if (!profile) return catalogRoute(req, res);
-  if (profile.tags.length) req.viewerTags = profile.tags;
+
+  req.viewerTags = profile.tags;
   if (!profile.id) return catalogRoute(req, res);
 
-  const { accountOwner, catalogEntryFor, servesCatalog } = require('./lib/accounts');
-  const scoped = scopeConfigToProfile(storedConfig, userUUID, profile.id);
-  if (!servesCatalog(scoped, catalogEntryFor(storedConfig, req.params.id))) {
-    req.userConfig = storedConfig;
+  const { accountOwner, servesCatalog } = require('./lib/accounts');
+  const scoped = scopeConfigToProfile(stored, userUUID, profile.id);
+  const viewerConfig = withViewerAccounts(stored, scoped);
+
+  const bareId = String(id).replace(/_(movie|series|anime|all)$/, '');
+  const entry = (Array.isArray(stored.catalogs) ? stored.catalogs : []).find((c) => c?.id === bareId) ?? { id: bareId };
+  if (!servesCatalog(scoped, entry)) {
+    req.userConfig = viewerConfig;
     return respond(req, res, { metas: [] });
   }
 
-  req.viewerConfig = withViewerAccounts(storedConfig, scoped);
-  const { noteAccountOwner, noteProfile, runInViewerScope } = require('./lib/jellyfin/viewer');
+  const { runInViewerScope, noteProfile, noteAccountOwner } = require('./lib/jellyfin/viewer');
   return runInViewerScope(false, () => {
     noteProfile(profileKey(scoped));
     noteAccountOwner(accountOwner(scoped));
+    req.viewerConfig = viewerConfig;
     return catalogRoute(req, res);
   });
 };
-addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", catalogRouteForViewer);
+addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", viewerCatalogRoute);
 registerInProcessRoute('catalog', "/stremio/:userUUID/catalog/:type/:id{/:extra}.json", catalogRoute);
 // --- Meta Route (with enhanced caching) ---
 const metaRoute = async function (req, res) {
@@ -5691,11 +5611,11 @@ const metaRoute = async function (req, res) {
     if (stremioId.startsWith(COLLECTION_META_PREFIX)) {
       const { profileForViewer, scopeConfigToProfile } = require('./lib/jellyfin/profiles');
       const profile = profileForViewer(config, userUUID, req.query.viewer);
-      if (profile === undefined) return refuseUnknownViewer(res, 'Meta', userUUID, req.query.viewer, true);
-      if (profile?.tags.length) req.viewerTags = profile.tags;
-      const view = profile?.id ? withViewerAccounts(config, scopeConfigToProfile(config, userUUID, profile.id)) : config;
-      const { tags } = resolveManifestTags(config, tagsAsked(req));
-      const meta = await collectionMeta(userUUID, view, tags, stremioId);
+      if (profile === undefined) return refuseUnknownViewer(res, 'Meta', userUUID, req.query.viewer, 'debug');
+      if (profile) req.viewerTags = profile.tags;
+      const viewerConfig = profile?.id ? withViewerAccounts(config, scopeConfigToProfile(config, userUUID, profile.id)) : config;
+      const { tags } = resolveManifestTags(config, tagQueryOf(req));
+      const meta = await collectionMeta(userUUID, viewerConfig, tags, stremioId);
       if (!meta) return res.status(404).send({ error: "Collection not found" });
       req.userConfig = config;
       return respond(req, res, { meta });
@@ -5915,7 +5835,7 @@ addon.post(["/stremio/:userUUID/watch_state/push/:type/:id.json", "/stremio/:use
     return res.status(404).json({ error: "User configuration not found" });
   }
 
-  if (!config.playbackReporting) {
+  if (!scrobblesJellyfin(config)) {
     consola.debug(`[Playback] Reporting is off for ${userUUID}, dropping ${type}/${id}`);
     return res.status(404).json({ error: "Playback reporting is not enabled" });
   }
@@ -5951,7 +5871,7 @@ addon.get("/stremio/:userUUID/watch_state/pull.json", async function (req, res) 
   } catch {
     config = null;
   }
-  if (!config || !config.playbackReporting) {
+  if (!config || !scrobblesJellyfin(config)) {
     return res.status(404).json({ error: "Watch state is not enabled" });
   }
 
@@ -5970,6 +5890,87 @@ addon.get("/stremio/:userUUID/watch_state/pull.json", async function (req, res) 
   } catch (error) {
     consola.error(`[Watch State] Failed to build the pull for ${userUUID}: ${error.message}`);
     return res.status(500).json({ error: "Failed to read watch state" });
+  }
+});
+
+// --- Stremio player and library events ---
+// Stremio does not wait for or read the answer, so it is given before the work.
+function stremioEventRoute(resource) {
+  return async function (req, res) {
+    const { userUUID, type, id, extra } = req.params;
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Cache-Control', 'no-store');
+
+    let stored;
+    try {
+      stored = await loadSharedConfig(userUUID);
+    } catch {
+      stored = null;
+    }
+    if (!stored) return res.json({ success: false });
+
+    const { profileForViewer } = require('./lib/jellyfin/profiles');
+    const profile = profileForViewer(stored, userUUID, req.query.viewer);
+    if (profile === undefined) return refuseUnknownViewer(res, 'Stremio', userUUID, req.query.viewer);
+
+    const { runInViewerScope } = require('./lib/jellyfin/viewer');
+    const { clientRequest, loadConfig } = require('./lib/jellyfin/context');
+    const { PLAY_SOURCES } = require('./lib/playSources');
+    const viewerReq = clientRequest(userUUID, profile?.id ?? null, PLAY_SOURCES.stremio.client);
+    return runInViewerScope(false, async () => {
+      const { syncsStremioLibrary } = require('./lib/watchTracking');
+      const { parseStremioEvent, stremioEventTarget, stremioEventKey, stremioEventSlot, isRepeatEvent, runInOrder, titleType, clientPlayOf, clientMarkOf } = require('./lib/stremioEvents');
+      const config = await loadConfig(viewerReq).catch(() => null);
+      const event = config && PLAY_SOURCES.stremio.scrobbles(config) ? parseStremioEvent(resource, type, id, extra) : null;
+      if (!event) return res.json({ success: false });
+      res.json({ success: true });
+
+      require('./lib/stremioEventStatus').noteEvent(userUUID, profile?.id ?? '');
+      const { viewerScope } = require('./lib/playbackHandler');
+      const scope = viewerScope(userUUID, config);
+      if (isRepeatEvent(scope, stremioEventTarget(event), stremioEventKey(event))) return;
+
+      runInOrder(`${scope}|${stremioEventSlot(event)}`, async () => {
+        const playstate = require('./lib/jellyfin/playstate');
+        if (event.resource === 'player') {
+          const play = clientPlayOf(event);
+          return play ? playstate.recordClientPlay(viewerReq, play, 'stremio') : undefined;
+        }
+        if (event.action === 'watched' || event.action === 'unwatched') {
+          const mark = clientMarkOf(event);
+          return mark ? playstate.recordClientMark(viewerReq, mark, 'stremio') : undefined;
+        }
+        if (!syncsStremioLibrary(config)) return;
+        const { setWatchlisted } = require('./lib/jellyfin/watchlist');
+        await setWatchlisted(userUUID, config, { k: event.type, t: titleType(event.metaId, event.type), i: event.metaId }, event.action === 'libraryAdd');
+      }).catch((error) => consola.error(`[Stremio] ${resource} ${type}/${id} failed: ${error.message}`));
+    });
+  };
+}
+addon.get("/stremio/:userUUID/player/:type/:id/:extra.json", stremioEventRoute('player'));
+addon.get("/stremio/:userUUID/library/:type/:id/:extra.json", stremioEventRoute('library'));
+
+// When each install link last fetched a manifest declaring the Stremio events, and last sent one.
+addon.post("/api/stremio/:userUUID/event-status", configLoadRateLimitMiddleware, async function (req, res) {
+  const userUUID = String(req.params.userUUID);
+  const password = req.body?.password;
+  try {
+    const accountId = req.session?.accountId;
+    const owns = Boolean(accountId) && (await database.ownsConfig(accountId, userUUID));
+    const verified = !owns && password ? await database.verifyUserAndGetConfig(userUUID, String(password)) : null;
+    if (!owns && !verified) {
+      return res.status(401).json({ error: 'Sign in or enter the configuration password to read the Stremio status' });
+    }
+    const config = verified ?? (await database.getUserConfig(userUUID).catch(() => null));
+    const { listProfiles } = require('./lib/jellyfin/profiles');
+    const { readStatus } = require('./lib/stremioEventStatus');
+    const links = await readStatus(userUUID, listProfiles(config, userUUID).map((profile) => profile.id ?? ''));
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ links });
+  } catch (error) {
+    consola.error(`[Stremio] Failed to read the event status for ${userUUID}: ${error.message}`);
+    return res.status(500).json({ error: "Failed to read the Stremio status" });
   }
 });
 
@@ -6768,18 +6769,89 @@ addon.use('/configure', express.static(clientDistDir, { setHeaders: setClientDis
 addon.use(express.static(publicDir));
 addon.use(express.static(clientDistDir, { setHeaders: setClientDistCacheHeaders }));
 
+addon.get(require('./lib/dashboardApp').DASHBOARD_APP_MANIFEST, (req, res) => {
+  const manifest = require('./lib/dashboardApp').dashboardAppManifest(req.query);
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.type('application/manifest+json').send(JSON.stringify(manifest));
+});
+
+addon.get(require('./lib/dashboardApp').OWN_PAGE_APP_MANIFEST, (req, res) => {
+  const manifest = require('./lib/dashboardApp').ownPageAppManifest(req.query);
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.type('application/manifest+json').send(JSON.stringify(manifest));
+});
+
+// A configuration's own Jellyfin page: the same app, opened on its own shell.
+addon.get("/api/own-page/status", (req, res) => {
+  res.json(require('./lib/jellyfin/ownPage').ownPageStatus());
+});
+
+addon.post("/api/own-page/:userUUID/session", (req, res, next) => require('./lib/jellyfin/ownPage').ownPageAddressLimit(req, res, next), async (req, res) => {
+  try {
+    const outcome = await require('./lib/jellyfin/ownPage').startSession(req, String(req.params.userUUID), req.body?.password);
+    res.status(outcome.status).json(outcome.body);
+  } catch (error) {
+    consola.error('[Own Page] Sign-in failed:', error);
+    res.status(500).json({ error: 'The sign-in could not be checked' });
+  }
+});
+
+addon.get("/api/own-page/:userUUID/profiles", (req, res, next) => require('./lib/jellyfin/ownPage').ownPageAddressLimit(req, res, next), async (req, res) => {
+  try {
+    const ownPage = require('./lib/jellyfin/ownPage');
+    const outcome = await ownPage.sessionProfiles(req.headers[ownPage.OWN_PAGE_HEADER], String(req.params.userUUID));
+    res.status(outcome.status).json(outcome.body);
+  } catch (error) {
+    consola.error('[Own Page] Profiles failed:', error);
+    res.status(500).json({ error: 'The profiles could not be read' });
+  }
+});
+
+addon.post("/api/own-page/:userUUID/unlock", (req, res, next) => require('./lib/jellyfin/ownPage').ownPageAddressLimit(req, res, next), async (req, res) => {
+  try {
+    const ownPage = require('./lib/jellyfin/ownPage');
+    const outcome = await ownPage.unlockProfile(req.headers[ownPage.OWN_PAGE_HEADER], String(req.params.userUUID), req.body?.profile, req.body?.pin);
+    res.status(outcome.status).json(outcome.body);
+  } catch (error) {
+    consola.error('[Own Page] Unlock failed:', error);
+    res.status(500).json({ error: 'The PIN could not be checked' });
+  }
+});
+
+addon.get(["/jellyfin-page/:userUUID", "/jellyfin-page/:userUUID/{*page}"], (req, res) => {
+  try {
+    const { ownPageAppHead, DASHBOARD_APP_THEME } = require('./lib/dashboardApp');
+    const html = fs.readFileSync(clientIndexPath, 'utf8')
+      .replace(/<title>.*?<\/title>/, '<title>Your viewing page</title>')
+      .replace(/\s*<link rel="apple-touch-icon"[^>]*>/, '')
+      .replace(/<meta name="theme-color" content="[^"]*"/, `<meta name="theme-color" content="${DASHBOARD_APP_THEME}"`)
+      .replace('</head>', `    ${ownPageAppHead(String(req.params.userUUID))}\n  <script>window.OWN_PAGE_MODE = true;</script>\n</head>`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('html').send(html);
+  } catch (error) {
+    consola.error('[Own Page] Page failed:', error);
+    res.status(500).send('The page could not be loaded');
+  }
+});
+
 // Dedicated Dashboard Page Route
-addon.get("/dashboard", (req, res) => {
+addon.get(["/dashboard", "/dashboard/{*page}"], (req, res) => {
   // Serve the same HTML but with dashboard-specific handling
   try {
     let html = fs.readFileSync(clientIndexPath, 'utf8');
-    
+
     // Inject dashboard-specific meta tags and title
     html = html.replace(
       /<title>.*?<\/title>/,
       '<title>AIO Metadata Dashboard</title>'
     );
-    
+
+    const { dashboardAppHead, DASHBOARD_APP_THEME } = require('./lib/dashboardApp');
+    html = html
+      .replace(/\s*<link rel="apple-touch-icon"[^>]*>/, '')
+      .replace(/<meta name="theme-color" content="[^"]*"/, `<meta name="theme-color" content="${DASHBOARD_APP_THEME}"`)
+      .replace('</head>', `    ${dashboardAppHead(req.path, req.query)}\n</head>`);
+
     // Add dashboard-specific script to auto-navigate to dashboard
     html = html.replace(
       '</head>',
@@ -6803,11 +6875,6 @@ addon.get("/dashboard", (req, res) => {
     consola.error('Error serving dashboard page:', error);
     res.status(500).send('Error loading dashboard');
   }
-});
-
-// Dashboard with trailing slash
-addon.get("/dashboard/", (req, res) => {
-  res.redirect('/dashboard');
 });
 
 addon.get('/api/config/addon-info', (req, res) => {
@@ -7335,6 +7402,9 @@ async function describeSelfDemotion(req, key, proposedValue, confirmed) {
 
   return null;
 }
+
+// A Jellyfin tab route: an administrator as before, or a configuration's own page as far as `access` reaches.
+const jellyfinRoute = (access) => require('./lib/jellyfin/ownPage').ownPageGuard(access, requireDashboardAdmin);
 
 function requireDashboardAdmin(req, res, next) {
   // A signed-in administrator needs no key. ADMIN_KEY stays the way in when the
@@ -8241,18 +8311,63 @@ addon.get("/api/dashboard/jellyfin/search", requireDashboardAdmin, async (req, r
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/export", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/export", jellyfinRoute({ reach: "config", heavy: true, turn: "files" }), async (req, res) => {
   try {
-    const payload = await require('./lib/jellyfin/dashboard').dashboardExport(String(req.params.userUUID));
-    res.setHeader('Content-Disposition', `attachment; filename="jellyfin-playback-${String(req.params.userUUID).slice(0, 8)}.json"`);
+    const userUUID = String(req.params.userUUID);
+    const config = await database.getUserConfig(userUUID).catch(() => null);
+    const payload = await require('./lib/jellyfin/historyTransfer').buildHistoryExport(userUUID, config);
+    res.setHeader('Content-Disposition', `attachment; filename="aiometadata-history-${userUUID.slice(0, 8)}-${payload.exportedAt.slice(0, 10)}.json"`);
     res.json(payload);
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
-    res.status(500).json({ error: 'Failed to export Jellyfin playback' });
+    res.status(500).json({ error: 'Failed to export the watch history' });
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/plays", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/import", jellyfinRoute({ reach: "config", heavy: true, turn: "files" }), (req, res, next) => {
+  const { historyImportBody } = require('./lib/jellyfin/historyTransfer');
+  if (!req.ownPage) return historyImportBody()(req, res, next);
+  const limit = require('./lib/jellyfin/ownPage').ownPageImportMb();
+  return historyImportBody(limit)(req, res, (error) => {
+    if (error?.type === 'entity.too.large') return res.status(413).json({ error: `That file is over the ${limit} MB this page takes` });
+    return next(error);
+  });
+}, async (req, res) => {
+  try {
+    const userUUID = String(req.params.userUUID);
+    const config = await database.getUserConfig(userUUID).catch(() => null);
+    if (!config) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    const outcome = await require('./lib/jellyfin/historyTransfer').receiveHistoryImport(userUUID, config, req.body, req.query);
+    res.status(outcome.status).json(outcome.body);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to import the watch history' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/import", jellyfinRoute({ reach: "config" }), async (req, res) => {
+  try {
+    res.json({ job: await require('./lib/jellyfin/historyTransfer').historyImportStatus(String(req.params.userUUID)) });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the import' });
+  }
+});
+
+addon.delete("/api/dashboard/jellyfin/:userUUID/import", jellyfinRoute({ reach: "config" }), async (req, res) => {
+  try {
+    const dismissed = await require('./lib/jellyfin/historyTransfer').dismissHistoryImport(String(req.params.userUUID));
+    res.status(dismissed ? 200 : 409).json(dismissed ? { ok: true } : { error: 'The import is still running' });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to clear the import' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/plays", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const kind = req.query.kind === 'played' ? 'played' : 'progress';
@@ -8270,7 +8385,57 @@ addon.get("/api/dashboard/jellyfin/:userUUID/plays", requireDashboardAdmin, asyn
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/shows", requireDashboardAdmin, async (req, res) => {
+// Art the dashboard draws into images it exports, read here so the browser can use it: public image hosts only.
+addon.get("/api/dashboard/art", jellyfinRoute({ reach: "session" }), async (req, res) => {
+  const url = typeof req.query.url === 'string' ? req.query.url : '';
+  if (!/^https?:\/\//i.test(url) || url.length > 2048) {
+    res.status(400).json({ error: 'An image URL is expected' });
+    return;
+  }
+  const { fetchImage, isNotModified, OversizeImage } = require('./lib/posterCache/upstream');
+  try {
+    const outcome = await fetchImage(url);
+    if (isNotModified(outcome)) {
+      res.status(502).json({ error: 'The image could not be read' });
+      return;
+    }
+    res.setHeader('Content-Type', outcome.contentType);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.send(outcome.body);
+  } catch (error) {
+    if (error instanceof OversizeImage) error.stream?.destroy?.();
+    // Always 502: a card asks for many paths at once, and a run of 4xx answers reads as probing to WAFs and ban lists.
+    res.status(502).json({ error: 'The image could not be read' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/year", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const year = parseInt(String(req.query.year ?? ''), 10);
+    // Next year is let through for the zones already in it; the review checks the viewer's own zone.
+    if (!Number.isInteger(year) || year < 1970 || year > new Date().getUTCFullYear() + 1) {
+      res.status(400).json({ error: 'Pick a year' });
+      return;
+    }
+    const have = Number(req.query.have);
+    const payload = await require('./lib/jellyfin/yearReview').dashboardYear(String(req.params.userUUID), profile, year, Number.isFinite(have) && have > 0 ? have : null);
+    if (!payload) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (payload.notBegun) {
+      res.status(400).json({ error: 'Pick a year' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the year in review' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/shows", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const payload = await require('./lib/jellyfin/dashboard').dashboardShows(String(req.params.userUUID), profile, req.query.fresh === '1');
@@ -8285,7 +8450,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/shows", requireDashboardAdmin, asyn
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/calendar", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/calendar", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const from = Number(req.query.from);
@@ -8299,14 +8464,66 @@ addon.get("/api/dashboard/jellyfin/:userUUID/calendar", requireDashboardAdmin, a
       res.status(404).json({ error: 'No such configuration' });
       return;
     }
-    res.json({ rows });
+    res.json(rows === 'pending' ? { rows: [], pending: true } : { rows });
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to read the Jellyfin calendar' });
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID/library", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/calendar/feed", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const secret = await require('./lib/jellyfin/calendarFeed').calendarFeedSecret(String(req.params.userUUID), profile);
+    res.json({ secret });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the calendar feed' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/calendar/feed", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    const secret = await require('./lib/jellyfin/calendarFeed').issueCalendarFeed(String(req.params.userUUID), profile);
+    if (!secret) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json({ secret });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to create the calendar feed' });
+  }
+});
+
+addon.delete("/api/dashboard/jellyfin/:userUUID/calendar/feed", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    await require('./lib/jellyfin/calendarFeed').revokeCalendarFeed(String(req.params.userUUID), profile);
+    res.json({ success: true });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to turn off the calendar feed' });
+  }
+});
+
+addon.get("/calendar/:secret.ics", async (req, res) => {
+  try {
+    const body = await require('./lib/jellyfin/calendarFeed').calendarFeed(String(req.params.secret));
+    if (!body) {
+      res.status(404).type('text/plain').send('No such calendar');
+      return;
+    }
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.type('text/calendar; charset=utf-8').send(body);
+  } catch (error) {
+    consola.error('[Calendar Feed] Error:', error);
+    res.status(500).type('text/plain').send('Could not build the calendar');
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/library", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const tab = ['watchlist', 'ratings', 'dropped'].includes(String(req.query.tab)) ? String(req.query.tab) : 'watchlist';
@@ -8325,7 +8542,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID/library", requireDashboardAdmin, as
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/library/undrop", requireDashboardAdmin, async (req, res) => {
+addon.post("/api/dashboard/jellyfin/:userUUID/library/undrop", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const metaId = typeof req.body?.metaId === 'string' ? req.body.metaId.trim() : '';
     const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
@@ -8345,7 +8562,636 @@ addon.post("/api/dashboard/jellyfin/:userUUID/library/undrop", requireDashboardA
   }
 });
 
-addon.post("/api/dashboard/jellyfin/:userUUID/shows/refresh", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID/searches", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const payload = await require('./lib/jellyfin/dashboard').dashboardSearches(String(req.params.userUUID), profile);
+    if (!payload) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to list searches' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/find", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const query = String(req.query.q ?? '').trim().slice(0, 100);
+    if (!query) {
+      res.json({ query, available: true, results: [] });
+      return;
+    }
+    const catalog = typeof req.query.catalog === 'string' && req.query.catalog ? req.query.catalog : null;
+    const payload = await require('./lib/jellyfin/dashboard').dashboardFindTitles(String(req.params.userUUID), profile, query, catalog);
+    if (!payload) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to search titles' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/title", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const ref = {
+      item: typeof req.query.item === 'string' ? req.query.item : undefined,
+      id: typeof req.query.id === 'string' ? req.query.id : undefined,
+      type: req.query.type === 'movie' ? 'movie' : 'series',
+    };
+    const payload = await require('./lib/jellyfin/dashboard').dashboardTitle(String(req.params.userUUID), profile, ref);
+    if (!payload) {
+      res.status(404).json({ error: 'No such title' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the title' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/person", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const item = typeof req.query.item === 'string' ? req.query.item : '';
+    const payload = item ? await require('./lib/jellyfin/dashboard').dashboardPerson(String(req.params.userUUID), profile, item) : null;
+    if (!payload) {
+      res.status(404).json({ error: 'No such person' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the person' });
+  }
+});
+
+const PERSON_ROLES = new Set(['all', 'Actor', 'Director', 'Writer', 'Producer', 'Composer']);
+
+addon.get("/api/dashboard/jellyfin/:userUUID/person/titles", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const item = typeof req.query.item === 'string' ? req.query.item : '';
+    const kind = req.query.kind === 'movie' || req.query.kind === 'series' ? req.query.kind : 'all';
+    const role = typeof req.query.role === 'string' && PERSON_ROLES.has(req.query.role) ? req.query.role : 'all';
+    const offset = Number.parseInt(String(req.query.offset ?? '0'), 10);
+    const limit = Number.parseInt(String(req.query.limit ?? '40'), 10);
+    const payload = item
+      ? await require('./lib/jellyfin/dashboard').dashboardPersonTitles(String(req.params.userUUID), profile, item, kind, role, req.query.order === 'oldest', Number.isFinite(offset) ? offset : 0, Number.isFinite(limit) ? limit : 40)
+      : null;
+    if (!payload) {
+      res.status(404).json({ error: 'No such person' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the filmography' });
+  }
+});
+
+const TITLE_ACTIONS = new Set(['played', 'unplayed', 'playedUpTo', 'watchlist', 'unwatchlist', 'drop', 'undrop', 'rate']);
+
+addon.post("/api/dashboard/jellyfin/:userUUID/title/action", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const action = String(req.body?.action ?? '');
+    const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds.filter((id) => typeof id === 'string' && id).slice(0, 500) : [];
+    if (!TITLE_ACTIONS.has(action) || !itemIds.length) {
+      res.status(400).json({ error: 'Name an action and the items it applies to' });
+      return;
+    }
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    const rating = req.body?.rating === null || req.body?.rating === undefined ? null : Number(req.body.rating);
+    const done = await require('./lib/jellyfin/dashboard').dashboardTitleAction(String(req.params.userUUID), profile, action, itemIds, rating);
+    if (done === null) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (done === false) {
+      res.status(422).json({ error: 'The title could not be read, so nothing was changed' });
+      return;
+    }
+    res.json({ done });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to change the title' });
+  }
+});
+
+const dashboardProfile = (value) => (typeof value === 'string' ? value : null);
+const dashboardItemIds = (value) => (Array.isArray(value) ? value.filter((id) => typeof id === 'string' && /^[0-9a-f-]{32,36}$/i.test(id)).slice(0, 500) : []);
+
+addon.get("/api/dashboard/jellyfin/:userUUID/playlists", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const payload = await require('./lib/jellyfin/dashboardPlaylists').dashboardPlaylists(String(req.params.userUUID), dashboardProfile(req.query.profile));
+    if (!payload) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the playlists' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/playlists/:playlistId", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const playlists = require('./lib/jellyfin/dashboardPlaylists');
+    if (!playlists.isPlaylistId(req.params.playlistId)) {
+      res.status(404).json({ error: 'No such playlist' });
+      return;
+    }
+    const offset = Math.max(0, parseInt(String(req.query.offset ?? 0), 10) || 0);
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? 20), 10) || 20));
+    const payload = await playlists.dashboardPlaylist(String(req.params.userUUID), dashboardProfile(req.query.profile), req.params.playlistId, offset, limit);
+    if (!payload || payload.missing) {
+      res.status(404).json({ error: payload ? 'No such playlist' : 'No such configuration' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the playlist' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/playlists/preview", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const itemIds = dashboardItemIds(req.body?.itemIds);
+    if (!itemIds.length) {
+      res.status(400).json({ error: 'Name the items to add' });
+      return;
+    }
+    const payload = await require('./lib/jellyfin/dashboardPlaylists').dashboardPlaylistPreview(String(req.params.userUUID), dashboardProfile(req.body?.profile), itemIds);
+    if (!payload) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(payload);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the playlists' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/playlists/change", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const playlists = require('./lib/jellyfin/dashboardPlaylists');
+    const body = req.body ?? {};
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const id = body.id;
+    let change = null;
+    if (body.op === 'create' && name) change = { op: 'create', name, itemIds: dashboardItemIds(body.itemIds) };
+    else if (!playlists.isPlaylistId(id)) change = null;
+    else if (body.op === 'rename' && name) change = { op: 'rename', id, name };
+    else if (body.op === 'delete') change = { op: 'delete', id };
+    else if (body.op === 'add' && dashboardItemIds(body.itemIds).length) change = { op: 'add', id, itemIds: dashboardItemIds(body.itemIds), position: Number.isInteger(body.position) ? body.position : null };
+    else if (body.op === 'remove' && dashboardItemIds(body.itemIds).length) change = { op: 'remove', id, itemIds: dashboardItemIds(body.itemIds) };
+    else if (body.op === 'move' && dashboardItemIds([body.itemId]).length && Number.isInteger(body.to)) change = { op: 'move', id, itemId: body.itemId, to: body.to };
+    if (!change) {
+      res.status(400).json({ error: 'That playlist change could not be read' });
+      return;
+    }
+    const outcome = await playlists.dashboardPlaylistChange(String(req.params.userUUID), dashboardProfile(body.profile), change);
+    if (!outcome) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (!outcome.ok) {
+      res.status(outcome.status).json({ error: outcome.error });
+      return;
+    }
+    res.json(outcome);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to change the playlist' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/progress/remove", jellyfinRoute({ reach: "heldProfile", field: "profileKey" }), async (req, res) => {
+  try {
+    const videoId = typeof req.body?.videoId === 'string' && req.body.videoId.length <= 300 ? req.body.videoId : '';
+    const profileKey = typeof req.body?.profileKey === 'string' && req.body.profileKey.length <= 200 ? req.body.profileKey : '';
+    if (!videoId) {
+      res.status(400).json({ error: 'Name the episode or film to remove' });
+      return;
+    }
+    const done = await require('./lib/jellyfin/dashboard').dashboardClearResume(String(req.params.userUUID), profileKey, videoId);
+    if (done === null) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (!done) {
+      res.status(400).json({ error: 'That play could not be removed' });
+      return;
+    }
+    res.json({ done });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to remove it from Continue Watching' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/same-viewing", jellyfinRoute({ reach: "heldProfile", field: "profile" }), async (req, res) => {
+  try {
+    const video = typeof req.body?.video === 'string' && req.body.video.length <= 300 ? req.body.video : '';
+    const profileKey = typeof req.body?.profile === 'string' && req.body.profile.length <= 200 ? req.body.profile : '';
+    const at = Number(req.body?.at);
+    const theirs = Number(req.body?.theirs);
+    if (!video || !Number.isFinite(at) || !Number.isFinite(theirs)) {
+      res.status(400).json({ error: 'Name the play and the date the tracker has' });
+      return;
+    }
+    const done = await require('./lib/jellyfin/dashboard').dashboardSameViewing(String(req.params.userUUID), profileKey, video, at, theirs);
+    if (done === null) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (done === 'invalid') {
+      res.status(400).json({ error: 'That play or profile does not match a rewatch' });
+      return;
+    }
+    if (!done) {
+      res.status(409).json({ error: 'That play is no longer in the history' });
+      return;
+    }
+    res.json({ done });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to join the play to the earlier viewing' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/title/watch-date", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : '';
+    const from = req.body?.from === null ? null : Number(req.body?.from);
+    const to = Number(req.body?.to);
+    if (!itemId || (from !== null && !Number.isFinite(from)) || !Number.isFinite(to) || to < Date.UTC(1900, 0, 1) || to > Date.now() + 5 * 60 * 1000) {
+      res.status(400).json({ error: 'Name the item, the viewing and a date that is not in the future' });
+      return;
+    }
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    const moved = await require('./lib/jellyfin/dashboard').dashboardWatchDate(String(req.params.userUUID), profile, itemId, from, Math.round(to));
+    if (moved === null) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (!moved) {
+      res.status(409).json({ error: 'That viewing is no longer in the history' });
+      return;
+    }
+    res.json({ moved });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to change the watch date' });
+  }
+});
+
+addon.get("/api/dashboard/trackers", jellyfinRoute({ reach: "session" }), (req, res) => {
+  res.json({ trackers: require('./lib/trackers').trackerFacts() });
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/sync", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const sync = await require('./lib/jellyfin/dashboard').dashboardSync(String(req.params.userUUID), profile);
+    if (!sync) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(sync);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the tracker sync' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/run", jellyfinRoute({ reach: "accounts", accounts: ["key"], heavy: true, turn: "trackers" }), async (req, res) => {
+  try {
+    const key = typeof req.body?.key === 'string' ? req.body.key : '';
+    if (!key) {
+      res.status(400).json({ error: 'Name the tracker account to read' });
+      return;
+    }
+    const done = await require('./lib/jellyfin/dashboard').dashboardSyncNow(String(req.params.userUUID), key, req.body?.full === true);
+    if (!done) {
+      res.status(404).json({ error: 'No such tracker account on this configuration' });
+      return;
+    }
+    res.json(done);
+  } catch (error: any) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(502).json({ error: `The tracker refused the read: ${String(error?.trackerSaid ?? error?.message ?? 'no answer').slice(0, 200)}` });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/outbox", jellyfinRoute({ reach: "config" }), async (req, res) => {
+  try {
+    const action = req.body?.action === 'retry' || req.body?.action === 'drop' ? req.body.action : null;
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter((id) => Number.isInteger(id) && id > 0).slice(0, 500) : [];
+    if (!action || !ids.length) {
+      res.status(400).json({ error: 'Name retry or drop and the writes it applies to' });
+      return;
+    }
+    const count = await require('./lib/jellyfin/dashboard').dashboardOutbox(String(req.params.userUUID), action, ids);
+    if (count === null) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json({ count });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to change the waiting writes' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift", jellyfinRoute({ reach: "profile", turn: "trackers" }), async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const drift = await require('./lib/jellyfin/dashboard').dashboardDrift(String(req.params.userUUID), profile);
+    if (!drift) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json(drift);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to compare the trackers' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/drift", jellyfinRoute({ reach: "profile", accounts: ["key"], heavy: true, turn: "trackers" }), async (req, res) => {
+  try {
+    const key = typeof req.body?.key === 'string' ? req.body.key : '';
+    const action = ['push', 'pull', 'leave', 'restore'].includes(req.body?.action) ? req.body.action : null;
+    const items = Array.isArray(req.body?.items) ? req.body.items.filter((item) => typeof item === 'string').slice(0, 500) : null;
+    const origin = typeof req.body?.origin === 'string' && req.body.origin.length <= 32 ? req.body.origin : null;
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    if (!key || !action || ((action === 'leave' || action === 'restore') && !origin)) {
+      res.status(400).json({ error: 'Name the tracker account, the action and, to leave out or show again, the import' });
+      return;
+    }
+    const count = await require('./lib/jellyfin/dashboard').dashboardDriftAction(String(req.params.userUUID), key, action, items, origin, profile);
+    if (count === null) {
+      res.status(404).json({ error: 'No such tracker account on this configuration' });
+      return;
+    }
+    res.json({ count });
+  } catch (error: any) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(502).json({ error: `The tracker could not be read first: ${String(error?.trackerSaid ?? error?.message ?? 'no answer').slice(0, 200)}` });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift/imported", jellyfinRoute({ reach: "profile", accounts: ["key"] }), async (req, res) => {
+  try {
+    const key = typeof req.query.key === 'string' ? req.query.key : '';
+    const origin = typeof req.query.origin === 'string' ? req.query.origin.slice(0, 32) : '';
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const items = key && origin ? await require('./lib/jellyfin/dashboard').dashboardDriftImported(String(req.params.userUUID), key, origin, profile) : null;
+    if (!items) {
+      res.status(404).json({ error: 'No such tracker account on this configuration' });
+      return;
+    }
+    res.json({ items });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to list the imported watches' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/drift/item", jellyfinRoute({ reach: "accounts", accounts: ["key"] }), async (req, res) => {
+  try {
+    const key = typeof req.query.key === 'string' ? req.query.key : '';
+    const video = typeof req.query.video === 'string' ? req.query.video.slice(0, 120) : '';
+    const side = req.query.side === 'ahead' ? 'ahead' : 'behind';
+    const bases = typeof req.query.bases === 'string' ? req.query.bases.split(',').slice(0, 20) : [];
+    const detail = key && video ? await require('./lib/jellyfin/dashboard').dashboardDriftItem(String(req.params.userUUID), key, side, video, bases) : null;
+    if (!detail) {
+      res.status(404).json({ error: 'No such title on this tracker account' });
+      return;
+    }
+    res.json(detail);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the details' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/match/search", jellyfinRoute({ reach: "accounts", accounts: ["key"] }), async (req, res) => {
+  try {
+    const key = typeof req.query.key === 'string' ? req.query.key : '';
+    const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
+    const kind = req.query.kind === 'movie' ? 'movie' : 'series';
+    if (!key || query.length < 2) {
+      res.status(400).json({ error: 'Name the tracker account and what to look for' });
+      return;
+    }
+    const results = await require('./lib/jellyfin/dashboard').dashboardMatchSearch(String(req.params.userUUID), key, query, kind);
+    if (!results) {
+      res.status(404).json({ error: 'No tracker account on this configuration that titles can be matched on' });
+      return;
+    }
+    res.json({ results });
+  } catch (error: any) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(502).json({ error: 'The tracker could not be searched' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/match/detail", jellyfinRoute({ reach: "accounts", accounts: ["key"] }), async (req, res) => {
+  try {
+    const key = typeof req.body?.key === 'string' ? req.body.key : '';
+    const detail = key ? await require('./lib/jellyfin/dashboard').dashboardMatchDetail(String(req.params.userUUID), key, req.body?.candidate) : null;
+    if (!detail) {
+      res.status(404).json({ error: 'That title could not be read from the tracker' });
+      return;
+    }
+    res.json(detail);
+  } catch (error: any) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(502).json({ error: 'The tracker could not be read' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/matches", jellyfinRoute({ reach: "accounts", accounts: ["key"] }), async (req, res) => {
+  try {
+    const key = typeof req.query.key === 'string' ? req.query.key : '';
+    const matches = key ? await require('./lib/jellyfin/dashboard').dashboardMatches(String(req.params.userUUID), key) : null;
+    if (!matches) {
+      res.status(404).json({ error: 'No tracker account on this configuration that titles can be matched on' });
+      return;
+    }
+    res.json({ matches });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the matched titles' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/match", jellyfinRoute({ reach: "accounts", accounts: ["key"] }), async (req, res) => {
+  try {
+    const key = typeof req.body?.key === 'string' ? req.body.key : '';
+    const saved = key ? await require('./lib/jellyfin/dashboard').dashboardMatchSave(String(req.params.userUUID), key, req.body) : null;
+    if (!saved) {
+      res.status(400).json({ error: 'Pick a title on the tracker and the title it stands for here' });
+      return;
+    }
+    res.json(saved);
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to save the match' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/match/remove", jellyfinRoute({ reach: "accounts", accounts: ["key"] }), async (req, res) => {
+  try {
+    const key = typeof req.body?.key === 'string' ? req.body.key : '';
+    const group = typeof req.body?.group === 'string' ? req.body.group : '';
+    const removed = key && group ? await require('./lib/jellyfin/dashboard').dashboardMatchRemove(String(req.params.userUUID), key, group) : false;
+    if (!removed) {
+      res.status(404).json({ error: 'No such match' });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to remove the match' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/preview", jellyfinRoute({ reach: "profile", accounts: ["from", "to"], heavy: true, turn: "trackers" }), async (req, res) => {
+  try {
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    const from = typeof req.body?.from === 'string' ? req.body.from : '';
+    const to = typeof req.body?.to === 'string' ? req.body.to : '';
+    const since = Number(req.body?.since) > 0 ? Number(req.body.since) : 0;
+    const what = ['ratings', 'watchlist', 'dropped'].includes(req.body?.what) ? req.body.what : 'watches';
+    const preview = await require('./lib/jellyfin/dashboard').dashboardCopyPreview(String(req.params.userUUID), profile, from, to, since, what, req.body?.retry === true);
+    if (!preview) {
+      res.status(404).json({ error: 'Pick two different trackers on this configuration that can copy this' });
+      return;
+    }
+    res.json(preview);
+  } catch (error: any) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(502).json({ error: `The trackers could not be compared: ${String(error?.trackerSaid ?? error?.message ?? 'no answer').slice(0, 200)}` });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/describe", jellyfinRoute({ reach: "session" }), async (req, res) => {
+  try {
+    const videos = Array.isArray(req.body?.videos) ? req.body.videos.filter((v) => typeof v === 'string').slice(0, 120) : [];
+    res.json(await require('./lib/jellyfin/dashboard').dashboardCopyDescribe(String(req.params.userUUID), videos));
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to name the titles' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/sync/copy", jellyfinRoute({ reach: "config" }), async (req, res) => {
+  try {
+    res.json({ jobs: await require('./lib/jellyfin/dashboard').dashboardCopyJobs(String(req.params.userUUID)) });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to read the copies' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy", jellyfinRoute({ reach: "profile", accounts: ["from", "to"], heavy: true, turn: "trackers" }), async (req, res) => {
+  try {
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    const from = typeof req.body?.from === 'string' ? req.body.from : '';
+    const to = typeof req.body?.to === 'string' ? req.body.to : '';
+    const since = Number(req.body?.since) > 0 ? Number(req.body.since) : 0;
+    const titles = Array.isArray(req.body?.titles) ? req.body.titles.filter((t) => typeof t === 'string').slice(0, 5000) : null;
+    const what = ['ratings', 'watchlist', 'dropped'].includes(req.body?.what) ? req.body.what : 'watches';
+    const id = await require('./lib/jellyfin/dashboard').dashboardCopyStart(String(req.params.userUUID), profile, from, to, since, titles, what, req.body?.retry === true);
+    if (id === null) {
+      res.status(404).json({ error: 'Pick two different trackers on this configuration' });
+      return;
+    }
+    res.json({ id });
+  } catch (error: any) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(502).json({ error: `The copy could not start: ${String(error?.trackerSaid ?? error?.message ?? 'no answer').slice(0, 200)}` });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/sync/copy/:id", jellyfinRoute({ reach: "config" }), async (req, res) => {
+  try {
+    const action = ['pause', 'resume', 'stop'].includes(req.body?.action) ? req.body.action : null;
+    const id = Number(req.params.id);
+    if (!action || !Number.isInteger(id)) {
+      res.status(400).json({ error: 'Name pause, resume or stop' });
+      return;
+    }
+    const ok = await require('./lib/jellyfin/dashboard').dashboardCopyControl(String(req.params.userUUID), id, action);
+    res.status(ok ? 200 : 409).json({ ok });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to change the copy' });
+  }
+});
+
+addon.get("/api/dashboard/jellyfin/:userUUID/devices", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    const devices = await require('./lib/jellyfin/dashboard').dashboardDevices(String(req.params.userUUID), profile);
+    if (!devices) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    res.json({ devices });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to list devices' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/devices/open", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+  try {
+    const deviceId = typeof req.body?.deviceId === 'string' ? req.body.deviceId : '';
+    const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : '';
+    if (!deviceId || !itemId) {
+      res.status(400).json({ error: 'Name a device and an item' });
+      return;
+    }
+    const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+    const start = Number(req.body?.startPositionTicks);
+    const sent = await require('./lib/jellyfin/dashboard').dashboardOpenOn(String(req.params.userUUID), profile, deviceId, {
+      itemId,
+      itemType: typeof req.body?.itemType === 'string' ? req.body.itemType : '',
+      itemName: typeof req.body?.itemName === 'string' ? req.body.itemName : '',
+      play: req.body?.play === true,
+      startPositionTicks: Number.isFinite(start) && start > 0 ? start : undefined,
+    });
+    if (sent === null) {
+      res.status(404).json({ error: 'No such configuration' });
+      return;
+    }
+    if (!sent) {
+      res.status(409).json({ error: 'That device is no longer connected' });
+      return;
+    }
+    res.json({ sent });
+  } catch (error) {
+    consola.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to reach the device' });
+  }
+});
+
+addon.post("/api/dashboard/jellyfin/:userUUID/shows/refresh", jellyfinRoute({ reach: "session", heavy: true }), async (req, res) => {
   try {
     const metaId = typeof req.body?.metaId === 'string' ? req.body.metaId.trim() : '';
     if (!metaId) {
@@ -8359,7 +9205,7 @@ addon.post("/api/dashboard/jellyfin/:userUUID/shows/refresh", requireDashboardAd
   }
 });
 
-addon.get("/api/dashboard/jellyfin/:userUUID", requireDashboardAdmin, async (req, res) => {
+addon.get("/api/dashboard/jellyfin/:userUUID", jellyfinRoute({ reach: "profile" }), async (req, res) => {
   try {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     const rows = parseInt(String(req.query.rows ?? ''), 10);
@@ -8369,7 +9215,7 @@ addon.get("/api/dashboard/jellyfin/:userUUID", requireDashboardAdmin, async (req
       res.status(404).json({ error: 'No such configuration' });
       return;
     }
-    res.json(payload);
+    res.json(require('./lib/jellyfin/ownPage').ownPageOverview(req, payload));
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch Jellyfin playback data' });

@@ -70,7 +70,7 @@ function isPermanentError(status: number): boolean {
 async function makeRequest(
   endpoint: string,
   apiKey: string,
-  method: 'GET' | 'POST' | 'DELETE' = 'GET',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE' = 'GET',
   body?: any
 ): Promise<any> {
   const state = getRateLimitState(apiKey);
@@ -354,17 +354,22 @@ async function fetchListBlock(apiKey: string, listId: string, blockOffset: numbe
   }, ttl, { upstream: true, sourceList: true });
 }
 
-async function fetchListPage(apiKey: string, listId: string, page: number, pageSize: number, newestFirst: boolean, ttl: number): Promise<{ items: any[] }> {
+async function fetchListPage(apiKey: string, listId: string, page: number, pageSize: number, newestFirst: boolean, ttl: number): Promise<{ items: any[]; total?: number }> {
   const blockSize = listBlockSize(pageSize);
   const start = (page - 1) * pageSize;
   const end = start + pageSize;
   const rows: any[] = [];
+  // Known only once a block comes back short, which is where the list ends.
+  let total: number | undefined;
   for (let at = Math.floor(start / blockSize) * blockSize; at < end; at += blockSize) {
     const items = await fetchListBlock(apiKey, listId, at, blockSize, newestFirst, ttl);
     rows.push(...items.slice(Math.max(0, start - at), end - at));
-    if (items.length < blockSize) break;
+    if (items.length < blockSize) {
+      total = at + items.length;
+      break;
+    }
   }
-  return { items: rows };
+  return total === undefined ? { items: rows } : { items: rows, total };
 }
 
 async function fetchPublicListByLink(apiKey: string, user: string, slug: string, page: number = 1, perPage: number = 20): Promise<any> {
@@ -384,14 +389,23 @@ async function markWatched(
   tmdbId: number,
   mediaType: 'movie' | 'tv',
   season?: number,
-  episode?: number
+  episode?: number,
+  watchedAt?: string | null
 ): Promise<any> {
-  const body: any = { tmdb_id: tmdbId, media_type: mediaType };
+  const body: any = { tmdb_id: tmdbId, media_type: mediaType, ...(watchedAt !== undefined ? { watched_at: watchedAt } : {}) };
   if (mediaType === 'tv' && season != null && episode != null) {
     body.season = season;
     body.episode = episode;
   }
   return makeRequest('/api/external/watched?dedupe=true', apiKey, 'POST', body);
+}
+
+async function setWatchedDate(apiKey: string, playId: string, watchedAt: string): Promise<any> {
+  return makeRequest(`/api/external/watched/${encodeURIComponent(playId)}`, apiKey, 'PATCH', { watched_at: watchedAt });
+}
+
+async function removePlay(apiKey: string, playId: string): Promise<any> {
+  return makeRequest(`/api/external/watched/${encodeURIComponent(playId)}`, apiKey, 'DELETE');
 }
 
 // --- Parse functions for catalog ---
@@ -550,6 +564,7 @@ export interface PmdbPlaybackOptions {
   played?: boolean;
   positionMs?: number;
   runtimeMs?: number;
+  watchedAt?: string | null;
 }
 
 async function createRating(apiKey: string, tmdbId: number, mediaType: 'movie' | 'tv', score: number): Promise<string | null> {
@@ -564,6 +579,19 @@ async function deleteRating(apiKey: string, id: string): Promise<void> {
 async function createEpisodeRating(apiKey: string, tmdbId: number, season: number, episode: number, score: number): Promise<string | null> {
   const data = await makeRequest('/api/external/episode-ratings', apiKey, 'POST', { tmdb_id: tmdbId, media_type: 'tv', season, episode, score, label: 'overall' });
   return data?.item?.id ? String(data.item.id) : null;
+}
+
+async function ratingsOf(apiKey: string, path: string): Promise<any[]> {
+  const data = await makeRequest(path, apiKey);
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
+async function fetchTitleRatings(apiKey: string, tmdbId: number, mediaType: 'movie' | 'tv'): Promise<any[]> {
+  return ratingsOf(apiKey, `/api/external/ratings?tmdb_id=${tmdbId}&media_type=${mediaType}&label=Overall`);
+}
+
+async function fetchEpisodeRatings(apiKey: string, tmdbId: number, season: number, episode: number): Promise<any[]> {
+  return ratingsOf(apiKey, `/api/external/episode-ratings?tmdb_id=${tmdbId}&media_type=tv&season=${season}&episode=${episode}&label=overall`);
 }
 
 async function deleteEpisodeRating(apiKey: string, id: string): Promise<void> {
@@ -643,7 +671,7 @@ async function reportPlayback(
     if (!options.played) return true;
   }
 
-  const result = await markWatched(apiKey, tmdbId, mediaType, season, episode);
+  const result = await markWatched(apiKey, tmdbId, mediaType, season, episode, options.watchedAt);
   return !!result?.success;
 }
 
@@ -739,6 +767,8 @@ export {
   fetchResume,
   fetchDropped,
   fetchWatched,
+  setWatchedDate,
+  removePlay,
   saveResume,
   clearResume,
   tmdbIdFrom,
@@ -747,6 +777,8 @@ export {
   deleteRating,
   createEpisodeRating,
   deleteEpisodeRating,
+  fetchTitleRatings,
+  fetchEpisodeRatings,
   fetchLists,
   fetchListItems,
   fetchListPage,

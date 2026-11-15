@@ -24,9 +24,9 @@ const {
   applyImdbRatingProjection,
   applyImdbRatingProjectionToList,
 }: any = require('./imdbRatingProjection');
-const { applyTrailerAddonProjection }: any = require('./trailerProjection');
 const { applyAnimeEpisodeDatesProjection }: any = require('./animeEpisodeDates');
 const { applyAnimeFillerProjection }: any = require('./animeFillerProjection');
+const { applyAddonTrailersProjection }: any = require('./trailerProjection');
 const {
   RELEASE_AVAILABILITY_FIELD,
   normalizeMetaReleaseAvailability,
@@ -463,8 +463,8 @@ function classifyResult(result: any, error: any = null, cacheKey: string | null 
     cacheKey.includes('stremthru-') ||
     cacheKey.includes('cinemeta-') ||
     cacheKey.includes('flixpatrol-') ||
-    cacheKey.includes('movielens-') ||
-    cacheKey.includes('lumiere-')
+    cacheKey.includes('lumiere-') ||
+    cacheKey.includes('movielens-')
   );
 
   if (isExternalApi) {
@@ -707,12 +707,12 @@ async function cacheWrapGlobal(key: string, method: () => Promise<any>, ttl: num
   // A refetch must not join a plain read already in flight, or it returns the
   // cached value it was meant to replace.
   const refetch = sourceList && sourceRefetchRequested();
-  const flightKey = refetch ? `refetch:${epochKey}` : epochKey;
+  const flightKey = refetch ? `refetch:${epochKey}` : options.accept ? `accept:${epochKey}` : epochKey;
   return singleFlight(flightKey, () => cacheWrapGlobalInternal(key, method, ttl, options, epochKey, refetch));
 }
 
 async function cacheWrapGlobalInternal(key: string, method: () => Promise<any>, ttl: number, options: any, versionedKey: string, refetch: boolean = false): Promise<any> {
-  const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries } = options;
+  const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries, accept } = options;
 
   let retries = 0;
 
@@ -737,10 +737,12 @@ async function cacheWrapGlobalInternal(key: string, method: () => Promise<any>, 
             globalCacheLogger.debug(`[Global-Cache] Cached error returned for ${truncateCacheKey(versionedKey)}`);
             updateCacheHealth(versionedKey, 'cached-error', true);
             return parsed;
-          } else {
+          } else if (!accept || accept(parsed)) {
             globalCacheLogger.debug(`⚡ [Global-Cache] HIT for ${truncateCacheKey(versionedKey)}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
+          } else {
+            globalCacheLogger.debug(`[Global-Cache] Refreshing ${truncateCacheKey(versionedKey)} cached in an older shape`);
           }
         } catch (parseError: any) {
           globalCacheLogger.warn(`Corrupted cache entry for ${versionedKey}, attempting self-healing`);
@@ -1278,7 +1280,7 @@ async function projectMetaForUser(meta: any, config: any, opts: { addonTrailers?
   if (!meta) return meta;
   normalizeMetaCredits(meta);
   applyTrailerStreamsProjection(meta);
-  if (opts.addonTrailers !== false) await applyTrailerAddonProjection(meta, config);
+  if (opts.addonTrailers !== false) await applyAddonTrailersProjection(meta, config);
   applyCastCountProjection(meta, config);
   applySeasonNumberingProjection(meta, config);
   applyBlurThumbProjection(meta, config);
@@ -1338,6 +1340,9 @@ const CATALOG_META_FIELDS = [
   'behaviorHints',
   'trailers',
   'collection',
+  'studios',
+  'networks',
+  '_studioRefs',
 ];
 
 function projectAppExtrasForCatalogCache(appExtras: any): any {
@@ -1710,6 +1715,7 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
     };
   }
   if (idOnly.startsWith('movielens.')) {
+    // All MovieLens pages (lists included) may be cached empty at the normal TTL.
     options = { ...options, resultClassifier: classifyResultAllowEmpty };
   }
   const existingOnHit = options.onHit;
@@ -2017,6 +2023,7 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
     tagline: meta.tagline,
     studios: meta.studios,
     networks: meta.networks,
+    _studioRefs: meta._studioRefs,
     countries: meta.countries,
     airDays: meta.airDays,
     airTime: meta.airTime,
@@ -2415,6 +2422,10 @@ const CATALOG_VIEW_SKIPPED = new Set([
   'addonName',
   'showDisabledCatalogs',
   'playbackReporting',
+  'jellyfinScrobbling',
+  'stremioScrobbling',
+  'stremioLibraryWatchlist',
+  'stremioScrobblingSince',
   'showRateMeButton',
 ]);
 const CATALOG_VIEW_SKIPPED_KEYS = new Set(['malTokenId', 'anilistTokenId', 'simklTokenId', 'traktTokenId', 'movieLensCredId', 'trakt', 'simkl', 'gemini', 'openrouter']);

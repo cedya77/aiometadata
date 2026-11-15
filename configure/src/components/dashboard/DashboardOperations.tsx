@@ -520,13 +520,13 @@ export function DashboardOperations({ data, loading, activeTab }: { data: any; l
                     <DialogDescription>
                       Removes every cached entry whose key contains this value — a meta id
                       (<code>tt0111161</code>, <code>mal:64019</code>) or a catalog id
-                      (<code>movielens.toppicks</code>). Preview first to see what matches.
+                      (<code>movielens.explore.toppicks</code>). Preview first to see what matches.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-3">
                     <Input
                       autoFocus
-                      placeholder="tt0111161 or movielens.toppicks"
+                      placeholder="tt0111161 or movielens.explore.toppicks"
                       value={clearToken}
                       onChange={(e) => { setClearToken(e.target.value); setClearPreview(null); }}
                       onKeyDown={(e) => { if (e.key === "Enter") handleClearById(true); }}

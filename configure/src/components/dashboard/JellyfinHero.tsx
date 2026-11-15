@@ -1,35 +1,156 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sizedArt } from "./art";
+import { isOwnPage, ownPageFull, switchOwnPageProfile } from "@/lib/ownPage";
 import { Loader2, Pause, Play } from "lucide-react";
-import { type JellyfinConfiguration, type JellyfinProfileSummary, type JellyfinSessionRow, type JellyfinSyncRow } from "@/hooks/useDashboardQueries";
+import { type JellyfinConfiguration, type JellyfinProfileSummary, type JellyfinSessionRow } from "@/hooks/useDashboardQueries";
 import { Art, ShelfTitle } from "./JellyfinShared";
-import { when, clock, duration, useFolded, dayKey, type Activity } from "./jellyfinUtils";
+import { Logo } from "./TrackerParts";
+import { when, clock, duration, dayKey, useNow, useOpenTitle, titleRefOf, type Activity } from "./jellyfinUtils";
+import { useLiveAccent, useLiveArt } from "./liveAccent";
 
-const SERVICE_LABELS: Record<string, string> = { mdblist: "MDBList", simkl: "Simkl", anilist: "AniList", mal: "MyAnimeList", publicmetadb: "PublicMetaDB" };
-function Avatar({ src, name, size }: { src: string | null; name: string; size: "sm" | "lg" }) {
+const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
+
+export function Avatar({ src, name, size, ringed }: { src: string | null; name: string; size: "sm" | "md" | "lg"; ringed?: boolean }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
-  const box = size === "lg" ? "h-14 w-14 text-xl" : "h-5 w-5 text-[10px]";
-  if (src && !failed) return <img src={src} alt="" onError={() => setFailed(true)} className={`${box} shrink-0 rounded-full object-cover ring-2 ring-white/10`} />;
-  return <span className={`${box} shrink-0 rounded-full bg-blue-500/20 text-blue-300 font-semibold flex items-center justify-center ring-2 ring-white/10`}>{(name.trim()[0] ?? "?").toUpperCase()}</span>;
+  const box = size === "lg" ? "h-14 w-14 text-xl" : size === "md" ? "h-7 w-7 text-xs" : "h-5 w-5 text-[10px]";
+  const ring = ringed ? "ring-2 ring-background" : "ring-2 ring-white/10";
+  if (src && !failed) return <img src={src} alt="" onError={() => setFailed(true)} className={`${box} shrink-0 rounded-full object-cover ${ring}`} />;
+  return <span className={`${box} shrink-0 rounded-full bg-blue-500/20 text-blue-300 font-semibold flex items-center justify-center ${ring}`}>{(name.trim()[0] ?? "?").toUpperCase()}</span>;
 }
-function HeroStat({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
+function HeroStat({ label, value, hint, compact }: { label: string; value: string | number; hint?: string; compact?: boolean }) {
   return (
-    <div className="min-w-0">
-      <p className="text-2xl sm:text-3xl font-semibold tabular-nums leading-none">{value}</p>
-      <p className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      {hint && <p className="text-[11px] text-muted-foreground/80 truncate">{hint}</p>}
+    <div className={cx("min-w-0", compact && "xl:border-l xl:border-white/[0.12] xl:px-7 xl:first:border-l-0 xl:first:pl-0")}>
+      <p className={cx("font-semibold tabular-nums leading-none sm:text-3xl", compact ? "text-xl" : "text-2xl")}>{value}</p>
+      <p className={cx("mt-1 uppercase tracking-wide text-muted-foreground sm:text-[11px]", compact ? "text-[10px]" : "text-[11px]")}>{label}</p>
+      {hint && <p className={cx("text-[11px] text-muted-foreground/80 truncate", compact && "max-sm:hidden")}>{hint}</p>}
     </div>
   );
 }
-function NowPlaying({ s }: { s: JellyfinSessionRow }) {
-  const pct = s.runtimeMs > 0 ? Math.min(100, Math.max(1, (s.positionMs / s.runtimeMs) * 100)) : null;
+
+/** Where a session has got to: between reports a playing one moves on from where it was last reported, until it reaches the end. */
+function useLivePosition(s: JellyfinSessionRow): number {
+  const moving = !s.paused && s.runtimeMs > 0;
+  const now = useNow(moving && Date.now() < s.at + s.runtimeMs - s.positionMs, 1000);
+  return moving ? Math.min(s.runtimeMs, s.positionMs + Math.max(0, now - s.at)) : s.positionMs;
+}
+const shareOf = (s: JellyfinSessionRow, positionMs: number) => (s.runtimeMs > 0 ? Math.min(100, (positionMs / s.runtimeMs) * 100) : 0);
+
+/** An avatar ringed by how far its profile's session has got, or plain when nothing plays. */
+export function LiveAvatar({ session, src, name, size }: { session: JellyfinSessionRow | undefined; src: string | null; name: string; size: "md" | "lg" }) {
+  return session ? <RingedAvatar s={session} src={src} name={name} size={size} /> : <Avatar src={src} name={name} size={size} />;
+}
+function RingedAvatar({ s, src, name, size }: { s: JellyfinSessionRow; src: string | null; name: string; size: "md" | "lg" }) {
+  const share = shareOf(s, useLivePosition(s));
+  const { style } = useLiveAccent(s);
   return (
-    <div className="glass flex items-center gap-3 rounded-xl px-3 py-2">
+    <span style={{ ...style, background: `conic-gradient(${s.paused ? "var(--live-dim)" : "var(--live)"} ${share}%, rgb(255 255 255 / 0.16) 0)` }} className={cx("inline-flex shrink-0 rounded-full", size === "lg" ? "p-[3px]" : "p-0.5")}>
+      <Avatar src={src} name={name} size={size} ringed />
+    </span>
+  );
+}
+
+function LiveDot({ paused }: { paused: boolean }) {
+  return (
+    <span className="relative flex size-[7px] shrink-0">
+      {!paused && <span className="absolute inline-flex size-full animate-ping rounded-full bg-[var(--live)] opacity-75" />}
+      <span className={cx("relative inline-flex size-[7px] rounded-full", paused ? "bg-[var(--live-dim)]" : "bg-[var(--live)]")} />
+    </span>
+  );
+}
+
+/** Bars that move while a session plays, and a pause sign while it rests. */
+function PlayingBars({ paused, className }: { paused: boolean; className?: string }) {
+  if (paused) return <Pause aria-hidden className={cx("size-3.5 fill-current", className)} />;
+  return (
+    <span aria-hidden className={cx("flex h-[13px] items-end gap-0.5", className)}>
+      {[0, -0.35, -0.7].map((delay) => <span key={delay} style={{ animationDelay: `${delay}s` }} className="animate-eq h-full w-[3px] origin-bottom rounded-[1px] bg-current" />)}
+    </span>
+  );
+}
+
+const ENDS = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+
+function SessionProgress({ s }: { s: JellyfinSessionRow }) {
+  const positionMs = useLivePosition(s);
+  const left = s.runtimeMs > 0 ? s.runtimeMs - positionMs : 0;
+  const remaining = duration(left);
+  const ends = !s.paused && left > 0 ? `ends ${ENDS.format(Date.now() + left)}` : null;
+  return (
+    <div className="max-w-md md:max-w-[600px]">
+      <div className="relative h-1.5 rounded-full bg-white/20 md:h-2.5">
+        <div
+          className={cx("relative h-full rounded-full", s.paused ? "bg-[var(--live-dim)]" : "bg-[linear-gradient(90deg,var(--live-deep),var(--live)_60%,var(--live-light))] shadow-[0_0_16px_var(--live-glow)]")}
+          style={{ width: `${shareOf(s, positionMs)}%` }}
+        >
+          <span className={cx("absolute right-0 top-1/2 size-3 -translate-y-1/2 translate-x-1/2 rounded-full ring-2 md:size-4 md:ring-[3px]", s.paused ? "bg-white/90 ring-white/25" : "bg-white ring-[color:var(--live-edge)] shadow-[0_0_14px_var(--live-glow)]")} />
+        </div>
+      </div>
+      <div className="mt-2 flex justify-between gap-3 text-xs tabular-nums text-white/80 md:mt-2.5 md:text-[13px]">
+        <span>{clock(positionMs)}{s.runtimeMs > 0 && <span className="text-white/45"> / {clock(s.runtimeMs)}</span>}</span>
+        <span className="truncate">{[remaining && `${remaining} left`, ends].filter(Boolean).join(" · ")}</span>
+      </div>
+    </div>
+  );
+}
+
+/** The session the hero turns into while it plays: the title's logo over its art, how far it has got, and where it reports. */
+function LiveSession({ s, named }: { s: JellyfinSessionRow; named: boolean }) {
+  const open = useOpenTitle();
+  const [logoFailed, setLogoFailed] = useState(false);
+  useEffect(() => setLogoFailed(false), [s.logoUrl]);
+  const who = s.viewer ? `${s.viewer}, into ${s.profile}'s history` : named ? s.profile : null;
+  const facts = [...(s.episode ? [s.episode] : [s.year, ...s.genres]), who].filter(Boolean).join(" · ");
+  const place = s.number !== null
+    ? [s.season === 0 ? "Specials" : s.season !== null ? `Season ${s.season}` : null, `Episode ${s.number}`].filter(Boolean).join(" · ")
+    : [s.year, ...s.genres].filter(Boolean).join(" · ");
+  const videoId = s.videoId;
+  return (
+    <div>
+      <div className="h-32 md:h-4" />
+      <div className="mb-6 hidden items-center gap-3 md:flex">
+        <span className="inline-flex items-center gap-2 rounded-full border border-[color:var(--live-edge)] bg-[var(--live-tint)] py-1.5 pl-2.5 pr-3 text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--live-light)]">
+          <LiveDot paused={s.paused} />{s.paused ? "Paused" : "Now playing"}
+        </span>
+        {who && <span className="truncate text-[13px] text-white/70">{who}</span>}
+      </div>
+      {s.logoUrl && !logoFailed
+        ? <img src={sizedArt(s.logoUrl, 500) ?? s.logoUrl} alt={s.title} onError={() => setLogoFailed(true)} className="max-h-24 max-w-[236px] object-contain object-left drop-shadow-[0_4px_18px_rgba(0,0,0,0.6)] md:max-h-40 md:max-w-[480px]" />
+        : <p className="text-3xl font-bold leading-tight drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)] md:text-5xl">{s.title}</p>}
+      <p className="mt-2.5 truncate text-[13px] text-white/80 md:hidden">{facts}</p>
+      {place && <p className="mt-6 hidden truncate text-xs font-bold uppercase tracking-[0.14em] text-[var(--live-light)] md:block">{place}</p>}
+      {s.episodeTitle && <p className="mt-1 hidden max-w-[600px] text-[44px] font-extrabold leading-[1.05] tracking-tight md:line-clamp-2">{s.episodeTitle}</p>}
+      <div className="mt-4 md:mt-6"><SessionProgress s={s} /></div>
+      <div className="mt-4 flex flex-wrap items-center gap-2.5 md:mt-6 md:gap-3">
+        {open && videoId && (
+          <button type="button" onClick={() => open(titleRefOf({ seriesId: s.seriesId, videoId }))} className="inline-flex h-10 items-center gap-2 rounded-full bg-white px-[18px] text-sm font-semibold text-black transition-colors hover:bg-white/85 md:h-12 md:px-6 md:text-[15px] md:font-bold">
+            <PlayingBars paused={s.paused} />
+            Details
+          </button>
+        )}
+        {s.trackers.length > 0 && (
+          <span className="inline-flex h-10 items-center gap-2 rounded-full border border-white/[0.12] bg-white/10 px-3 backdrop-blur-md md:h-12 md:gap-2.5 md:bg-black/25 md:px-4">
+            <span className="text-xs text-white/80">Scrobbling to</span>
+            <span className="flex gap-1">
+              {s.trackers.map((service) => <Logo key={service} service={service} size={22} />)}
+            </span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NowPlaying({ s }: { s: JellyfinSessionRow }) {
+  const positionMs = useLivePosition(s);
+  const pct = s.runtimeMs > 0 ? Math.max(1, shareOf(s, positionMs)) : null;
+  const { style } = useLiveAccent(s);
+  return (
+    <div style={style} className="glass flex items-center gap-3 rounded-xl px-3 py-2">
       <div className="w-20 shrink-0"><Art src={s.imageUrl} title={s.title} wide /></div>
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-xs leading-tight truncate">
-          <span className={`mr-1.5 inline-flex items-center gap-1 rounded px-1 py-px text-[10px] font-medium ${s.paused ? "bg-white/10 text-muted-foreground" : "bg-blue-500/20 text-blue-300"}`}>
+          <span className={`mr-1.5 inline-flex items-center gap-1 rounded px-1 py-px text-[10px] font-medium ${s.paused ? "bg-white/10 text-muted-foreground" : "bg-[var(--live-tint)] text-[var(--live-light)]"}`}>
             {s.paused ? <Pause className="h-2.5 w-2.5" /> : <Play className="h-2.5 w-2.5" />}{s.paused ? "Paused" : "Playing"}
           </span>
           <span className="font-medium">{s.title}</span>
@@ -37,125 +158,141 @@ function NowPlaying({ s }: { s: JellyfinSessionRow }) {
         </p>
         <div className="flex items-center gap-2">
           <div className="h-1 flex-1 rounded-full bg-white/10 overflow-hidden">
-            {pct !== null && <div className="h-full bg-gradient-to-r from-blue-600 to-blue-400" style={{ width: `${pct}%` }} />}
+            {pct !== null && <div className="h-full bg-[linear-gradient(90deg,var(--live-deep),var(--live))]" style={{ width: `${pct}%` }} />}
           </div>
-          <span className="text-[10px] tabular-nums text-muted-foreground whitespace-nowrap">{clock(s.positionMs)}{s.runtimeMs > 0 ? ` / ${clock(s.runtimeMs)}` : ""}</span>
+          <span className="text-[10px] tabular-nums text-muted-foreground whitespace-nowrap">{clock(positionMs)}{s.runtimeMs > 0 ? ` / ${clock(s.runtimeMs)}` : ""}</span>
         </div>
         <p className="text-[10px] text-muted-foreground truncate">{s.viewer ? `${s.viewer}, into ${s.profile}'s history` : s.profile} · {when(s.at)}</p>
       </div>
     </div>
   );
 }
-export function Hero({ data, profile, onProfile, activity, controls, switching }: {
+
+// The art fades out at the top for the header and at the foot into the page, and stays clear across the middle.
+const LIVE_SHADE = "linear-gradient(180deg, hsl(var(--background) / 0.75) 0%, transparent 26%, transparent 50%, hsl(var(--background) / 0.85) 82%, hsl(var(--background)) 100%)";
+// On a wide screen the art sits on the right over the session's colour field, so only the top and the foot fade.
+const LIVE_SHADE_WIDE = "linear-gradient(180deg, hsl(var(--background) / 0.4) 0%, transparent 18%, transparent 55%, hsl(var(--background) / 0.85) 88%, hsl(var(--background)) 100%)";
+
+export function Hero({ data, profile, onProfile, activity, back, actions, search, switching }: {
   data: JellyfinConfiguration;
   profile: string | null;
   onProfile: (key: string | null) => void;
   activity: Activity;
-  controls: React.ReactNode;
+  back: React.ReactNode;
+  actions: React.ReactNode;
+  search: React.ReactNode;
   switching: boolean;
 }) {
-  const shown = profile === null ? data.profiles : data.profiles.filter((p) => p.key === profile);
+  const history = data.history === undefined ? data.profile : data.history;
+  const shown = history === null ? data.profiles : data.profiles.filter((p) => p.key === history);
+  const viewers = data.viewers ?? data.profiles;
+  const viewer = profile === null ? null : viewers.find((p) => p.key === profile) ?? null;
+  const borrowed = viewer !== null && history !== null && viewer.key !== history ? shown[0]?.name ?? null : null;
   const sum = (pick: (p: JellyfinProfileSummary) => number) => shown.reduce((n, p) => n + pick(p), 0);
   const lastActivity = shown.reduce<number | null>((at, p) => Math.max(at ?? 0, p.lastActivity ?? 0) || null, null);
-  const lead = profile === null ? data.profiles[0] : shown[0];
-  const backdrop = sizedArt(data.sessions[0]?.backdropUrl ?? data.inProgress[0]?.backdropUrl ?? data.recentlyPlayed[0]?.backdropUrl
-    ?? data.sessions[0]?.imageUrl ?? data.inProgress[0]?.imageUrl ?? data.recentlyPlayed[0]?.imageUrl, 1280);
+  const lead = profile === null ? data.profiles[0] : viewer ?? shown[0];
+  const live = switching ? undefined : data.sessions[0];
+  const accent = useLiveAccent(live);
+  const [artBox, setArtBox] = useState<HTMLImageElement | null>(null);
+  const liveArt = useLiveArt(data.sessions[0], artBox);
+  const backdrop = liveArt.art ? liveArt.src : sizedArt(data.inProgress[0]?.backdropUrl ?? data.recentlyPlayed[0]?.backdropUrl
+    ?? data.inProgress[0]?.imageUrl ?? data.recentlyPlayed[0]?.imageUrl, 1280);
   const [loaded, setLoaded] = useState<string | null>(null);
-  const chips = data.profiles.length > 1;
+  const switchable = isOwnPage() && (viewers.length > 1 || !ownPageFull());
+  const chips = viewers.length > 1 || switchable;
+  // Someone other than the profile in view is named; the profile's own play reads as its own.
+  const several = profile === null && data.profiles.length > 1;
+  const watcher = live && (live.viewer ?? (several ? live.profile : null));
+  const liveLine = live && (watcher
+    ? `${watcher} ${live.paused ? "paused" : "is watching"} ${live.title}`
+    : live.paused ? `Paused on ${live.title}` : `Watching ${live.title} now`);
   return (
-    <div className="relative overflow-hidden">
-      {backdrop && (
+    <div className="relative overflow-hidden" style={live ? accent.style : undefined}>
+      {live && <div className={cx("absolute inset-0 hidden transition-opacity duration-700 md:block", accent.ready ? "opacity-100" : "opacity-0")} style={{ background: "var(--live-field)" }} />}
+      {(liveArt.art || backdrop) && (
         <img
-          key={backdrop}
-          src={backdrop}
+          ref={setArtBox}
+          key={backdrop ?? "measuring"}
+          src={backdrop ?? undefined}
           alt=""
           onLoad={() => setLoaded(backdrop)}
-          className={`absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-700 ${loaded === backdrop && !switching ? "opacity-50" : "opacity-0"}`}
+          className={cx(
+            "absolute w-full object-cover transition-opacity duration-700",
+            live
+              ? "inset-x-0 top-0 h-[28rem] object-[58%_20%] md:inset-y-0 md:left-auto md:h-full md:w-[58%] xl:w-[70%] md:object-[55%_25%] md:[mask-image:linear-gradient(90deg,transparent,#000_38%)]"
+              : "inset-0 h-full object-top",
+            loaded === backdrop && !switching ? (live ? "opacity-85 md:opacity-100" : "opacity-50") : "opacity-0",
+          )}
         />
       )}
-      <div className="absolute inset-0 bg-gradient-to-r from-background via-background/85 to-background/30" />
-      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
-      <div className="relative space-y-5 px-4 pt-4 pb-6 sm:px-6">
-        <div className="flex flex-wrap items-center justify-end gap-2">{controls}</div>
-        <div className="flex items-center gap-4">
-          <Avatar src={lead?.avatar ?? null} name={lead?.name ?? data.label} size="lg" />
-          <div className="min-w-0">
+      {live ? (
+        <>
+          <div className="absolute inset-x-0 top-0 h-[28rem] md:hidden" style={{ background: LIVE_SHADE }} />
+          <div className="absolute inset-0 hidden md:block" style={{ background: LIVE_SHADE_WIDE }} />
+        </>
+      ) : (
+        <>
+          <div className="absolute inset-0 bg-gradient-to-r from-background via-background/85 to-background/30" />
+          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
+        </>
+      )}
+      <div className="relative space-y-5 px-4 pt-3 pb-6 sm:px-6 sm:pt-5">
+        <div className="flex items-center gap-3 sm:gap-4">
+          {back}
+          <LiveAvatar session={live} src={lead?.avatar ?? null} name={lead?.name ?? data.label} size="lg" />
+          <div className="min-w-0 flex-1">
             <p className="text-2xl font-semibold leading-tight truncate">{profile === null ? data.label : lead?.name ?? data.label}</p>
             {switching ? (
               <p className="flex items-center gap-1.5 text-xs text-blue-300"><Loader2 className="h-3 w-3 animate-spin" /> Loading {profile === null ? "every profile" : lead?.name ?? "profile"}…</p>
+            ) : live && liveLine ? (
+              <p className="flex items-center gap-[7px] text-[13px] text-[var(--live-light)] md:hidden"><LiveDot paused={live.paused} /><span className="truncate">{liveLine}</span></p>
             ) : (
               <p className="text-xs text-muted-foreground truncate">
-                <span className="font-mono">{data.userUUID.slice(0, 8)}</span>
-                {lastActivity ? ` · active ${when(lastActivity)}` : ""}
-                {lead?.sharedWith.length ? ` · shared with ${lead.sharedWith.join(", ")}` : ""}
+                {!isOwnPage() && <span className="font-mono">{data.userUUID.slice(0, 8)}</span>}
+                {lastActivity ? (isOwnPage() ? `Active ${when(lastActivity)}` : ` · active ${when(lastActivity)}`) : ""}
+                {borrowed ? ` · shares ${borrowed}'s history` : shown[0]?.sharedWith.length ? ` · shared with ${shown[0].sharedWith.join(", ")}` : ""}
               </p>
             )}
           </div>
+          {actions}
         </div>
+        {/* On a phone the profiles move to the avatar tab of the tab bar. */}
         {chips && (
-          <div className="flex flex-wrap gap-1.5">
-            <button type="button" onClick={() => onProfile(null)} className={`h-7 rounded-full px-3 text-xs ring-1 transition-colors ${profile === null ? "bg-foreground text-background ring-transparent" : "glass ring-transparent hover:bg-black/50"}`}>All</button>
-            {data.profiles.map((p) => (
+          <div className="hidden flex-wrap gap-1.5 md:flex">
+            {ownPageFull() && <button type="button" onClick={() => onProfile(null)} className={`h-7 rounded-full px-3 text-xs ring-1 transition-colors ${profile === null ? "bg-foreground text-background ring-transparent" : "glass ring-transparent hover:bg-black/50"}`}>All</button>}
+            {viewers.map((p) => (
               <button key={p.key} type="button" onClick={() => onProfile(p.key)} className={`h-7 inline-flex items-center gap-1.5 rounded-full pl-1 pr-3 text-xs ring-1 transition-colors ${profile === p.key ? "bg-foreground text-background ring-transparent" : "glass ring-transparent hover:bg-black/50"}`}>
                 {switching && profile === p.key ? <Loader2 className="h-5 w-5 animate-spin p-0.5" /> : <Avatar src={p.avatar} name={p.name} size="sm" />}
                 {p.name}
               </button>
             ))}
+            {switchable && <button type="button" onClick={switchOwnPageProfile} className="glass h-7 rounded-full px-3 text-xs ring-1 ring-transparent transition-colors hover:bg-black/55">Switch profile</button>}
           </div>
         )}
-        <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4 max-w-2xl">
-          <HeroStat label="Movies" value={sum((p) => p.movies).toLocaleString()} />
-          <HeroStat label="Episodes" value={sum((p) => p.episodes).toLocaleString()} />
-          <HeroStat label="In progress" value={sum((p) => p.inProgress).toLocaleString()} />
-          <HeroStat label="Day streak" value={activity.streak} hint={activity.best > activity.streak ? `best ${activity.best} this year` : undefined} />
+        {live && <LiveSession s={live} named={several} />}
+        <div className={cx("space-y-5", live && "xl:flex xl:items-center xl:justify-between xl:gap-10 xl:space-y-0 xl:pt-6")}>
+          <div className={cx("grid gap-x-6 gap-y-4 sm:grid-cols-4 max-w-2xl", live ? "grid-cols-4 max-sm:gap-x-2 max-sm:pt-1 xl:flex xl:gap-0 xl:max-w-none" : "grid-cols-2")}>
+            <HeroStat compact={!!live} label="Movies" value={sum((p) => p.movies).toLocaleString()} />
+            <HeroStat compact={!!live} label="Episodes" value={sum((p) => p.episodes).toLocaleString()} />
+            <HeroStat compact={!!live} label="In progress" value={sum((p) => p.inProgress).toLocaleString()} />
+            <HeroStat compact={!!live} label="Day streak" value={activity.streak} hint={activity.best > activity.streak ? `best ${activity.best} this year` : undefined} />
+          </div>
+          <div className={cx("max-w-2xl", live && "xl:w-[30rem] xl:shrink-0")}>{search}</div>
         </div>
-        {!switching && data.sessions.length > 0 && (
+        {!switching && data.sessions.length > 1 && (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 max-w-3xl">
-            {data.sessions.map((s, i) => <NowPlaying key={`${s.title}-${i}`} s={s} />)}
+            {data.sessions.slice(1).map((s, i) => <NowPlaying key={`${s.title}-${i}`} s={s} />)}
           </div>
         )}
       </div>
     </div>
   );
 }
-function SyncChip({ row }: { row: JellyfinSyncRow }) {
-  const tone = row.lastError ? "bg-red-500" : row.pending > 0 ? "bg-amber-400" : row.imported ? "bg-emerald-500" : "bg-muted-foreground";
-  const detail = [
-    row.profiles.join(", "),
-    row.fullAt ? `full read ${when(row.fullAt)}` : "never read in full",
-    row.pending ? `${row.pending} waiting since ${when(row.oldestPendingAt)}, ${row.attempts} ${row.attempts === 1 ? "try" : "tries"}` : "",
-    row.lastError ?? "",
-  ].filter(Boolean).join(" · ");
-  return (
-    <span title={detail} className="glass inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs">
-      <span className={`h-1.5 w-1.5 rounded-full ${tone}`} />
-      <span className="font-medium">{SERVICE_LABELS[row.service] ?? row.service}</span>
-      <span className="text-muted-foreground">{row.imported ? `synced ${when(row.syncedAt)}` : "not imported yet"}</span>
-      {row.pending > 0 && <span className="text-amber-400 tabular-nums">{row.pending} waiting</span>}
-    </span>
-  );
-}
-export function SyncStrip({ rows }: { rows: JellyfinSyncRow[] }) {
-  const failed = rows.filter((r) => r.lastError);
-  return (
-    <section className="px-4 py-3 sm:px-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-1 text-[11px] uppercase tracking-wide text-muted-foreground">Trackers</span>
-        {rows.length === 0
-          ? <span className="text-xs text-muted-foreground">None connected. History is kept on this server only.</span>
-          : rows.map((row, i) => <SyncChip key={`${row.service}-${i}`} row={row} />)}
-      </div>
-      {failed.map((row, i) => (
-        <p key={`${row.service}-error-${i}`} className="mt-2 text-[11px] text-red-400 truncate" title={row.lastError ?? undefined}>
-          {SERVICE_LABELS[row.service] ?? row.service}: {row.lastError}
-        </p>
-      ))}
-    </section>
-  );
-}
 const HEAT = ["bg-muted/50", "bg-blue-500/25", "bg-blue-500/50", "bg-blue-500/80", "bg-blue-400"];
-export function ActivityMap({ activity }: { activity: Activity }) {
-  const [folded, fold] = useFolded("jellyfin.fold.activity");
+const MONTH = new Intl.DateTimeFormat(undefined, { month: "short" });
+const DAY_TITLE = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+
+export const ActivityMap = React.memo(function ActivityMap({ activity }: { activity: Activity }) {
   const scroller = useRef<HTMLDivElement>(null);
   const { weeks, months, cut } = useMemo(() => {
     const today = new Date();
@@ -178,7 +315,7 @@ export function ActivityMap({ activity }: { activity: Activity }) {
       }
       const first = week[0]?.date;
       if (first && first.getMonth() !== lastMonth) {
-        months.push({ at: weeks.length, label: first.toLocaleDateString(undefined, { month: "short" }) });
+        months.push({ at: weeks.length, label: MONTH.format(first) });
         lastMonth = first.getMonth();
       }
       weeks.push(week);
@@ -190,18 +327,16 @@ export function ActivityMap({ activity }: { activity: Activity }) {
   useEffect(() => {
     const el = scroller.current;
     if (el) el.scrollLeft = el.scrollWidth;
-  }, [weeks.length, folded]);
+  }, [weeks.length]);
   const level = (n: number) => (n <= 0 ? 0 : n <= cut[0] ? 1 : n <= cut[1] ? 2 : n <= cut[2] ? 3 : 4);
   return (
-    <section className={`px-4 sm:px-6 ${folded ? "py-3" : "py-4"}`}>
-      <div className={`flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 ${folded ? "" : "mb-3"}`}>
-        <ShelfTitle title="Activity" count={null} folded={folded} onFold={fold} />
+    <section className="px-4 py-4 sm:px-6">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <ShelfTitle title="Activity" count={null} />
         <p className="text-xs text-muted-foreground tabular-nums">
           <span className="text-foreground">{activity.total.toLocaleString()}</span> watched in the last year · <span className="text-foreground">{activity.active}</span> active days · best streak <span className="text-foreground">{activity.best}</span>
         </p>
       </div>
-      {!folded && (
-      <>
       <div ref={scroller} className="overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="min-w-[720px] space-y-1">
           <div className="relative h-3 text-[10px] text-muted-foreground">
@@ -211,7 +346,7 @@ export function ActivityMap({ activity }: { activity: Activity }) {
             {weeks.map((week, w) => (
               <div key={w} className="grid gap-[3px]">
                 {week.map((day, d) => day
-                  ? <span key={day.key} title={`${day.date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}: ${day.n} watched`} className={`aspect-square w-full rounded-[3px] ${HEAT[level(day.n)]}`} />
+                  ? <span key={day.key} title={`${DAY_TITLE.format(day.date)}: ${day.n} watched`} className={`aspect-square w-full rounded-[3px] ${HEAT[level(day.n)]}`} />
                   : <span key={`empty-${d}`} className="aspect-square w-full" />)}
               </div>
             ))}
@@ -221,8 +356,6 @@ export function ActivityMap({ activity }: { activity: Activity }) {
       <div className="mt-2 flex items-center justify-end gap-1 text-[10px] text-muted-foreground">
         Less {HEAT.map((c) => <span key={c} className={`h-[11px] w-[11px] rounded-[2px] ${c}`} />)} More
       </div>
-      </>
-      )}
     </section>
   );
-}
+});

@@ -151,6 +151,14 @@ export function clientInfo(req: any): { client: string; device: string; deviceId
   };
 }
 
+/** The request a Jellyfin client would have made, for work that reaches the server another way. */
+export function clientRequest(userUUID: string, profileId: string | null, client?: { name: string; deviceId: string }): any {
+  const headers: Record<string, string> = client
+    ? { 'x-emby-authorization': `MediaBrowser Client="${client.name}", Device="${client.name}", DeviceId="${client.deviceId}", Version=""`, 'user-agent': client.name }
+    : {};
+  return { params: { userUUID }, jellyfin: { userUUID, profileId }, query: {}, headers, get: (name: string) => headers[name.toLowerCase()] };
+}
+
 export function serverIdFor(userUUID: string): string {
   return normaliseJellyfinId(userUUID);
 }

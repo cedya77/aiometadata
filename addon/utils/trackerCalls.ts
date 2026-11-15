@@ -10,6 +10,7 @@ export interface TrackerCall {
   status: number;
   body?: string;
   retryAt?: number;
+  rewatch?: boolean;
 }
 
 const TRACKER_HOSTS = new Set([
@@ -33,6 +34,15 @@ export async function recordingTrackerCalls(work: () => Promise<unknown>): Promi
   }
 }
 
+export function noteUnreadable(source: string): void {
+  store.getStore()?.push({ host: source, status: 0 });
+}
+
+export function lastTrackerCall(): TrackerCall | undefined {
+  const calls = store.getStore();
+  return calls?.[calls.length - 1];
+}
+
 /** Status 0 is a request that never got an answer. */
 export function noteTrackerCall(url: string, status: number, body?: string, retryAfter?: string | number | null, retryAt?: number): void {
   const calls = store.getStore();
@@ -49,6 +59,7 @@ export function noteTrackerCall(url: string, status: number, body?: string, retr
     host,
     status,
     ...(status >= 400 && body ? { body: String(body).slice(0, 300) } : {}),
+    ...(status >= 200 && status < 300 && /[?&]allow_rewatch=yes\b/.test(url) ? { rewatch: true } : {}),
     ...(retryAt ? { retryAt } : Number.isFinite(seconds) && seconds > 0 ? { retryAt: Date.now() + seconds * 1000 } : {}),
   });
 }

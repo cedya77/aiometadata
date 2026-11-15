@@ -10,7 +10,7 @@ import {
   type JellyfinShowRow,
 } from "@/hooks/useDashboardQueries";
 import { Art, Shelf } from "./JellyfinShared";
-import { when, useFolded } from "./jellyfinUtils";
+import { when, useOpenTitle } from "./jellyfinUtils";
 
 const episodeRef = (ref: JellyfinEpisodeRef | null): string => {
   if (!ref || ref.number === null) return "";
@@ -22,8 +22,8 @@ const SHOW_FILTERS: Array<{ key: ShowFilter; label: string; outcomes: string[] }
   { key: "all", label: "All", outcomes: [] },
   { key: "next", label: "Up next", outcomes: ["shown"] },
   { key: "waiting", label: "Waiting", outcomes: ["caught-up", "airs-later"] },
-  { key: "done", label: "Finished", outcomes: ["finished", "dropped"] },
-  { key: "problems", label: "Not shown", outcomes: ["missing-episode", "no-meta", "no-air-date", "not-anime", "rating-cap"] },
+  { key: "done", label: "Finished", outcomes: ["finished", "unfinished", "dropped"] },
+  { key: "problems", label: "Not shown", outcomes: ["missing-episode", "no-meta", "no-air-date", "on-hold", "not-anime", "rating-cap"] },
 ];
 function showStatus(row: JellyfinShowRow): { text: string; tone: string; fixable: boolean } {
   const next = episodeRef(row.next);
@@ -32,7 +32,12 @@ function showStatus(row: JellyfinShowRow): { text: string; tone: string; fixable
     case "caught-up": return { text: "Caught up, waiting for new episodes", tone: "text-sky-300", fixable: false };
     case "airs-later": return { text: `${next} airs ${row.airsAt ? new Date(row.airsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "later"}`, tone: "text-sky-300", fixable: false };
     case "finished": return { text: "Finished", tone: "text-emerald-400", fixable: false };
+    case "unfinished": {
+      const left = Math.max(0, (row.total ?? 0) - (row.watched ?? 0));
+      return { text: `Reached the end, ${left} episode${left === 1 ? "" : "s"} unwatched`, tone: "text-amber-300", fixable: false };
+    }
     case "dropped": return { text: "Dropped", tone: "text-muted-foreground", fixable: false };
+    case "on-hold": return { text: "Left out: on hold", tone: "text-muted-foreground", fixable: false };
     case "missing-episode": return { text: `Last watched ${episodeRef(row.last) || "episode"} is not among its ${row.episodes ?? 0} episodes`, tone: "text-red-400", fixable: true };
     case "no-meta": return { text: "No metadata for this show", tone: "text-red-400", fixable: true };
     case "no-air-date": return { text: `${next} has no air date`, tone: "text-amber-400", fixable: true };
@@ -45,14 +50,15 @@ const SOURCE_LABELS: Record<string, string> = { server: "played here", tracker: 
 function ShowCard({ row, onRefresh, refreshing }: { row: JellyfinShowRow; onRefresh: () => void; refreshing: boolean }) {
   const status = showStatus(row);
   const pct = row.total ? Math.min(100, Math.round(((row.watched ?? 0) / row.total) * 100)) : null;
+  const open = useOpenTitle();
   return (
-    <div className="flex gap-3 rounded-lg bg-muted/30 p-2.5 ring-1 ring-white/[0.06]">
+    <div role={open ? "button" : undefined} tabIndex={open ? 0 : undefined} onClick={open ? () => open({ id: row.metaId, type: "series" }) : undefined} onKeyDown={open ? (event) => { if (event.key === "Enter") open({ id: row.metaId, type: "series" }); } : undefined} className={`flex gap-3 rounded-lg bg-muted/30 p-2.5 ring-1 ring-white/[0.06] transition hover:bg-muted/50 ${open ? "cursor-pointer" : ""}`}>
       <div className="w-12 shrink-0"><Art src={row.posterUrl} title={row.title} wide={false} /></div>
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-start justify-between gap-2">
           <p className="truncate text-sm font-semibold leading-tight" title={row.title}>{row.title}</p>
           {status.fixable && (
-            <Button size="sm" variant="ghost" className="-mr-1 -mt-1 h-6 gap-1 px-1.5 text-[11px]" onClick={onRefresh} disabled={refreshing} title="Read this show's episodes again and rebuild its shelves">
+            <Button size="sm" variant="ghost" className="-mr-1 -mt-1 h-6 gap-1 px-1.5 text-[11px]" onClick={(event) => { event.stopPropagation(); onRefresh(); }} disabled={refreshing} title="Read this show's episodes again and rebuild its shelves">
               <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} /> Refresh
             </Button>
           )}
@@ -78,8 +84,7 @@ export function Shows({ userUUID, profile, profileName, activeTab }: { userUUID:
   const [all, setAll] = useState(false);
   const [refreshing, setRefreshing] = useState<string | null>(null);
   const refreshShow = useJellyfinShowRefresh();
-  const [folded, fold] = useFolded("jellyfin.fold.shows");
-  const { data, isLoading, isError, isFetching } = useJellyfinShows(userUUID, profile, fresh, { activeTab, enabled: !folded });
+  const { data, isLoading, isError, isFetching } = useJellyfinShows(userUUID, profile, fresh, { activeTab });
   const rows = data?.rows ?? [];
   const counts = Object.fromEntries(SHOW_FILTERS.map((f) => [f.key, f.outcomes.length ? rows.filter((r) => f.outcomes.includes(r.outcome)).length : rows.length])) as Record<ShowFilter, number>;
   const picked = SHOW_FILTERS.find((f) => f.key === filter)!;
@@ -103,8 +108,6 @@ export function Shows({ userUUID, profile, profileName, activeTab }: { userUUID:
     <Shelf
       title={`Shows, ${profileName}'s Next Up`}
       count={data ? rows.length : null}
-      folded={folded}
-      onFold={fold}
       action={
         <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
           {data && !isFetching && <span className="tabular-nums">built in {(data.ms / 1000).toFixed(1)} s</span>}

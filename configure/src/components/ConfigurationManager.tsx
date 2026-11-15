@@ -15,7 +15,9 @@ import { TagChip } from "@/components/TagChip";
 import { AGE_RATING_ORDER } from "@/lib/ageRatings";
 import type { TagDef } from "@/contexts/config";
 import { ManagerSync } from "@/components/ManagerSync";
-import { JellyfinDialog } from "@/components/JellyfinDialog";
+import { InstallLinks } from "@/components/users/InstallLinks";
+import { useJellyfinServer } from "@/hooks/useJellyfinServer";
+import { navigateToSettingsSection } from "@/lib/settingsRoute";
 import { cn } from "@/lib/utils";
 import { keyStatuses } from "@/lib/configStatus";
 import { Callout } from "@/components/settings/Callout";
@@ -297,17 +299,7 @@ export function ConfigurationManager() {
     return taggedManifestUrl(identity.installUrl, selectedTags);
   }, [identity, selectedTags]);
 
-  const [jellyfinEnabled, setJellyfinEnabled] = useState(false);
-  const [showJellyfin, setShowJellyfin] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/config")
-      .then(res => res.ok ? res.json() : null)
-      .then(data => { if (!cancelled) setJellyfinEnabled(Boolean(data?.jellyfinEnabled)); })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, []);
+  const { enabled: jellyfinEnabled } = useJellyfinServer();
 
   const toggleTag = (name: string) => {
     setSelectedTagNames(prev =>
@@ -351,29 +343,6 @@ export function ConfigurationManager() {
             />
 
             <SettingRow
-              htmlFor="hide-stremio-catalogs"
-              label="Hide Stremio-Specific Catalogs"
-              description="Leaves catalogs only Stremio uses, such as Calendar videos, out of the manifest. Clients that don't use them can flicker while they render them and then drop them."
-              control={
-                <Switch
-                  id="hide-stremio-catalogs"
-                  checked={config.hideStremioCatalogs ?? false}
-                  onCheckedChange={(checked) => {
-                    setConfig(prev => ({
-                      ...prev,
-                      hideStremioCatalogs: checked
-                    }));
-                  }}
-                />
-              }
-              note={config.hideStremioCatalogs ? (
-                <Callout variant="warn">
-                  Clients that do use the Calendar will lose it.
-                </Callout>
-              ) : null}
-            />
-
-            <SettingRow
               htmlFor="collection-catalogs"
               label="Collections and More Like This as Catalogs"
               description="Adds the collections you build, and a More Like This catalog of a title's similar titles, to the manifest for apps that use them, such as AIOStreams. Apps that don't list them among their catalogs, for example under Discover. Jellyfin shows collections as box sets and fills its own More Like This either way."
@@ -395,6 +364,24 @@ export function ConfigurationManager() {
                   Catalog Mode Only already leaves both out.
                 </Callout>
               ) : null}
+            />
+
+            <SettingRow
+              htmlFor="hide-stremio-catalogs"
+              label="Hide Stremio Catalogs"
+              description="Leaves Stremio-specific catalogs, such as Calendar videos, out of the manifest. Turn on for clients that don't use them and show them as stray rows."
+              control={
+                <Switch
+                  id="hide-stremio-catalogs"
+                  checked={config.hideStremioCatalogs ?? false}
+                  onCheckedChange={(checked) => {
+                    setConfig(prev => ({
+                      ...prev,
+                      hideStremioCatalogs: checked
+                    }));
+                  }}
+                />
+              }
             />
           </div>
         </CardContent>
@@ -606,13 +593,11 @@ export function ConfigurationManager() {
                 )}
               </div>
             </div>
+            <InstallLinks userUUID={identity.userUUID} installUrl={identity.installUrl} />
             <Callout variant="info">
               <strong>Important:</strong> Save your UUID and password. You'll need both to access your configuration later.
             </Callout>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              {identity && jellyfinEnabled ? (
-                <JellyfinDialog open={showJellyfin} onOpenChange={setShowJellyfin} userUUID={identity.userUUID} />
-              ) : null}
               <Dialog open={showLoadDialog} onOpenChange={setShowLoadDialog}>
                 <Button
                   variant="outline"
@@ -694,11 +679,6 @@ export function ConfigurationManager() {
                 currentProfileTags={selectedTags}
                 onSynced={() => { markManifestInstalled(); }}
               />
-              {jellyfinEnabled ? (
-                <Button variant="outline" className="w-full sm:w-auto" onClick={() => setShowJellyfin(true)}>
-                  <img src="/jellyfin_icon.svg" alt="" aria-hidden="true" className="h-4 w-4 mr-2 object-contain" /> Jellyfin
-                </Button>
-              ) : null}
             </div>
           </CardContent>
         </Card>

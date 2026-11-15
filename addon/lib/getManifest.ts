@@ -24,7 +24,8 @@ import { mergeGenreOptions } from '../utils/mergedCatalog';
 import { fetchLumiereGenres, lumiereApiBase, lumiereGenreLabel, lumiereListOf } from '../utils/lumiereLists';
 const { getSetting }: any = require('./settingsService');
 import consola from 'consola';
-import { hasAnyWatchTrackingEnabled } from './watchTracking';
+import { hasAnyWatchTrackingEnabled, scrobblesJellyfin } from './watchTracking';
+import { scrobbleResources } from './playSources';
 const logger = consola.withTag('Manifest');
 
 
@@ -912,8 +913,7 @@ async function lumiereGenreOptions(): Promise<Record<'movie' | 'series', string[
   }
 }
 
-/** `viewer`, a named user's scoped config, decides which account rows are listed. */
-async function getManifest(config: any, opts: { tags?: string[]; userUUID?: string; viewer?: any } = {}): Promise<any> {
+async function getManifest(config: any, opts: { tags?: string[]; userUUID?: string; viewerConfig?: any } = {}): Promise<any> {
   const startTime = Date.now();
   logger.start('Starting manifest generation...');
 
@@ -928,8 +928,10 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
   const tags = Array.isArray(opts.tags) ? opts.tags.filter(Boolean) : [];
   const tagSet = new Set(tags.map((t: string) => t.toLowerCase()));
   const jikanEnabled = jikan.isJikanEnabled();
+  // A named household user is listed what their own accounts serve; nothing else reads their config.
+  const servedBy = opts.viewerConfig ?? config;
   const enabledCatalogs = userCatalogs.filter((c: any) =>
-    c.enabled && servesCatalog(opts.viewer ?? config, c) && (jikanEnabled || !jikan.isJikanCatalogId(c.id)) && (tagSet.size === 0 || rowOwner(c) || (Array.isArray(c.tags) && c.tags.some((t: any) => tagSet.has(String(t).toLowerCase()))))
+    c.enabled && servesCatalog(servedBy, c) && (jikanEnabled || !jikan.isJikanCatalogId(c.id)) && (tagSet.size === 0 || rowOwner(c) || (Array.isArray(c.tags) && c.tags.some((t: any) => tagSet.has(String(t).toLowerCase()))))
   );
 
   // Absorbed merge sources must be built (even if disabled) so their genres feed the parent.
@@ -1246,8 +1248,8 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
       if (userCatalog.id.startsWith('movielens.')) {
           logger.debug(`Processing MovieLens catalog: ${userCatalog.id}`);
           const catalogType = userCatalog.displayType || userCatalog.type;
-          const supportsGenres = userCatalog.id.startsWith('movielens.explore') || userCatalog.id.startsWith('movielens.watchlist');
-          const genreOptions = supportsGenres ? MOVIELENS_GENRES : [];
+          const takesGenres = userCatalog.id.startsWith('movielens.explore') || userCatalog.id === 'movielens.watchlist';
+          const genreOptions = takesGenres ? MOVIELENS_GENRES : [];
           const options = userCatalog.showInHome ? genreOptions : ['None', ...genreOptions];
           const extra: any[] = [];
           if (options.length > 0) {
@@ -1704,7 +1706,9 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
     }
   }
 
-  if (!config.hideStremioCatalogs) {
+  // Catalogs only Stremio understands. Other clients render them as stray rows,
+  // so users can opt out with hideStremioCatalogs.
+  if (config.hideStremioCatalogs !== true) {
     catalogs.push({
       type: "series",
       id: "calendar-videos",
@@ -1754,10 +1758,8 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
   // a front-end start delivering. Named as strings: a reader validates object resources against the names it
   // knows, and one that has never heard of these would reject the manifest whole.
   const anyoneTracks = watchTrackingEnabled || holderCards(config).some((card) => hasAnyWatchTrackingEnabled(withAccountOwner(config, card.id)));
-  const playbackReporting = anyoneTracks && config.playbackReporting === true;
-  if (playbackReporting) {
-    resources.push("watch_state", "playback");
-  }
+  const playbackReporting = anyoneTracks && scrobblesJellyfin(config);
+  resources.push(...scrobbleResources(config, anyoneTracks));
 
   const manifest = {
     id: buildInfo.name,

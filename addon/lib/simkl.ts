@@ -10,19 +10,6 @@ export interface SimklTokens {
   // Note: Simkl access tokens never expire, no refresh_token
 }
 
-export interface SimklPinRequest {
-  user_code: string;
-  verification_url: string;
-  expires_in: number;
-  interval: number;
-}
-
-export type SimklPinPoll =
-  | { status: 'authorized'; access_token: string }
-  | { status: 'pending' }
-  | { status: 'slow_down' }
-  | { status: 'expired' };
-
 export interface SimklUser {
   username: string;
   name?: string;
@@ -34,107 +21,10 @@ export class SimklClient {
   private clientSecret: string;
   private redirectUri: string;
 
-  // PIN flow needs only a client id, so these two stay empty there.
-  constructor(clientId: string, clientSecret: string = '', redirectUri: string = '') {
+  constructor(clientId: string, clientSecret?: string, redirectUri?: string) {
     this.clientId = clientId;
-    this.clientSecret = clientSecret;
-    this.redirectUri = redirectUri;
-  }
-
-  /**
-   * Start the PIN (device) flow. No client secret, no callback URL.
-   */
-  async requestPin(): Promise<SimklPinRequest> {
-    const params = new URLSearchParams({ client_id: this.clientId });
-    let data: any;
-    try {
-      const response = await httpGet(`${SIMKL_API_BASE}/oauth/pin?${params.toString()}`);
-      data = response.data;
-    } catch (error: any) {
-      const status = error?.response?.status;
-      let body = error?.response?.data;
-      if (typeof body === 'string') {
-        try { body = JSON.parse(body); } catch { body = null; }
-      }
-      if (status === 401 || status === 403 || body?.error === 'client_id_failed') {
-        logger.error(`Simkl rejected the client credentials (HTTP ${status})`);
-        throw Object.assign(new Error('Simkl rejected this instance\'s client id'), { expose: true });
-      }
-      if (body?.error === 'unauthorized_client') {
-        logger.error(`Simkl rejected the PIN request: ${body.message || 'unauthorized_client'}`);
-        throw Object.assign(
-          new Error('This Simkl client ID belongs to an AUTH V2 app. Set it as Simkl V2 Client ID (SIMKL_V2_CLIENT_ID) instead of Simkl Client ID (SIMKL_CLIENT_ID).'),
-          { expose: true }
-        );
-      }
-      throw error;
-    }
-
-    if (!data || data.result !== 'OK' || !data.user_code) {
-      logger.error('Unexpected Simkl PIN response:', JSON.stringify(data));
-      throw new Error('Simkl did not return a PIN');
-    }
-
-    return {
-      user_code: String(data.user_code),
-      verification_url: String(data.verification_url || data.verification_uri || 'https://simkl.com/pin'),
-      expires_in: Number(data.expires_in) || 900,
-      interval: Number(data.interval) || 5,
-    };
-  }
-
-  /**
-   * Poll a pending PIN. Simkl returns result "OK" with an access token once the
-   * user has entered the code, and "KO" with either "Authorization pending" or
-   * "Slow down" while it is still waiting.
-   */
-  async pollPin(userCode: string): Promise<SimklPinPoll> {
-    const params = new URLSearchParams({ client_id: this.clientId });
-
-    let data: any;
-    try {
-      const response = await httpGet(
-        `${SIMKL_API_BASE}/oauth/pin/${encodeURIComponent(userCode)}?${params.toString()}`
-      );
-      data = response.data;
-    } catch (error: any) {
-      const status = error?.response?.status;
-
-      // A rejected client id is a configuration problem, not a user who hasn't
-      // typed the code yet. Let it surface instead of polling forever.
-      if (status === 401 || status === 403) {
-        logger.error(`Simkl rejected the client credentials (HTTP ${status})`);
-        throw error;
-      }
-
-      if (status === 429) {
-        return { status: 'slow_down' };
-      }
-
-      // Anything else is treated as transient, the next tick retries.
-      logger.debug(`Simkl PIN poll failed, treating as pending: ${error?.message}`);
-      return { status: 'pending' };
-    }
-
-    if (data && data.result === 'OK' && data.access_token) {
-      return { status: 'authorized', access_token: String(data.access_token) };
-    }
-
-    // Simkl answers an unknown code by minting a fresh one and returning the
-    // step-1 body, which carries `device_code` and no `access_token`. Its
-    // documentation names that field as the signal that the code we polled is
-    // gone. Reading it as pending would keep polling, and every one of those
-    // polls mints another code, so this has to come before anything else.
-    if (data && data.device_code) {
-      return { status: 'expired' };
-    }
-
-    const message = typeof data?.message === 'string' ? data.message.toLowerCase() : '';
-    if (message.includes('slow down')) {
-      return { status: 'slow_down' };
-    }
-
-    return { status: 'pending' };
+    this.clientSecret = clientSecret ?? '';
+    this.redirectUri = redirectUri ?? '';
   }
 
   /**
@@ -290,20 +180,6 @@ export interface SimklV2Tokens {
   scope: string;
 }
 
-export interface SimklDeviceCode {
-  device_code: string;
-  user_code: string;
-  verification_url: string;
-  expires_in: number;
-  interval: number;
-}
-
-export type SimklDevicePoll =
-  | { status: 'authorized'; tokens: SimklV2Tokens }
-  | { status: 'pending' }
-  | { status: 'slow_down' }
-  | { status: 'expired' };
-
 export function isSimklV2Token(accessToken: unknown): boolean {
   return typeof accessToken === 'string' && accessToken.startsWith(SIMKL_V2_TOKEN_PREFIX);
 }
@@ -314,6 +190,25 @@ export function simklV2Credentials(): { clientId: string; clientSecret: string }
     clientId: String(getSetting('SIMKL_V2_CLIENT_ID') || '').trim(),
     clientSecret: String(getSetting('SIMKL_V2_CLIENT_SECRET') || '').trim(),
   };
+}
+
+export type SimklAuthMode = 'oauth' | 'pin' | 'both';
+
+/**
+ * Which ways of connecting Simkl this instance offers. An unset or unknown
+ * SIMKL_AUTH_MODE offers OAuth only when the matching client secret exists.
+ */
+export function simklAuthMode(): SimklAuthMode {
+  const { getSetting } = require('./settingsService');
+  const configured = String(getSetting('SIMKL_AUTH_MODE') || '').trim().toLowerCase();
+  if (configured === 'oauth' || configured === 'pin' || configured === 'both') return configured;
+  const v2 = simklV2Credentials();
+  if (v2.clientId) return v2.clientSecret ? 'oauth' : 'pin';
+  return String(getSetting('SIMKL_CLIENT_SECRET') || '').trim() ? 'oauth' : 'pin';
+}
+
+export function simklCodeFlowOffered(mode: SimklAuthMode = simklAuthMode()): boolean {
+  return mode === 'pin' || mode === 'both';
 }
 
 export function simklClientIdFor(accessToken?: string | null): string {
@@ -364,41 +259,6 @@ function oauthError(action: string, status: number, data: any): Error {
   return error;
 }
 
-export async function requestSimklDeviceCode(clientId: string): Promise<SimklDeviceCode> {
-  const { status, data } = await postForm('/oauth2/device', { client_id: clientId, scope: SIMKL_V2_SCOPE });
-  if (status < 200 || status >= 300 || !data?.device_code || !data?.user_code) {
-    logger.error(`Simkl device code request failed (HTTP ${status}): ${data?.error || 'no code'}`);
-    throw oauthError('device code request', status, data);
-  }
-  return {
-    device_code: String(data.device_code),
-    user_code: String(data.user_code),
-    verification_url: String(data.verification_uri_complete || data.verification_uri || 'https://simkl.com/pin'),
-    expires_in: Number(data.expires_in) || 900,
-    interval: Number(data.interval) || 5,
-  };
-}
-
-export async function pollSimklDeviceCode(clientId: string, deviceCode: string): Promise<SimklDevicePoll> {
-  let result: { status: number; data: any };
-  try {
-    result = await postForm('/oauth2/token', {
-      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-      client_id: clientId,
-      device_code: deviceCode,
-    });
-  } catch (error: any) {
-    logger.debug(`Simkl device poll failed, treating as pending: ${error?.message}`);
-    return { status: 'pending' };
-  }
-  const { status, data } = result;
-  if (status >= 200 && status < 300) return { status: 'authorized', tokens: readTokens(data) };
-  if (status === 401) throw oauthError('device poll', status, data);
-  if (data?.error === 'slow_down' || status === 429) return { status: 'slow_down' };
-  if (data?.error === 'expired_token') return { status: 'expired' };
-  return { status: 'pending' };
-}
-
 export function simklV2AuthorizationUrl(clientId: string, redirectUri: string, state: string, codeVerifier: string): string {
   const crypto = require('crypto');
   const challenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
@@ -443,4 +303,162 @@ export async function revokeSimklV2Token(clientId: string, clientSecret: string,
 
 export function simklV2ScopeWrites(scope: string): boolean {
   return String(scope || '').split(/\s+/).includes('media:write');
+}
+
+// --- Code sign-in (V1 PIN and V2 device flow) ---
+
+const SIMKL_PIN_PAGE = 'https://simkl.com/pin';
+
+export interface SimklDeviceCode {
+  userCode: string;
+  verificationUrl: string;
+  expiresIn: number;
+  interval: number;
+  /** Only the V2 flow has one; V1 polls by the user code. */
+  deviceCode?: string;
+}
+
+export type SimklCodePoll =
+  | { status: 'pending' }
+  | { status: 'slow_down' }
+  | { status: 'expired' }
+  | { status: 'authorized'; accessToken: string; tokens?: SimklV2Tokens };
+
+/** An error whose message is written for the person connecting, so a route may show it as is. */
+export function userSafeError(message: string): Error {
+  const error: any = new Error(message);
+  error.userSafe = true;
+  return error;
+}
+
+export function isUserSafeError(error: unknown): boolean {
+  return Boolean(error && (error as any).userSafe === true);
+}
+
+/** Simkl's error bodies come back from the HTTP client as text. */
+function readBody(data: unknown): any {
+  if (typeof data !== 'string') return data ?? null;
+  if (!data) return null;
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+function positiveSeconds(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function rejectedClientIdError(): Error {
+  return userSafeError('Simkl rejected the client id this instance is configured with. The instance owner should check SIMKL_CLIENT_ID.');
+}
+
+function v2ClientIdInV1SlotError(): Error {
+  return userSafeError('This client id belongs to a Simkl AUTH V2 app. The instance owner should set it as SIMKL_V2_CLIENT_ID instead of SIMKL_CLIENT_ID.');
+}
+
+function failForPinError(status: number | undefined, body: any): void {
+  if (status === 401 || status === 403 || body?.error === 'client_id_failed') {
+    logger.error(`Simkl rejected the client credentials when asked for a PIN (HTTP ${status ?? 'n/a'}${body?.error ? `, ${body.error}` : ''})`);
+    throw rejectedClientIdError();
+  }
+  if (body?.error === 'unauthorized_client') {
+    logger.error('Simkl refused a PIN for SIMKL_CLIENT_ID: it is the id of an AUTH V2 app');
+    throw v2ClientIdInV1SlotError();
+  }
+}
+
+/** Asks Simkl's V1 PIN endpoint for a code the user enters at simkl.com/pin. */
+export async function requestSimklPin(clientId: string): Promise<SimklDeviceCode> {
+  let body: any;
+  try {
+    const response = await httpGet(`${SIMKL_API_BASE}/oauth/pin?client_id=${encodeURIComponent(clientId)}`);
+    body = readBody(response.data);
+  } catch (error: any) {
+    failForPinError(error?.response?.status, readBody(error?.response?.data));
+    throw error;
+  }
+
+  failForPinError(undefined, body);
+  if (body?.result !== 'OK' || !body?.user_code) {
+    logger.warn('Unexpected Simkl PIN response:', JSON.stringify(body));
+    throw new Error('Simkl did not return a PIN');
+  }
+  return {
+    userCode: String(body.user_code),
+    verificationUrl: String(body.verification_url || body.verification_uri || SIMKL_PIN_PAGE),
+    expiresIn: positiveSeconds(body.expires_in, 900),
+    interval: positiveSeconds(body.interval, 5),
+  };
+}
+
+/** Asks Simkl whether the V1 PIN has been approved yet. */
+export async function pollSimklPin(clientId: string, userCode: string): Promise<SimklCodePoll> {
+  let body: any;
+  try {
+    const response = await httpGet(`${SIMKL_API_BASE}/oauth/pin/${encodeURIComponent(userCode)}?client_id=${encodeURIComponent(clientId)}`);
+    body = readBody(response.data);
+  } catch (error: any) {
+    const status = error?.response?.status;
+    if (status === 401 || status === 403) {
+      // A configuration problem, not a slow user: polling again cannot fix it.
+      logger.error(`Simkl rejected the PIN status check (HTTP ${status}); check SIMKL_CLIENT_ID`);
+      throw error;
+    }
+    if (status === 429) return { status: 'slow_down' };
+    logger.debug(`Simkl PIN status check failed, still pending: ${error?.message || error}`);
+    return { status: 'pending' };
+  }
+
+  // Simkl answers a code it no longer knows by minting a fresh one. Read as
+  // pending, that would mint another code on every poll.
+  if (body?.device_code) return { status: 'expired' };
+  if (body?.result === 'OK' && body?.access_token) {
+    return { status: 'authorized', accessToken: String(body.access_token) };
+  }
+  if (/slow down/i.test(String(body?.message || ''))) return { status: 'slow_down' };
+  return { status: 'pending' };
+}
+
+/** Starts Simkl's V2 device flow. */
+export async function requestSimklV2DeviceCode(clientId: string): Promise<SimklDeviceCode> {
+  const { status, data } = await postForm('/oauth2/device', { client_id: clientId, scope: SIMKL_V2_SCOPE });
+  if (status >= 200 && status < 300 && data?.device_code && data?.user_code) {
+    return {
+      deviceCode: String(data.device_code),
+      userCode: String(data.user_code),
+      verificationUrl: String(data.verification_uri_complete || data.verification_uri || SIMKL_PIN_PAGE),
+      expiresIn: positiveSeconds(data.expires_in, 900),
+      interval: positiveSeconds(data.interval, 5),
+    };
+  }
+  logger.warn(`Simkl V2 device code request failed (HTTP ${status}):`, JSON.stringify(data));
+  throw oauthError('device code request', status, data);
+}
+
+/** Asks Simkl whether the V2 device code has been approved yet. */
+export async function pollSimklV2DeviceToken(clientId: string, deviceCode: string): Promise<SimklCodePoll> {
+  let result: { status: number; data: any };
+  try {
+    result = await postForm('/oauth2/token', {
+      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      client_id: clientId,
+      device_code: deviceCode,
+    });
+  } catch (error: any) {
+    logger.debug(`Simkl V2 device token check failed, still pending: ${error?.message || error}`);
+    return { status: 'pending' };
+  }
+
+  const { status, data } = result;
+  if (status >= 200 && status < 300) {
+    const tokens = readTokens(data);
+    return { status: 'authorized', accessToken: tokens.access_token, tokens };
+  }
+  if (status === 401) throw oauthError('device token check', status, data);
+  if (data?.error === 'slow_down' || status === 429) return { status: 'slow_down' };
+  if (data?.error === 'expired_token') return { status: 'expired' };
+  return { status: 'pending' };
 }

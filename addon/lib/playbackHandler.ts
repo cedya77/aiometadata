@@ -2,6 +2,7 @@ import consola from 'consola';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../utils/envNumber';
 import { enqueueTrackerWrites, startWindowSeconds, type OutboxJob } from './trackerOutbox';
+import { rewatchGapMs } from './jellyfin/bulkMarks';
 import type { WatchTrackingService } from './watchTracking';
 
 const logger = consola.withTag('Playback');
@@ -37,7 +38,7 @@ export interface PlaybackReport {
  * position or timestamp, and repeats it across retries. Some clients also report
  * a single stop twice in two shapes, so a repeat is expected rather than a fault.
  */
-const seen = new LRUCache<string, true>({
+const seen = new LRUCache<string, number>({
   max: envInt('PLAYBACK_DEDUPE_MAX', 10000, 1),
   ttl: envInt('PLAYBACK_DEDUPE_TTL', 6 * 60 * 60, 60) * 1000,
 });
@@ -80,11 +81,14 @@ function markRepeatMs(): number {
   return envInt('PLAYBACK_MARK_REPEAT_WINDOW', 300, 0) * 1000;
 }
 
-export function isDuplicate(userUUID: string, id: string | null): boolean {
+/** A message seen before, within withinMs of the first time when given. */
+export function isDuplicate(userUUID: string, id: string | null, withinMs?: number): boolean {
   if (!id) return false;
   const key = `${userUUID}:${id}`;
-  if (seen.has(key)) return true;
-  seen.set(key, true);
+  const at = seen.get(key);
+  const now = Date.now();
+  if (at !== undefined && (withinMs === undefined || now - at < withinMs)) return true;
+  seen.set(key, now);
   return false;
 }
 
@@ -101,11 +105,12 @@ export function isRepeatWatched(userUUID: string, report: PlaybackReport): boole
   const key = `watched:${userUUID}:${video}`;
   const previous = decisions.get(key);
   const now = Date.now();
-  decisions.set(key, { intent, at: now });
-
-  if (!previous || previous.intent !== intent) return false;
-  if (report.event === 'played' || report.event === 'unplayed') return now - previous.at < markRepeatMs();
-  return true;
+  const finish = report.event !== 'played' && report.event !== 'unplayed';
+  // A finish after the rewatch gap from the last one kept is another viewing, as the watch history counts it.
+  const repeat = Boolean(previous && previous.intent === intent)
+    && now - previous!.at < (finish ? rewatchGapMs(Number(report.durationMs) || 0) : markRepeatMs());
+  if (!finish || !repeat) decisions.set(key, { intent, at: now });
+  return repeat;
 }
 
 /** Keeps one user's events apart from another's; the installation keeps the key it always had. */
@@ -159,19 +164,58 @@ export async function handleBulkPlaybackReport(
   const method = event === 'played' ? 'addToHistory' : 'removeFromHistory';
   const scope = body?.scope === 'season' ? 'season' : 'series';
   const item = String(body?.metaId || id);
+  const at = event === 'played' ? num(body?.at) : null;
+  const dated = at ? { at: at * 1000 } : {};
   const jobs: OutboxJob[] = [];
+  // An episode a tracker has as a film goes on its own, delivered as that film, so its retries never repeat the rest.
+  const { filmFor } = require('./jellyfin/trackerMatch');
+  const { parseMediaId: parseVideo } = require('./subtitleHandler');
+  // A failed read of the matches sends every episode as it is, rather than losing the whole mark.
+  const apart = async (service: WatchTrackingService): Promise<{ films: Map<string, string[]>; rest: string[] }> => {
+    const films = new Map<string, string[]>();
+    const rest: string[] = [];
+    for (const video of videos) {
+      const film = await filmFor(userUUID, service, [video], true).catch(() => null);
+      if (film) films.set(video, film.spellings);
+      else rest.push(video);
+    }
+    return { films, rest };
+  };
+  const filmJobs = (service: WatchTrackingService, films: string[]): OutboxJob[] => films.map((video) => {
+    const parsed = parseVideo(video);
+    const report: PlaybackReport = {
+      id: null, event, at, metaId: body?.metaId ?? null, videoId: video,
+      positionMs: null, durationMs: null, played: event === 'played',
+      season: parsed?.season ?? null, episode: parsed?.episode ?? null, ids: body?.ids ?? {},
+    };
+    return { service, op: method === 'removeFromHistory' ? 'unwatch' : 'credit', item, coalesce: `history:${video}`, payload: { type, id: video, report, progress: null } };
+  });
+  // An episode sent as a film follows the tracker's film switch, as it does when delivered.
   for (const service of ['simkl', 'mdblist'] as const) {
-    if (shouldTrackServiceMediaType(config, service, 'series')) jobs.push({ service, op: 'episodes', item, payload: { videos, method, scope } });
+    const shows = shouldTrackServiceMediaType(config, service, 'series');
+    const movies = shouldTrackServiceMediaType(config, service, 'movie');
+    if (!shows && !movies) continue;
+    const { films, rest } = await apart(service);
+    if (shows && rest.length) jobs.push({ service, op: 'episodes', item, payload: { videos: rest, method, scope, ...dated } });
+    if (movies) jobs.push(...filmJobs(service, [...films.keys()]));
   }
   // PublicMetaDB clears a season in one call but records a watch one episode at a time,
   // each a play of its own, so an episode it already lists is not played again.
-  if (shouldTrackServiceMediaType(config, 'publicmetadb', 'series')) {
-    if (method === 'removeFromHistory') jobs.push({ service: 'publicmetadb', op: 'episodes', item, payload: { videos, method, scope } });
-    else {
-      const listed = await pmdbListed(config, videos);
-      for (const video of videos) {
-        if (!listed.has(video)) jobs.push({ service: 'publicmetadb', op: 'episodes', item, coalesce: `history:${video}`, payload: { videos: [video], method, scope } });
+  const pmdbShows = shouldTrackServiceMediaType(config, 'publicmetadb', 'series');
+  const pmdbMovies = shouldTrackServiceMediaType(config, 'publicmetadb', 'movie');
+  if (pmdbShows || pmdbMovies) {
+    const { films, rest } = await apart('publicmetadb');
+    if (pmdbShows && method === 'removeFromHistory') {
+      if (rest.length) jobs.push({ service: 'publicmetadb', op: 'episodes', item, payload: { videos: rest, method, scope } });
+    } else if (pmdbShows) {
+      const listed = await pmdbListed(config, rest);
+      for (const video of rest) {
+        if (!listed.has(video)) jobs.push({ service: 'publicmetadb', op: 'episodes', item, coalesce: `history:${video}`, payload: { videos: [video], method, scope, ...dated } });
       }
+    }
+    if (pmdbMovies) {
+      const listed = method === 'removeFromHistory' ? new Set<string>() : await pmdbListed(config, [...films.values()].flat());
+      jobs.push(...filmJobs('publicmetadb', [...films].filter(([, spellings]) => !spellings.some((spelling) => listed.has(spelling))).map(([video]) => video)));
     }
   }
   // A count-based list only needs the furthest episode watched, or the span unwatched.
@@ -182,7 +226,7 @@ export async function handleBulkPlaybackReport(
   const parsedEdge = parseMediaId(edge);
   if (parsedEdge) {
     const report: PlaybackReport = {
-      id: null, event, at: null, metaId: body?.metaId ?? null, videoId: edge,
+      id: null, event, at, metaId: body?.metaId ?? null, videoId: edge,
       positionMs: null, durationMs: null, played: event === 'played',
       season: parsedEdge.season ?? null, episode: parsedEdge.episode ?? null, ids: body?.ids ?? {},
     };
@@ -275,7 +319,9 @@ export async function handlePlaybackReport(
     return { status: 400, reason: 'unrecognised event' };
   }
 
-  if (isDuplicate(viewerScope(userUUID, config), report.id)) {
+  // A finish names its position, which a rewatch can end on again: past the rewatch gap it is another viewing.
+  const finishGap = report.event === 'stop' && intentOf(report) === 'watched' ? rewatchGapMs(Number(report.durationMs) || 0) : undefined;
+  if (isDuplicate(viewerScope(userUUID, config), report.id, finishGap)) {
     logger.debug(`Duplicate ${report.event} for ${type}/${id} (${report.id})`);
     return { status: 204 };
   }
@@ -326,7 +372,7 @@ export async function handlePlaybackReport(
   if (writesTrackersFor(config)) {
     const { playedThresholdFor } = require('./jellyfin/playstate');
     const watchedAt = await playedThresholdFor(userUUID, config?.jellyfinProfileId ?? null);
-    await enqueueTrackerWrites(userUUID, config, planReport(type, id, report, progress, config, watchedAt));
+    await enqueueTrackerWrites(userUUID, config, await planReport(type, id, report, progress, config, watchedAt, userUUID));
   }
 
   return { status: 204 };
@@ -337,9 +383,10 @@ export async function handlePlaybackReport(
  * failed. A tracker that holds plays rather than a flag would otherwise count a
  * watch twice because the resume clear after it failed.
  */
-function planReport(type: string, id: string, report: PlaybackReport, progress: number | null, config: any, watchedAt: number): OutboxJob[] {
+async function planReport(type: string, id: string, report: PlaybackReport, progress: number | null, config: any, watchedAt: number, userUUID?: string): Promise<OutboxJob[]> {
   const { parseMediaId } = require('./subtitleHandler');
   const { shouldTrackServiceMediaType, normalizeWatchTrackingMediaType } = require('./watchTracking');
+  const { scrobblingTrackers } = require('./trackers');
   const parsedId = parseMediaId(id);
   const mediaType = parsedId ? normalizeWatchTrackingMediaType(type, parsedId.type) : null;
   if (!mediaType) return [];
@@ -351,14 +398,23 @@ function planReport(type: string, id: string, report: PlaybackReport, progress: 
   const credited = intent === 'watched' && report.event !== 'stop';
   // A watch only hides a tracker's paused session; it has to be deleted or an unwatch revives it.
   // A mark ends a session the same way a finished stop does, and an unmark starts the title over.
-  const clears = report.event === 'played' || report.event === 'unplayed' || (report.event === 'stop' && intent === 'watched');
+  // Below the minimum resume no resume point is kept here, so a tracker gets none either; a stop clears one it held from before.
+  const { resumeFloorPercent } = require('./jellyfin/resume');
+  const belowFloor = (intent === 'paused' || intent === 'partial') && progress !== null
+    && (report.positionMs as number) / (report.durationMs as number) * 100 < resumeFloorPercent();
+  const clears = report.event === 'played' || report.event === 'unplayed' || (report.event === 'stop' && (intent === 'watched' || belowFloor));
+
+  // An episode a tracker has as a film is delivered as that film, so the tracker's film switch decides.
+  const { filmFor } = require('./jellyfin/trackerMatch');
+  const sentType = async (service: WatchTrackingService) => (mediaType === 'series' && parsedId.episode !== null && parsedId.episode !== undefined
+    && await filmFor(userUUID, service, [id], true).catch(() => null) ? 'movie' : mediaType);
 
   const jobs: OutboxJob[] = [];
-  for (const service of ['simkl', 'mdblist', 'publicmetadb'] as const) {
-    if (!shouldTrackServiceMediaType(config, service, mediaType)) continue;
-    const scrobbles = service === 'publicmetadb'
+  for (const service of scrobblingTrackers() as WatchTrackingService[]) {
+    if (!shouldTrackServiceMediaType(config, service, await sentType(service))) continue;
+    const scrobbles = !belowFloor && (service === 'publicmetadb'
       ? (report.event === 'stop' || report.event === 'pause') && (intent === 'partial' || intent === 'watched' || intent === 'paused')
-      : intent !== 'none' && intent !== 'unwatched' && !credited;
+      : intent !== 'none' && intent !== 'unwatched' && !credited);
     // A later start or pause replaces one still waiting; a stop is never replaced, since it may be the watch.
     if (scrobbles) {
       jobs.push({
@@ -381,13 +437,26 @@ function planReport(type: string, id: string, report: PlaybackReport, progress: 
 
 type ReportPayload = { type: string; id: string; report: PlaybackReport; progress: number | null; through?: string; watchedAt?: number };
 
-export async function deliverScrobble(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {
+/**
+ * An episode matched to a film on this tracker goes there as the film. Every write is remapped here, as it is
+ * delivered, so a job made anywhere sends it alike, and what was asked keeps the episode's own id.
+ */
+async function onTracker<P extends { type: string; id: string }>(service: WatchTrackingService, p: P, config: any): Promise<P> {
+  const { parseStremioId } = require('./jellyfin/idsCodec');
+  const parsed = typeof p?.id === 'string' ? parseStremioId(p.id) : null;
+  if (!parsed || parsed.episode === null || parsed.episode === undefined) return p;
+  const film = await require('./jellyfin/trackerMatch').filmFor(config?.userUUID, service, [p.id], true);
+  return film ? { ...p, type: 'movie', id: film.film } : p;
+}
+
+export async function deliverScrobble(service: WatchTrackingService, sent: ReportPayload, config: any): Promise<void> {
+  const p = await onTracker(service, sent, config);
   if (service === 'simkl') await scrobbleSimkl(p.type, p.id, p.report, p.progress, config, p.watchedAt);
   else if (service === 'mdblist') await scrobbleMdblist(p.type, p.id, p.report, p.progress, config);
   else if (service === 'publicmetadb') await reportPublicMetaDB(p.type, p.id, p.report, config);
 }
 
-function trackedMediaId(p: ReportPayload): any | null {
+function trackedMediaId(p: Pick<ReportPayload, 'type' | 'id'>): any | null {
   const { parseMediaId } = require('./subtitleHandler');
   const { normalizeWatchTrackingMediaType } = require('./watchTracking');
   const parsedId = parseMediaId(p.id);
@@ -395,17 +464,80 @@ function trackedMediaId(p: ReportPayload): any | null {
   return parsedId;
 }
 
-export async function deliverCredit(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {
+export async function deliverCredit(service: WatchTrackingService, sent: ReportPayload, config: any): Promise<void> {
+  const p = await onTracker(service, sent, config);
   const parsedId = trackedMediaId(p);
-  if (parsedId) await require('./subtitleHandler').creditHistory(parsedId, config, service);
+  // Dated by the mark, so a retry or a date the client sent is not recorded as the time it was delivered.
+  const at = Number(p.report?.at) > 0 ? Number(p.report.at) * 1000 : undefined;
+  if (parsedId) await require('./subtitleHandler').creditHistory(parsedId, config, service, at);
 }
 
-export async function deliverUnwatch(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {
-  const parsedId = trackedMediaId(p);
+export async function deliverUnwatch(service: WatchTrackingService, sent: ReportPayload, config: any): Promise<void> {
+  const parsedId = trackedMediaId(await onTracker(service, sent, config));
   if (parsedId) await require('./subtitleHandler').unwatch(parsedId, config, service);
 }
 
-export async function deliverClearResume(service: WatchTrackingService, p: ReportPayload, config: any): Promise<void> {
+export async function deliverWatchDate(service: WatchTrackingService, sent: { type: string; id: string; from: number; to: number; latest?: number | null; apart?: boolean }, config: any): Promise<void> {
+  const p = await onTracker(service, sent, config);
+  const parsedId = trackedMediaId(p);
+  if (parsedId) await require('./subtitleHandler').redateHistory(parsedId, config, service, p);
+}
+
+export async function deliverCatchUp(service: WatchTrackingService, sent: { type: string; id: string; at: number }, config: any, userUUID: string): Promise<void> {
+  const p = await onTracker(service, sent, config);
+  if (service === 'anilist' || service === 'mal') {
+    const report: PlaybackReport = { id: null, event: 'played', at: p.at, metaId: null, videoId: p.id, positionMs: null, durationMs: null, played: true, season: null, episode: null, ids: {} };
+    await advanceAnimeLists(p.type, p.id, report, config, userUUID, service);
+    return;
+  }
+  const parsedId = trackedMediaId(p);
+  if (parsedId) await require('./subtitleHandler').creditHistory(parsedId, config, service, p.at);
+}
+
+export async function deliverCatchUps(service: WatchTrackingService, p: { items?: any[]; rewatch?: boolean }, config: any, userUUID: string): Promise<void> {
+  const items = Array.isArray(p.items) ? p.items : [];
+  const { ACCOUNT_SERVICES } = require('./accounts');
+  const { trackerName, trackerOf } = require('./trackers');
+  const batch = trackerOf(service)?.writeWatches;
+  const credential = batch ? config.apiKeys?.[ACCOUNT_SERVICES[service].key] : null;
+  if (!items.length || !credential) return;
+  const { noteTrackerCall } = require('../utils/trackerCalls');
+  const { asFilmOn } = require('./jellyfin/trackerMatch');
+  // Rewritten in place, so a lost index still names the item asked for.
+  const sending = await Promise.all(items.map((item: any) => (item && Array.isArray(item.ids) ? asFilmOn(config?.userUUID, service, item).catch(() => item) : item)));
+  const outcome = await batch.write(sending, credential, config, p.rewatch === true);
+  const name = trackerName(service);
+  const url = batch.url;
+  if (outcome.wait) {
+    noteTrackerCall(url, 429, outcome.error ?? 'waiting for the allowance', null, Date.now() + outcome.wait);
+    return;
+  }
+  if (!outcome.sent && outcome.failed) {
+    noteTrackerCall(url, 404, `none of ${items.length} found on ${name}`);
+    return;
+  }
+  const lost = new Set<number>(outcome.lost ?? []);
+  if (!lost.size) return;
+  const missed = items.filter((_, i) => lost.has(i));
+  p.items = items.filter((_, i) => !lost.has(i));
+  const { sourceKeyFor } = require('./jellyfin/trackerMirror');
+  const { noteActivity } = require('./trackerActivity');
+  const { accountOwner, credentialOf } = require('./accounts');
+  const videos = missed.map((entry: any) => entry?.ids?.[0]).filter(Boolean);
+  await noteActivity({
+    sourceKey: sourceKeyFor(service, credentialOf(config, service)),
+    service,
+    kind: 'failed',
+    userUUID,
+    profile: accountOwner(config),
+    op: 'catchUps',
+    video: videos[0] ?? null,
+    detail: { verb: videos.length === 1 ? 'Sent a missed watch' : `Sent ${videos.length} missed watches`, count: videos.length, videos, status: 404, reason: `not found on ${name}` },
+  });
+}
+
+export async function deliverClearResume(service: WatchTrackingService, sent: ReportPayload, config: any): Promise<void> {
+  const p = await onTracker(service, sent, config);
   const { parseMediaId, clearResumePoint } = require('./subtitleHandler');
   const parsedId = parseMediaId(p.id);
   if (parsedId) await clearResumePoint(parsedId, config, service);

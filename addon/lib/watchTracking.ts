@@ -10,6 +10,18 @@ export type WatchTrackingService =
 
 export type WatchTrackingMediaType = 'movie' | 'series';
 
+export function scrobblesJellyfin(config: any): boolean {
+  return config?.playbackReporting === true && config?.jellyfinScrobbling !== false;
+}
+
+export function scrobblesStremio(config: any): boolean {
+  return config?.playbackReporting === true && config?.stremioScrobbling === true;
+}
+
+export function syncsStremioLibrary(config: any): boolean {
+  return scrobblesStremio(config) && config?.stremioLibraryWatchlist === true;
+}
+
 export const WATCH_TRACKING_SERVICES: WatchTrackingService[] = [
   'simkl',
   'anilist',

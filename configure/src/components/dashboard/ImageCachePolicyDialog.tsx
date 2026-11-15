@@ -315,7 +315,7 @@ export function ImageCachePolicyDialog({
               onValueChange={(policy) => updateRow(row.domain, { explicit: true, policy: policy as TtlPolicy })}
             >
               <SelectTrigger className="w-[150px] h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
+              <SelectContent sheet>
                 {(Object.keys(labels) as TtlPolicy[]).map((policy) => (
                   <SelectItem key={policy} value={policy}>{labels[policy]}</SelectItem>
                 ))}

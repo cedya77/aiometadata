@@ -1,10 +1,20 @@
 import getCountryISO3 from 'country-iso-2-to-3';
 
+export type StudioSource = 'tmdb-company' | 'tmdb-network' | 'tvdb' | 'mal';
+
+/** A studio or network as its provider knows it, so a studio page can be asked of that provider. */
+export interface StudioRef {
+  name: string;
+  source: StudioSource;
+  id: number;
+}
+
 /** Detail-page fields beside the Stremio ones, as Jellyfin servers read them off a meta. */
 export interface MetaDetails {
   tagline?: string;
   studios?: string[];
   networks?: string[];
+  _studioRefs?: StudioRef[];
   countries?: string[];
   airDays?: string[];
   airTime?: string;
@@ -50,6 +60,21 @@ function names(list: any): string[] {
   return [...new Set(out)];
 }
 
+function refs(groups: Array<[any, StudioSource, string?]>): StudioRef[] {
+  const out: StudioRef[] = [];
+  const seen = new Set<string>();
+  for (const [list, source, idKey = 'id'] of groups) {
+    for (const entry of Array.isArray(list) ? list : [list]) {
+      const name = String(entry?.name ?? '').trim();
+      const id = Number(entry?.[idKey]);
+      if (!name || !Number.isInteger(id) || id <= 0 || seen.has(`${source}:${id}`)) continue;
+      seen.add(`${source}:${id}`);
+      out.push({ name, source, id });
+    }
+  }
+  return out;
+}
+
 function present(details: MetaDetails): MetaDetails {
   return Object.fromEntries(
     Object.entries(details).filter(([, value]) => (Array.isArray(value) ? value.length > 0 : Boolean(value)))
@@ -68,6 +93,7 @@ export function tmdbDetails(data: any): MetaDetails {
     tagline: typeof data?.tagline === 'string' ? data.tagline.trim() : undefined,
     studios: names(data?.production_companies),
     networks: names(data?.networks),
+    _studioRefs: refs([[data?.production_companies, 'tmdb-company'], [data?.networks, 'tmdb-network']]),
     countries: names(data?.production_countries).map(countryName),
   });
 }
@@ -76,9 +102,12 @@ export function tvdbSeriesDetails(show: any): MetaDetails {
   const companies = Array.isArray(show?.companies) ? show.companies : [];
   const ofType = (type: string) => companies.filter((company: any) => company?.companyType?.companyTypeName === type);
   const status = String(show?.status?.name ?? '');
+  const studios = [...ofType('Studio'), ...ofType('Production Company')];
+  const networks = [show?.originalNetwork, show?.latestNetwork, ...ofType('Network')];
   return present({
-    studios: names([...ofType('Studio'), ...ofType('Production Company')]),
-    networks: names([show?.originalNetwork, show?.latestNetwork, ...ofType('Network')]),
+    studios: names(studios),
+    networks: names(networks),
+    _studioRefs: refs([[studios, 'tvdb'], [networks, 'tvdb']]),
     countries: show?.originalCountry ? [countryName(String(show.originalCountry))] : [],
     ...schedule(status === 'Continuing' || status === 'Upcoming', WEEKDAYS.filter((day) => show?.airsDays?.[day.toLowerCase()] === true), show?.airsTime),
   });
@@ -86,8 +115,10 @@ export function tvdbSeriesDetails(show: any): MetaDetails {
 
 export function tvdbMovieDetails(movie: any): MetaDetails {
   const companies = movie?.companies && typeof movie.companies === 'object' ? movie.companies : {};
+  const studios = [...(companies.studio ?? []), ...(companies.production ?? [])];
   return present({
-    studios: names([...(companies.studio ?? []), ...(companies.production ?? [])]),
+    studios: names(studios),
+    _studioRefs: refs([[studios, 'tvdb']]),
     countries: Array.isArray(movie?.production_countries) && movie.production_countries.length
       ? names(movie.production_countries).map(countryName)
       : movie?.originalCountry ? [countryName(String(movie.originalCountry))] : [],
@@ -109,6 +140,7 @@ export function jikanDetails(anime: any): MetaDetails {
   const day = String(anime?.broadcast?.day ?? '').replace(/s$/, '');
   return present({
     studios: names(anime?.studios),
+    _studioRefs: refs([[anime?.studios, 'mal', 'mal_id']]),
     ...schedule(anime?.status === 'Currently Airing' || anime?.status === 'Not yet aired', WEEKDAYS.includes(day) ? [day] : [], anime?.broadcast?.time),
   });
 }

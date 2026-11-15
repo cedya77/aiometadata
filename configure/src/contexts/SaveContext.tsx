@@ -11,6 +11,8 @@ import { ManagerSync } from "@/components/ManagerSync";
 import { Switch } from "@/components/ui/switch";
 import { missingRequiredKeys, type KeyStatus } from "@/lib/configStatus";
 import { navigateToSettingsSection } from "@/lib/settingsRoute";
+import { householdIssue } from "@/lib/cardAccounts";
+import { withoutWatchTrackingDefaults } from "@/lib/watchTracking";
 
 const LazyInstallDialog = lazy(() =>
   import("@/components/InstallDialog").then((module) => ({ default: module.InstallDialog }))
@@ -27,11 +29,15 @@ interface SaveContextType {
   isSaving: boolean;
   error: string;
   savedConfig: SavedConfig | null;
+  /** The configuration as last saved or loaded, or null before there is one. */
+  persistedConfig: AppConfig | null;
   markConfigPersisted: (persisted: AppConfig) => void;
   /** Null until a save target exists, so callers can tell "unknown" from "no changes". */
   isDirty: boolean | null;
   canSave: boolean;
   missingKeys: KeyStatus[];
+  /** Why the people set up in the configuration stop it being saved, or null. */
+  saveBlockedBy: string | null;
   /** Opens the install dialog and rebaselines the manifest. */
   openInstall: (manifestUrl?: string) => void;
   installUrl: string;
@@ -76,7 +82,7 @@ const SELF_PERSISTING_KEYS = [
 function fingerprintConfig(config: AppConfig): string {
   // Connecting, disconnecting and syncing all persist as they go, so counting what they
   // touch would report unsaved work for changes already on disk. Save owns the rest.
-  const { apiKeys, managers: _managers, managerAccounts: _managerAccounts, ...rest } = config as any;
+  const { apiKeys, managers: _managers, managerAccounts: _managerAccounts, ...rest } = withoutWatchTrackingDefaults(config) as any;
   const trimmedApiKeys = Object.fromEntries(
     Object.entries(apiKeys ?? {}).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
   );
@@ -109,6 +115,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState("");
   const [savedConfig, setSavedConfig] = useState<SavedConfig | null>(null);
   const [savedFingerprint, setSavedFingerprint] = useState<string | null>(null);
+  const [persistedConfig, setPersistedConfig] = useState<AppConfig | null>(null);
   const [reinstallModalOpen, setReinstallModalOpen] = useState(false);
   const [suppressReinstallNotice, setSuppressReinstallNotice] = useState(false);
   const [isInstallOpen, setIsInstallOpen] = useState(false);
@@ -119,7 +126,8 @@ export function SaveProvider({ children }: { children: ReactNode }) {
     () => (contextLoading ? [] : missingRequiredKeys(config, caps)),
     [config, hasBuiltInTmdb, hasBuiltInTvdb, hasBuiltInGemini, contextLoading] // eslint-disable-line react-hooks/exhaustive-deps
   );
-  const canSave = !contextLoading && missingKeys.length === 0;
+  const saveBlockedBy = useMemo(() => householdIssue(config, auth.userUUID ?? ''), [config, auth.userUUID]);
+  const canSave = !contextLoading && missingKeys.length === 0 && saveBlockedBy === null;
 
   useEffect(() => {
     fetch("/api/config/addon-info")
@@ -139,12 +147,14 @@ export function SaveProvider({ children }: { children: ReactNode }) {
       baselineUuid.current = null;
       baseVersion.current = null;
       setSavedFingerprint(null);
+      setPersistedConfig(null);
       return;
     }
     if (baselineUuid.current === auth.userUUID) return;
     baselineUuid.current = auth.userUUID;
     baseVersion.current = Number((config as { configVersion?: number }).configVersion) || null;
     setSavedFingerprint(fingerprintConfig(config));
+    setPersistedConfig(config);
   }, [contextLoading, auth.authenticated, auth.userUUID, config]);
 
   const saves = useMemo(() => {
@@ -179,6 +189,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
   // is on disk, so the baseline moves with it instead of reporting unsaved work.
   const markConfigPersisted = useCallback((persisted: AppConfig) => {
     setSavedFingerprint(fingerprintConfig(persisted));
+    setPersistedConfig(persisted);
   }, []);
 
   const currentFingerprint = useMemo(() => fingerprintConfig(config), [config]);
@@ -250,6 +261,7 @@ export function SaveProvider({ children }: { children: ReactNode }) {
       }
       setSavedConfig(result);
       setSavedFingerprint(fingerprintConfig(config));
+      setPersistedConfig(config);
       const savedVersion = Number(result?.configVersion);
       if (Number.isFinite(savedVersion) && savedVersion > 0) {
         baseVersion.current = savedVersion;
@@ -337,10 +349,12 @@ export function SaveProvider({ children }: { children: ReactNode }) {
     isSaving,
     error,
     savedConfig,
+    persistedConfig,
     isDirty,
     markConfigPersisted,
     canSave,
     missingKeys,
+    saveBlockedBy,
     openInstall,
     installUrl: defaultInstallUrl,
   };

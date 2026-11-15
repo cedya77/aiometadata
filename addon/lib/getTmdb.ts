@@ -416,6 +416,14 @@ function getApiKey(config: UserConfig = {} as UserConfig): string {
     return key;
 }
 
+export function hasTmdbKey(config: UserConfig = {} as UserConfig): boolean {
+  try {
+    return !!getApiKey(config);
+  } catch {
+    return false;
+  }
+}
+
 function normalizeCommaListParam(value: any): string {
   const raw = Array.isArray(value) ? value.join(',') : String(value);
   const tokens = raw
@@ -519,6 +527,13 @@ export async function tvContentRatings(id: string, config: UserConfig) {
   return cacheWrapGlobal(`tmdb:tv:content_ratings:${id}`, () =>
     makeTmdbRequest(`/tv/${id}/content_ratings`, getApiKey(config), {}, 'GET', null, config),
     7 * 24 * 60 * 60
+  );
+}
+
+export async function networkInfo(id: string | number, config: UserConfig) {
+  return cacheWrapGlobal(`tmdb:network:${id}`, () =>
+    makeTmdbRequest(`/network/${id}`, getApiKey(config), {}, 'GET', null, config),
+    30 * 24 * 60 * 60
   );
 }
 
@@ -678,6 +693,10 @@ export async function discoverMovie(params: any, config: UserConfig) {
 
 export async function discoverTv(params: any, config: UserConfig) {
   return makeTmdbRequest('/discover/tv', getApiKey(config), params, 'GET', null, config);
+}
+
+export async function searchCompany(params: any, config: UserConfig) {
+  return makeTmdbRequest('/search/company', getApiKey(config), params, 'GET', null, config);
 }
 
 export async function genreMovieList(params: any, config: UserConfig) {
@@ -1150,6 +1169,7 @@ module.exports = {
   primaryTranslations,
   discoverMovie,
   discoverTv,
+  searchCompany,
   collectionInfo,
   searchCollection,
   seasonInfo,
@@ -1182,6 +1202,7 @@ module.exports = {
   getTranslations,
   movieReleaseDates,
   tvContentRatings,
+  networkInfo,
   movieKeywords,
   tvKeywords,
   keywordNamesOf,

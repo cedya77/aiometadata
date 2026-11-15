@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Loader2, Save } from 'lucide-react';
 import { useSave } from '@/contexts/SaveContext';
+import { navigateToSettingsSection } from '@/lib/settingsRoute';
 
 /**
  * The header scrolls away and sections run long on phones, so the header's save
@@ -8,13 +9,13 @@ import { useSave } from '@/contexts/SaveContext';
  * something to save; SettingsLayout reserves the space it occupies.
  */
 export function MobileSaveBar() {
-  const { requestSave, isSaving, isDirty, canSave, missingKeys } = useSave();
+  const { requestSave, isSaving, isDirty, canSave, missingKeys, saveBlockedBy } = useSave();
 
   // isDirty is null before a first save, which still warrants the bar: that is the
   // onboarding path, where the header's icon-only button is the least discoverable.
   if (isDirty === false && !isSaving) return null;
 
-  const blocked = !canSave && missingKeys.length > 0;
+  const blocked = !canSave && (missingKeys.length > 0 || saveBlockedBy !== null);
   const neverSaved = isDirty === null;
 
   return (
@@ -29,7 +30,9 @@ export function MobileSaveBar() {
             </div>
             <div className="truncate text-xs text-muted-foreground">
               {blocked
-                ? `Missing: ${missingKeys.map(k => k.name).join(', ')}`
+                ? missingKeys.length
+                  ? `Missing: ${missingKeys.map(k => k.name).join(', ')}`
+                  : <button type="button" className="underline underline-offset-2" onClick={() => navigateToSettingsSection('people')}>{saveBlockedBy} Fix in People</button>
                 : neverSaved
                   ? 'Save to get your install link.'
                   : 'Save to apply them to your addon.'}

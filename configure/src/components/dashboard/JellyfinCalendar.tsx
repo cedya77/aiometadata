@@ -1,7 +1,10 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
+import { toast } from "sonner";
+import { CalendarDays, CalendarPlus, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, ImageOff, Link2Off, Loader2, RotateCcw } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useJellyfinCalendar, type DashboardTab, type JellyfinCalendarRow } from "@/hooks/useDashboardQueries";
+import { useOpenTitle } from "./jellyfinUtils";
+import { useJellyfinCalendar, useJellyfinCalendarFeed, useJellyfinCalendarFeedActions, type DashboardTab, type JellyfinCalendarRow } from "@/hooks/useDashboardQueries";
 
 const WEEK = 7;
 
@@ -100,6 +103,7 @@ function FadeImage({ src, className, onError }: { src: string; className: string
 }
 
 const EpisodeCard = ({ airing: { row, at, aired }, large = false, onFocus }: { airing: Airing; large?: boolean; onFocus: (src: string | undefined) => void }) => {
+  const open = useOpenTitle();
   const sources = artFor(row, aired, large ? 720 : 480);
   const [sourceIndex, setSourceIndex] = useState(0);
   const [logoFailed, setLogoFailed] = useState(false);
@@ -110,7 +114,14 @@ const EpisodeCard = ({ airing: { row, at, aired }, large = false, onFocus }: { a
   const ambient = sized(row.backdrop, AMBIENT_WIDTH) ?? artFor(row, aired, AMBIENT_WIDTH).pop();
 
   return (
-    <div onMouseEnter={() => onFocus(ambient)} className="group block" title={`${row.seriesName}${row.name ? ` · ${row.name}` : ""}`}>
+    <div
+      onMouseEnter={() => onFocus(ambient)}
+      role={open && row.seriesId ? "button" : undefined}
+      tabIndex={open && row.seriesId ? 0 : undefined}
+      onClick={open && row.seriesId ? () => open({ item: row.seriesId! }) : undefined}
+      className={cx("group block", open && row.seriesId && "cursor-pointer")}
+      title={`${row.seriesName}${row.name ? ` · ${row.name}` : ""}`}
+    >
       <div
         className={cx(
           "relative aspect-video w-full overflow-hidden rounded-lg bg-foreground/5 shadow-md transition duration-300",
@@ -229,23 +240,6 @@ const DayStrip = ({ days, selected, today, onSelect }: { days: Day[]; selected: 
 
 type View = "week" | "month";
 const VIEW_KEY = "jellyfin.calendar.view";
-const FOLDED_KEY = "jellyfin.calendar.folded";
-
-function storedFolded(): boolean {
-  try {
-    return localStorage.getItem(FOLDED_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function storeFolded(folded: boolean) {
-  try {
-    if (folded) localStorage.setItem(FOLDED_KEY, "1");
-    else localStorage.removeItem(FOLDED_KEY);
-  } catch {}
-}
-
 function storedView(): View {
   try {
     return localStorage.getItem(VIEW_KEY) === "month" ? "month" : "week";
@@ -360,6 +354,72 @@ const DayPanel = ({ day, loading, onFocus }: { day: Day; loading: boolean; onFoc
   </section>
 );
 
+const feedUrl = (secret: string) => `${window.location.origin}/calendar/${secret}.ics`;
+
+async function copyLink(url: string, title: string) {
+  try {
+    await navigator.clipboard.writeText(url);
+    toast.success(title, { description: "Add it in your calendar app as a calendar from a URL." });
+  } catch {
+    toast.message("Copy this link", { description: url, duration: 20_000 });
+  }
+}
+
+function CalendarSubscribe({ userUUID, profile, profileName, activeTab }: { userUUID: string; profile: string | null; profileName: string; activeTab: DashboardTab }) {
+  const { data, isLoading } = useJellyfinCalendarFeed(userUUID, profile, { activeTab });
+  const { issue, revoke } = useJellyfinCalendarFeedActions();
+  const [busy, setBusy] = useState(false);
+  const secret = data?.secret ?? null;
+
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await work();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const subscribe = () => run(async () => copyLink(feedUrl(await issue(userUUID, profile)), "Calendar link copied"));
+  const renew = () => run(async () => copyLink(feedUrl(await issue(userUUID, profile)), "New calendar link copied"));
+  const turnOff = () => run(async () => {
+    await revoke(userUUID, profile);
+    toast.success("Calendar link turned off");
+  });
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" aria-label="Subscribe in a calendar app" title="Subscribe in a calendar app" disabled={isLoading} className={cx("glass flex size-9 items-center justify-center rounded-full transition-colors hover:bg-black/50 disabled:opacity-50", secret && "text-blue-400")}>
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <CalendarPlus className="size-4" />}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent sheet align="end" className="w-72">
+        <DropdownMenuLabel className="text-xs font-normal leading-relaxed text-muted-foreground">
+          {secret
+            ? `Calendar apps holding this link follow ${profileName}'s episodes and watchlisted films as they are scheduled.`
+            : `A private link that puts ${profileName}'s episodes and watchlisted films in Google, Apple or Outlook Calendar.`}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {secret ? (
+          <>
+            <DropdownMenuItem asChild>
+              <a href={feedUrl(secret).replace(/^https?:/, "webcal:")}><ExternalLink className="size-4" /> Open in a calendar app</a>
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={busy} onSelect={() => void copyLink(feedUrl(secret), "Calendar link copied")}><Copy className="size-4" /> Copy link</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled={busy} onSelect={() => void renew()}><RotateCcw className="size-4" /> Make a new link</DropdownMenuItem>
+            <DropdownMenuItem disabled={busy} onSelect={() => void turnOff()} className="text-red-300 focus:text-red-200"><Link2Off className="size-4" /> Turn off the link</DropdownMenuItem>
+          </>
+        ) : (
+          <DropdownMenuItem disabled={busy} onSelect={() => void subscribe()}><CalendarPlus className="size-4" /> Make a link and copy it</DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export default function JellyfinCalendar({ userUUID, profile, profileName, activeTab }: { userUUID: string; profile: string | null; profileName: string; activeTab: DashboardTab }) {
   const first = useMemo(() => firstWeekday(), []);
   const [now, setNow] = useState(() => Date.now());
@@ -381,19 +441,15 @@ export default function JellyfinCalendar({ userUUID, profile, profileName, activ
   const [month, setMonth] = useState(thisMonth);
   const [picked, setPicked] = useState<string | null>(null);
   const [ambient, setAmbient] = useState<string | undefined>();
-  const [folded, setFolded] = useState(storedFolded);
-  const fold = () => {
-    storeFolded(!folded);
-    setFolded(!folded);
-  };
 
   const span = useMemo(() => (view === "month" ? monthWindow(month, first) : { start: weekStart, days: WEEK }), [view, month, first, weekStart]);
-  const { data, isLoading, isFetching, isError, refetch } = useJellyfinCalendar(userUUID, profile, span.start, span.days, { activeTab, enabled: !folded });
+  const { data, isLoading: reading, isFetching, isError, refetch } = useJellyfinCalendar(userUUID, profile, span.start, span.days, { activeTab });
+  const isLoading = reading || Boolean(data?.pending);
   const [before, after] = useMemo(() => (view === "month"
     ? [monthWindow(new Date(month.getFullYear(), month.getMonth() - 1, 1), first), monthWindow(new Date(month.getFullYear(), month.getMonth() + 1, 1), first)]
     : [{ start: addDays(weekStart, -WEEK), days: WEEK }, { start: addDays(weekStart, WEEK), days: WEEK }]), [view, month, first, weekStart]);
-  useJellyfinCalendar(userUUID, profile, before.start, before.days, { activeTab, enabled: !folded && Boolean(data) });
-  useJellyfinCalendar(userUUID, profile, after.start, after.days, { activeTab, enabled: !folded && Boolean(data) });
+  useJellyfinCalendar(userUUID, profile, before.start, before.days, { activeTab, enabled: Boolean(data) && !data?.pending });
+  useJellyfinCalendar(userUUID, profile, after.start, after.days, { activeTab, enabled: Boolean(data) && !data?.pending });
   const days = useMemo(() => buildDays(span.start, span.days, data?.rows, now, today), [span, data, now, today]);
   const counted = view === "month" ? days.filter((day) => day.date.getMonth() === month.getMonth()) : days;
   const total = counted.reduce((sum, day) => sum + day.airings.length, 0);
@@ -444,13 +500,8 @@ export default function JellyfinCalendar({ userUUID, profile, profileName, activ
 
   return (
     <section className="relative isolate overflow-hidden">
-      {!folded && <AmbientBackdrop src={ambient ?? lead} />}
-      <div className={cx("relative flex flex-col gap-6 px-4 sm:px-6", folded ? "py-3" : "py-6")}>
-        {folded ? (
-          <button type="button" onClick={fold} aria-expanded={false} className="flex items-center gap-1.5 self-start text-[11px] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground">
-            <ChevronDown className="size-3.5 -rotate-90" /> {profileName}'s calendar
-          </button>
-        ) : (
+      <AmbientBackdrop src={ambient ?? lead} />
+      <div className="relative flex flex-col gap-6 px-4 py-6 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex min-w-0 flex-col gap-1">
             <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -483,20 +534,17 @@ export default function JellyfinCalendar({ userUUID, profile, profileName, activ
                 <ChevronRight className="size-4" />
               </button>
             </div>
-            <button type="button" onClick={fold} aria-expanded aria-label="Fold the calendar" className="glass flex size-9 items-center justify-center rounded-full transition-colors hover:bg-black/50">
-              <ChevronDown className="size-4 rotate-180" />
-            </button>
+            <CalendarSubscribe userUUID={userUUID} profile={profile} profileName={profileName} activeTab={activeTab} />
           </div>
         </div>
-        )}
 
-        {!folded && isError && !isFetching && (
+        {isError && !isFetching && (
           <div className="flex flex-col items-center gap-3 py-12 text-center">
             <p className="text-sm text-muted-foreground">Could not read this calendar.</p>
             <button type="button" onClick={() => void refetch()} className="glass h-8 rounded-full px-4 text-xs font-medium hover:bg-white/15">Retry</button>
           </div>
         )}
-        {!folded && !(isError && !isFetching) && (
+        {!(isError && !isFetching) && (
         <div className={cx("transition-opacity duration-300", isFetching && !isLoading && "opacity-70")}>
           {view === "month" ? (
             <div className="flex flex-col gap-8">

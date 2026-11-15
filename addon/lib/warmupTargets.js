@@ -51,9 +51,9 @@ function collectWarmupTargets(metas, config, fallbackType, deps) {
   const selfOrigin = posterCacheConfig.getSelfOrigin();
   const metaFieldClasses = posterCacheConfig.META_FIELD_CLASSES;
   const cacheThumbnails = posterCacheConfig.isClassEnabled('thumbnail');
-  const cacheCast = posterCacheConfig.isClassEnabled('cast');
   const cacheableFields = new Set(posterCacheConfig.getCacheableFields());
   if (cacheThumbnails) cacheableFields.add('thumbnail');
+  const cacheCast = posterCacheConfig.isClassEnabled('cast');
   if (cacheCast) cacheableFields.add('cast');
   const customArtPatterns = {
     background: config.customBackgroundUrlPattern,
@@ -150,6 +150,7 @@ function collectWarmupTargets(metas, config, fallbackType, deps) {
         if (video?.thumbnail) addThirdParty(video.thumbnail, 'thumbnail', 'thumbnail');
       }
     }
+
     if (cacheCast && Array.isArray(meta.app_extras?.cast)) {
       for (const member of meta.app_extras.cast) {
         if (member?.photo) addThirdParty(member.photo, 'cast', 'cast');

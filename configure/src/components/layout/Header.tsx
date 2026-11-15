@@ -84,7 +84,7 @@ export function Header() {
                            sessionStorage.getItem('fromStremioSettings') === 'true';
       
       // Don't prompt for login on dashboard route
-      const isDashboardRoute = window.location.pathname === '/dashboard' || window.location.pathname === '/dashboard/';
+      const isDashboardRoute = /^\/dashboard(\/|$)/.test(window.location.pathname);
       
       if (!auth.authenticated && isFromStremio && !isDashboardRoute) {
         sessionStorage.removeItem('fromStremioSettings');

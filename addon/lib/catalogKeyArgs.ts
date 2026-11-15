@@ -104,6 +104,16 @@ export async function applyCatalogKeyStamps(args: Record<string, any>, catalogId
     }
   }
 
+  if (catalogId.startsWith('mdblist.watchlist') && config.apiKeys?.mdblist) {
+    try {
+      const { watchlistActivityStamp } = require('../utils/mdbList');
+      const watchlistedAt = await watchlistActivityStamp(config.apiKeys.mdblist);
+      if (watchlistedAt) args._mdblistAct = watchlistedAt;
+    } catch (e: any) {
+      logger.warn(`MDBList activity stamp failed for ${catalogId}: ${e.message}`);
+    }
+  }
+
   if (catalogId.startsWith('movielens.explore')) {
     try {
       const credId = config.apiKeys?.movieLensCredId;

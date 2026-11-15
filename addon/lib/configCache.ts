@@ -1,158 +1,229 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
+// Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
+/**
+ * Cache of loaded user configs. Redis is the shared layer, so a save on one
+ * replica is seen by the others; a short in-process layer spares hot users a
+ * Redis read and decode on every request. A missing-key memo lets a request
+ * for a config that does not exist answer without another database read.
+ */
 import { LRUCache } from 'lru-cache';
-const consola: any = require('consola');
-const redis: any = require('./redisClient');
-const { encodeCachePayload, decodeCachePayload }: any = require('./cacheCodec');
+import consola from 'consola';
+import redis from './redisClient';
+import { decodeCachePayload, encodeCachePayload } from './cacheCodec';
+import { envInt } from '../utils/envNumber';
 
-const logger: any = consola.withTag('ConfigCache');
+const logger = consola.withTag('ConfigCache');
 
-function parsePositiveIntEnv(envValue: string | undefined, defaultValue: number, minValue: number = 1): number {
-  const parsed = Number.parseInt(String(envValue), 10);
-  if (!Number.isFinite(parsed) || parsed < minValue) return defaultValue;
-  return parsed;
+const KEY_PREFIX = 'user-config:';
+const DEFAULT_REDIS_TTL_SEC = 300;
+const MIN_REDIS_TTL_SEC = 10;
+const DEFAULT_MEMORY_TTL_SEC = 30;
+const DEFAULT_MISSING_TTL_SEC = 60;
+const MEMORY_MAX_ENTRIES = 2000;
+const MISSING_MAX_ENTRIES = 5000;
+const SCAN_COUNT = 1000;
+
+type Loader = () => Promise<any>;
+
+interface PendingLoad {
+  promise: Promise<any>;
 }
 
-function CONFIG_CACHE_TTL_SEC() { return parsePositiveIntEnv(process.env.CONFIG_CACHE_TTL_SEC, 300, 10); }
-function isConfigCacheCompressionEnabled(): boolean {
+const memory = new LRUCache<string, any>({ max: MEMORY_MAX_ENTRIES });
+const missing = new LRUCache<string, true>({ max: MISSING_MAX_ENTRIES });
+const pendingLoads = new Map<string, PendingLoad>();
+
+function redisKey(key: string): string {
+  return `${KEY_PREFIX}${key}`;
+}
+
+function shortKey(key: string): string {
+  return String(key).slice(0, 8);
+}
+
+function errorMessage(error: unknown): string {
+  return (error as any)?.message || String(error);
+}
+
+function redisTtlSec(): number {
+  const parsed = Number.parseInt(String(process.env.CONFIG_CACHE_TTL_SEC), 10);
+  return Number.isFinite(parsed) && parsed >= MIN_REDIS_TTL_SEC ? parsed : DEFAULT_REDIS_TTL_SEC;
+}
+
+function memoryTtlMs(): number {
+  return envInt('CONFIG_MEMORY_TTL_SEC', DEFAULT_MEMORY_TTL_SEC, 1) * 1000;
+}
+
+function missingTtlMs(): number {
+  return envInt('CONFIG_MISSING_TTL_SEC', DEFAULT_MISSING_TTL_SEC, 1) * 1000;
+}
+
+function compressionEnabled(): boolean {
   return process.env.CONFIG_CACHE_COMPRESSION_ENABLED !== 'false';
 }
-const KEY_PREFIX = 'user-config:';
 
-function redisKey(id: string): string {
-  return `${KEY_PREFIX}${id}`;
+function redisReady(): boolean {
+  return !!redis && String(redis.status) === 'ready';
 }
 
-const pendingLoads = new Map<string, Promise<any>>();
-// Decoded once per short window; every request otherwise reads and parses it from Redis.
-const decoded = new LRUCache<string, any>({ max: 2000, ttl: parsePositiveIntEnv(process.env.CONFIG_MEMORY_TTL_SEC, 30, 1) * 1000 });
-const missing = new LRUCache<string, true>({ max: 5000, ttl: parsePositiveIntEnv(process.env.CONFIG_MISSING_TTL_SEC, 60, 1) * 1000 });
+function holdInMemory(key: string, value: any): void {
+  memory.set(key, value, { ttl: memoryTtlMs() });
+}
 
-class ConfigCache {
-  async get(key: string): Promise<any> {
-    const held = decoded.get(key);
-    if (held !== undefined) return held;
-    if (!redis || redis.status !== 'ready') return null;
-    try {
-      const raw = await redis.getBuffer(redisKey(key));
-      const value = raw ? await decodeCachePayload(raw) : null;
-      if (value !== null) decoded.set(key, value);
-      return value;
-    } catch (err: any) {
-      logger.warn(`get failed for ${String(key).substring(0, 8)}...: ${err.message}`);
-      return null;
-    }
+async function forEachRedisKeyBatch(cb: (keys: string[]) => Promise<void>): Promise<void> {
+  if (!redis) return;
+  let cursor = '0';
+  do {
+    const [next, keys] = await redis.scan(cursor, 'MATCH', `${KEY_PREFIX}*`, 'COUNT', SCAN_COUNT);
+    cursor = next;
+    if (keys && keys.length > 0) await cb(keys);
+  } while (cursor !== '0');
+}
+
+async function get(key: string): Promise<any> {
+  const held = memory.get(key);
+  if (held !== undefined) return held;
+
+  if (!redisReady()) return null;
+
+  try {
+    const payload = await redis!.getBuffer(redisKey(key));
+    if (payload === null || payload === undefined) return null;
+    const value = await decodeCachePayload(payload);
+    if (value === null || value === undefined) return null;
+    holdInMemory(key, value);
+    return value;
+  } catch (error) {
+    logger.warn(`Config cache read failed for ${shortKey(key)}...: ${errorMessage(error)}`);
+    return null;
+  }
+}
+
+async function set(key: string, value: any): Promise<void> {
+  if (value === undefined) return;
+  if (value === null) {
+    memory.delete(key);
+    return;
   }
 
-  /** A key the loader found nothing for; asked again only after the window, without a load. */
-  rememberMissing(key: string): void {
-    missing.set(key, true);
-  }
+  missing.delete(key);
+  holdInMemory(key, value);
 
-  isMissing(key: string): boolean {
-    return missing.has(key);
-  }
+  if (!redisReady()) return;
 
-  async set(key: string, value: any): Promise<void> {
-    missing.delete(key);
-    if (value === undefined || value === null) decoded.delete(key);
-    else decoded.set(key, value);
-    if (!redis || redis.status !== 'ready' || value === undefined) return;
-    try {
-      const payload = await encodeCachePayload(value, {
-        compressionEnabled: isConfigCacheCompressionEnabled(),
+  try {
+    const payload = await encodeCachePayload(value, { compressionEnabled: compressionEnabled() });
+    await redis!.set(redisKey(key), payload, 'EX', redisTtlSec());
+  } catch (error) {
+    logger.warn(`Config cache write failed for ${shortKey(key)}...: ${errorMessage(error)}`);
+  }
+}
+
+async function del(key: string): Promise<void> {
+  memory.delete(key);
+  missing.delete(key);
+  pendingLoads.delete(key);
+
+  if (!redisReady()) return;
+
+  try {
+    await redis!.del(redisKey(key));
+  } catch (error) {
+    logger.warn(`Config cache delete failed for ${shortKey(key)}...: ${errorMessage(error)}`);
+  }
+}
+
+async function clear(): Promise<void> {
+  memory.clear();
+  missing.clear();
+  pendingLoads.clear();
+
+  if (!redisReady()) return;
+
+  try {
+    await forEachRedisKeyBatch(async (keys) => {
+      await redis!.unlink(...keys);
+    });
+  } catch (error) {
+    logger.warn(`Config cache clear failed: ${errorMessage(error)}`);
+  }
+}
+
+function getOrLoad(key: string, loader: Loader): Promise<any> {
+  const inFlight = pendingLoads.get(key);
+  if (inFlight) return inFlight.promise;
+
+  const record = {} as PendingLoad;
+  record.promise = (async () => {
+    const cached = await get(key);
+    if (cached !== null && cached !== undefined) return cached;
+
+    const value = await loader();
+    // A del() or clear() while the loader ran drops this record; the value is
+    // still returned to the waiting callers but not cached, since it may predate
+    // the change that caused the del.
+    if (value !== null && value !== undefined && pendingLoads.get(key) === record) {
+      set(key, value).catch((error) => {
+        logger.warn(`Config cache store failed for ${shortKey(key)}...: ${errorMessage(error)}`);
       });
-      await redis.set(redisKey(key), payload, 'EX', CONFIG_CACHE_TTL_SEC());
-    } catch (err: any) {
-      logger.warn(`set failed for ${String(key).substring(0, 8)}...: ${err.message}`);
     }
-  }
+    return value;
+  })().finally(() => {
+    if (pendingLoads.get(key) === record) pendingLoads.delete(key);
+  });
 
-  async del(key: string): Promise<void> {
-    missing.delete(key);
-    decoded.delete(key);
-    pendingLoads.delete(redisKey(key));
-    if (!redis || redis.status !== 'ready') return;
-    try {
-      await redis.del(redisKey(key));
-    } catch (err: any) {
-      logger.warn(`del failed for ${String(key).substring(0, 8)}...: ${err.message}`);
-    }
-  }
-
-  async clear(): Promise<void> {
-    decoded.clear();
-    pendingLoads.clear();
-    if (!redis || redis.status !== 'ready') return;
-    try {
-      let cursor = '0';
-      do {
-        const [next, keys] = await redis.scan(cursor, 'MATCH', `${KEY_PREFIX}*`, 'COUNT', 500);
-        cursor = next;
-        if (keys.length) await redis.unlink(...keys);
-      } while (cursor !== '0');
-    } catch (err: any) {
-      logger.warn(`clear failed: ${err.message}`);
-    }
-  }
-
-  async getOrLoad(key: string, loader: () => Promise<any>): Promise<any> {
-    if (!redis || redis.status !== 'ready') return loader();
-
-    const cached = await this.get(key);
-    if (cached !== null) return cached;
-
-    const mapKey = redisKey(key);
-    const existing = pendingLoads.get(mapKey);
-    if (existing) {
-      logger.debug(`Config load already in progress for ${String(key).substring(0, 8)}..., waiting`);
-      return existing;
-    }
-
-    const loadPromise = (async () => {
-      try {
-        const value = await loader();
-        if (value !== undefined && value !== null) {
-          this.set(key, value).catch((err: any) => logger.warn(`Background set failed: ${err.message}`));
-        }
-        return value;
-      } finally {
-        pendingLoads.delete(mapKey);
-      }
-    })();
-
-    pendingLoads.set(mapKey, loadPromise);
-    return loadPromise;
-  }
-
-  isLoadPending(key: string): boolean {
-    return pendingLoads.has(redisKey(key));
-  }
-
-  async stats({ countRedisEntries = false } = {}): Promise<{ pendingLoads: number; entries: number | null }> {
-    const out: { pendingLoads: number; entries: number | null } = { pendingLoads: pendingLoads.size, entries: null };
-    if (!countRedisEntries || !redis || redis.status !== 'ready') return out;
-    try {
-      let cursor = '0';
-      let total = 0;
-      do {
-        const [next, keys] = await redis.scan(cursor, 'MATCH', `${KEY_PREFIX}*`, 'COUNT', 500);
-        cursor = next;
-        total += keys.length;
-      } while (cursor !== '0');
-      out.entries = total;
-    } catch (err: any) {
-      logger.warn(`stats SCAN failed: ${err.message}`);
-    }
-    return out;
-  }
+  pendingLoads.set(key, record);
+  return record.promise;
 }
 
-const configCache = new ConfigCache();
+function isLoadPending(key: string): boolean {
+  return pendingLoads.has(key);
+}
+
+function rememberMissing(key: string): void {
+  missing.set(key, true, { ttl: missingTtlMs() });
+}
+
+function isMissing(key: string): boolean {
+  return missing.get(key) === true;
+}
+
+async function stats(options: { countRedisEntries?: boolean } = {}): Promise<{ pendingLoads: number; entries: number | null }> {
+  const result = { pendingLoads: pendingLoads.size, entries: null as number | null };
+  if (!options.countRedisEntries || !redisReady()) return result;
+
+  try {
+    let count = 0;
+    await forEachRedisKeyBatch(async (keys) => {
+      count += keys.length;
+    });
+    result.entries = count;
+  } catch (error) {
+    logger.warn(`Config cache entry count failed: ${errorMessage(error)}`);
+  }
+  return result;
+}
 
 if (redis) {
-  logger.debug(`ConfigCache backed by Redis, TTL=${CONFIG_CACHE_TTL_SEC()}s`);
+  logger.debug(`Config cache is Redis-backed (TTL ${redisTtlSec()}s).`);
 } else {
-  logger.warn('ConfigCache: Redis unavailable, falling through to loader on every call');
+  logger.warn('Redis is unavailable; config cache is disabled and every lookup falls through to the loader.');
 }
 
-export { configCache as default };
+const configCache = {
+  get,
+  set,
+  del,
+  clear,
+  getOrLoad,
+  isLoadPending,
+  rememberMissing,
+  isMissing,
+  stats,
+  // In-process state, read synchronously by the dashboard heap profile.
+  cache: memory,
+  pendingLoads,
+};
+
+export default configCache;
 module.exports = configCache;

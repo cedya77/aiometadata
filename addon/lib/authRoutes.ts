@@ -104,7 +104,7 @@ function trustedProxyHops(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-function clientAddress(req: any): string {
+export function clientAddress(req: any): string {
   const hops = trustedProxyHops();
   if (hops > 0) {
     const forwarded = String(req.headers['x-forwarded-for'] || '')

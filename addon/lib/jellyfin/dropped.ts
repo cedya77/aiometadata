@@ -16,6 +16,12 @@ const changed = new LRUCache<string, Map<string, { keys: string[]; dropped: bool
   ttl: envInt('JELLYFIN_DROP_HOLD', 600, 10) * 1000,
 });
 
+export function forgetHeldDrops(userUUID: string): void {
+  for (const key of [...held.keys()]) {
+    if (key.startsWith(`${userUUID}:`)) held.delete(key);
+  }
+}
+
 export function withHeldDrops(userUUID: string, config: any, dropped: Set<string>): Set<string> {
   const { profileKey } = require('./profiles');
   const key = `${userUUID}:${profileKey(config)}`;

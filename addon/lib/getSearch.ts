@@ -22,6 +22,7 @@ import { hasAgeRatingCap } from '../utils/ageRating';
 import { buildCertificationMap } from '../utils/contentRating';
 const { cacheWrapMetaSmart, cacheWrapGlobal }: any = require('./getCache');
 const { getSetting }: any = require('./settingsService');
+const { resolveSeriesRuntime }: any = require('./tmdbSeriesRuntime');
 import { fetchImdbSuggestions, type ImdbSuggestion } from '../utils/imdbSuggestions.js';
 import { fetchLumiereSearch, fetchLumierePeopleSearch, type LumiereResult } from '../utils/lumiereSearch.js';
 import { lumiereApiBase } from '../utils/lumiereLists.js';
@@ -122,6 +123,8 @@ async function parseTvdbSearchResult(type: string, extendedRecord: any, language
   let certification: string | null = null;
   let certifications: Record<string, string> | null = null;
   let movieReleaseDates: any = null;
+  // The age gate at the end of TVDB search drops anything with no known certification,
+  // so a cap needs the lookup even when the rating itself is not displayed.
   if (config.displayAgeRating || hasAgeRatingCap(config)) {
     try {
       let tmdbRatings: any = null;
@@ -651,7 +654,7 @@ async function performTmdbSearch(type: string, query: string, language: string, 
         if(allIds.tvdbId) parsed._tvdbId = String(allIds.tvdbId);
         parsed.keywords = moviedb.keywordNamesOf(details) ?? [];
         parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
-        if(type === 'series') parsed.runtime  = Utils.parseRunTime(details.episode_run_time?.[0] ?? details.last_episode_to_air?.runtime ?? details.next_episode_to_air?.runtime ?? null);
+        if(type === 'series') parsed.runtime  = Utils.parseRunTime(await resolveSeriesRuntime(details));
         parsed.app_extras = { releaseDates: details.release_dates, certification, certifications };
         return { parsed, details };
     } catch (error: any) {
@@ -1425,12 +1428,7 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
     parsed.keywords = moviedb.keywordNamesOf(details) ?? [];
     parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
     if (type === 'series') {
-      parsed.runtime = Utils.parseRunTime(
-        details.episode_run_time?.[0] ??
-        details.last_episode_to_air?.runtime ??
-        details.next_episode_to_air?.runtime ??
-        null
-      );
+      parsed.runtime = Utils.parseRunTime(await resolveSeriesRuntime(details));
     }
 
     parsed.app_extras = { releaseDates: details.release_dates, certification, certifications };

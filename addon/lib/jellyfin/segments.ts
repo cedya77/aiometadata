@@ -111,8 +111,9 @@ async function aniSkipQuery(malId: number, episode: number, episodeLength: numbe
     });
     return Array.isArray(response.data?.results) ? response.data.results : [];
   } catch (error: any) {
-    if (error?.response?.status === 404) return [];
-    throw error;
+    // AniSkip answers 404 for an episode it has no markers for.
+    if (error?.response?.status !== 404) throw error;
+    return [];
   }
 }
 
