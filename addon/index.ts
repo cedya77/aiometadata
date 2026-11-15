@@ -1966,6 +1966,22 @@ addon.get("/api/tmdb/discover/providers", async (req, res) => {
   }
 });
 
+// How many TMDB keywords an exclusion pattern such as `christmas*` fits, read from the keyword export.
+addon.get("/api/tmdb/keyword-pattern", async (req, res) => {
+  const { isKeywordPattern, keywordPatternProblem, keywordPatternRegex } = require('./utils/keywordPatterns');
+  const pattern = String(req.query.pattern || '').trim();
+  if (!isKeywordPattern(pattern)) return res.status(400).json({ error: "pattern must contain *" });
+  const problem = keywordPatternProblem(pattern);
+  if (problem) return res.json({ pattern, valid: false, problem });
+  try {
+    const { previewTmdbKeywordPattern } = require('./lib/tmdb-keyword-index');
+    return res.json({ pattern, valid: true, ...(await previewTmdbKeywordPattern(keywordPatternRegex(pattern))) });
+  } catch (error) {
+    consola.warn('[TMDB Keywords] Pattern preview failed:', error.message);
+    return res.json({ pattern, valid: true, count: null, sample: [] });
+  }
+});
+
 // Proxy: Discover searchable entities (person/company/keyword) for ID-based filters
 addon.get("/api/tmdb/discover/search/:entity", async (req, res) => {
   try {

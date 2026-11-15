@@ -3,6 +3,7 @@
 import consola from 'consola';
 import { allowsUnrated, hasAgeRatingCap, passesAgeRating } from './ageRating';
 import { trackerConfig } from '../lib/accounts';
+import { keywordMatcher, type KeywordMatcher } from './keywordPatterns';
 const logger = consola.withTag('CatalogFilters');
 
 function isHideWatchedExcluded(cleanId: string): boolean {
@@ -92,9 +93,8 @@ function catalogFiltersActive({ config, catalogConfig, cleanId }: Omit<CatalogFi
   return Boolean(config.exclusionKeywords || config.regexExclusionFilter || config.exclusionGenres || excludedTmdbKeywords(config).size);
 }
 
-function excludedTmdbKeywords(config: any): Set<string> {
-  const list = Array.isArray(config?.exclusionTmdbKeywords) ? config.exclusionTmdbKeywords : [];
-  return new Set(list.map((keyword: unknown) => String(keyword).trim().toLowerCase()).filter(Boolean));
+function excludedTmdbKeywords(config: any): KeywordMatcher {
+  return keywordMatcher(Array.isArray(config?.exclusionTmdbKeywords) ? config.exclusionTmdbKeywords : []);
 }
 
 async function attachTmdbKeywords(metas: any[], config: any): Promise<void> {
@@ -306,7 +306,7 @@ async function applyCatalogFilters(metas: any[], { type, config, catalogConfig, 
     if (isSearch) await attachTmdbKeywords(metas, config);
     const before = metas.length;
     metas = metas.filter((meta: any) =>
-      !(Array.isArray(meta?.keywords) && meta.keywords.some((keyword: unknown) => blockedKeywords.has(String(keyword).toLowerCase())))
+      !(Array.isArray(meta?.keywords) && meta.keywords.some((keyword: unknown) => blockedKeywords.matches(keyword)))
     );
     if (before !== metas.length) {
       logger.debug(`TMDB keyword filter: removed ${before - metas.length} items`);

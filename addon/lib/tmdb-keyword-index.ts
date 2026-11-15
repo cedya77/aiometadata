@@ -4,6 +4,7 @@ import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { request } from 'undici';
 import consola from 'consola';
+import { LRUCache } from 'lru-cache';
 import redis from './redisClient';
 
 const logger = consola.withTag('TMDB-Keywords');
@@ -242,6 +243,27 @@ export async function resolveTmdbKeywordByName(
 
   const normalized = normalizeTmdbKeywordName(name);
   return entriesByNormalizedName.get(normalized) || null;
+}
+
+const patternPreviews = new LRUCache<string, { count: number; sample: string[] }>({ max: 200 });
+
+/** How many TMDB keyword names a pattern fits, with the shortest few as a sample. */
+export async function previewTmdbKeywordPattern(pattern: RegExp, sampleSize = 8): Promise<{ count: number; sample: string[] }> {
+  if (!initialized) await initializeTmdbKeywordIndex();
+  const key = `${lastExportDate}|${pattern.source}`;
+  const held = patternPreviews.get(key);
+  if (held) return held;
+  let count = 0;
+  const hits: string[] = [];
+  for (const entry of entriesByNormalizedName.values()) {
+    if (!pattern.test(entry.label.toLowerCase())) continue;
+    count++;
+    if (hits.length < 500) hits.push(entry.label);
+  }
+  hits.sort((a, b) => a.length - b.length || a.localeCompare(b));
+  const preview = { count, sample: hits.slice(0, sampleSize) };
+  patternPreviews.set(key, preview);
+  return preview;
 }
 
 export function getTmdbKeywordIndexStats() {
