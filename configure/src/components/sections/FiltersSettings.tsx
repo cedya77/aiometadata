@@ -286,7 +286,7 @@ export function FiltersSettings() {
               onChange={(next) => setConfig(prev => ({ ...prev, exclusionTmdbKeywords: next }))}
             />
             <p className="text-sm text-muted-foreground">
-              Hides any title TMDB tags with one of these keywords.
+              Hides any title TMDB tags with one of these keywords. A pattern such as <code>christmas*</code> or <code>*christmas*</code> hides every keyword that fits it, including ones TMDB adds later.
             </p>
           </div>
 

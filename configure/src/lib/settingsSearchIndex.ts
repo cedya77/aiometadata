@@ -307,7 +307,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     id: 'filters.exclusionTmdbKeywords', section: 'filters', anchor: 'exclusion-tmdb-keywords',
     label: 'Exclude TMDB Keywords',
     description: 'Hides any title TMDB tags with one of these keywords.',
-    keywords: ['exclude', 'block', 'hide', 'keyword', 'tmdb', 'tag', 'topic'],
+    keywords: ['exclude', 'block', 'hide', 'keyword', 'tmdb', 'tag', 'topic', 'pattern', 'wildcard'],
   },
   {
     id: 'filters.exclusionKeywords', section: 'filters', anchor: 'exclusion-keywords',
