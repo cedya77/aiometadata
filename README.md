@@ -222,7 +222,7 @@ release of them becomes Apache-2.0 two years after it is published.
 
 In short: running it for yourself, your household or your organization is
 fine, and so is modifying it. Offering v4 as a commercial hosted service is
-not, until the release you run turns Apache-2.0. v3.8.3 and earlier keep the
+not, until the release you run turns Apache-2.0. v3.9.0 and earlier keep the
 GPL-3.0 they were released under.
 
 [LICENSING.md](LICENSING.md) says which files are under which license and

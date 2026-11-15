@@ -75,7 +75,7 @@ These are the folders and files v4 adds over v3.8.3, plus two that carry
 mostly v4 work: `addon/lib/featureDatabase.ts` holds the v4 feature modules'
 tables and queries, split out of the core store (`addon/lib/databaseCore.ts`),
 and `configure/src/hooks/useDashboardQueries.ts` serves only the dashboard.
-Earlier versions of these folders and files shipped in v3.8.3 and before, and
+Earlier versions of these folders and files shipped in v3.9.0 and before, and
 those versions stay under the GPL-3.0 they were released with.
 
 **Not covered by either license.** These files are third-party material,
@@ -156,7 +156,7 @@ this text:
 
 ## Older releases
 
-Releases up to and including v3.8.3 keep the licenses they were published
+Releases up to and including v3.9.0 keep the licenses they were published
 under (GPL-3.0 for v3.x since 11 April 2026; MIT or Apache-2.0 before that).
 Nothing here changes them.
 
@@ -178,7 +178,7 @@ that a Competing Use: making the software available to others in a commercial
 product or service with the same or substantially similar functionality. See
 the licensor's note below.
 
-**What can a paid host still run?** v3.8.3 and earlier, under their own
+**What can a paid host still run?** v3.9.0 and earlier, under their own
 licenses. Each v4 release from two years after it is published, under
 Apache-2.0. And any software a customer installs for themselves on a server
 they rent.

@@ -34,7 +34,7 @@ require. The full license texts are in the LICENSES folder.
   License text: LICENSES/MIT.txt
 
 11 April 2026 to the v4.0 relicense: GPL-3.0
-  Releases v3.8.3 and earlier remain available under GPL-3.0. Code that third
+  Releases v3.9.0 and earlier remain available under GPL-3.0. Code that third
   parties contributed in this period under GPL-3.0 only is not part of v4: it
   was removed and the features were re-implemented from behavior
   specifications. The licensor keeps a record of each one.
