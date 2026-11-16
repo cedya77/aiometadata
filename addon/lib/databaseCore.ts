@@ -905,6 +905,44 @@ export class DatabaseCore {
     return result.rows;
   }
 
+  protected async runTogether(statements: Array<[string, any[]]>): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    if (this.type === 'sqlite') {
+      const prepared = new Map<string, any>();
+      this.timedSQLite(() => this.db.transaction(() => {
+        for (const [query, params] of statements) {
+          let statement = prepared.get(query);
+          if (!statement) {
+            statement = this.db.prepare(query);
+            prepared.set(query, statement);
+          }
+          this.executeSQLiteStatement(statement, 'run', params);
+        }
+      })());
+      await this.sqliteBreath();
+      return;
+    }
+
+    for (let attempt = 0; ; attempt++) {
+      const client = await this.db.connect();
+      try {
+        await client.query('BEGIN');
+        for (const [query, params] of statements) await client.query(query, params);
+        await client.query('COMMIT');
+        return;
+      } catch (error: any) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        // 40P01: two batches deadlocked, and Postgres ended this one.
+        if (error?.code !== '40P01' || attempt >= 2) throw error;
+      } finally {
+        client.release();
+      }
+    }
+  }
+
   generateUserUUID(): string {
     return crypto.randomUUID();
   }
@@ -1812,23 +1850,31 @@ export class DatabaseCore {
   async enqueueTrackerOutbox(rows: Array<{ lane: string; userUUID: string; profile: string; service: string; op: string; item: string; coalesce: string | null; payload: any; expiresAt: number }>): Promise<void> {
     const sqlite = this.type === 'sqlite';
     const now = Date.now();
-    for (const row of rows) {
-      // A newer write for the same thing replaces one still waiting, never one being sent.
-      if (row.coalesce) {
-        await this.runQuery(
-          sqlite
-            ? 'DELETE FROM tracker_outbox WHERE lane = ? AND coalesce_key = ? AND claimed_until <= ?'
-            : 'DELETE FROM tracker_outbox WHERE lane = $1 AND coalesce_key = $2 AND claimed_until <= $3',
-          [row.lane, row.coalesce, now]
-        );
-      }
-      await this.runQuery(
-        sqlite
-          ? `INSERT INTO tracker_outbox (lane, user_uuid, profile, service, op, item_key, coalesce_key, payload, next_at, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          : `INSERT INTO tracker_outbox (lane, user_uuid, profile, service, op, item_key, coalesce_key, payload, next_at, expires_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [row.lane, row.userUUID, row.profile || '', row.service, row.op, row.item, row.coalesce, JSON.stringify(row.payload), now, Math.round(row.expiresAt), now]
-      );
+    const remove = sqlite
+      ? 'DELETE FROM tracker_outbox WHERE lane = ? AND coalesce_key = ? AND claimed_until <= ?'
+      : 'DELETE FROM tracker_outbox WHERE claimed_until <= $3 AND (lane, coalesce_key) IN (SELECT * FROM unnest($1::text[], $2::text[]))';
+    const insert = sqlite
+      ? `INSERT INTO tracker_outbox (lane, user_uuid, profile, service, op, item_key, coalesce_key, payload, next_at, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      : `INSERT INTO tracker_outbox (lane, user_uuid, profile, service, op, item_key, coalesce_key, payload, next_at, expires_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`;
+    // A newer write for the same thing replaces one still waiting, never one being sent.
+    const last = new Map<string, number>();
+    rows.forEach((row, at) => {
+      if (row.coalesce) last.set(JSON.stringify([row.lane, row.coalesce]), at);
+    });
+    const kept = rows.filter((row, at) => !row.coalesce || last.get(JSON.stringify([row.lane, row.coalesce])) === at);
+    const replacing = kept.filter((row) => row.coalesce);
+    const statements: Array<[string, any[]]> = [];
+    if (sqlite) {
+      for (const row of replacing) statements.push([remove, [row.lane, row.coalesce, now]]);
+    } else {
+      // One account's batches queue in turn, so two of them never hold each other's rows.
+      statements.push([`SELECT pg_advisory_xact_lock(hashtext('tracker_outbox'), hashtext(lane)) FROM unnest($1::text[]) AS lane`, [[...new Set(rows.map((row) => row.lane))].sort()]]);
+      if (replacing.length) statements.push([remove, [replacing.map((row) => row.lane), replacing.map((row) => row.coalesce), now]]);
     }
+    for (const row of kept) {
+      statements.push([insert, [row.lane, row.userUUID, row.profile || '', row.service, row.op, row.item, row.coalesce, JSON.stringify(row.payload), now, Math.round(row.expiresAt), now]]);
+    }
+    await this.runTogether(statements);
   }
 
   async readyTrackerOutbox(now: number, limit: number): Promise<any[]> {
