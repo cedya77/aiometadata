@@ -147,7 +147,7 @@ export async function enqueueTrackerWrites(userUUID: string | undefined, config:
         payload: job.payload,
         expiresAt: now + (job.within ? job.within * 1000 : maxAgeMs()),
       })));
-      kick();
+      if (active.size < concurrency() && rows.some(({ lane }) => !active.has(lane))) kick();
       return;
     } catch (error: any) {
       logger.warn(`Could not queue ${rows.length} tracker write(s), sending them now: ${error?.message || error}`);
@@ -166,6 +166,7 @@ export async function enqueueTrackerWrites(userUUID: string | undefined, config:
 
 const active = new Set<string>();
 let again = false;
+let kickScheduled = false;
 let passId = 0;
 let passStartedAt = 0;
 let lastPurgeAt = 0;
@@ -182,8 +183,13 @@ function kick(): void {
     heartbeat = setInterval(kick, HEARTBEAT_MS);
     heartbeat.unref?.();
   }
+  if (kickScheduled) return;
+  kickScheduled = true;
   // A fresh, empty scope: the pump must not inherit whichever request's viewer queued the write.
-  setImmediate(() => { runInViewerScope(false, () => pump()).catch((error: any) => logger.warn(`Outbox pass failed: ${error?.message || error}`)); });
+  setImmediate(() => {
+    kickScheduled = false;
+    runInViewerScope(false, () => pump()).catch((error: any) => logger.warn(`Outbox pass failed: ${error?.message || error}`));
+  });
 }
 
 function wakeBy(at: number | null): void {

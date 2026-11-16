@@ -491,6 +491,7 @@ export class DatabaseCore {
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_user ON tracker_outbox(user_uuid, id)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_claimed ON tracker_outbox(claimed_until, lane)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_next ON tracker_outbox(next_at)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_watch_index (
         source_key TEXT NOT NULL,
         video_id TEXT NOT NULL,
@@ -722,6 +723,7 @@ export class DatabaseCore {
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_user ON tracker_outbox(user_uuid, id)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_claimed ON tracker_outbox(claimed_until, lane)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_next ON tracker_outbox(next_at)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_watch_index (
         source_key VARCHAR(64) NOT NULL,
         video_id TEXT NOT NULL,
@@ -1860,8 +1862,12 @@ export class DatabaseCore {
     const sqlite = this.type === 'sqlite';
     const at = sqlite ? '?' : '$1';
     const [row] = await this.allPrimaryQuery(
-      `SELECT MIN(CASE WHEN claimed_until > ${at} THEN claimed_until ELSE next_at END) AS wake_at FROM tracker_outbox WHERE claimed_until > ${at} OR next_at > ${at}`,
-      sqlite ? [now, now, now] : [now]
+      `SELECT MIN(at) AS wake_at FROM (
+         SELECT MIN(claimed_until) AS at FROM tracker_outbox WHERE claimed_until > ${at}
+         UNION ALL
+         SELECT MIN(next_at) AS at FROM tracker_outbox WHERE next_at > ${at}
+       ) AS wake`,
+      sqlite ? [now, now] : [now]
     );
     const wakeAt = Number(row?.wake_at);
     return Number.isFinite(wakeAt) && wakeAt > 0 ? wakeAt : null;
