@@ -373,7 +373,7 @@ export async function handlePlaybackReport(
 
   if (writesTrackersFor(config)) {
     const { playedThresholdFor } = require('./jellyfin/playstate');
-    const watchedAt = await playedThresholdFor(userUUID, config?.jellyfinProfileId ?? null);
+    const watchedAt = await playedThresholdFor(userUUID, config?.jellyfinProfileId ?? null, config);
     await enqueueTrackerWrites(userUUID, config, await planReport(type, id, report, progress, config, watchedAt, userUUID));
   }
 

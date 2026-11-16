@@ -38,14 +38,14 @@ export function validPlayedThreshold(value: unknown): number | null {
   return Number.isFinite(percent) && percent >= 50 && percent <= 100 ? percent : null;
 }
 
-export async function storedPlayedThreshold(userUUID: string, profileId: string | null): Promise<number | null> {
+export async function storedPlayedThreshold(userUUID: string, profileId: string | null, known?: any): Promise<number | null> {
   const key = `${userUUID}:${profileId ?? ''}`;
   let held = playedThresholds.get(key);
   if (!held) {
     try {
       const database = require('../database');
       const { profileById } = require('./profiles');
-      const config = await database.getUserConfig(userUUID);
+      const config = known ?? (await require('../configApi').loadSharedConfig(userUUID).catch(() => null));
       const profile = profileById(config, userUUID, profileId);
       const stored = await database.getPreferences(userUUID, profile?.id ?? '', USER_CONFIGURATION_ID, '');
       held = { percent: validPlayedThreshold(stored?.PlayedThresholdPercent) };
@@ -57,8 +57,8 @@ export async function storedPlayedThreshold(userUUID: string, profileId: string 
   return held.percent;
 }
 
-export async function playedThresholdFor(userUUID: string, profileId: string | null): Promise<number> {
-  return (await storedPlayedThreshold(userUUID, profileId)) ?? serverPlayedThreshold();
+export async function playedThresholdFor(userUUID: string, profileId: string | null, known?: any): Promise<number> {
+  return (await storedPlayedThreshold(userUUID, profileId, known)) ?? serverPlayedThreshold();
 }
 
 export async function savePlayedThreshold(userUUID: string, profileId: string | null, percent: number | null): Promise<void> {
@@ -74,7 +74,7 @@ export async function savePlayedThreshold(userUUID: string, profileId: string | 
 /** The share of a title played that counts as watched: the user's own setting, else the server's. */
 async function watchedAtPercent(req: any): Promise<number> {
   const userUUID = req?.params?.userUUID;
-  return userUUID ? playedThresholdFor(userUUID, req.jellyfin?.profileId ?? null) : serverPlayedThreshold();
+  return userUUID ? playedThresholdFor(userUUID, req.jellyfin?.profileId ?? null, req.jellyfin?.config) : serverPlayedThreshold();
 }
 
 interface SessionPosition {
