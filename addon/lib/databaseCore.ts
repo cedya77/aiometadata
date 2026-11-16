@@ -1956,11 +1956,13 @@ export class DatabaseCore {
     );
   }
 
-  async listTrackerOutboxLane(lane: string): Promise<Array<{ op: string; item_key: string; payload: string; created_at: number }>> {
+  async listTrackerOutboxLane(lane: string, ops: string[]): Promise<Array<{ op: string; item_key: string; payload: string; created_at: number }>> {
+    if (!ops.length) return [];
     const sqlite = this.type === 'sqlite';
+    const marks = ops.map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
     const rows = await this.allQuery(
-      `SELECT op, item_key, payload, created_at FROM tracker_outbox WHERE lane = ${sqlite ? '?' : '$1'} AND expires_at > ${sqlite ? '?' : '$2'} ORDER BY id`,
-      [lane, Date.now()]
+      `SELECT op, item_key, payload, created_at FROM tracker_outbox WHERE lane = ${sqlite ? '?' : '$1'} AND expires_at > ${sqlite ? '?' : '$2'} AND op IN (${marks}) ORDER BY id`,
+      [lane, Date.now(), ...ops]
     );
     return rows.map((row: any) => ({ ...row, created_at: Number(row.created_at) }));
   }

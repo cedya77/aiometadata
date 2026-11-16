@@ -55,6 +55,8 @@ const CHANGES_WATCHED = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'red
 const CHANGES_RESUME = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'clearResume', 'episodes']);
 const CHANGES_UPCOMING = new Set<OutboxOp>(['watchlist']);
 
+const WATCH_OPS: OutboxOp[] = ['scrobble', 'credit', 'unwatch', 'catchUp', 'catchUps', 'episodes', 'anime'];
+
 const LEASE_MS = 5 * 60 * 1000;
 const HEARTBEAT_MS = 60 * 1000;
 const PASS_STUCK_MS = 60 * 1000;
@@ -102,7 +104,7 @@ export async function pendingWatches(service: WatchTrackingService, credential: 
     const kind = parsed.episode !== null && parsed.episode !== undefined ? 'episode' : 'movie';
     out.set(videoId, { videoId, kind, metaId: kind === 'episode' ? parsed.base : videoId, played, at });
   };
-  for (const row of await database.listTrackerOutboxLane(laneKey(service, credential))) {
+  for (const row of await database.listTrackerOutboxLane(laneKey(service, credential), WATCH_OPS)) {
     let p: any;
     try {
       p = JSON.parse(row.payload);
