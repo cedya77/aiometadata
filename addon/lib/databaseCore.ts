@@ -1960,7 +1960,7 @@ export class DatabaseCore {
     if (!ops.length) return [];
     const sqlite = this.type === 'sqlite';
     const marks = ops.map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
-    const rows = await this.allQuery(
+    const rows = await this.allPrimaryQuery(
       `SELECT op, item_key, payload, created_at FROM tracker_outbox WHERE lane = ${sqlite ? '?' : '$1'} AND expires_at > ${sqlite ? '?' : '$2'} AND op IN (${marks}) ORDER BY id`,
       [lane, Date.now(), ...ops]
     );
