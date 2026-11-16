@@ -157,9 +157,15 @@ async function getPosition(key: string): Promise<SessionPosition | undefined> {
   }
 }
 
-function setPosition(key: string, value: SessionPosition): void {
+const POSITION_STORE_MS = 10_000;
+const positionStoredAt = new LRUCache<string, number>({ max: envInt('JELLYFIN_SESSION_CACHE_MAX', 5000, 1) });
+
+/** A tick that only moves the position is kept here, and stored at most every ten seconds. */
+function setPosition(key: string, value: SessionPosition, tick = false): void {
   positions.set(key, value);
   if (!redis) return;
+  if (tick && value.at - (positionStoredAt.get(key) ?? 0) < POSITION_STORE_MS) return;
+  positionStoredAt.set(key, value.at);
   const ttl = sessionTtlSeconds();
   const own = accountIndex(key.split(':')[0]);
   redis.multi()
@@ -177,6 +183,7 @@ function setPosition(key: string, value: SessionPosition): void {
 
 function deletePosition(key: string): void {
   positions.delete(key);
+  positionStoredAt.delete(key);
   if (redis) redis.multi().hdel(POSITIONS_KEY, key).zrem(POSITIONS_INDEX, key).zrem(accountIndex(key.split(':')[0]), key).exec().catch(() => undefined);
 }
 
@@ -955,7 +962,7 @@ export async function recordProgress(req: any, body: any, source: PlaySourceId =
   const previous = await getPosition(key);
   const paused = body?.IsPaused === true || body?.isPaused === true;
   if (previous?.marked) {
-    setPosition(key, { ...previous, positionMs, at: Date.now(), paused });
+    setPosition(key, { ...previous, positionMs, at: Date.now(), paused }, previous.paused === paused);
     return;
   }
 
@@ -1016,7 +1023,7 @@ export async function recordProgress(req: any, body: any, source: PlaySourceId =
         next.writtenMs = positionMs;
       }
     }
-    setPosition(key, next);
+    setPosition(key, next, next.writtenAt === previous?.writtenAt && previous !== undefined);
     return;
   }
 
