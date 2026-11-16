@@ -427,7 +427,9 @@ async function planReport(type: string, id: string, report: PlaybackReport, prog
     }
     if (credited) jobs.push({ service, op: 'credit', item, payload, coalesce: `history:${id}` });
     if (intent === 'unwatched') jobs.push({ service, op: 'unwatch', item, payload, coalesce: `history:${id}` });
-    if (credited || clears) jobs.push({ service, op: 'clearResume', item, payload, coalesce: `resume:${id}` });
+    // An unwatch on Simkl or MDBList clears the resume point itself.
+    const cleared = intent === 'unwatched' && service !== 'publicmetadb';
+    if (credited || (clears && !cleared)) jobs.push({ service, op: 'clearResume', item, payload, coalesce: `resume:${id}` });
   }
   if (intent === 'watched' || intent === 'unwatched') {
     for (const service of ['anilist', 'mal'] as const) {
