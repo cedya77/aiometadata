@@ -365,6 +365,7 @@ import { sourceBadgeStyles, sourceBadgeLabels } from '@/lib/sourceBadges';
 import { supportsMdblistScoreFilters } from '@/utils/catalogUtils';
 import { MERGE_MODES, MERGED_CATALOG_MODE, type MergeMode } from '@shared/mergeModes';
 import { MergeModePicker } from '@/components/MergeModePicker';
+import { sourceFilterOptions } from '@shared/mergeSourceFilter';
 
 
 
@@ -2809,12 +2810,19 @@ const MergedCatalogCard = ({
   const [showSettings, setShowSettings] = useState(false);
   const [settingsMergeMode, setSettingsMergeMode] = useState<MergeMode>(catalog.metadata?.mergeMode || MERGED_CATALOG_MODE);
   const [settingsPosterShape, setSettingsPosterShape] = useState<'inherit' | 'poster' | 'landscape'>(catalog.metadata?.posterShape || 'inherit');
+  const [settingsBySource, setSettingsBySource] = useState(Boolean(catalog.metadata?.filterBySource));
+  const [settingsLabels, setSettingsLabels] = useState<Record<string, string>>({});
   const sourcesShape = mergedSourcesShape(catalog, allCatalogs);
+  const sourceKey = (source: { catalogId: string; catalogType: string }) => `${source.catalogId}:${source.catalogType}`;
   const openSettings = () => {
     setSettingsMergeMode(catalog.metadata?.mergeMode || MERGED_CATALOG_MODE);
     setSettingsPosterShape(catalog.metadata?.posterShape || 'inherit');
+    setSettingsBySource(Boolean(catalog.metadata?.filterBySource));
+    setSettingsLabels(Object.fromEntries(sources.map(source => [sourceKey(source), source.label ?? ''])));
     setShowSettings(true);
   };
+  // Named exactly as apps will list them, numbering included.
+  const sourceNames = sourceFilterOptions(sources.map(source => ({ ...source, label: settingsLabels[sourceKey(source)] })), allCatalogs);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -3020,6 +3028,7 @@ const MergedCatalogCard = ({
               <CatalogTagRow catalog={catalog} mode="chips" className="mt-1.5" />
               <p className="mt-1.5 text-xs text-muted-foreground">
                 {sources.length} sources · {catalog.metadata?.mergeMode || MERGED_CATALOG_MODE}
+                {catalog.metadata?.filterBySource ? ' · filter by source' : ''}
                 {' · '}
                 <button
                   type="button"
@@ -3180,6 +3189,56 @@ const MergedCatalogCard = ({
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor={`merge-by-source-${catalog.id}`}>Filter by source</Label>
+                  <p className="text-xs text-muted-foreground">
+                    The filter in apps lists each source by name instead of genres. Picking one shows that source alone, and None shows the whole merge. Genre filtering is off while this is on.
+                  </p>
+                </div>
+                <Switch id={`merge-by-source-${catalog.id}`} checked={settingsBySource} onCheckedChange={setSettingsBySource} />
+              </div>
+              {settingsBySource && sourceNames.length > 0 && (
+                <div className="space-y-2">
+                  <div className="-mx-1 max-h-72 space-y-3 overflow-y-auto px-1 py-1">
+                    {sourceNames.map(option => {
+                      const key = sourceKey(option);
+                      const sourceCatalog = allCatalogs.find(c => c.id === option.catalogId && c.type === option.catalogType);
+                      const catalogName = sourceCatalog?.name || option.catalogId;
+                      const typed = (settingsLabels[key] ?? '').trim();
+                      const fieldId = `merge-source-name-${catalog.id}-${key}`;
+                      return (
+                        <div key={key} className="space-y-1">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <Label htmlFor={fieldId} className="truncate text-xs font-medium">{catalogName}</Label>
+                            <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
+                              {sourceCatalog ? (sourceBadgeLabels[sourceCatalog.source] || sourceCatalog.source) : ''}
+                            </span>
+                          </div>
+                          <Input
+                            id={fieldId}
+                            value={settingsLabels[key] ?? ''}
+                            onChange={e => setSettingsLabels(prev => ({ ...prev, [key]: e.target.value }))}
+                            placeholder={catalogName}
+                            maxLength={80}
+                            className="h-8 text-sm"
+                          />
+                          {option.label !== (typed || catalogName) && (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                              {(typed || catalogName).toLowerCase() === 'none'
+                                ? `None stands for the whole merge, so apps show this one as “${option.label}”.`
+                                : `Another source reads the same, so apps show this one as “${option.label}”.`}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Leave a name empty to use the catalog's own. Names that read alike get their type, or a number when the type is the same.</p>
+                </div>
+              )}
+            </div>
             <div className="space-y-2">
               <Label>Poster Shape</Label>
               <Select value={settingsPosterShape} onValueChange={(v: 'inherit' | 'poster' | 'landscape') => setSettingsPosterShape(v)}>
@@ -3197,7 +3256,22 @@ const MergedCatalogCard = ({
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowSettings(false)}>Cancel</Button>
               <Button onClick={() => {
-                updateCatalog(c => ({ ...c, metadata: { ...c.metadata, mergeMode: settingsMergeMode, posterShape: settingsPosterShape === 'inherit' ? undefined : settingsPosterShape } }));
+                updateCatalog(c => ({
+                  ...c,
+                  metadata: {
+                    ...c.metadata,
+                    mergeMode: settingsMergeMode,
+                    posterShape: settingsPosterShape === 'inherit' ? undefined : settingsPosterShape,
+                    filterBySource: settingsBySource || undefined,
+                    mergedSources: (c.metadata?.mergedSources || []).map(source => {
+                      const label = (settingsLabels[sourceKey(source)] ?? '').trim();
+                      const next = { ...source };
+                      if (label) next.label = label;
+                      else delete next.label;
+                      return next;
+                    }),
+                  },
+                }));
                 setShowSettings(false);
               }}>Save</Button>
             </div>
@@ -5325,6 +5399,7 @@ function CatalogsSettingsContent({
   const [mergeShowInHome, setMergeShowInHome] = useState(true);
   const [mergeDisplayType, setMergeDisplayType] = useState('');
   const [mergeMode, setMergeMode] = useState<MergeMode>(MERGED_CATALOG_MODE);
+  const [mergeBySource, setMergeBySource] = useState(false);
 
   const openMergeDialog = () => {
     if (selectedCatalogs.some(c => c.source === 'merged')) {
@@ -5341,6 +5416,7 @@ function CatalogsSettingsContent({
     setMergeShowInHome(true);
     setMergeDisplayType('');
     setMergeMode('interleaved');
+    setMergeBySource(false);
     setShowMergeDialog(true);
   };
 
@@ -5370,7 +5446,7 @@ function CatalogsSettingsContent({
       source: 'merged',
       showInHome: mergeShowInHome,
       displayType: mergeDisplayType.trim() || undefined,
-      metadata: { mergedSources, mergeMode },
+      metadata: { mergedSources, mergeMode, ...(mergeBySource ? { filterBySource: true } : {}) },
     };
 
     setConfig(prev => {
@@ -6127,6 +6203,13 @@ function CatalogsSettingsContent({
             <div className="space-y-2">
               <Label id="merge-mode-label">Merge Mode</Label>
               <MergeModePicker value={mergeMode} onChange={setMergeMode} labelledBy="merge-mode-label" />
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="merge-by-source">Filter by source</Label>
+                <p className="text-xs text-muted-foreground">Apps list each source by name in place of genres, so one can be shown alone. Names can be changed later in Merge Settings.</p>
+              </div>
+              <Switch id="merge-by-source" checked={mergeBySource} onCheckedChange={setMergeBySource} />
             </div>
             <div className="text-xs text-muted-foreground">
               Type preview: <code className="font-mono">{

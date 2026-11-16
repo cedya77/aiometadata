@@ -160,8 +160,12 @@ export interface CatalogConfig {
       catalogType: string;     // source catalog type at merge time
       originalEnabled: boolean;
       originalShowInHome: boolean;
+      /** Shown in place of the source's own name when the merge filters by source. */
+      label?: string;
     }>;
     mergeMode?: MergeMode;
+    /** The merge's one filter lists its sources instead of genres. */
+    filterBySource?: boolean;
     // MovieLens-specific metadata
     sortBy?: string;
     sortDirection?: string;
