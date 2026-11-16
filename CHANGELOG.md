@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.0.0](https://github.com/cedya77/aiometadata/compare/v3.9.0...v4.0.0) (2026-11-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* AIOMetadata is licensed under AGPL-3.0-or-later (core) and FSL-1.1-ALv2 (v4 feature modules) instead of GPL-3.0. Releases up to and including v3.9.0 stay under GPL-3.0.
+
+### Features
+
+* AIOMetadata v4 under AGPL-3.0-or-later and FSL-1.1-ALv2 ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **catalogs:** a merge can offer its sources in its filter in place of genres ([d6019b2](https://github.com/cedya77/aiometadata/commit/d6019b2cb39183d15a2c791f9cc77e0ee7986712))
+* **configure:** add several TMDB keywords at once, and keyword patterns with a preview ([0a1697e](https://github.com/cedya77/aiometadata/commit/0a1697ec3e4d41461cc157e1dd6057acbfaf5581)), closes [#849](https://github.com/cedya77/aiometadata/issues/849)
+* **configure:** an About dialog with the source link, licenses and TMDB notice ([55c73dc](https://github.com/cedya77/aiometadata/commit/55c73dc344397a2b7359e2f7b80cbbbf6a05e938))
+* **configure:** change a configuration's password from the Danger Zone ([eb001d2](https://github.com/cedya77/aiometadata/commit/eb001d2d82151e0c401e04622c05541edb633125)), closes [#888](https://github.com/cedya77/aiometadata/issues/888)
+* **configure:** data source attributions in the About dialog ([dabf7ff](https://github.com/cedya77/aiometadata/commit/dabf7ffc816e881af8eb64d9362cc72491fdfd93))
+* **configure:** Filter by source in Merge Settings and when creating a merge ([b074458](https://github.com/cedya77/aiometadata/commit/b074458880d5fd53c9eeaae7a428299c0bd9b223)), closes [#807](https://github.com/cedya77/aiometadata/issues/807)
+* **configure:** Watch Tracking, Jellyfin and People settings tabs ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **dashboard:** a year in review with chapters, a tap-through story and a share card ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **dashboard:** compare each tracker with your watch history, and copy history, ratings, watchlists and dropped shows between trackers ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **dashboard:** import watch history from a Nuvio account or library bundle ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **dashboard:** install the dashboard as a home screen app, laid out for phones ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **dashboard:** mark an episode and every one after it unwatched from the Jellyfin tab ([895965a](https://github.com/cedya77/aiometadata/commit/895965a9c44a12c6c6b348c5bba2b415a79c4b93))
+* **dashboard:** match titles a tracker can't find, episode by episode, specials and episodes that are films there included ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **dashboard:** open any title with its cast, filmographies, viewings, trailer and watched state ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **dashboard:** rebuild the Year in Review when a save changes its language, metadata or timezone ([a24a774](https://github.com/cedya77/aiometadata/commit/a24a774bcb1cb006d2cb3b14246e1ced32b1764e))
+* **dashboard:** show each tracker's reads and writes, and what each missing watch was sent as ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **dashboard:** subscribe to a profile's calendar from any calendar app ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **filters:** TMDB keyword exclusions accept patterns with * ([e367110](https://github.com/cedya77/aiometadata/commit/e3671101c157ebb4f701d6367b86d3f0365c9916))
+* **jellyfin:** choose TMDB or Simkl for a title's similar titles ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **jellyfin:** filter and list by year, studio, tag, rating, series status and folder, and look titles up by IMDb, TMDB or TVDB id ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **jellyfin:** give a configuration its own page with sign-in, profile picker and PIN, installable as a home screen app ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **jellyfin:** give titles their original language and mark filler and recap episodes ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **jellyfin:** keep every viewing in a watch history, rewatches included, and change when a title was watched here and on the trackers ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **jellyfin:** keep playlists, through Jellyfin's playlists API, the dashboard and history exports ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **jellyfin:** let a collection folder interleave or alternate its catalogs and shuffle each page ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **jellyfin:** let apps share audio fingerprints for a season's intros and credits ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **jellyfin:** let each profile choose how much of a title counts as watched ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **jellyfin:** let Jellyfin apps watch together through SyncPlay ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **jellyfin:** let the main user see and control every profile's devices ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **jellyfin:** optionally import tracker history again soon after a configuration's imported history is forgotten ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **jellyfin:** play or open a title on another of the user's devices, from an app or the dashboard ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **simkl:** log a rewatch on PRO and VIP accounts ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+* **tracking:** scrobble playback reported by addon clients, with a switch for each source ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+
+
+### Bug Fixes
+
+* **admin:** resetting a configuration's password signs its Jellyfin apps out ([ca3521d](https://github.com/cedya77/aiometadata/commit/ca3521dc2ca61016e0548720d5a10e8d4ab43c0d))
+* **configure:** show the full explanation of each Continue Watching from choice again ([75ed456](https://github.com/cedya77/aiometadata/commit/75ed456d5f62514671bed5c5da9e3d38a7ed6e8f))
+* legacy MovieLens ids, viewer tags, and smaller refinements to the reimplemented features ([d76734b](https://github.com/cedya77/aiometadata/commit/d76734b94c201350702b4e12c390cc60213b8451))
+* **poster-cache:** resolve a configured proxy's hostname normally instead of with the image host's addresses ([14d2886](https://github.com/cedya77/aiometadata/commit/14d28862a490e1989c9c9a249b520a650204787f)), closes [#914](https://github.com/cedya77/aiometadata/issues/914)
+* **recommendations:** use a configuration's own OpenRouter key before the instance's Gemini key ([288fee3](https://github.com/cedya77/aiometadata/commit/288fee302d4a1e877aef50b0b7cccf61d1a1caf6))
+* **trailers:** warm the trailer addon in the background so a slow addon no longer holds up catalog warming ([fbd826c](https://github.com/cedya77/aiometadata/commit/fbd826c53aad6a4a76ed1f5b322b2e544cd5f057))
+
+
+### Performance Improvements
+
+* **jellyfin:** faster Next Up, collection folders, playlists, history imports and tracker syncs on large histories ([0a54b50](https://github.com/cedya77/aiometadata/commit/0a54b505694e49df54667b593b343102214d3fc6))
+
 ## [3.9.0](https://github.com/cedya77/aiometadata/compare/v3.8.3...v3.9.0) (2026-11-13)
 
 
