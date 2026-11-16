@@ -48,6 +48,9 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=beta
+          # Otherwise the label comes from the repository's detected license, which names only the AGPL.
+          labels: |
+            org.opencontainers.image.licenses=AGPL-3.0-or-later AND FSL-1.1-ALv2
 
       - name: Build and push multi-platform image
         uses: docker/build-push-action@v5
