@@ -3204,7 +3204,7 @@ addon.get("/api/recommendations/status", async (req: any, res: any) => {
 
     const { collectWatchedRows, isWatched, resolveSources, trackerAvailability, runAsProfile }: any = require('./utils/recommendations/history');
     const { summarise }: any = require('./utils/recommendations/rows');
-    const { resolveProvider }: any = require('./utils/recommendations/provider');
+    const { resolveProvider, instanceGeminiKey }: any = require('./utils/recommendations/provider');
     const { profileCacheKey }: any = require('./utils/recommendations/profile');
     const { readGlobalCache }: any = require('./lib/getCache');
 
@@ -3230,7 +3230,7 @@ addon.get("/api/recommendations/status", async (req: any, res: any) => {
         profile: profile ? { summary: profile.summary, builtAt: profile.builtAt, builtFrom: profile.builtFrom } : null,
       };
     });
-    return res.json({ ...report, profiles });
+    return res.json({ ...report, profiles, instanceGemini: !!instanceGeminiKey() });
   } catch (error: any) {
     consola.withTag('Recommendations').warn(`Status failed: ${error.message}`);
     return res.status(500).json({ error: "Could not read recommendation status" });

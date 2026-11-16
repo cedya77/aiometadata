@@ -67,6 +67,8 @@ interface Status {
   connected: { simkl: boolean; mdblist: boolean; local?: boolean };
   available?: { simkl: boolean; mdblist: boolean };
   provider: { provider: string; model: string } | null;
+  /** The instance supplies a Gemini key of its own. */
+  instanceGemini?: boolean;
   counts: { total: number; movies: number; series: number; anime: number; rated: number; meanRating?: number };
   profile: { summary: string; builtAt: string; builtFrom: number } | null;
   profiles?: Array<{ id: string; name: string; avatar?: string; linked: string[] }>;
@@ -101,7 +103,7 @@ function Avatar({ viewer, index }: { viewer: Viewer; index: number }) {
 }
 
 export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { config, setConfig, auth } = useConfig();
+  const { config, setConfig, auth, hasBuiltInGemini } = useConfig();
   const { models: openRouterModels, loading: openRouterModelsLoading } =
     useOpenRouterModels(config.apiKeys?.openrouter);
 
@@ -139,6 +141,7 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
   const hasHistory = hasSimkl || hasMdblist || hasPlays;
   const hasGemini = !!config.apiKeys?.gemini;
   const hasOpenRouter = !!config.apiKeys?.openrouter;
+  const geminiAvailable = hasGemini || (status?.instanceGemini ?? hasBuiltInGemini);
   const hasModel = hasGemini || hasOpenRouter;
   const ready = hasHistory && hasModel;
 
@@ -163,9 +166,10 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
   const refreshHours = draft.refresh_hours || 24;
   const refreshCustom = ![6, 12, 24].includes(refreshHours);
   const order = draft.order || 'balanced';
-  const usingOpenRouter = preferred === 'openrouter'
-    ? hasOpenRouter
-    : preferred === 'gemini' ? false : !hasGemini && hasOpenRouter;
+  // The server's order: the provider chosen, then the configuration's own keys, then the instance's.
+  const usingOpenRouter = preferred === 'openrouter' && hasOpenRouter
+    ? true
+    : preferred === 'gemini' && geminiAvailable ? false : !hasGemini && hasOpenRouter;
 
   // Reads what is already known; never triggers a build, so opening this panel
   // cannot spend a model call.
@@ -503,7 +507,7 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
                   </p>
                 </div>
                 <div className="max-w-3xl space-y-4">
-                    {hasGemini && hasOpenRouter && (
+                    {geminiAvailable && hasOpenRouter && (
                       <div className="space-y-2">
                         <Label className="text-sm font-medium">Provider</Label>
                         <div className={TRAY}>
@@ -515,6 +519,7 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
                             </button>
                           ))}
                         </div>
+                        {!hasGemini && <p className="text-xs text-muted-foreground">Gemini uses the key this instance provides.</p>}
                       </div>
                     )}
 
