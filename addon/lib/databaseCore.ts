@@ -2570,22 +2570,27 @@ export class DatabaseCore {
     }
   }
 
+  /**
+   * Stores a new configuration password and signs out every app that signed in to the configuration.
+   * Personal page sessions are signed with the stored hash, so they end on their own.
+   */
+  async setUserPassword(userUUID: string, password: string): Promise<boolean> {
+    const hashedPassword = await this.hashPassword(password);
+    const query = this.type === 'sqlite'
+      ? 'UPDATE user_configs SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = ?'
+      : 'UPDATE user_configs SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = $2';
+    const result = await this.runQuery(query, [hashedPassword, userUUID]);
+    const changed = this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0;
+    if (changed) {
+      await require('./jellyfin/tokens').revokeUserTokens(userUUID).catch((error: any) => logger.warn(`Signing out clients for ${userUUID} failed: ${error.message}`));
+    }
+    return changed;
+  }
+
   async resetUserPassword(userUUID: string, newPassword?: string): Promise<string | null> {
     try {
       const password = newPassword || Math.random().toString(36).slice(-8);
-      const hashedPassword = await this.hashPassword(password);
-
-      const query = this.type === 'sqlite'
-        ? 'UPDATE user_configs SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = ?'
-        : 'UPDATE user_configs SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = $2';
-
-      const result = await this.runQuery(query, [hashedPassword, userUUID]);
-
-      if (this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0) {
-        return password;
-      }
-
-      return null;
+      return (await this.setUserPassword(userUUID, password)) ? password : null;
     } catch (error) {
       logger.error('Error resetting user password:', error);
       return null;
