@@ -14,6 +14,7 @@ import { fetchResume, parseResumeItems, fetchListPage, parseListItems, fetchPick
 import { mapWithLimit } from "../utils/concurrency.js";
 import { envInt } from '../utils/envNumber';
 import { MERGED_CATALOG_MODE, mergeModeOf } from './collectionBuilder/mergeModes';
+import { sourceFilterOptions, sourceForFilter } from './collectionBuilder/mergeSourceFilter';
 const anilist = require('./anilist');
 const idMapper = require('./id-mapper');
 import { createHash } from 'crypto';
@@ -3626,8 +3627,13 @@ async function getMergedCatalog(
     return [];
   }
   const mergeMode = mergeModeOf((catalogConfig as any).metadata?.mergeMode, MERGED_CATALOG_MODE);
+  // A merge filtered by source serves the source its filter names on its own, unfiltered; None is the whole merge.
+  const picked = (catalogConfig as any).metadata?.filterBySource
+    ? sourceForFilter(sourceFilterOptions(sources, config.catalogs as any[]), genre)
+    : null;
+  const sourceGenre = picked ? '' : genre;
 
-  const validSources = sources.filter((s: any) => {
+  const usableSources = sources.filter((s: any) => {
     if (s.catalogId.startsWith('merged.')) {
       logger.warn(`[Merged] Skipping nested merge reference: ${s.catalogId}`);
       return false;
@@ -3641,12 +3647,15 @@ async function getMergedCatalog(
     }
     return servesCatalog(config, entry);
   });
+  const validSources = picked
+    ? usableSources.filter((s: any) => s.catalogId === picked.catalogId && s.catalogType === picked.catalogType)
+    : usableSources;
   if (validSources.length === 0) return [];
 
   const { applyCatalogFilters } = require('../utils/catalogFilters.js');
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
   const stremioSkip = skip ?? (page - 1) * pageSize;
-  const hasGenreFilter = !!(genre && genre !== 'None' && normalizeGenreKey(genre));
+  const hasGenreFilter = !!(sourceGenre && sourceGenre !== 'None' && normalizeGenreKey(sourceGenre));
   const catalogTTL = parseInt(process.env.CATALOG_TTL || String(24 * 60 * 60), 10);
 
   const owner = accountOwner(config);
@@ -3685,7 +3694,7 @@ async function getMergedCatalog(
 
   const fetchSourcePage = async (src: any, srcPage: number): Promise<{ items: any[]; rawLength: number }> => {
     try {
-      const effectiveGenre = genre || await hiddenCatalogGenre(config, userUUID, src.catalogId, src.catalogType) || '';
+      const effectiveGenre = sourceGenre || await hiddenCatalogGenre(config, userUUID, src.catalogId, src.catalogType) || '';
       const srcConfig = viewerConfigFor(config, owner, src.catalogId);
       const cacheArgs = await buildCatalogCacheArgs(src.catalogId, src.catalogType, srcPage, effectiveGenre, srcConfig);
       const catalogKey = `${src.catalogId}:${src.catalogType}:${stableStringify(cacheArgs)}`;
@@ -3700,10 +3709,10 @@ async function getMergedCatalog(
       let items = raw;
 
       if (hasGenreFilter) {
-        items = filterMetasByGenre(items, genre);
+        items = filterMetasByGenre(items, sourceGenre);
         if (items.length !== raw.length) {
           logger.debug(
-            `[Merged] ${src.catalogId}: genre="${genre}" dropped ${raw.length - items.length}/${raw.length} metas`
+            `[Merged] ${src.catalogId}: genre="${sourceGenre}" dropped ${raw.length - items.length}/${raw.length} metas`
           );
         }
       }

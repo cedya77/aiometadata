@@ -24,6 +24,7 @@ const catalogsTranslations: Record<string, Record<string, string>> = catalogsTra
 const CATALOG_TYPES: Record<string, any> = catalogTypesJson;
 import { cacheWrapJikanApi, cacheWrapGlobal, cacheWrapStremThruGenres, cacheWrapLumiereGenres } from './getCache';
 import { mergeGenreOptions } from '../utils/mergedCatalog';
+import { sourceFilterOptions } from './collectionBuilder/mergeSourceFilter';
 import { fetchLumiereGenres, lumiereApiBase, lumiereGenreLabel, lumiereListOf } from '../utils/lumiereLists';
 const { getSetting }: any = require('./settingsService');
 import consola from 'consola';
@@ -712,6 +713,7 @@ function createServerWatchlistCatalog(userCatalog: any, showPrefix: boolean = fa
 function createMergedCatalog(
   userCatalog: any,
   allBuiltCatalogs: any[],
+  userCatalogs: any[],
   showPrefix: boolean = false,
   prefixName: string = "AIOMetadata"
 ): any {
@@ -719,12 +721,14 @@ function createMergedCatalog(
     logger.debug(`Creating Merged catalog: ${userCatalog.id} (${userCatalog.type})`);
     const catalogType = userCatalog.displayType || userCatalog.type;
     const sources = userCatalog.metadata?.mergedSources || [];
+    // A merge filtered by source offers its sources in the one filter apps show, in place of genres.
+    const bySource = Boolean(userCatalog.metadata?.filterBySource);
 
     // Genre union across the already-built source manifest entries, deduped by
     // a normalized key so that slug-style labels (e.g. Simkl "science-fiction")
     // collapse onto display-style labels (e.g. Letterboxd "Science Fiction").
     const perSourceOptions: string[][] = [];
-    for (const src of sources) {
+    for (const src of bySource ? [] : sources) {
       const suffixed = `${src.catalogId}_${src.catalogType}`;
       const built = allBuiltCatalogs.find((c: any) => {
         if (!c) return false;
@@ -742,7 +746,9 @@ function createMergedCatalog(
       if (opts.length > 0) perSourceOptions.push(opts);
     }
 
-    const genreOptions = mergeGenreOptions(perSourceOptions);
+    const genreOptions = bySource
+      ? sourceFilterOptions(sources, userCatalogs).map((option) => option.label)
+      : mergeGenreOptions(perSourceOptions);
 
     const finalGenreOptions = genreOptions.length > 0
       ? (userCatalog.showInHome ? genreOptions : ['None', ...genreOptions])
@@ -1472,7 +1478,7 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
       return catalogs.findIndex(c => c.id === catId);
     };
     for (const { userCatalog, configIndex } of mergedUserCatalogs) {
-      const built = createMergedCatalog(userCatalog, catalogs, showPrefix, prefixName);
+      const built = createMergedCatalog(userCatalog, catalogs, userCatalogs, showPrefix, prefixName);
       if (!built) continue;
       const preceding = enabledCatalogs.slice(0, configIndex);
       let insertIdx = 0;

@@ -79,7 +79,7 @@ const SAFE_METADATA = [
   'airingSoonDays', 'status', 'description', 'itemCount', 'url', 'identifier',
   'isWatchlist', 'isCustomList', 'mediatype', 'username', 'listName', 'author',
   'listId', 'listDescription', 'isPublic', 'listType',
-  'mergeMode', 'mergedSources',
+  'mergeMode', 'mergedSources', 'filterBySource',
 ];
 
 /** Everything not named here is dropped, `privacy` deliberately among them. */
@@ -100,7 +100,7 @@ export function sanitizeMetadata(
     // merge, which means nothing to anyone importing it.
     safe.mergedSources = safe.mergedSources
       .filter((entry: any) => entry?.catalogId && keepSource(entry))
-      .map((entry: any) => ({ catalogId: entry.catalogId, catalogType: entry.catalogType }));
+      .map((entry: any) => ({ catalogId: entry.catalogId, catalogType: entry.catalogType, ...(typeof entry.label === 'string' && entry.label.trim() ? { label: entry.label.trim() } : {}) }));
     if (safe.mergedSources.length === 0) delete safe.mergedSources;
   }
 
