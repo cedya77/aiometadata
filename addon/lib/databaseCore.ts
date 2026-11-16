@@ -490,6 +490,7 @@ export class DatabaseCore {
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_coalesce ON tracker_outbox(lane, coalesce_key)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_user ON tracker_outbox(user_uuid, id)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_claimed ON tracker_outbox(claimed_until, lane)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_watch_index (
         source_key TEXT NOT NULL,
         video_id TEXT NOT NULL,
@@ -720,6 +721,7 @@ export class DatabaseCore {
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_coalesce ON tracker_outbox(lane, coalesce_key)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_user ON tracker_outbox(user_uuid, id)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_claimed ON tracker_outbox(claimed_until, lane)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_watch_index (
         source_key VARCHAR(64) NOT NULL,
         video_id TEXT NOT NULL,
@@ -1832,13 +1834,14 @@ export class DatabaseCore {
     const at = sqlite ? '?' : '$1';
     // A title's writes go in order, but a waiting rating holds none back: it may be waiting for the title's own watched mark.
     const rows = await this.allPrimaryQuery(
-      `SELECT id, lane, user_uuid, profile, service, op, item_key, payload, attempts, next_at, expires_at, claimed_until, created_at FROM (
-         SELECT o.*, ROW_NUMBER() OVER (PARTITION BY o.lane ORDER BY o.id) AS lane_rank
-         FROM tracker_outbox o
+      `SELECT id, lane, user_uuid, profile, service, op, item_key, payload, attempts, next_at, expires_at, claimed_until, created_at
+       FROM tracker_outbox WHERE id IN (
+         SELECT MIN(o.id) FROM tracker_outbox o
          WHERE o.next_at <= ${at} AND o.claimed_until <= ${at}
-           AND NOT EXISTS (SELECT 1 FROM tracker_outbox c WHERE c.lane = o.lane AND c.claimed_until > ${at})
+           AND o.lane NOT IN (SELECT c.lane FROM tracker_outbox c WHERE c.claimed_until > ${at})
            AND NOT EXISTS (SELECT 1 FROM tracker_outbox w WHERE w.lane = o.lane AND w.item_key = o.item_key AND w.id < o.id AND w.next_at > ${at} AND w.op <> 'rate')
-       ) ready WHERE lane_rank = 1 ORDER BY id LIMIT ${sqlite ? '?' : '$2'}`,
+         GROUP BY o.lane
+       ) ORDER BY id LIMIT ${sqlite ? '?' : '$2'}`,
       sqlite ? [now, now, now, now, limit] : [now, limit]
     );
     // Postgres hands BIGINT back as a string.
