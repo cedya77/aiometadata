@@ -718,6 +718,12 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     keywords: ['password', 'confirm'],
   },
   {
+    id: 'configuration.changePassword', section: 'configuration', anchor: 'change-password',
+    label: 'Change Password',
+    description: 'Sets a new password for this configuration and signs its Jellyfin apps out.',
+    keywords: ['password', 'change password', 'new password', 'reset password', 'security'],
+  },
+  {
     id: 'configuration.addonPassword', section: 'configuration', anchor: 'cfgmgr-addon-password',
     label: 'Addon Password',
     description: 'Required by the addon administrator.',

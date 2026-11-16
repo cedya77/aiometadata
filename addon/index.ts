@@ -7169,6 +7169,30 @@ addon.delete('/api/config/delete-user/:userUUID', async (req, res) => {
   }
 });
 
+// --- Change the configuration password ---
+const CONFIG_PASSWORD_MIN = 6;
+const CONFIG_PASSWORD_MAX = 200;
+addon.post('/api/config/change-password/:userUUID', configLoadRateLimitMiddleware, async (req, res) => {
+  const userUUID = String(req.params.userUUID || '');
+  const { currentPassword, newPassword } = req.body || {};
+  const next = typeof newPassword === 'string' ? newPassword : '';
+  if (!userUUID) return res.status(400).json({ error: 'User UUID is required' });
+  if (next.length < CONFIG_PASSWORD_MIN || next.length > CONFIG_PASSWORD_MAX) {
+    return res.status(400).json({ error: `The new password needs ${CONFIG_PASSWORD_MIN} to ${CONFIG_PASSWORD_MAX} characters` });
+  }
+  try {
+    // An account that owns the configuration needs no password, as for every other change to it.
+    const access = await resolveConfigAccess(req, userUUID, typeof currentPassword === 'string' ? currentPassword : null);
+    if (!access) return res.status(401).json({ error: 'The current password is not right' });
+    if (!(await database.setUserPassword(userUUID, next))) return res.status(404).json({ error: 'User not found' });
+    consola.info(`[Config] Password changed for ${userUUID}; its Jellyfin sign-ins were ended`);
+    return res.json({ success: true });
+  } catch (error) {
+    consola.error(`[Config] Changing the password of ${userUUID} failed:`, error);
+    return res.status(500).json({ error: 'Failed to change the password' });
+  }
+});
+
 // --- Cache Management Endpoints ---
 
 // Clean bad cache entries

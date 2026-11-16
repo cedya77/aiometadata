@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Download, Upload, FileText, Shield, AlertCircle, Loader2, Trash2, Lock, Link as LinkIcon } from "lucide-react";
+import { Download, Upload, FileText, Shield, AlertCircle, Loader2, Trash2, Lock, KeyRound, Link as LinkIcon } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { exportConfigFile } from "@/lib/exportConfigFile";
@@ -31,6 +31,12 @@ export function ConfigImportExport() {
   const [deletePassword, setDeletePassword] = useState('');
   const [addonPassword, setAddonPassword] = useState('');
   const [requiresAddonPassword, setRequiresAddonPassword] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [signedInWithAccount, setSignedInWithAccount] = useState(false);
 
 
   useEffect(() => {
@@ -221,6 +227,45 @@ export function ConfigImportExport() {
   const handleResetConfirm = () => {
     resetConfigFromContext();
     toast.success("Configuration reset to defaults");
+  };
+
+  const openChangePassword = () => {
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmNewPassword('');
+    setShowChangePassword(true);
+    fetch('/api/auth/status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((status) => setSignedInWithAccount(Boolean(status?.signedIn)))
+      .catch(() => setSignedInWithAccount(false));
+  };
+
+  const newPasswordProblem =
+    newPassword.length > 0 && newPassword.length < 6 ? 'At least 6 characters'
+      : confirmNewPassword.length > 0 && confirmNewPassword !== newPassword ? 'The two new passwords differ'
+        : '';
+  const canChangePassword = newPassword.length >= 6 && newPassword === confirmNewPassword && (signedInWithAccount || currentPassword.length > 0) && !changingPassword;
+
+  const handleChangePassword = async () => {
+    if (!canChangePassword || !auth.userUUID) return;
+    setChangingPassword(true);
+    try {
+      const response = await fetch(`/api/config/change-password/${encodeURIComponent(auth.userUUID)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || 'Failed to change the password');
+      // Saving from this page sends the password, so it carries on with the new one.
+      setAuth((prev) => ({ ...prev, password: newPassword }));
+      setShowChangePassword(false);
+      toast.success('Password changed', { description: 'Jellyfin apps and personal pages sign in again with the new one.' });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to change the password');
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   const deleteUserRecords = async () => {
@@ -450,7 +495,7 @@ export function ConfigImportExport() {
 
       <CollapsibleSettingCard
         title="Danger Zone"
-        description="Reset your configuration, or permanently delete your account."
+        description="Reset your configuration, change its password, or permanently delete your account."
       >
         <div className="divide-y">
           <SettingRow
@@ -466,6 +511,20 @@ export function ConfigImportExport() {
               </Button>
             }
           />
+
+          {auth.authenticated && auth.userUUID ? (
+            <SettingRow
+              id="change-password"
+              label="Change Password"
+              description="Sets a new password for this configuration. Jellyfin apps signed in to it are signed out and sign in again with the new one, and so do personal pages. Install links keep working."
+              control={
+                <Button onClick={openChangePassword} variant="outline">
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  Change
+                </Button>
+              }
+            />
+          ) : null}
 
           {auth.authenticated && auth.userUUID ? (
             <SettingRow
@@ -523,6 +582,73 @@ This action CANNOT be undone. Are you absolutely sure?`}
         variant="destructive"
         icon={<Trash2 className="h-5 w-5 text-destructive" />}
       />
+
+      <Dialog open={showChangePassword} onOpenChange={(open) => !changingPassword && setShowChangePassword(open)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5" />
+              Change Password
+            </DialogTitle>
+            <DialogDescription>
+              Jellyfin apps signed in to this configuration are signed out and need the new password, and so do personal pages. Install links keep working.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleChangePassword();
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="current-password">Current password</Label>
+              <Input
+                id="current-password"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+              />
+              {signedInWithAccount && (
+                <p className="text-xs text-muted-foreground">Not needed when the account you are signed in with owns this configuration.</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-password">New password</Label>
+              <Input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-new-password">Confirm new password</Label>
+              <Input
+                id="confirm-new-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
+              />
+              <p className={`text-xs ${newPasswordProblem ? 'text-destructive' : 'text-muted-foreground'}`}>
+                {newPasswordProblem || 'At least 6 characters.'}
+              </p>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowChangePassword(false)} disabled={changingPassword}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!canChangePassword}>
+                {changingPassword ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Change Password
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Password Dialog */}
       <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
