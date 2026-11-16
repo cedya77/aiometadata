@@ -236,14 +236,11 @@ async function pump(): Promise<void> {
       const slots = concurrency() - active.size;
       if (slots > 0) {
         const rows: any[] = await database.readyTrackerOutbox(now, slots + active.size);
-        let free = slots;
-        for (const row of rows) {
-          if (pass !== passId) return;
-          if (free <= 0) break;
-          if (active.has(row.lane)) continue;
-          if (!(await database.claimTrackerOutbox(row.id, Date.now() + leaseMs()))) continue;
-          free--;
-          send(row);
+        if (pass !== passId) return;
+        const taking = rows.filter((row) => !active.has(row.lane)).slice(0, slots);
+        const claimed = new Set<number>(await database.claimTrackerOutbox(taking.map((row) => row.id), Date.now() + leaseMs()));
+        for (const row of taking) {
+          if (claimed.has(row.id)) send(row);
         }
       }
       if (pass !== passId) return;

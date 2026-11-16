@@ -1935,14 +1935,15 @@ export class DatabaseCore {
     return rows;
   }
 
-  async claimTrackerOutbox(id: number, until: number): Promise<boolean> {
-    const result = await this.runQuery(
-      this.type === 'sqlite'
-        ? 'UPDATE tracker_outbox SET claimed_until = ? WHERE id = ? AND claimed_until <= ?'
-        : 'UPDATE tracker_outbox SET claimed_until = $1 WHERE id = $2 AND claimed_until <= $3',
-      [until, id, Date.now()]
+  async claimTrackerOutbox(ids: number[], until: number): Promise<number[]> {
+    if (!ids.length) return [];
+    const sqlite = this.type === 'sqlite';
+    const marks = ids.map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
+    const rows = await this.allPrimaryQuery(
+      `UPDATE tracker_outbox SET claimed_until = ${sqlite ? '?' : '$1'} WHERE claimed_until <= ${sqlite ? '?' : '$2'} AND id IN (${marks}) RETURNING id`,
+      [until, Date.now(), ...ids]
     );
-    return Number(result?.changes ?? result?.rowCount ?? 0) === 1;
+    return rows.map((row: any) => Number(row.id));
   }
 
   async retryTrackerOutbox(id: number, attempts: number, nextAt: number, error: string): Promise<void> {
