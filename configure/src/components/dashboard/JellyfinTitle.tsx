@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { useQueryClient, type Query } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Bookmark, BookmarkCheck, CalendarPlus, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Clapperboard, Clock, Film, ImageOff, LayoutGrid, ListPlus, Loader2, MoreHorizontal, PencilLine, Play, Plus, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
+import { ArrowLeft, Bookmark, BookmarkCheck, CalendarPlus, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Clapperboard, Clock, Film, ImageOff, LayoutGrid, ListPlus, ListRestart, Loader2, MoreHorizontal, PencilLine, Play, Plus, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinTitle, useJellyfinTitleAction, useJellyfinWatchDate, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitlePerson, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
@@ -554,12 +554,12 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
     selecting,
     selected: selected.has(ep.id),
     highlighted: !selecting && ep.id === next?.id,
-    busy: busy === ep.id + "played" || busy === ep.id + "unplayed" || busy === ep.id + "playedUpTo",
+    busy: (["played", "unplayed", "playedUpTo", "unplayedFrom"] as const).some((action) => busy === ep.id + action),
     onToggleSelect: () => toggleSelect(ep.id),
     onPlayOn: (at: Anchor) => setRemote({ target: episodeTarget(ep), at }),
     onPlaylist: (at: Anchor) => setAdding({ choices: [{ key: ep.id, label: [code(ep), ep.name].filter(Boolean).join(" "), itemIds: [ep.id] }], at }),
     onDate: (anchor: WatchDateAnchor) => openDate(ep.id, ep.watches[0] ?? null, anchor),
-    onAction: (action: JellyfinTitleAction) => void run(action, [ep.id], action === "playedUpTo" ? `Watched up to ${code(ep)}` : action === "played" ? `${code(ep)} marked watched` : `${code(ep)} marked unwatched`, action === "playedUpTo" ? undefined : action === "played"),
+    onAction: (action: JellyfinTitleAction) => void run(action, [ep.id], action === "playedUpTo" ? `Watched up to ${code(ep)}` : action === "unplayedFrom" ? `Unwatched from ${code(ep)} on` : action === "played" ? `${code(ep)} marked watched` : `${code(ep)} marked unwatched`, action === "playedUpTo" || action === "unplayedFrom" ? undefined : action === "played"),
   });
   const card = (ep: JellyfinTitleEpisode, className?: string) => <EpisodeCard key={ep.id} className={className} {...episodeProps(ep)} />;
   const glow = phone && Boolean(hero);
@@ -781,6 +781,7 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
                     const target = seasonMenu.season;
                     const aired = (seasons.find(([s]) => s === target.season)?.[1] ?? []).filter((ep) => !(ep.airsAt && ep.airsAt > now));
                     const ids = aired.map((ep) => ep.id);
+                    const first = aired[0];
                     const last = aired[aired.length - 1];
                     const label = seasonLabel(target.season);
                     if (aired.length === 0) return null;
@@ -789,6 +790,7 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
                         { icon: <Check className="size-4" />, label: `Mark ${label} watched`, onSelect: () => void run("played", [target.id], `${label} marked watched`, true, null, ids) },
                         { icon: <Undo2 className="size-4" />, label: `Mark ${label} unwatched`, onSelect: () => void run("unplayed", [target.id], `${label} marked unwatched`, false, null, ids) },
                         ...(target.season !== 0 && last ? [{ icon: <CheckCheck className="size-4" />, label: `Watched up to the end of ${label}`, onSelect: () => void run("playedUpTo", [last.id], `Watched up to the end of ${label}`) }] : []),
+                        ...(target.season !== 0 && first ? [{ icon: <ListRestart className="size-4" />, label: `Unwatched from the start of ${label}`, onSelect: () => void run("unplayedFrom", [first.id], `Unwatched from the start of ${label}`) }] : []),
                       ]} />
                     );
                   })()}

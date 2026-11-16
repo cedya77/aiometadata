@@ -375,7 +375,7 @@ export function registerJellyfinDashboardRoutes(addon: any, deps: any): void {
     }
   });
 
-  const TITLE_ACTIONS = new Set(['played', 'unplayed', 'playedUpTo', 'watchlist', 'unwatchlist', 'drop', 'undrop', 'rate']);
+  const TITLE_ACTIONS = new Set(['played', 'unplayed', 'playedUpTo', 'unplayedFrom', 'watchlist', 'unwatchlist', 'drop', 'undrop', 'rate']);
 
   addon.post("/api/dashboard/jellyfin/:userUUID/title/action", jellyfinRoute({ reach: "profile" }), async (req, res) => {
     try {

@@ -2039,7 +2039,7 @@ export async function dashboardPersonTitles(userUUID: string, profile: string | 
   });
 }
 
-export type TitleAction = 'played' | 'unplayed' | 'playedUpTo' | 'watchlist' | 'unwatchlist' | 'drop' | 'undrop' | 'rate';
+export type TitleAction = 'played' | 'unplayed' | 'playedUpTo' | 'unplayedFrom' | 'watchlist' | 'unwatchlist' | 'drop' | 'undrop' | 'rate';
 
 export async function dashboardTitleAction(userUUID: string, profile: string | null, action: TitleAction, itemIds: string[], rating: number | null = null): Promise<boolean | null> {
   const { runInViewerScope } = require('./viewer');
@@ -2056,6 +2056,7 @@ export async function dashboardTitleAction(userUUID: string, profile: string | n
       if (action === 'played') await playstate.recordPlayed(req, { ItemId: itemId }, 'dashboard');
       else if (action === 'unplayed') await playstate.recordUnplayed(req, { ItemId: itemId }, 'dashboard');
       else if (action === 'playedUpTo') await playstate.recordPlayedUpTo(req, itemId, 'dashboard');
+      else if (action === 'unplayedFrom') await playstate.recordUnplayedFrom(req, itemId, 'dashboard');
       else {
         const descriptor = await decodeJellyfinId(itemId);
         if (!descriptor) continue;

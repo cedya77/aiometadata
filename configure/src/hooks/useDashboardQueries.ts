@@ -2138,7 +2138,7 @@ export function useJellyfinTitle(userUUID: string | null, profile: string | null
   );
 }
 
-export type JellyfinTitleAction = 'played' | 'unplayed' | 'playedUpTo' | 'watchlist' | 'unwatchlist' | 'drop' | 'undrop' | 'rate';
+export type JellyfinTitleAction = 'played' | 'unplayed' | 'playedUpTo' | 'unplayedFrom' | 'watchlist' | 'unwatchlist' | 'drop' | 'undrop' | 'rate';
 
 export interface JellyfinFoundTitle {
   id: string;

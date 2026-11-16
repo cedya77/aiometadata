@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useEffect, useState, type RefObject } from "react";
-import { Cast, Check, CheckCheck, ListPlus, Undo2 } from "lucide-react";
+import { Cast, Check, CheckCheck, ListPlus, ListRestart, Undo2 } from "lucide-react";
 import type { JellyfinTitle, JellyfinTitleAction, JellyfinTitleEpisode } from "@/hooks/useDashboardQueries";
 import type { MenuItem } from "./JellyfinShared";
 import { sizedArt } from "./art";
@@ -72,6 +72,7 @@ export function episodeMenuItems(ep: JellyfinTitleEpisode, unaired: boolean, at:
     { icon: <Check className="size-4" />, label: "Mark watched", onSelect: () => onAction("played") },
     { icon: <Undo2 className="size-4" />, label: "Mark unwatched", onSelect: () => onAction("unplayed") },
     ...(ep.season === 0 ? [] : [{ icon: <CheckCheck className="size-4" />, label: "Watched up to here", onSelect: () => onAction("playedUpTo") }]),
+    ...(ep.season === 0 || unaired ? [] : [{ icon: <ListRestart className="size-4" />, label: "Unwatched from here", onSelect: () => onAction("unplayedFrom") }]),
     ...(unaired || !onPlaylist ? [] : [{ icon: <ListPlus className="size-4" />, label: "Add to playlist", onSelect: () => onPlaylist(at) }]),
   ];
 }

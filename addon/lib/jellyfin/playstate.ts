@@ -635,7 +635,7 @@ export async function recordStopped(req: any, body: any, source: PlaySourceId = 
 // the mark applies to each aired episode in it. The table is written for all
 // of them before this returns, since the client reads the item back straight
 // after and a half-marked season shows no tick; the trackers are told after.
-async function markEach(req: any, body: any, event: 'played' | 'unplayed', upTo = false, source: PlaySourceId = 'jellyfin', at: number | null = null): Promise<void> {
+async function markEach(req: any, body: any, event: 'played' | 'unplayed', span: MarkSpan | null = null, source: PlaySourceId = 'jellyfin', at: number | null = null): Promise<void> {
   const userUUID = req.params?.userUUID;
   const itemId = bodyItemId(req, body);
   if (!userUUID || !itemId) return;
@@ -649,8 +649,8 @@ async function markEach(req: any, body: any, event: 'played' | 'unplayed', upTo 
 
   await closeOpenSession(userUUID, config, profile, itemId, event === 'played', source);
 
-  const marked = await markedItemIds(userUUID, itemId, upTo);
-  if (upTo) marked.ids = await unplayedAmong(userUUID, config, profile, marked.ids);
+  const marked = await markedItemIds(userUUID, itemId, span);
+  if (span) marked.ids = await stillToMark(userUUID, config, profile, marked.ids, event === 'played');
   await markItems(userUUID, config, profile, marked, event, source, at);
 }
 
@@ -679,6 +679,8 @@ async function closeOpenSession(userUUID: string, config: any, profile: string, 
 }
 
 type MarkTarget = { ids: string[]; meta?: any; scope?: 'season' | 'series'; metaId?: string };
+/** An episode and the aired ones before it, or it and every one after it. */
+type MarkSpan = 'upTo' | 'from';
 
 async function markItems(
   userUUID: string,
@@ -753,33 +755,35 @@ const isPlayable = (descriptor: any): boolean => descriptor?.k === 'movie' || de
 
 /**
  * The item itself, or each aired episode of the season or series it names, with the meta
- * they share. Up to an episode, the aired episodes of its series up to and including it.
+ * they share. Up to an episode, the aired episodes of its series up to and including it;
+ * from one, that episode and every one after it. Specials are left out of both.
  */
 async function markedItemIds(
   userUUID: string,
   itemId: string,
-  upTo = false
+  span: MarkSpan | null = null
 ): Promise<{ ids: string[]; meta?: any; scope?: 'season' | 'series'; metaId?: string }> {
   const descriptor = await decodeJellyfinId(itemId);
-  if (upTo && descriptor?.k === 'episode') {
+  if (span && descriptor?.k === 'episode') {
     const meta = await fetchMeta(userUUID, 'series', descriptor.i);
     const now = Date.now();
     const ids: string[] = [];
+    // -1 before the episode, 0 on it, 1 after it.
+    const place = (season: number | null, episode: number): number =>
+      descriptor.s === null || season === descriptor.s ? Math.sign(episode - descriptor.e) : Math.sign((season ?? 0) - descriptor.s);
     for (const video of Array.isArray(meta?.videos) ? meta.videos : []) {
       const aired = Date.parse(video.released || '');
-      if (Number.isFinite(aired) && aired > now) continue;
+      if (span === 'upTo' && Number.isFinite(aired) && aired > now) continue;
       const parsed = parseStremioId(String(video.id ?? ''));
       const season = parsed?.season ?? null;
       const episode = parsed?.episode;
       if (!parsed || typeof episode !== 'number') continue;
-      if (descriptor.s === null) {
-        if (season !== null || episode > descriptor.e) continue;
-      } else if (season === null || season === 0 || season > descriptor.s || (season === descriptor.s && episode > descriptor.e)) {
-        continue;
-      }
+      if (descriptor.s === null ? season !== null : season === null || season === 0) continue;
+      if (span === 'upTo' ? place(season, episode) > 0 : descriptor.s === 0 || place(season, episode) < 0) continue;
       ids.push(encodeJellyfinId({ k: 'episode', t: descriptor.t, i: parsed.base, s: season, e: episode }));
     }
-    return { ids, meta, scope: 'series', metaId: descriptor.i };
+    // A span from an episode on is narrower than the show, so a tracker that clears a whole show at once is not asked to.
+    return { ids, meta, scope: span === 'upTo' ? 'series' : 'season', metaId: descriptor.i };
   }
   if (!descriptor || (descriptor.k !== 'season' && descriptor.k !== 'series')) return { ids: [itemId] };
 
@@ -863,7 +867,7 @@ export async function recordClientMark(req: any, mark: ClientMark, source: PlayS
 }
 
 export async function recordPlayed(req: any, body: any, source: PlaySourceId = 'jellyfin', at: number | null = null): Promise<void> {
-  await markEach(req, body, 'played', false, source, at);
+  await markEach(req, body, 'played', null, source, at);
 }
 
 /** A played date a client sent, read as ISO time; one still to come is now, and one that is no date is none. */
@@ -875,7 +879,7 @@ export function clientPlayedAt(value: unknown): number | null {
 }
 
 export async function recordUnplayed(req: any, body: any, source: PlaySourceId = 'jellyfin'): Promise<void> {
-  await markEach(req, body, 'unplayed', false, source);
+  await markEach(req, body, 'unplayed', null, source);
 }
 
 export async function recordWatchDate(req: any, itemId: string, from: number | null, to: number, merge = false): Promise<boolean> {
@@ -915,14 +919,20 @@ export async function recordWatchDate(req: any, itemId: string, from: number | n
 
 /** The episode and every aired one before it in its series, specials left out. */
 export async function recordPlayedUpTo(req: any, itemId: string, source: PlaySourceId = 'jellyfin'): Promise<void> {
-  await markEach(req, { ItemId: itemId }, 'played', true, source);
+  await markEach(req, { ItemId: itemId }, 'played', 'upTo', source);
 }
 
-async function unplayedAmong(userUUID: string, config: any, profile: string, ids: string[]): Promise<string[]> {
+/** The episode and every one after it in its series, specials left out. */
+export async function recordUnplayedFrom(req: any, itemId: string, source: PlaySourceId = 'jellyfin'): Promise<void> {
+  await markEach(req, { ItemId: itemId }, 'unplayed', 'from', source);
+}
+
+/** Those not yet the way the mark leaves them, so a span tells the trackers only what it changes. */
+async function stillToMark(userUUID: string, config: any, profile: string, ids: string[], played: boolean): Promise<string[]> {
   const { applyWatchedState, watchedSnapshot } = require('./watched');
   const items = ids.map((id) => ({ Id: id, UserData: {} as any }));
   await applyWatchedState(items, await watchedSnapshot(userUUID, config, { patient: true }), userUUID, profile, config);
-  return items.filter((item) => !item.UserData?.Played).map((item) => item.Id);
+  return items.filter((item) => Boolean(item.UserData?.Played) !== played).map((item) => item.Id);
 }
 
 /**
@@ -1043,7 +1053,7 @@ export async function recordUserData(req: any, body: any, source: PlaySourceId =
 
   const played = body?.Played ?? body?.played;
   if (played === true || played === false) {
-    await markEach(req, { ItemId: itemId }, played ? 'played' : 'unplayed', false, source, played ? at : null);
+    await markEach(req, { ItemId: itemId }, played ? 'played' : 'unplayed', null, source, played ? at : null);
     return { played, positionMs: 0, ...(played && at !== null ? { at } : {}) };
   }
 
