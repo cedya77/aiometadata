@@ -1540,9 +1540,10 @@ export class DatabaseCore {
     videoId: string,
     patch: { positionMs?: number; runtimeMs?: number; played?: boolean; lastPlayedAt?: number | null; lastPlayedKind?: 'viewing' | 'mark'; origin?: string | null; watch?: WatchPatch },
     profile = '',
-    writtenAt?: number
+    writtenAt?: number,
+    held?: any
   ): Promise<void> {
-    const existing = await this.getPlaystate(userUUID, videoId, profile);
+    const existing = held === undefined ? await this.getPlaystate(userUUID, videoId, profile) : held;
     const now = writtenAt ?? Date.now();
 
     const positionMs = patch.positionMs ?? existing?.position_ms ?? 0;
