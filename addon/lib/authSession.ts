@@ -139,19 +139,22 @@ async function scanSessions(
     for (const key of keys) {
       const raw = await redis.get(key);
       if (!raw) continue;
+      let record: any;
       try {
-        await visit(key.slice(SESSION_PREFIX.length), JSON.parse(raw));
+        record = JSON.parse(raw);
       } catch {
         // Unreadable value, leave it to expire on its own.
+        continue;
       }
+      await visit(key.slice(SESSION_PREFIX.length), record);
     }
   } while (cursor !== '0');
 }
 
 /**
  * Sessions minted before the per-account index existed carry no member, so the
- * index alone would report them revoked while they kept working. One sweep at
- * startup adopts them; after that createSession is the only writer it needs.
+ * index alone would undercount them. One sweep at startup adopts them; once a
+ * sweep finishes without an error, later startups skip it.
  */
 export async function backfillSessionIndex(): Promise<number> {
   let adopted = 0;
@@ -178,13 +181,13 @@ export async function backfillSessionIndex(): Promise<number> {
 
 /**
  * Every session for one account, used when its access is revoked. The index
- * answers first; until the startup backfill has adopted every older session, or
- * after an index write failed, a sweep catches anything missing from it.
+ * answers first, then a sweep catches anything missing from it: revoking is
+ * rare and interactive, so it is worth the scan to never report a success that
+ * left a session alive.
  */
 export async function destroyAccountSessions(accountId: string): Promise<number> {
   const key = accountSessionsKey(accountId);
   const removed = new Set<string>();
-  let indexRead = true;
 
   try {
     const ids: string[] = await redis.zrange(key, 0, '-1');
@@ -195,10 +198,7 @@ export async function destroyAccountSessions(accountId: string): Promise<number>
     await redis.del(key);
   } catch (error: any) {
     logger.warn(`Could not read the session index for ${accountId}: ${error.message}`);
-    indexRead = false;
   }
-
-  if (indexRead && (await indexComplete())) return removed.size;
 
   try {
     await scanSessions(async (id, record) => {
