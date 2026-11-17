@@ -5,7 +5,7 @@ import { envInt } from '../../utils/envNumber';
 import { yieldEvery } from '../../utils/yieldEvery';
 import { parseStremioId } from './idsCodec';
 import { bulkTimes } from './bulkMarks';
-import { aliasConfigFor, groupBySpelling, getPlaystatesAcross, upsertPlaystateEverywhere, videoIdAliases } from './aliases';
+import { groupBySpelling, getPlaystatesAcross, upsertPlaystateEverywhere, videoIdAliases } from './aliases';
 import { scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
 import { isAnimeList, trackerOf } from '../trackers';
@@ -91,9 +91,8 @@ export function furthestPerEntry(service: string, viewings: Viewing[], scope: (v
   return [...furthest.values()].map(({ viewing }) => viewing);
 }
 
-async function ownViewings(userUUID: string, profiles: Set<string>): Promise<Viewing[]> {
+async function ownViewings(userUUID: string, profiles: Set<string>, config: any): Promise<Viewing[]> {
   const rows = (await database.listWatchesByOrigin(userUUID, [...OWN_ORIGINS])).filter((row: any) => profiles.has(row.profile));
-  const config = await aliasConfigFor(userUUID);
   const byMoment = new Map<string, any[]>();
   for (const row of rows) {
     const key = `${row.profile}|${row.watched_at}`;
@@ -160,9 +159,8 @@ async function groupImported<T extends { video_id: any; last_played_at: number }
   return [...joined.values()];
 }
 
-async function importedViewings(userUUID: string, profiles: Set<string>, origins: string[]): Promise<Viewing[]> {
+async function importedViewings(userUUID: string, profiles: Set<string>, origins: string[], config: any): Promise<Viewing[]> {
   if (!origins.length) return [];
-  const config = await aliasConfigFor(userUUID);
   const moments = new Map<string, any[]>();
   const add = (key: string, row: any) => {
     if (!moments.has(key)) moments.set(key, []);
@@ -203,7 +201,7 @@ export function belongsOn(service: string, viewing: Viewing, config: any): boole
 }
 
 export async function driftFor(userUUID: string, source: DriftSource): Promise<Drift> {
-  const config = await aliasConfigFor(userUUID);
+  const config = source.scoped;
   const { indexedSnapshot, watchedAmong, seriesCountsAmong } = require('./watched');
   const { pendingWatches } = require('../trackerOutbox');
   const { sourceKeyFor } = require('./trackerMirror');
@@ -221,7 +219,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   const unmarking = new Set<string>(pending.filter((p: any) => !p.played).map((p: any) => String(p.videoId)));
   const settled = readAt - envInt('JELLYFIN_TRACKER_DRIFT_SETTLE_MINUTES', 15, 0) * 60 * 1000;
 
-  const mine = (await ownViewings(userUUID, source.keys)).map((v) => asListed(source.service, v)).filter((v) => belongsOn(source.service, v, source.scoped));
+  const mine = (await ownViewings(userUUID, source.keys, source.scoped)).map((v) => asListed(source.service, v)).filter((v) => belongsOn(source.service, v, source.scoped));
   const sent = new Map<string, number>();
   for (const row of (await database.listTrackerActivity([sourceKey], settled, 2000).catch(() => [])) as any[]) {
     if (row.kind !== 'sent' || !row.video || !WATCH_OPS.has(String(row.op))) continue;
@@ -317,7 +315,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   const origins = [...require('./historyTransfer').importedOrigins().keys()] as string[];
   const left = new Set<string>(((await database.listLeftOut(userUUID, sourceKey).catch(() => [])) as any[]).map((row) => `${row.profile}|${row.origin}|${row.video_id}`));
   const leftOut: Record<string, number> = {};
-  const brought = (await importedViewings(userUUID, source.keys, origins)).map((v) => asListed(source.service, v)).filter((v) => {
+  const brought = (await importedViewings(userUUID, source.keys, origins, source.scoped)).map((v) => asListed(source.service, v)).filter((v) => {
     if (!belongsOn(source.service, v, source.scoped)) return false;
     if (!v.ids.some((id) => left.has(`${v.profile}|${v.origin}|${id}`))) return true;
     leftOut[v.origin!] = (leftOut[v.origin!] ?? 0) + 1;
@@ -370,11 +368,11 @@ async function statesFor(userUUID: string, viewings: Viewing[]): Promise<Map<str
 
 async function aheadOf(userUUID: string, source: DriftSource, sourceKey: string, since: number, unmarking: Set<string>): Promise<Viewing[]> {
   const rows: any[] = await database.watchIndexSince(sourceKey, since);
-  const config = await aliasConfigFor(userUUID);
+  const config = source.scoped;
   const { ourSpellings } = require('./trackerMatch');
   const candidates: Viewing[] = [];
   for (const row of rows) {
-    const ours: string[] = await ourSpellings(userUUID, source.service, String(row.video_id)).catch(() => []);
+    const ours: string[] = await ourSpellings(userUUID, source.service, String(row.video_id), config).catch(() => []);
     const ids = [...ours, String(row.video_id), ...(await videoIdAliases(String(row.video_id), config).catch(() => [] as string[]))];
     if (ids.some((id) => unmarking.has(id))) continue;
     const viewing = viewingOf('', row.at, ids);
@@ -502,11 +500,11 @@ export async function pullDrift(userUUID: string, source: DriftSource, viewings:
     await pause();
     const video = spellingFor(source.service, viewing.ids);
     for (const profile of source.keys) {
-      const row = (await getPlaystatesAcross(userUUID, [video], profile)).get(video);
+      const row = (await getPlaystatesAcross(userUUID, [video], profile, source.scoped)).get(video);
       if (row && Number(row.played) === 1) {
         for (const id of viewing.ids) await database.logWatch(userUUID, profile, id, { at: viewing.at, kind: 'dated' }, true, source.service);
       } else {
-        await upsertPlaystateEverywhere(userUUID, video, { positionMs: 0, played: true, lastPlayedAt: viewing.at, lastPlayedKind: bulk.get(viewing.profile)?.has(viewing.at) ? 'mark' : 'viewing', origin: source.service, watch: { at: viewing.at, kind: 'dated' } }, profile, viewing.ids);
+        await upsertPlaystateEverywhere(userUUID, video, { positionMs: 0, played: true, lastPlayedAt: viewing.at, lastPlayedKind: bulk.get(viewing.profile)?.has(viewing.at) ? 'mark' : 'viewing', origin: source.service, watch: { at: viewing.at, kind: 'dated' } }, profile, viewing.ids, source.scoped);
       }
       added += 1;
     }

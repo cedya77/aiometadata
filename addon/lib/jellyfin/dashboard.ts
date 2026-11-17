@@ -1102,7 +1102,7 @@ async function saveFilmMatch(userUUID: string, key: string, source: SyncSource, 
   if (!parsed || parsed.episode === null || parsed.episode === undefined || target.kind === 'tv') return null;
   const film = { ids: target.ids, title: target.title, year: target.year, posterUrl: target.posterUrl, kind: 'movie' };
   if (!filmSpelling(film)) return null;
-  const spellings = [video, ...((await videoIdAliases(video).catch(() => [])) as string[])];
+  const spellings = [video, ...((await videoIdAliases(video, source.scoped).catch(() => [])) as string[])];
   const bases = [...new Set(spellings.filter((id) => {
     const spelled = parseStremioId(id);
     return spelled && spelled.episode !== null && spelled.episode !== undefined;

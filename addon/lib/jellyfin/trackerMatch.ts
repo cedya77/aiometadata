@@ -342,11 +342,11 @@ export async function theirSpellings(userUUID: string, service: string, ids: str
   return out;
 }
 
-export async function ourSpellings(userUUID: string, service: string, id: string): Promise<string[]> {
+export async function ourSpellings(userUUID: string, service: string, id: string, config?: any): Promise<string[]> {
   if (!matchable(service)) return [];
   const index = await indexFor(userUUID, service);
   if (!index.byTheirs.size) return [];
-  const aliasConfig = await aliasConfigFor(userUUID);
+  const aliasConfig = config ?? (await aliasConfigFor(userUUID));
   const parsed = parseStremioId(id);
   const matches = parsed ? index.byTheirs.get(parsed.base) : null;
   if (!parsed || !matches?.length) return [];
