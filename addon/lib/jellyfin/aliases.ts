@@ -230,6 +230,19 @@ function otherFilmSpelling(videoId: string): string | null {
   return null;
 }
 
+const FILM_ID = /^(tt\d+|tmdb:\d+)$/;
+
+/** A film's other id of IMDb and TMDB, where the movie mapping pairs them both ways; the two share no alias. */
+export function filmTwin(videoId: string): string | null {
+  if (!FILM_ID.test(videoId)) return null;
+  try {
+    const other = otherFilmSpelling(videoId);
+    return other && otherFilmSpelling(other) === videoId ? other : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function filmsHeldElsewhere(userUUID: string, videoIds: string[], profile = ''): Promise<Map<string, any>> {
   const candidates = new Map<string, string>();
   for (const videoId of videoIds) {
@@ -265,7 +278,7 @@ export async function dedupeByAlias<T extends { videoId: string }>(rows: T[]): P
 
 const BREATH_EVERY = 500;
 
-/** Which title each id belongs to: known aliases, and the spellings one play through this server wrote together. */
+/** Which title each id belongs to: known aliases, a film's IMDb and TMDB ids, and the spellings one play through this server wrote together. */
 export async function spellingRoots(ids: string[], writtenAt: (i: number) => unknown, breathe = false): Promise<(id: string) => string> {
   // A history longer than the memo would only push out what others are using, and find nothing it put there.
   const aliasesOf = breathe && ids.length > aliasMemo.max / 2 ? (id: string) => aliasMemo.peek(id) ?? computeVideoIdAliases(id) : videoIdAliases;
@@ -288,6 +301,8 @@ export async function spellingRoots(ids: string[], writtenAt: (i: number) => unk
     const id = ids[i];
     if (breathe && i % BREATH_EVERY === BREATH_EVERY - 1) await new Promise((resolve) => setImmediate(resolve));
     for (const alias of await aliasesOf(id).catch(() => [] as string[])) union(id, alias);
+    const twin = filmTwin(id);
+    if (twin) union(id, twin);
     const written = writtenAt(i);
     if (!written) continue;
     const parsed = parseStremioId(id);

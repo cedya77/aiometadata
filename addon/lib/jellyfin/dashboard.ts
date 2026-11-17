@@ -392,7 +392,7 @@ const stillGood = (held: StatsMark, now: StatsMark): boolean =>
   held.counts === now.counts && (held.moment === now.moment
     || now.at - held.at < envInt('JELLYFIN_DASHBOARD_STATS_PLAYING_SECONDS', 300, 0) * 1000);
 
-const statsStoreKey = (userUUID: string) => `jf:dashstats:v4:${userUUID}`;
+const statsStoreKey = (userUUID: string) => `jf:dashstats:v5:${userUUID}`;
 
 async function storedStats(userUUID: string): Promise<(StatsMark & { stats: Map<string, ProfileStats> }) | null> {
   if (!redis) return null;
