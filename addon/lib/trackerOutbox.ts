@@ -206,6 +206,34 @@ function wakeBy(at: number | null): void {
   wakeTimer.unref?.();
 }
 
+/**
+ * The ready writes to start now, one per lane. Each tracker with work gets an
+ * even share of the slots first; one may then take what the others leave, short
+ * of the last slot while another tracker has a write ready or in flight.
+ */
+export function pickWrites<R extends { service: string; lane: string }>(rows: R[], active: Set<string>, total: number): R[] {
+  const slots = total - active.size;
+  const running = new Map<string, number>();
+  for (const lane of active) {
+    const service = lane.split(':')[0];
+    running.set(service, (running.get(service) ?? 0) + 1);
+  }
+  const busy = new Set<string>([...running.keys(), ...rows.map((row) => row.service)]);
+  const share = Math.max(1, Math.ceil(total / Math.max(1, busy.size)));
+  const taking: R[] = [];
+  for (const round of [0, 1]) {
+    for (const row of rows) {
+      if (taking.length >= slots) break;
+      const most = round === 0 ? share : [...busy].some((service) => service !== row.service) ? Math.max(1, total - 1) : total;
+      const held = running.get(row.service) ?? 0;
+      if (held >= most || active.has(row.lane) || taking.includes(row)) continue;
+      running.set(row.service, held + 1);
+      taking.push(row);
+    }
+  }
+  return taking;
+}
+
 async function pump(): Promise<void> {
   if (passStartedAt) {
     if (Date.now() - passStartedAt < PASS_STUCK_MS) {
@@ -240,22 +268,7 @@ async function pump(): Promise<void> {
       if (slots > 0) {
         const rows: any[] = await database.readyTrackerOutbox(now, total);
         if (pass !== passId) return;
-        const running = new Map<string, number>();
-        for (const lane of active) {
-          const service = lane.split(':')[0];
-          running.set(service, (running.get(service) ?? 0) + 1);
-        }
-        // Each tracker gets half the slots first; one may take what the others leave, short of the last.
-        const taking: any[] = [];
-        for (const most of [Math.max(1, Math.ceil(total / 2)), Math.max(1, total - 1)]) {
-          for (const row of rows) {
-            if (taking.length >= slots) break;
-            const held = running.get(row.service) ?? 0;
-            if (held >= most || active.has(row.lane) || taking.includes(row)) continue;
-            running.set(row.service, held + 1);
-            taking.push(row);
-          }
-        }
+        const taking = pickWrites(rows, active, total);
         const claimed = new Set<number>(await database.claimTrackerOutbox(taking.map((row) => row.id), Date.now() + leaseMs()));
         for (const row of taking) {
           if (claimed.has(row.id)) send(row);
