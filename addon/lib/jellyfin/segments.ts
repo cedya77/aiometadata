@@ -153,11 +153,11 @@ async function fromAniSkip(lookup: Lookup): Promise<Segment[]> {
 }
 
 /** The MAL entry and episode number an episode id is known under, if any. */
-export async function malEpisodeFor(videoId: string | null): Promise<{ malId: number; malEpisode: number } | null> {
+export async function malEpisodeFor(videoId: string | null, config: any = {}): Promise<{ malId: number; malEpisode: number } | null> {
   if (!videoId) return null;
   const { parseStremioId } = require('./ids');
   const { videoIdAliases } = require('./aliases');
-  const spellings = [videoId, ...(await videoIdAliases(videoId))];
+  const spellings = [videoId, ...(await videoIdAliases(videoId, config))];
   for (const spelling of spellings) {
     const parsed = parseStremioId(spelling);
     if (parsed?.idType !== 'mal' || !parsed.episode) continue;

@@ -393,10 +393,10 @@ async function ownRows(userUUID: string, profile: string, config: any): Promise<
   // The earliest write of a batch is the spelling the client played under.
   const { dedupeByAlias, videoIdAliases } = require('./aliases');
   const { movieSpellings } = require('./watched');
-  const deduped: ResumeRow[] = await dedupeByAlias([...rows].sort((a, b) => (a.writtenAt ?? 0) - (b.writtenAt ?? 0)));
+  const deduped: ResumeRow[] = await dedupeByAlias([...rows].sort((a, b) => (a.writtenAt ?? 0) - (b.writtenAt ?? 0)), config);
   const spellingsOf = new Map<string, string[]>();
   for (const row of deduped) {
-    spellingsOf.set(row.videoId, row.kind === 'movie' ? await movieSpellings(row.videoId, config) : await videoIdAliases(row.videoId));
+    spellingsOf.set(row.videoId, row.kind === 'movie' ? await movieSpellings(row.videoId, config) : await videoIdAliases(row.videoId, config));
   }
   let held = new Map<string, any>();
   try {
@@ -422,7 +422,7 @@ export async function resumeSnapshot(userUUID: string, config: any): Promise<Res
   let known = new Map<string, any>();
   try {
     const { getPlaystatesAcross } = require('./aliases');
-    known = await getPlaystatesAcross(userUUID, tracker.map((r) => r.videoId), profile);
+    known = await getPlaystatesAcross(userUUID, tracker.map((r) => r.videoId), profile, config);
   } catch (error: any) {
     logger.debug(`Own playstate rows unavailable: ${error?.message || error}`);
   }
@@ -437,7 +437,7 @@ export async function oneRowPerTitle(candidates: ResumeRow[], config: any): Prom
   const taken = new Set<string>();
   const rows: ResumeRow[] = [];
   for (const row of candidates) {
-    const spellings = [row.videoId, await titleIdentity(row.videoId, config), ...(await videoIdAliases(row.videoId))];
+    const spellings = [row.videoId, await titleIdentity(row.videoId, config), ...(await videoIdAliases(row.videoId, config))];
     if (spellings.some((spelling) => taken.has(spelling))) continue;
     for (const spelling of spellings) taken.add(spelling);
     rows.push(row);
@@ -470,7 +470,7 @@ export async function trackerPositions(userUUID: string, config: any): Promise<M
   const { titleIdentity } = require('./canonicalIds');
   const out = new Map<string, ResumeRow>();
   for (const row of await trackerSnapshot(userUUID, config)) {
-    for (const spelling of [row.videoId, ...(await videoIdAliases(row.videoId)), await titleIdentity(row.videoId, config)]) {
+    for (const spelling of [row.videoId, ...(await videoIdAliases(row.videoId, config)), await titleIdentity(row.videoId, config)]) {
       if (!out.has(spelling)) out.set(spelling, row);
     }
   }
@@ -495,7 +495,7 @@ export async function trackerSnapshot(userUUID: string, config: any): Promise<Re
     if (!held || row.updatedAt > held.updatedAt) merged.set(row.videoId, row);
   }
   const { dedupeByAlias } = require('./aliases');
-  const rows: ResumeRow[] = await dedupeByAlias([...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt));
+  const rows: ResumeRow[] = await dedupeByAlias([...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt), config);
   if (parts.length && parts.every((part) => part.ok)) await followTrackerClears(userUUID, config, rows);
   return rows.filter((row) => !belowTrackerFloor(row.progress));
 }
@@ -601,7 +601,7 @@ async function clearDropped(userUUID: string, profile: string, config: any, befo
   for (const id of gone) {
     const parsed = parseStremioId(id);
     const isEpisode = Boolean(parsed && parsed.episode !== null && parsed.episode !== undefined);
-    const spellings = [id, ...(isEpisode ? await videoIdAliases(id) : await movieSpellings(id, config))];
+    const spellings = [id, ...(isEpisode ? await videoIdAliases(id, config) : await movieSpellings(id, config))];
     if (spellings.some((spelling) => current.has(spelling))) continue;
 
     const rows = [...(await database.getPlaystates(userUUID, spellings, profile)).values()].filter((row: any) => Number(row.position_ms) > 0);

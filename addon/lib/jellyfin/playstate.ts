@@ -901,7 +901,7 @@ export async function recordWatchDate(req: any, itemId: string, from: number | n
   const { profileKey } = require('./profiles');
   const { videoIdAliases } = require('./aliases');
   const profile = profileKey(config);
-  const spellings = [session.videoId, ...session.aliases, ...(await videoIdAliases(session.videoId).catch(() => [] as string[]))];
+  const spellings = [session.videoId, ...session.aliases, ...(await videoIdAliases(session.videoId, config).catch(() => [] as string[]))];
   const runtimeMs = session.runtimeMs ?? 0;
   const sameViewing = runtimeMs > 0 ? runtimeMs : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
   const database: any = require('../database');
@@ -1084,7 +1084,7 @@ export async function recordUserData(req: any, body: any, source: PlaySourceId =
   const { profileKey } = require('./profiles');
   const profile = profileKey(config);
   deletePosition(`${userUUID}:${profile}:${itemId}`);
-  await upsertPlaystateEverywhere(userUUID, session.videoId, { positionMs, runtimeMs: session.runtimeMs ?? 0, ...(positionMs > 0 ? { lastPlayedAt: at ?? Date.now() } : {}), origin: 'server' }, profile, session.aliases);
+  await upsertPlaystateEverywhere(userUUID, session.videoId, { positionMs, runtimeMs: session.runtimeMs ?? 0, ...(positionMs > 0 ? { lastPlayedAt: at ?? Date.now() } : {}), origin: 'server' }, profile, session.aliases, config);
   announce(userUUID, config, profile, session).catch((error: any) =>
     logger.debug(`User data push failed for ${session.videoId}: ${error?.message || error}`)
   );

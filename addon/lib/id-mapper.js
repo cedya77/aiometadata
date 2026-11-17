@@ -2683,7 +2683,8 @@ async function resolveTmdbEpisodesFromKitsu(kitsuId, kitsuEpisodeNumbers, config
     await applyTmdbEpisodeNumbers(map, config);
     return map;
   } catch (error) {
-    logger.error(`[ID Mapper] Error resolving TMDB episodes from Kitsu ID ${kitsuId}:`, error);
+    if (error?.code === 'TMDB_KEY_MISSING') logger.debug(`[ID Mapper] Error resolving TMDB episodes from Kitsu ID ${kitsuId}: ${error.message}`);
+    else logger.error(`[ID Mapper] Error resolving TMDB episodes from Kitsu ID ${kitsuId}:`, error);
     return new Map();
   }
 }
@@ -2707,7 +2708,8 @@ async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber, config =
     await applyTmdbEpisodeNumbers(tmdbEpisodeMap, config);
     return tmdbEpisodeMap.get(kitsuEpisodeNumber) || null;
   } catch (error) {
-    logger.error(`[ID Mapper] Error resolving TMDB episode from Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber}:`, error);
+    if (error?.code === 'TMDB_KEY_MISSING') logger.debug(`[ID Mapper] Error resolving TMDB episode from Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber}: ${error.message}`);
+    else logger.error(`[ID Mapper] Error resolving TMDB episode from Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber}:`, error);
     return null;
   }
 }

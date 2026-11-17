@@ -62,7 +62,7 @@ export function entryHomeBase(userUUID: string, config: any, base: string): Prom
     const latest: { videoId: string; at: number } | null = await database.latestOwnPlayAmong(userUUID, profile, showSpellings(base, mapping)).catch(() => null);
     if (latest) {
       const { videoIdAliases } = require('./aliases');
-      const group: Map<string, any> = await database.getPlaystates(userUUID, [latest.videoId, ...(await videoIdAliases(latest.videoId))], profile).catch(() => new Map());
+      const group: Map<string, any> = await database.getPlaystates(userUUID, [latest.videoId, ...(await videoIdAliases(latest.videoId, config))], profile).catch(() => new Map());
       const lead = [...group.values()]
         .filter((row: any) => Number(row.last_played_at) === latest.at)
         .sort((a: any, b: any) => (Number(a.updated_at) - Number(b.updated_at)) || (String(a.video_id) < String(b.video_id) ? -1 : String(a.video_id) > String(b.video_id) ? 1 : 0))[0];
@@ -88,7 +88,7 @@ export async function episodeHome(userUUID: string, config: any, videoId: string
   const page = await seriesIndex(userUUID, home).catch(() => null);
   if (!page?.videos?.length) return null;
   const { videoIdAliases } = require('./aliases');
-  const wanted = new Set<string>([videoId, ...(await videoIdAliases(videoId))]);
+  const wanted = new Set<string>([videoId, ...(await videoIdAliases(videoId, config))]);
   const video = page.videos.find((candidate: any) => wanted.has(String(candidate.id)));
   if (!video) return null;
   const placed = parseStremioId(String(video.id));

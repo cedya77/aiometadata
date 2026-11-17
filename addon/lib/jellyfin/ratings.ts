@@ -44,7 +44,7 @@ export function titleKeys(metaId: string, ids: Record<string, any>): string[] {
 }
 
 /** Every id a rated movie, series, season or episode is known by, each holding its rating. */
-async function keysFor(descriptor: Descriptor, ids: Record<string, any>, metaId: string): Promise<string[]> {
+async function keysFor(descriptor: Descriptor, ids: Record<string, any>, metaId: string, config: any = {}): Promise<string[]> {
   if (descriptor.k === 'season') {
     return [...new Set([descriptor.i, ...titleKeys(metaId, ids)])].map((base) => seasonKey(base, descriptor.s));
   }
@@ -55,7 +55,7 @@ async function keysFor(descriptor: Descriptor, ids: Record<string, any>, metaId:
   const own = stremioIdFor(descriptor);
   if (own) {
     keys.add(own);
-    for (const alias of await videoIdAliases(own)) keys.add(alias);
+    for (const alias of await videoIdAliases(own, config)) keys.add(alias);
   }
   return [...keys];
 }
@@ -71,7 +71,7 @@ export async function rateItem(userUUID: string, config: any, descriptor: Descri
   const meta = await fetchMeta(userUUID, stremioType, descriptor.i);
   if (!meta) return false;
   const ids = idsFor(meta, stremioType);
-  const keys = await keysFor(descriptor, ids, String(meta.id));
+  const keys = await keysFor(descriptor, ids, String(meta.id), config);
   const profile = profileKey(config);
   const held: any[] = await database.listRatings(userUUID, profile, keys).catch(() => []);
   const previous = held.find((row) => row.pmdb_id)?.pmdb_id ?? null;

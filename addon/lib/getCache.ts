@@ -781,7 +781,8 @@ async function cacheWrapGlobalInternal(key: string, method: () => Promise<any>, 
     }
     return result;
   } catch (error: any) {
-    globalCacheLogger.error(`Method failed for cache key ${versionedKey}:`, error);
+    if (error?.code === 'TMDB_KEY_MISSING') globalCacheLogger.debug(`Method failed for cache key ${versionedKey}: ${error.message}`);
+    else globalCacheLogger.error(`Method failed for cache key ${versionedKey}:`, error);
       updateCacheHealth(versionedKey, 'error', false);
 
       if (enableErrorCaching) {

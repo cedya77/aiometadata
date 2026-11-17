@@ -123,13 +123,13 @@ function merged(into: HistoryEntry, entry: HistoryEntry): void {
 const SPELLINGS_READ = 500;
 
 /** Each row's other spellings outside these rows, with `earlier` set on those a page before already read. */
-async function spellingsOutside(rows: any[], read: (videoIds: string[]) => Promise<any[]>): Promise<Map<any, any[]>> {
+async function spellingsOutside(rows: any[], read: (videoIds: string[]) => Promise<any[]>, config: any = {}): Promise<Map<any, any[]>> {
   const at = (row: any, videoId = String(row.video_id)) => `${row.profile ?? ''}|${videoId}`;
   const here = new Set(rows.map((row) => at(row)));
   const wanted = new Map<any, string[]>();
   for (const row of rows) {
     const id = String(row.video_id);
-    const others = [...(await videoIdAliases(id).catch(() => [] as string[])), filmTwin(id)]
+    const others = [...(await videoIdAliases(id, config).catch(() => [] as string[])), filmTwin(id)]
       .filter((other): other is string => Boolean(other) && !here.has(at(row, other as string)));
     if (others.length) wanted.set(row, others);
   }
@@ -158,7 +158,8 @@ export async function historyPage(
   resolve: (entries: HistoryEntry[]) => Promise<Array<any | null>>,
   limit: number,
   after?: HistoryCursor,
-  readSpellings?: (videoIds: string[], pagedThrough?: HistoryCursor) => Promise<any[]>
+  readSpellings?: (videoIds: string[], pagedThrough?: HistoryCursor) => Promise<any[]>,
+  config: any = {}
 ): Promise<{ entries: Array<HistoryEntry & { item: any | null }>; cursor: string | null }> {
   const asked = limit * 3 + 1;
   const raw = await read(asked, after);
@@ -175,9 +176,9 @@ export async function historyPage(
     if (!byProfile.has(key)) byProfile.set(key, []);
     byProfile.get(key)!.push(row);
   }
-  const outside = readSpellings ? await spellingsOutside(kept, (videoIds) => readSpellings(videoIds, after)) : new Map<any, any[]>();
+  const outside = readSpellings ? await spellingsOutside(kept, (videoIds) => readSpellings(videoIds, after), config) : new Map<any, any[]>();
   // A title a page before listed under another spelling is not listed again.
-  const groups = (await Promise.all([...byProfile.values()].map((rows) => groupBySpelling(rows))))
+  const groups = (await Promise.all([...byProfile.values()].map((rows) => groupBySpelling(rows, config))))
     .flat()
     .filter((group) => !group.some((row) => outside.get(row)?.some((other) => Number(other.earlier) === 1)));
   const indexOf = new Map(kept.map((row, i) => [row, i]));

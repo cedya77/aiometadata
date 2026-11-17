@@ -129,7 +129,7 @@ export const traktHistorySource: HistorySource = {
     const episodes = new Map<string, Promise<string[]>>();
     const episodeOf = (row: any, season: number, episode: number) => {
       const key = `${JSON.stringify(row.show?.ids ?? {})}|${season}|${episode}`;
-      if (!episodes.has(key)) episodes.set(key, tmdbEpisodeSpellings(row.show?.ids, season, episode, onTvdb(row)));
+      if (!episodes.has(key)) episodes.set(key, tmdbEpisodeSpellings(row.show?.ids, season, episode, onTvdb(row), config));
       return episodes.get(key)!;
     };
     const spellingsOf = async (row: any): Promise<(Found & { label: string }) | null> => {

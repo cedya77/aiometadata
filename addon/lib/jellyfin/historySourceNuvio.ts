@@ -47,7 +47,7 @@ export const nuvioHistorySource: HistorySource = {
 
   detects: (upload) => isNuvioLibrary(upload.json),
 
-  async read(upload, { userUUID }) {
+  async read(upload, { userUUID, config }) {
     const profiles = readNuvioLibrary(upload.json);
 
     const shows = new Map<string, string>();
@@ -64,7 +64,7 @@ export const nuvioHistorySource: HistorySource = {
       if (!memo.has(key)) memo.set(key, make().catch(() => [] as string[]));
       return memo.get(key)!;
     };
-    const withAliases = (id: string) => remembered(id, async () => unique([id, ...(await videoIdAliases(id).catch(() => [] as string[]))]));
+    const withAliases = (id: string) => remembered(id, async () => unique([id, ...(await videoIdAliases(id, config).catch(() => [] as string[]))]));
     const titleSpellings = (id: string, kind: NuvioKind) => {
       if (isAnimeId(id)) return withAliases(id);
       const [scheme, number] = id.split(':');

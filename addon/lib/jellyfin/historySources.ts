@@ -239,20 +239,20 @@ export function tmdbSeasonSpellings(ids: TitleIds | null | undefined, season: nu
 
 export type EpisodeAt = { season: number; episode: number };
 
-export async function tmdbEpisodeSpellings(ids: TitleIds | null | undefined, season: number, episode: number, onTvdb: EpisodeAt | null = null): Promise<string[]> {
+export async function tmdbEpisodeSpellings(ids: TitleIds | null | undefined, season: number, episode: number, onTvdb: EpisodeAt | null = null, config: any = {}): Promise<string[]> {
   const show = showIds(ids);
   const primary = show.tmdb ? `tmdb:${show.tmdb}:${season}:${episode}` : null;
   const tvdbNumbered = onTvdb && show.tvdb ? [`tvdb:${show.tvdb}:${onTvdb.season}:${onTvdb.episode}`, show.imdb && `${show.imdb}:${onTvdb.season}:${onTvdb.episode}`] : null;
   if (!show.anime && tvdbNumbered) return unique([primary, ...tvdbNumbered]);
   if (show.anime) {
-    const kitsu = show.tmdb ? await kitsuForTmdb(show.tmdb, season, episode).catch(() => null) : null;
+    const kitsu = show.tmdb ? await kitsuForTmdb(show.tmdb, season, episode, config).catch(() => null) : null;
     const anime = kitsu ? `kitsu:${kitsu.kitsuId}:${kitsu.episodeNumber}` : null;
     const found = anime
-      ? [anime, ...(await videoIdAliases(anime).catch(() => [] as string[])).filter((id) => !id.startsWith('tmdb:'))]
-      : primary ? await videoIdAliases(primary).catch(() => [] as string[]) : [];
+      ? [anime, ...(await videoIdAliases(anime, config).catch(() => [] as string[])).filter((id) => !id.startsWith('tmdb:'))]
+      : primary ? await videoIdAliases(primary, config).catch(() => [] as string[]) : [];
     return unique([primary, ...found, ...(tvdbNumbered && !found.some((id) => id.startsWith('tvdb:')) ? tvdbNumbered : [])]);
   }
-  const aliases = primary ? await videoIdAliases(primary).catch(() => [] as string[]) : [];
+  const aliases = primary ? await videoIdAliases(primary, config).catch(() => [] as string[]) : [];
   return unique([primary, ...aliases, show.imdb && `${show.imdb}:${season}:${episode}`, show.tvdb && `tvdb:${show.tvdb}:${season}:${episode}`]);
 }
 
