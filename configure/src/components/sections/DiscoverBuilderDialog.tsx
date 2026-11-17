@@ -1339,6 +1339,8 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     setIncludeAdult(config.includeAdult);
     setReleasedOnly(false);
     setTmdbTvStatuses([]);
+    setTmdbMovieReleaseTypes([]);
+    setTmdbTvTypes([]);
     setCacheTTL(null);
 
     setReferences(null);
@@ -1353,6 +1355,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     setReleaseRegion('');
     setCertificationCountry('');
     setCertificationValue('');
+    setCertificationMode('exact');
 
     setWatchRegion('');
     setWatchProviders([]);
@@ -1397,6 +1400,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     setSeriesDatePreset('clear');
     setAirDateFrom('');
     setAirDateTo('');
+    setAirDatePreset('clear');
     setAnilistFormats([]);
     setAnilistStatus('');
     setAnilistSeason('');
