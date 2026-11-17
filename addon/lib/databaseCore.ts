@@ -32,6 +32,28 @@ const IMPORTED_PLAYSTATE = `(origin IS NOT NULL AND origin NOT IN ('server', 'pl
 // Under SQLite's bound-parameter limit with room for the other parameters.
 export const PLAYSTATE_KEY_BATCH = 500;
 
+// token_refs holds every value of these fields in a configuration's apiKeys or a Jellyfin user's, kept by triggers.
+const TOKEN_REF_FIELDS = ['simklTokenId', 'malTokenId', 'anilistTokenId', 'traktTokenId', 'movieLensCredId', 'mdblist', 'publicmetadb'];
+const TOKEN_REF_MAX = 255;
+const TOKEN_REF_TAG = crypto.createHash('sha1').update(`1:${TOKEN_REF_MAX}:${TOKEN_REF_FIELDS.join(',')}`).digest('hex').slice(0, 8);
+const TOKEN_REF_NAMES = TOKEN_REF_FIELDS.map((field) => `'${field}'`).join(', ');
+
+function sqliteTokenRefs(doc: string, uuid: string, source = ''): string {
+  return `SELECT t.key, t.atom, ${uuid} FROM ${source}json_tree(CASE WHEN json_valid(${doc}) THEN ${doc} ELSE '{}' END) t
+    WHERE t.type = 'text' AND t.key IN (${TOKEN_REF_NAMES}) AND length(t.atom) <= ${TOKEN_REF_MAX}
+      AND (t.path = '$.apiKeys' OR t.path LIKE '$.jellyfinUsers[%].accounts.apiKeys')`;
+}
+
+function postgresTokenRefs(doc: string, uuid: string): string {
+  return `SELECT k.key AS field, k.value #>> '{}' AS token_id, ${uuid} AS user_uuid
+    FROM LATERAL (SELECT ${doc} -> 'apiKeys' AS keys
+                  UNION ALL
+                  SELECT u -> 'accounts' -> 'apiKeys' FROM jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(${doc} -> 'jellyfinUsers') = 'array' THEN ${doc} -> 'jellyfinUsers' ELSE '[]'::jsonb END) u) s
+    CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(s.keys) = 'object' THEN s.keys ELSE '{}'::jsonb END) k
+    WHERE k.key IN (${TOKEN_REF_NAMES}) AND jsonb_typeof(k.value) = 'string' AND length(k.value #>> '{}') <= ${TOKEN_REF_MAX}`;
+}
+
 function dbTypeFromUri(uri: string | undefined): DbType | null {
   if (!uri) return null;
   if (uri.startsWith('sqlite://')) return 'sqlite';
@@ -64,6 +86,10 @@ export class DatabaseCore {
 
   // SQLite answers on the server's one thread, so after this much of it in a row others get a turn.
   protected sqliteSpentMs = 0;
+
+  // Configurations up to this id are in token_refs; null until that is known, Infinity once all are.
+  protected tokenRefsFrom: number | null = null;
+  tokenRefsBackfill: Promise<void> | null = null;
 
   protected timedSQLite<T>(work: () => T): T {
     const started = performance.now();
@@ -149,6 +175,7 @@ export class DatabaseCore {
     } else {
       logger.info('RUN_MIGRATIONS=false, skipping schema creation (expecting an already-migrated database)');
     }
+    this.tokenRefsBackfill = this.backfillTokenRefs();
 
     const usingReplica = this.readDb && this.readDb !== this.db;
     logger.info(`Initialized ${this.type} database${usingReplica ? ' with a separate read replica' : ''}`);
@@ -212,6 +239,7 @@ export class DatabaseCore {
     } else {
       await this.createPostgreSQLTables();
     }
+    await this.ensureTokenRefTriggers();
     await this.ensureAccountColumns();
     await this.ensurePlaystateProfile();
     await this.ensurePlaystateOrigin();
@@ -219,6 +247,132 @@ export class DatabaseCore {
     await this.ensureWatchlistMetaType();
     await this.ensureTrackerOutboxProfile();
     await this.ensureRatingsMetaType();
+  }
+
+  /** Keeps token_refs in step with every write to user_configs, whichever code makes it. */
+  async ensureTokenRefTriggers(): Promise<void> {
+    try {
+      if (this.type === 'sqlite') {
+        const insert = `INSERT OR IGNORE INTO token_refs (field, token_id, user_uuid) ${sqliteTokenRefs('NEW.config_data', 'NEW.user_uuid')};`;
+        const forget = 'DELETE FROM token_refs WHERE user_uuid = OLD.user_uuid;';
+        const stale = (await this.allPrimaryQuery(
+          `SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'user_configs' AND name LIKE 'user_configs_token_refs_%'`
+        )).map((row: any) => String(row.name)).filter((name: string) => !name.endsWith(`_${TOKEN_REF_TAG}`));
+        this.db.transaction(() => {
+          this.db.prepare(`CREATE TRIGGER IF NOT EXISTS user_configs_token_refs_ai_${TOKEN_REF_TAG} AFTER INSERT ON user_configs
+            BEGIN ${insert} END`).run();
+          this.db.prepare(`CREATE TRIGGER IF NOT EXISTS user_configs_token_refs_au_${TOKEN_REF_TAG} AFTER UPDATE OF config_data, user_uuid ON user_configs
+            BEGIN ${forget} ${insert} END`).run();
+          this.db.prepare(`CREATE TRIGGER IF NOT EXISTS user_configs_token_refs_ad_${TOKEN_REF_TAG} AFTER DELETE ON user_configs
+            BEGIN ${forget} END`).run();
+          for (const name of stale) this.db.prepare(`DROP TRIGGER IF EXISTS "${name}"`).run();
+        })();
+        return;
+      }
+      const name = `user_configs_token_refs_${TOKEN_REF_TAG}`;
+      await this.runQuery(`DO $do$
+        DECLARE stale text;
+        BEGIN
+          PERFORM pg_advisory_xact_lock(hashtext('user_configs_token_refs'));
+          IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'user_configs'::regclass AND tgname = '${name}') THEN
+            CREATE OR REPLACE FUNCTION ${name}() RETURNS trigger LANGUAGE plpgsql AS $fn$
+            BEGIN
+              IF TG_OP <> 'INSERT' THEN
+                DELETE FROM token_refs WHERE user_uuid = OLD.user_uuid;
+              END IF;
+              IF TG_OP <> 'DELETE' THEN
+                INSERT INTO token_refs (field, token_id, user_uuid) ${postgresTokenRefs('NEW.config_data::jsonb', 'NEW.user_uuid')}
+                ON CONFLICT DO NOTHING;
+              END IF;
+              RETURN NULL;
+            END
+            $fn$;
+            CREATE TRIGGER ${name} AFTER INSERT OR DELETE OR UPDATE OF config_data, user_uuid ON user_configs
+              FOR EACH ROW EXECUTE FUNCTION ${name}();
+          END IF;
+          FOR stale IN SELECT tgname FROM pg_trigger WHERE tgrelid = 'user_configs'::regclass
+                         AND starts_with(tgname, 'user_configs_token_refs_') AND tgname <> '${name}' LOOP
+            EXECUTE format('DROP TRIGGER %I ON user_configs', stale);
+          END LOOP;
+        END
+        $do$`);
+    } catch (error: any) {
+      logger.warn(`Could not set up token_refs triggers, so token checks read every configuration: ${error.message}`);
+    }
+  }
+
+  /** Fills token_refs for configurations written before its triggers, a batch at a time; resumes where it stopped. */
+  async backfillTokenRefs(): Promise<void> {
+    const sqlite = this.type === 'sqlite';
+    let last = 0;
+    try {
+      const [trigger] = await this.allPrimaryQuery(sqlite
+        ? `SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'user_configs' AND name IN (?, ?, ?)`
+        : `SELECT COUNT(*) AS n FROM pg_trigger WHERE tgrelid = 'user_configs'::regclass AND tgname = $1`,
+      sqlite ? ['ai', 'au', 'ad'].map((kind) => `user_configs_token_refs_${kind}_${TOKEN_REF_TAG}`) : [`user_configs_token_refs_${TOKEN_REF_TAG}`]);
+      if (Number(trigger?.n) !== (sqlite ? 3 : 1)) {
+        logger.warn('token_refs triggers are missing, so token checks read every configuration');
+        return;
+      }
+      await this.runQuery(sqlite
+        ? 'INSERT OR IGNORE INTO token_refs_backfill (tag) VALUES (?)'
+        : 'INSERT INTO token_refs_backfill (tag) VALUES ($1) ON CONFLICT DO NOTHING', [TOKEN_REF_TAG]);
+      const [state] = await this.allPrimaryQuery(`SELECT last_id, done FROM token_refs_backfill WHERE tag = ${sqlite ? '?' : '$1'}`, [TOKEN_REF_TAG]);
+      if (Number(state?.done)) {
+        this.tokenRefsFrom = Infinity;
+        return;
+      }
+      last = Number(state?.last_id) || 0;
+      this.tokenRefsFrom = last;
+      logger.info(`Filling token_refs from configuration id ${last}`);
+      let size = 64;
+      for (;;) {
+        const [next] = await this.allPrimaryQuery(sqlite
+          ? 'SELECT MAX(id) AS id FROM (SELECT id FROM user_configs WHERE id > ? ORDER BY id LIMIT ?)'
+          : 'SELECT MAX(id) AS id FROM (SELECT id FROM user_configs WHERE id > $1 ORDER BY id LIMIT $2) b', [last, size]);
+        const upTo = Number(next?.id);
+        if (!upTo) break;
+        const started = performance.now();
+        await this.fillTokenRefs(last, upTo);
+        const spent = performance.now() - started;
+        last = upTo;
+        this.tokenRefsFrom = last;
+        size = Math.max(8, Math.min(2000, Math.round(size * Math.min(2, 25 / Math.max(spent, 1)))));
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      await this.runQuery(`UPDATE token_refs_backfill SET done = 1 WHERE tag = ${sqlite ? '?' : '$1'}`, [TOKEN_REF_TAG]);
+      this.tokenRefsFrom = Infinity;
+      logger.info('Filled token_refs');
+    } catch (error: any) {
+      logger.warn(`Filling token_refs stopped after configuration id ${last}; token checks read the rest: ${error.message}`);
+    }
+  }
+
+  protected async fillTokenRefs(after: number, upTo: number): Promise<void> {
+    if (this.type === 'sqlite') {
+      this.timedSQLite(() => this.db.transaction(() => {
+        this.db.prepare(`INSERT OR IGNORE INTO token_refs (field, token_id, user_uuid)
+          ${sqliteTokenRefs('c.config_data', 'c.user_uuid', 'user_configs c, ')} AND c.id > ? AND c.id <= ?`).run(after, upTo);
+        this.db.prepare('UPDATE token_refs_backfill SET last_id = MAX(last_id, ?) WHERE tag = ?').run(upTo, TOKEN_REF_TAG);
+      })());
+      return;
+    }
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`INSERT INTO token_refs (field, token_id, user_uuid)
+        SELECT r.field, r.token_id, r.user_uuid FROM user_configs c
+        CROSS JOIN LATERAL (${postgresTokenRefs('c.config_data::jsonb', 'c.user_uuid')}) r
+        WHERE c.id > $1 AND c.id <= $2
+        ON CONFLICT DO NOTHING`, [after, upTo]);
+      await client.query('UPDATE token_refs_backfill SET last_id = GREATEST(last_id, $1) WHERE tag = $2', [upTo, TOKEN_REF_TAG]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /** The profile is part of the key, which neither dialect can add in place. */
@@ -601,7 +755,19 @@ export class DatabaseCore {
         PRIMARY KEY (account_id, user_uuid),
         FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
       )`,
-      `CREATE INDEX IF NOT EXISTS idx_account_configs_uuid ON account_configs(user_uuid)`
+      `CREATE INDEX IF NOT EXISTS idx_account_configs_uuid ON account_configs(user_uuid)`,
+      `CREATE TABLE IF NOT EXISTS token_refs (
+        field TEXT NOT NULL,
+        token_id TEXT NOT NULL,
+        user_uuid TEXT NOT NULL,
+        PRIMARY KEY (field, token_id, user_uuid)
+      ) WITHOUT ROWID`,
+      `CREATE INDEX IF NOT EXISTS idx_token_refs_uuid ON token_refs(user_uuid)`,
+      `CREATE TABLE IF NOT EXISTS token_refs_backfill (
+        tag TEXT PRIMARY KEY,
+        last_id INTEGER NOT NULL DEFAULT 0,
+        done INTEGER NOT NULL DEFAULT 0
+      )`
     ];
 
     for (const query of queries) {
@@ -832,7 +998,19 @@ export class DatabaseCore {
         last_opened_at TIMESTAMP,
         PRIMARY KEY (account_id, user_uuid)
       )`,
-      `CREATE INDEX IF NOT EXISTS idx_account_configs_uuid ON account_configs(user_uuid)`
+      `CREATE INDEX IF NOT EXISTS idx_account_configs_uuid ON account_configs(user_uuid)`,
+      `CREATE TABLE IF NOT EXISTS token_refs (
+        field VARCHAR(64) NOT NULL,
+        token_id VARCHAR(255) NOT NULL,
+        user_uuid VARCHAR(255) NOT NULL,
+        PRIMARY KEY (field, token_id, user_uuid)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_token_refs_uuid ON token_refs(user_uuid)`,
+      `CREATE TABLE IF NOT EXISTS token_refs_backfill (
+        tag VARCHAR(64) PRIMARY KEY,
+        last_id BIGINT NOT NULL DEFAULT 0,
+        done SMALLINT NOT NULL DEFAULT 0
+      )`
     ];
 
     for (const query of queries) {
@@ -2490,28 +2668,47 @@ export class DatabaseCore {
   /** Every configuration referring to one of these tokens, at the top level or on a Jellyfin user. */
   async findTokenReferences(field: string, tokenIds: string[]): Promise<Array<{ uuid: string; passwordHash: string; config: any; owners: string[] }>> {
     if (!tokenIds.length || !/^[A-Za-z]+$/.test(field)) return [];
+    if (!this.initialized) await this.initialize();
     const sqlite = this.type === 'sqlite';
-    const marks = tokenIds.map((_, i) => (sqlite ? '?' : `$${i + 1}`)).join(', ');
-    const query = sqlite
-      ? `SELECT user_uuid, password_hash, config_data FROM user_configs
-         WHERE json_extract(config_data, '$.apiKeys.${field}') IN (${marks})
-            OR EXISTS (SELECT 1 FROM json_each(config_data, '$.jellyfinUsers') u
-                       WHERE json_extract(config_data, u.fullkey || '.accounts.apiKeys.${field}') IN (${marks}))`
-      : `SELECT user_uuid, password_hash, config_data FROM user_configs
-         WHERE config_data::jsonb->'apiKeys'->>'${field}' IN (${marks})
-            OR EXISTS (
-                 SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(config_data::jsonb->'jellyfinUsers') = 'array'
-                                                         THEN config_data::jsonb->'jellyfinUsers' ELSE '[]'::jsonb END) u
-                 WHERE u->'accounts'->'apiKeys'->>'${field}' IN (${marks}))`;
+    const mark = (n: number) => (sqlite ? '?' : `$${n}`);
+    const indexed = TOKEN_REF_FIELDS.includes(field) && tokenIds.every((id) => typeof id === 'string' && id.length <= TOKEN_REF_MAX);
+    // Configurations above this id are not all in token_refs yet, so those are read in full.
+    const scanAbove = indexed ? this.tokenRefsFrom : null;
     // The release check must see this process's own just-committed write, so this reads the
     // primary directly rather than through allQuery's (possibly lagging) read replica.
-    if (!this.initialized) await this.initialize();
     try {
-      const rows = sqlite
-        ? this.executeSQLiteStatement(this.db.prepare(query), 'all', [...tokenIds, ...tokenIds])
-        : (await this.db.query(query, tokenIds)).rows;
+      const rows: any[] = [];
+      if (scanAbove !== null) {
+        rows.push(...await this.allPrimaryQuery(
+          `SELECT id, user_uuid, password_hash, config_data FROM user_configs
+           WHERE user_uuid IN (SELECT user_uuid FROM token_refs WHERE field = ${mark(1)} AND token_id IN (${tokenIds.map((_, i) => mark(i + 2)).join(', ')}))`,
+          [field, ...tokenIds]
+        ));
+      }
+      if (scanAbove !== Infinity) {
+        const marks = tokenIds.map((_, i) => mark(i + 1)).join(', ');
+        const matches = sqlite
+          ? `(json_extract(config_data, '$.apiKeys.${field}') IN (${marks})
+              OR EXISTS (SELECT 1 FROM json_each(config_data, '$.jellyfinUsers') u
+                         WHERE json_extract(config_data, u.fullkey || '.accounts.apiKeys.${field}') IN (${marks})))`
+          : `(config_data::jsonb->'apiKeys'->>'${field}' IN (${marks})
+              OR EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(config_data::jsonb->'jellyfinUsers') = 'array'
+                                                           THEN config_data::jsonb->'jellyfinUsers' ELSE '[]'::jsonb END) u
+                   WHERE u->'accounts'->'apiKeys'->>'${field}' IN (${marks})))`;
+        const params: any[] = sqlite ? [...tokenIds, ...tokenIds] : [...tokenIds];
+        if (scanAbove) params.push(scanAbove);
+        rows.push(...await this.allPrimaryQuery(
+          `SELECT id, user_uuid, password_hash, config_data FROM user_configs WHERE ${matches}${scanAbove ? ` AND id > ${mark(tokenIds.length + 1)}` : ''}`,
+          params
+        ));
+      }
+      const seen = new Set<string>();
+      const unique = rows
+        .sort((a, b) => Number(a.id) - Number(b.id))
+        .filter((row) => !seen.has(row.user_uuid) && seen.add(row.user_uuid));
       const wanted = new Set(tokenIds);
-      return rows.map((row: any) => {
+      return unique.map((row: any) => {
         const config = typeof row.config_data === 'string' ? JSON.parse(row.config_data) : row.config_data;
         const owners: string[] = [];
         if (wanted.has(config?.apiKeys?.[field])) owners.push('');
