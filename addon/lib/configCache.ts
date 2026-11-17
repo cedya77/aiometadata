@@ -6,6 +6,7 @@
  * Redis read and decode on every request. A missing-key memo lets a request
  * for a config that does not exist answer without another database read.
  */
+import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
 import consola from 'consola';
 import redis from './redisClient';
@@ -32,6 +33,17 @@ interface PendingLoad {
 const memory = new LRUCache<string, any>({ max: MEMORY_MAX_ENTRIES });
 const missing = new LRUCache<string, true>({ max: MISSING_MAX_ENTRIES });
 const pendingLoads = new Map<string, PendingLoad>();
+
+const stamps = new WeakMap<object, string>();
+
+function stamp(value: any, payload: any): void {
+  if (value && typeof value === 'object') stamps.set(value, createHash('sha1').update(payload).digest('base64'));
+}
+
+/** Names the stored bytes a held config was read from or written as, so work derived from one is not redone for its twin. */
+function stampOf(config: any): string | undefined {
+  return config && typeof config === 'object' ? stamps.get(config) : undefined;
+}
 
 function redisKey(key: string): string {
   return `${KEY_PREFIX}${key}`;
@@ -91,6 +103,7 @@ async function get(key: string): Promise<any> {
     if (payload === null || payload === undefined) return null;
     const value = await decodeCachePayload(payload);
     if (value === null || value === undefined) return null;
+    stamp(value, payload);
     holdInMemory(key, value);
     return value;
   } catch (error) {
@@ -113,6 +126,7 @@ async function set(key: string, value: any): Promise<void> {
 
   try {
     const payload = await encodeCachePayload(value, { compressionEnabled: compressionEnabled() });
+    stamp(value, payload);
     await redis!.set(redisKey(key), payload, 'EX', redisTtlSec());
   } catch (error) {
     logger.warn(`Config cache write failed for ${shortKey(key)}...: ${errorMessage(error)}`);
@@ -231,6 +245,7 @@ const configCache = {
   isLoadPending,
   rememberMissing,
   isMissing,
+  stampOf,
   stats,
   // In-process state, read synchronously by the dashboard heap profile.
   cache: memory,
