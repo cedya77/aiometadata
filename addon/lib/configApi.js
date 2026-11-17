@@ -10,7 +10,7 @@ const { respondIfSigninRequired } = require('./signinGate');
 const KEY_VALIDATION_STATUS_SET = new Set(['valid', 'invalid', 'timeout', 'error']);
 const isKnownKeyValidationStatus = (status) =>
   typeof status === 'string' && KEY_VALIDATION_STATUS_SET.has(status);
-const TESTABLE_API_KEY_FIELDS = new Set(['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'openrouter', 'publicmetadb']);
+const TESTABLE_API_KEY_FIELDS = new Set(['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'openrouter', 'publicmetadb', 'fastcrw']);
 function getTestApiKeyMaxLength() {
   const parsed = parseInt(process.env.TEST_API_KEY_MAX_LENGTH || '128', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 128;
@@ -1559,6 +1559,8 @@ class ConfigApi {
         });
         return response?.statusCode === 200;
       },
+
+      fastcrw: async (key) => require('../utils/web-search').checkWebSearchKey(key),
     };
 
     const validationPromises = Object.entries(apiKeys)

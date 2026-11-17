@@ -67,6 +67,8 @@ export interface UserConfig {
     /** MovieLens credential ID stored in oauth_tokens table (provider 'movielens') */
     movieLensCredId?: string;
     publicmetadb?: string;
+    /** fastCRW key for web search in AI search and recommendations */
+    fastcrw?: string;
   };
   mdblistWatchTracking?: boolean;
   traktWatchTracking?: boolean;

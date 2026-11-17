@@ -294,6 +294,22 @@ to every visitor, so which one you reach for depends on who uses the instance.
 - **Description**: Sends every OpenRouter request (AI search, AI catalogs, recommendations) to another OpenAI-compatible API instead, such as LiteLLM, Ollama or vLLM. Users then enter that API's key in the OpenRouter key field (shown as **AI Endpoint API Key**) and pick its model names; the model list comes from its `/models`. OpenRouter's web search, presets and thinking control do not apply there and are hidden. An API that accepts any key can be used by every user of the instance. Also editable under **API Keys** in the dashboard settings.
 - **Example**: `OPENROUTER_BASE_URL=http://litellm:4000/v1`
 
+#### `FASTCRW_BASE_URL`
+- **Optional**: Yes
+- **Default**: empty (fastCRW's hosted API, `https://api.fastcrw.com`)
+- **Description**: A fastCRW server of this instance's own for web search in AI search and recommendations. fastCRW searches the web and AIOMetadata hands the model the results, so any model can use it, including free ones and an `OPENROUTER_BASE_URL` endpoint. With it set, every user can choose fastCRW without a key of their own. Users who leave it empty add a fastCRW key under Integrations. Also editable under **API Keys** in the dashboard settings.
+- **Example**: `FASTCRW_BASE_URL=http://crw:3000`
+
+#### `FASTCRW_API_KEY`
+- **Optional**: Yes
+- **Default**: empty
+- **Description**: A fastCRW key the instance pays for, used by users who have no key of their own. A search costs 2 fastCRW credits.
+
+#### `FASTCRW_CACHE_HOURS`
+- **Optional**: Yes
+- **Default**: `12`
+- **Description**: How long a fastCRW search is reused for the same query, by every user, before it runs again.
+
 ---
 
 ## Timezone Configuration

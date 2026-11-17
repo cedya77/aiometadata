@@ -16,7 +16,7 @@ interface Suggestion {
   year: number;
 }
 
-async function performOpenRouterSearch(apiKey: string, query: string, type: 'movie' | 'series' | 'mixed', language: string, model?: string): Promise<Suggestion[]> {
+async function performOpenRouterSearch(apiKey: string, query: string, type: 'movie' | 'series' | 'mixed', language: string, model?: string, webResults = ''): Promise<Suggestion[]> {
   const startTime = Date.now();
 
   if (!apiKey) {
@@ -34,7 +34,7 @@ async function performOpenRouterSearch(apiKey: string, query: string, type: 'mov
   try {
     const generationStart = Date.now();
 
-    const prompt = buildPrompt(query, type, 20, hasWebSearch ? 'context' : false);
+    const prompt = buildPrompt(query, type, 20, hasWebSearch || webResults ? 'context' : false, webResults);
 
     const response = await generateContent({
       apiKey,

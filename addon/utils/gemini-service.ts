@@ -82,17 +82,17 @@ function groundingRefused(error: any): boolean {
   return /quota|billing|not available|not supported|permission|grounding/.test(message);
 }
 
-async function performGeminiSearch(apiKey: string, query: string, type: string, language: string, model: string, forceGrounding: boolean = false): Promise<Suggestion[]> {
+async function performGeminiSearch(apiKey: string, query: string, type: string, language: string, model: string, forceGrounding: boolean = false, webResults = ''): Promise<Suggestion[]> {
   if (!apiKey) {
     logger.warn("Search failed: no API key provided.");
     return [];
   }
 
   const selectedModel = resolveGeminiModel(model);
-  const wantsGrounding = forceGrounding && supportsGrounding(selectedModel);
+  const wantsGrounding = !webResults && forceGrounding && supportsGrounding(selectedModel);
 
   try {
-    return await geminiSearch(apiKey, query, type, selectedModel, wantsGrounding);
+    return await geminiSearch(apiKey, query, type, selectedModel, wantsGrounding, webResults);
   } catch (error: any) {
     if (wantsGrounding && groundingRefused(error)) {
       logger.warn(`Gemini refused web search on ${selectedModel} (${error?.message || error}); retrying without it`);
@@ -102,7 +102,7 @@ async function performGeminiSearch(apiKey: string, query: string, type: string, 
   }
 }
 
-async function geminiSearch(apiKey: string, query: string, type: string, selectedModel: string, useGrounding: boolean): Promise<Suggestion[]> {
+async function geminiSearch(apiKey: string, query: string, type: string, selectedModel: string, useGrounding: boolean, webResults = ''): Promise<Suggestion[]> {
   const startTime = Date.now();
   const timeout = useGrounding ? 45000 : 30000;
 
@@ -110,7 +110,7 @@ async function geminiSearch(apiKey: string, query: string, type: string, selecte
 
   const generationStart = Date.now();
 
-  const prompt = buildPrompt(query, type, 20, useGrounding ? 'gemini' : false);
+  const prompt = buildPrompt(query, type, 20, useGrounding ? 'gemini' : webResults ? 'context' : false, webResults);
 
   const response = await generateContent({
     apiKey,
@@ -164,7 +164,7 @@ async function geminiSearch(apiKey: string, query: string, type: string, selecte
   return suggestions;
 }
 
-function buildPrompt(query: string, type: string, numResults: number = 10, searchMode: string | false = false): string {
+function buildPrompt(query: string, type: string, numResults: number = 10, searchMode: string | false = false, webResults = ''): string {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.toLocaleString('en-US', { month: 'long' });
@@ -201,7 +201,10 @@ INVALID OUTPUTS (DO NOT DO THIS):
 
 === CONTEXT ===
 TODAY: ${currentDate}
-
+${webResults ? `
+=== WEB RESULTS ===
+${webResults}
+` : ''}
 === RESULT COUNT ===
 - you must return exactly ${numResults} results without any padding and when possible.
 - Never pad with unrelated results

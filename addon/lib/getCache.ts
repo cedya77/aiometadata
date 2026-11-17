@@ -1578,6 +1578,7 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
       sources: require('../utils/recommendations/history').resolveSources(config).choice,
       // Every setting that moves the picks has to move the page as well.
       webSearch: config.recommendations?.web_search === true,
+      ...(config.recommendations?.web_search_via ? { webSearchVia: config.recommendations.web_search_via } : {}),
       reasoningEffort: config.recommendations?.reasoning_effort || '',
       stalledWeight: config.recommendations?.stalled_weight || '',
       staleAfterDays: config.recommendations?.stale_after_days || '',
@@ -1817,6 +1818,8 @@ async function cacheWrapSearch(userUUID: string, searchKey: string, method: () =
     aiModel: config.search?.ai_model || '',
     aiWebSearch: config.search?.ai_web_search || false,
     aiOpenrouterWebSearch: config.search?.ai_openrouter_web_search !== false,
+    // Only a configuration that chose an engine carries it, so every other one keeps the key it had.
+    ...(config.search?.ai_web_search_via ? { aiWebSearchVia: config.search.ai_web_search_via } : {}),
   };
 
   const searchConfigString = JSON.stringify(searchConfig);

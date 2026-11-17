@@ -1450,22 +1450,28 @@ async function performAiSearch(query: string, language: string, config: any): Pr
   const aiModel = aiProvider === 'openrouter'
     ? (config.search?.ai_model || 'google/gemini-2.5-flash')
     : resolveGeminiModel(config.search?.ai_model);
-  const aiWebSearch = aiProvider === 'openrouter'
-    ? config.search?.ai_openrouter_web_search !== false && !require('../utils/ai-endpoint').isCustomAiEndpoint()
+  const wantsWebSearch = aiProvider === 'openrouter'
+    ? config.search?.ai_openrouter_web_search !== false
     : config.search?.ai_web_search === true;
+  // fastCRW searches here and hands the model its results, so it serves any model; otherwise the provider's own search.
+  const webSearch = require('../utils/web-search');
+  const engine = webSearch.chosenWebSearch(config, config.search?.ai_web_search_via);
+  const fastcrw = wantsWebSearch ? engine.fastcrw : null;
+  const aiWebSearch = engine.provider && wantsWebSearch && (aiProvider !== 'openrouter' || !require('../utils/ai-endpoint').isCustomAiEndpoint());
 
-  logger.info(`Starting AI search for query: "${query}" (provider: ${aiProvider}, model: ${aiModel}, webSearch: ${aiWebSearch})`);
+  logger.info(`Starting AI search for query: "${query}" (provider: ${aiProvider}, model: ${aiModel}, webSearch: ${fastcrw ? 'fastcrw' : aiWebSearch})`);
 
   try {
     let suggestions: any[];
+    const webResults = fastcrw ? await webSearch.webContext(fastcrw, `${query} movies and TV series`, { limit: 10 }) : '';
 
     if (aiProvider === 'openrouter') {
       const openrouterKey = config.apiKeys?.openrouter;
       const effectiveModel = withWebSearch(aiModel, aiWebSearch);
-      suggestions = await performOpenRouterSearch(openrouterKey, query, 'mixed', language, effectiveModel);
+      suggestions = await performOpenRouterSearch(openrouterKey, query, 'mixed', language, effectiveModel, webResults);
     } else {
       const geminiKey = config.apiKeys?.gemini || process.env.BUILT_IN_GEMINI_API_KEY;
-      suggestions = await performGeminiSearch(geminiKey, query, 'mixed', language, aiModel, aiWebSearch);
+      suggestions = await performGeminiSearch(geminiKey, query, 'mixed', language, aiModel, aiWebSearch, webResults);
     }
 
     if (!suggestions || suggestions.length === 0) {

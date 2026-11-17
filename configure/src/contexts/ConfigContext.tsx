@@ -38,6 +38,8 @@ interface ConfigContextType {
   hasBuiltInGemini: boolean;
   /** OpenRouter requests go to another OpenAI-compatible API the instance names; null until the instance answers. */
   aiCustomEndpoint: boolean | null;
+  /** The instance searches the web through fastCRW for every user, without a key of their own. */
+  webSearchInstance: boolean;
   traktSearchEnabled: boolean;
   simklSearchEnabled: boolean;
   lumiereEnabled: boolean;
@@ -429,6 +431,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [hasBuiltInMdblist, setHasBuiltInMdblist] = useState(false);
   const [hasBuiltInGemini, setHasBuiltInGemini] = useState(false);
   const [aiCustomEndpoint, setAiCustomEndpoint] = useState<boolean | null>(null);
+  const [webSearchInstance, setWebSearchInstance] = useState(false);
   const [anilistRequiresAuth, setAnilistRequiresAuth] = useState(true);
   const [traktSearchEnabled, setTraktSearchEnabled] = useState(true);
   const [simklSearchEnabled, setSimklSearchEnabled] = useState(true);
@@ -492,6 +495,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
         setHasBuiltInMdblist(!!envApiKeys.hasBuiltInMdblist);
         setHasBuiltInGemini(!!envApiKeys.hasBuiltInGemini);
         setAiCustomEndpoint(!!envApiKeys.aiCustomEndpoint);
+        setWebSearchInstance(!!envApiKeys.webSearchInstance);
         setAnilistRequiresAuth(envApiKeys.anilistRequiresAuth ?? true);
         setTraktSearchEnabled(envApiKeys.traktSearchEnabled ?? true);
         setSimklSearchEnabled(envApiKeys.simklSearchEnabled ?? true);
@@ -575,7 +579,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, hasBuiltInMdblist, hasBuiltInGemini, aiCustomEndpoint, catalogTTL, maxCatalogs, collectionImportCatalogCap, maxEpisodeOrders, refreshInstanceLimits, isLoading, sessionId, setSessionId, anilistRequiresAuth, traktSearchEnabled, simklSearchEnabled, lumiereEnabled, jikanEnabled, aiCatalogMaxPerRequest, manifestFingerprint, manifestChangedSinceInstall, markManifestInstalled }}>
+    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, hasBuiltInMdblist, hasBuiltInGemini, aiCustomEndpoint, webSearchInstance, catalogTTL, maxCatalogs, collectionImportCatalogCap, maxEpisodeOrders, refreshInstanceLimits, isLoading, sessionId, setSessionId, anilistRequiresAuth, traktSearchEnabled, simklSearchEnabled, lumiereEnabled, jikanEnabled, aiCatalogMaxPerRequest, manifestFingerprint, manifestChangedSinceInstall, markManifestInstalled }}>
       {children}
     </ConfigContext.Provider>
   );

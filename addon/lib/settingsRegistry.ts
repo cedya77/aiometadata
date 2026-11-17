@@ -126,6 +126,45 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     },
   },
   {
+    key: 'FASTCRW_BASE_URL',
+    envVar: 'FASTCRW_BASE_URL',
+    label: 'fastCRW Server URL',
+    description: 'A fastCRW server of this instance\'s own for web search in AI search and recommendations, e.g. http://crw:3000. Every user can then search through it without a key. Empty uses fastCRW\'s hosted API, for users who add their own fastCRW key.',
+    category: 'API Keys',
+    type: 'string',
+    default: '',
+    validate: (value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed) return true;
+      try {
+        const { protocol } = new URL(trimmed);
+        return protocol === 'http:' || protocol === 'https:';
+      } catch {
+        return false;
+      }
+    },
+  },
+  {
+    key: 'FASTCRW_API_KEY',
+    envVar: 'FASTCRW_API_KEY',
+    label: 'fastCRW API Key',
+    description: 'A fastCRW key this instance pays for, used by users who have none of their own. Each search costs 2 credits.',
+    category: 'API Keys',
+    type: 'string',
+    default: '',
+    sensitive: true,
+  },
+  {
+    key: 'FASTCRW_CACHE_HOURS',
+    envVar: 'FASTCRW_CACHE_HOURS',
+    label: 'Web Search Cache Hours',
+    description: 'How long a fastCRW search is reused for the same query, by every user, before it is run again.',
+    category: 'Cache',
+    type: 'number',
+    default: 12,
+    min: 1,
+  },
+  {
     key: 'BUILT_IN_TMDB_API_KEY',
     envVar: 'BUILT_IN_TMDB_API_KEY',
     label: 'Built-in TMDB Key',

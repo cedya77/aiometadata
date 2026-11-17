@@ -107,8 +107,11 @@ const ApiKeyInput = ({
   );
 };
 
+/** The keys this page edits and tests. */
+const API_KEY_FIELDS: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'fastcrw', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'publicmetadb'];
+
 export function IntegrationsSettings() {
-  const { config, aiCustomEndpoint } = useConfig();
+  const { config, aiCustomEndpoint, webSearchInstance } = useConfig();
   const [validationStatus, setValidationStatus] = useState<Record<string, 'idle' | 'loading' | 'success' | 'error'>>({});
   const [isTesting, setIsTesting] = useState(false);
   const [showAllKeys, setShowAllKeys] = useState(false);
@@ -120,7 +123,7 @@ export function IntegrationsSettings() {
   
   // Check if any keys have changed since last successful validation
   useEffect(() => {
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'publicmetadb'];
+    const apiKeyFields = API_KEY_FIELDS;
 
     let changed = false;
     for (const key of apiKeyFields) {
@@ -163,7 +166,7 @@ export function IntegrationsSettings() {
 
   const handleTestAllKeys = async () => {
     setIsTesting(true);
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'publicmetadb'];
+    const apiKeyFields = API_KEY_FIELDS;
     
     // Build the list of keys to test, excluding unchanged successfully validated ones
     const keysToTest: Record<string, string> = {};
@@ -316,7 +319,7 @@ export function IntegrationsSettings() {
   
   // Determine button state and text
   const getButtonState = () => {
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'publicmetadb'];
+    const apiKeyFields = API_KEY_FIELDS;
     const hasAnyKeys = apiKeyFields.some(key => config.apiKeys[key] && config.apiKeys[key]!.trim() !== "");
     
     if (!hasAnyKeys) {
@@ -380,6 +383,15 @@ export function IntegrationsSettings() {
           linkHref={aiCustomEndpoint ? undefined : 'https://openrouter.ai/keys'}
           placeholder={aiCustomEndpoint ? "The key this instance's AI endpoint takes" : undefined}
           validationStatus={validationStatus.openrouter || 'idle'}
+          onKeyChange={handleKeyChange}
+          forceShow={showAllKeys || undefined}
+        />
+        <ApiKeyInput
+          id="fastcrw"
+          label="fastCRW API Key"
+          linkHref="https://fastcrw.com"
+          placeholder={webSearchInstance ? 'Optional: this instance already searches the web' : 'Web search for AI search and recommendations'}
+          validationStatus={validationStatus.fastcrw || 'idle'}
           onKeyChange={handleKeyChange}
           forceShow={showAllKeys || undefined}
         />
