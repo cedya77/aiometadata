@@ -107,6 +107,25 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     sensitive: true,
   },
   {
+    key: 'OPENROUTER_BASE_URL',
+    envVar: 'OPENROUTER_BASE_URL',
+    label: 'OpenRouter-Compatible Base URL',
+    description: 'Sends every OpenRouter request to another OpenAI-compatible API instead, such as LiteLLM, Ollama or vLLM, e.g. http://litellm:4000/v1. Users then enter that API\'s key and model names in the OpenRouter fields. OpenRouter web search and presets are unavailable there. An API that takes any key is open to every user of this instance. Empty uses OpenRouter.',
+    category: 'API Keys',
+    type: 'string',
+    default: '',
+    validate: (value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed) return true;
+      try {
+        const { protocol } = new URL(trimmed);
+        return protocol === 'http:' || protocol === 'https:';
+      } catch {
+        return false;
+      }
+    },
+  },
+  {
     key: 'BUILT_IN_TMDB_API_KEY',
     envVar: 'BUILT_IN_TMDB_API_KEY',
     label: 'Built-in TMDB Key',

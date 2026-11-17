@@ -36,6 +36,8 @@ interface ConfigContextType {
   hasBuiltInTmdb: boolean;
   hasBuiltInMdblist: boolean;
   hasBuiltInGemini: boolean;
+  /** OpenRouter requests go to another OpenAI-compatible API the instance names; null until the instance answers. */
+  aiCustomEndpoint: boolean | null;
   traktSearchEnabled: boolean;
   simklSearchEnabled: boolean;
   lumiereEnabled: boolean;
@@ -426,6 +428,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [hasBuiltInTmdb, setHasBuiltInTmdb] = useState(false);
   const [hasBuiltInMdblist, setHasBuiltInMdblist] = useState(false);
   const [hasBuiltInGemini, setHasBuiltInGemini] = useState(false);
+  const [aiCustomEndpoint, setAiCustomEndpoint] = useState<boolean | null>(null);
   const [anilistRequiresAuth, setAnilistRequiresAuth] = useState(true);
   const [traktSearchEnabled, setTraktSearchEnabled] = useState(true);
   const [simklSearchEnabled, setSimklSearchEnabled] = useState(true);
@@ -488,6 +491,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
         setHasBuiltInTmdb(!!envApiKeys.hasBuiltInTmdb);
         setHasBuiltInMdblist(!!envApiKeys.hasBuiltInMdblist);
         setHasBuiltInGemini(!!envApiKeys.hasBuiltInGemini);
+        setAiCustomEndpoint(!!envApiKeys.aiCustomEndpoint);
         setAnilistRequiresAuth(envApiKeys.anilistRequiresAuth ?? true);
         setTraktSearchEnabled(envApiKeys.traktSearchEnabled ?? true);
         setSimklSearchEnabled(envApiKeys.simklSearchEnabled ?? true);
@@ -571,7 +575,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, hasBuiltInMdblist, hasBuiltInGemini, catalogTTL, maxCatalogs, collectionImportCatalogCap, maxEpisodeOrders, refreshInstanceLimits, isLoading, sessionId, setSessionId, anilistRequiresAuth, traktSearchEnabled, simklSearchEnabled, lumiereEnabled, jikanEnabled, aiCatalogMaxPerRequest, manifestFingerprint, manifestChangedSinceInstall, markManifestInstalled }}>
+    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, hasBuiltInMdblist, hasBuiltInGemini, aiCustomEndpoint, catalogTTL, maxCatalogs, collectionImportCatalogCap, maxEpisodeOrders, refreshInstanceLimits, isLoading, sessionId, setSessionId, anilistRequiresAuth, traktSearchEnabled, simklSearchEnabled, lumiereEnabled, jikanEnabled, aiCatalogMaxPerRequest, manifestFingerprint, manifestChangedSinceInstall, markManifestInstalled }}>
       {children}
     </ConfigContext.Provider>
   );

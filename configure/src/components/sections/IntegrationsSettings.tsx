@@ -43,7 +43,7 @@ const ApiKeyInput = ({
 }: {
   id: keyof AppConfig['apiKeys'];
   label: string;
-  linkHref: string;
+  linkHref?: string;
   placeholder?: string;
   validationStatus?: 'idle' | 'loading' | 'success' | 'error';
   onKeyChange?: (id: keyof AppConfig['apiKeys']) => void;
@@ -68,14 +68,16 @@ const ApiKeyInput = ({
       <CardContent className="p-4 space-y-2">
         <div className="flex items-center justify-between">
           <Label htmlFor={id} className="font-medium">{label}</Label>
-          <a
-            href={linkHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-muted-foreground hover:text-foreground hover:underline"
-          >
-            Get Key
-          </a>
+          {linkHref && (
+            <a
+              href={linkHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Get Key
+            </a>
+          )}
         </div>
         <div className="flex items-center space-x-2">
           <Input
@@ -106,7 +108,7 @@ const ApiKeyInput = ({
 };
 
 export function IntegrationsSettings() {
-  const { config } = useConfig();
+  const { config, aiCustomEndpoint } = useConfig();
   const [validationStatus, setValidationStatus] = useState<Record<string, 'idle' | 'loading' | 'success' | 'error'>>({});
   const [isTesting, setIsTesting] = useState(false);
   const [showAllKeys, setShowAllKeys] = useState(false);
@@ -374,8 +376,9 @@ export function IntegrationsSettings() {
         />
         <ApiKeyInput
           id="openrouter"
-          label="OpenRouter API Key"
-          linkHref="https://openrouter.ai/keys"
+          label={aiCustomEndpoint ? 'AI Endpoint API Key' : 'OpenRouter API Key'}
+          linkHref={aiCustomEndpoint ? undefined : 'https://openrouter.ai/keys'}
+          placeholder={aiCustomEndpoint ? "The key this instance's AI endpoint takes" : undefined}
           validationStatus={validationStatus.openrouter || 'idle'}
           onKeyChange={handleKeyChange}
           forceShow={showAllKeys || undefined}

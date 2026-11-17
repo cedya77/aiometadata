@@ -62,8 +62,10 @@ export function resolveGeminiModel(model?: string | null): string {
 export type AIProvider = 'gemini' | 'openrouter';
 
 // An OpenRouter ID is always vendor/model, which keeps the two namespaces apart.
-export function isModelIdForProvider(provider: AIProvider, model?: string | null): boolean {
+// A custom OpenAI-compatible endpoint names its models its own way.
+export function isModelIdForProvider(provider: AIProvider, model?: string | null, customEndpoint = false): boolean {
   if (!model) return false;
+  if (provider === 'openrouter' && customEndpoint) return true;
   return provider === 'openrouter' ? model.includes('/') : !model.includes('/');
 }
 
@@ -76,14 +78,14 @@ export function defaultModelFor(provider: AIProvider): string {
 }
 
 // Mirrors resolveCatalogModel in addon/utils/ai-model-resolver.ts.
-export function resolveCatalogModel(config: any, provider: AIProvider): string {
+export function resolveCatalogModel(config: any, provider: AIProvider, customEndpoint = false): string {
   const configured = provider === 'openrouter'
     ? config?.ai_catalog?.openrouter_model
     : config?.ai_catalog?.gemini_model;
   const inherited = config?.search?.ai_provider === provider ? config?.search?.ai_model : undefined;
 
   for (const candidate of [configured, inherited]) {
-    if (!isModelIdForProvider(provider, candidate)) continue;
+    if (!isModelIdForProvider(provider, candidate, customEndpoint)) continue;
     return provider === 'openrouter' ? candidate : resolveGeminiModel(candidate);
   }
 

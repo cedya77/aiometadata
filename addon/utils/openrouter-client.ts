@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
 // Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { request, Agent, ProxyAgent } from 'undici';
-
-const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+import { aiEndpointBase, isCustomAiEndpoint } from './ai-endpoint';
 
 function getOpenRouterProxyUrl(): string | null {
   const orProxy = process.env.OPENROUTER_HTTPS_PROXY ?? process.env.OPENROUTER_HTTP_PROXY;
@@ -72,7 +71,8 @@ interface GenerateContentResult {
 }
 
 async function generateContent({ apiKey, model, prompt, systemPrompt, timeout = 30000, maxTokens = 8192, reasoningEffort }: GenerateContentOptions): Promise<GenerateContentResult> {
-  const url = `${OPENROUTER_BASE_URL}/chat/completions`;
+  const custom = isCustomAiEndpoint();
+  const url = `${aiEndpointBase()}/chat/completions`;
   const startTime = Date.now();
 
   const messages: Array<{ role: string; content: string }> = [];
@@ -85,24 +85,40 @@ async function generateContent({ apiKey, model, prompt, systemPrompt, timeout = 
     max_tokens: maxTokens,
   };
 
-  if (reasoningEffort) {
+  // `reasoning` is OpenRouter's own field; other servers name it differently or refuse it.
+  if (reasoningEffort && !custom) {
     body.reasoning = { effort: reasoningEffort };
   }
 
-  try {
+  const send = async (payload: any): Promise<{ statusCode: number; data: any }> => {
     const { statusCode, body: responseBody } = await request(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
       dispatcher: openrouterDispatcher,
       headersTimeout: timeout,
       bodyTimeout: timeout,
     });
+    if (!custom) return { statusCode, data: await responseBody.json() };
+    // A model server can answer an error in plain text.
+    const text = await responseBody.text();
+    try {
+      return { statusCode, data: JSON.parse(text) };
+    } catch {
+      return { statusCode, data: { error: { message: `HTTP ${statusCode}: ${text.slice(0, 200)}` } } };
+    }
+  };
 
-    const data: any = await responseBody.json();
+  try {
+    let { statusCode, data } = await send(body);
+    // OpenAI's reasoning models refuse max_tokens and take max_completion_tokens instead.
+    if (custom && statusCode === 400 && /max_tokens/.test(String(data?.error?.message ?? ''))) {
+      const { max_tokens: limit, ...rest } = body;
+      ({ statusCode, data } = await send({ ...rest, max_completion_tokens: limit }));
+    }
     const responseTime = Date.now() - startTime;
 
     if (statusCode !== 200) {
@@ -110,7 +126,7 @@ async function generateContent({ apiKey, model, prompt, systemPrompt, timeout = 
       requestTracker.trackProviderCall('openrouter', responseTime, false);
 
       const errorMessage = data?.error?.message || `HTTP ${statusCode}`;
-      const error: any = new Error(`OpenRouter API error: ${errorMessage}`);
+      const error: any = new Error(`${custom ? 'AI endpoint' : 'OpenRouter API'} error: ${errorMessage}`);
       error.statusCode = statusCode;
       error.response = data;
       throw error;

@@ -79,7 +79,7 @@ const EXAMPLE_PROMPTS: Record<AICatalogGenerationMode, string[]> = {
 type DialogState = 'idle' | 'generating' | 'resolving' | 'success' | 'error';
 
 export function AICatalogDialog({ isOpen, onClose, embedded, onCatalogsCreated }: AICatalogDialogProps) {
-  const { config, setConfig, auth, aiCatalogMaxPerRequest, jikanEnabled } = useConfig();
+  const { config, setConfig, auth, aiCatalogMaxPerRequest, jikanEnabled, aiCustomEndpoint } = useConfig();
   const [query, setQuery] = useState('');
   const [state, setState] = useState<DialogState>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -92,11 +92,11 @@ export function AICatalogDialog({ isOpen, onClose, embedded, onCatalogsCreated }
   const defaultProvider = config.apiKeys?.openrouter ? 'openrouter' : 'gemini';
   const [provider, setProvider] = useState<'openrouter' | 'gemini'>(defaultProvider);
   const [generationMode, setGenerationMode] = useState<AICatalogGenerationMode>('auto');
-  const [model, setModel] = useState(() => resolveCatalogModel(config, defaultProvider));
-  const { models: openRouterModels, loading: openRouterModelsLoading } = useOpenRouterModels(config.apiKeys?.openrouter);
+  const [model, setModel] = useState(() => resolveCatalogModel(config, defaultProvider, !!aiCustomEndpoint));
+  const { models: openRouterModels, loading: openRouterModelsLoading } = useOpenRouterModels(config.apiKeys?.openrouter, aiCustomEndpoint);
 
   useEffect(() => {
-    setModel(resolveCatalogModel(config, provider));
+    setModel(resolveCatalogModel(config, provider, !!aiCustomEndpoint));
   }, [provider, isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleModelChange = (value: string) => {

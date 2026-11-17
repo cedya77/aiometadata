@@ -109,7 +109,10 @@ export function resolveProvider(config: any): ResolvedProvider | null {
   else return null;
 
   const { resolveRecommendationModel, isPresetModel, withWebSearch }: any = require('../ai-model-resolver');
-  const webSearch = config?.recommendations?.web_search === true;
+  const { isCustomAiEndpoint }: any = require('../ai-endpoint');
+  // Another OpenAI-compatible endpoint has no search of its own to ask.
+  const webSearch = config?.recommendations?.web_search === true
+    && !(provider === 'openrouter' && isCustomAiEndpoint());
 
   // Gemini takes grounding as a request flag, OpenRouter as a model suffix, so
   // the suffix is settled here rather than at the call site.

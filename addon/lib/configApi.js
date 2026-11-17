@@ -1550,7 +1550,10 @@ class ConfigApi {
       },
 
       openrouter: async (key) => {
-        const response = await serviceRequest('https://openrouter.ai/api/v1/auth/key', {
+        const { aiEndpointBase, isCustomAiEndpoint } = require('../utils/ai-endpoint');
+        // Any OpenAI-compatible server lists its models; only OpenRouter has /auth/key.
+        const url = isCustomAiEndpoint() ? `${aiEndpointBase()}/models` : 'https://openrouter.ai/api/v1/auth/key';
+        const response = await serviceRequest(url, {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${key}` },
         });

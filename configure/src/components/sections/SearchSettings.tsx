@@ -167,14 +167,14 @@ function SortableEngineRow(props: EngineRowProps) {
 }
 
 export function SearchSettings() {
-  const { config, setConfig, hasBuiltInTvdb, hasBuiltInGemini, traktSearchEnabled, simklSearchEnabled, lumiereEnabled, jikanEnabled } = useConfig();
+  const { config, setConfig, hasBuiltInTvdb, hasBuiltInGemini, aiCustomEndpoint, traktSearchEnabled, simklSearchEnabled, lumiereEnabled, jikanEnabled } = useConfig();
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editType, setEditType] = useState('');
   const hasGeminiKey = !!config.apiKeys?.gemini || hasBuiltInGemini;
   const hasOpenRouterKey = !!config.apiKeys?.openrouter;
   const hasAnyAiKey = hasGeminiKey || hasOpenRouterKey;
-  const { models: openRouterModels, loading: openRouterModelsLoading } = useOpenRouterModels(config.apiKeys?.openrouter);
+  const { models: openRouterModels, loading: openRouterModelsLoading } = useOpenRouterModels(config.apiKeys?.openrouter, aiCustomEndpoint);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -637,7 +637,9 @@ export function SearchSettings() {
                     label="Model"
                     description={
                       (config.search.ai_provider || 'gemini') === 'openrouter'
-                        ? isPresetModel(config.search.ai_model)
+                        ? aiCustomEndpoint
+                          ? "Any model name this instance's AI endpoint serves"
+                          : isPresetModel(config.search.ai_model)
                           ? 'Any OpenRouter model ID or @preset/name'
                           : `Any OpenRouter model ID or @preset/name, ${config.search.ai_openrouter_web_search !== false ? 'with Web Search' : 'without Web Search'}`
                         : (() => {
@@ -722,7 +724,7 @@ export function SearchSettings() {
                   {/* OpenRouter Web Search toggle */}
                   {(() => {
                     const provider = config.search.ai_provider || 'gemini';
-                    if (provider !== 'openrouter') return null;
+                    if (provider !== 'openrouter' || aiCustomEndpoint) return null;
                     const preset = isPresetModel(config.search.ai_model);
                     const enabled = config.search.ai_openrouter_web_search !== false && !preset;
 

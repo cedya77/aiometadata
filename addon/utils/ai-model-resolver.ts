@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
 // Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 const { resolveGeminiModel, DEFAULT_GEMINI_MODEL }: any = require('./gemini-service');
+const { isCustomAiEndpoint }: any = require('./ai-endpoint');
 
 const DEFAULT_OPENROUTER_MODEL = 'google/gemini-2.5-flash';
 
@@ -10,14 +11,17 @@ type AiProvider = 'gemini' | 'openrouter';
 // reaches a client must be charset-checked first.
 const GEMINI_MODEL_PATTERN = /^[a-z0-9][a-z0-9.-]*$/i;
 const OPENROUTER_MODEL_PATTERN = /^(?:~?[a-z0-9][a-z0-9._-]*\/[a-z0-9._-]+(:[a-z0-9._-]+)?(@preset\/[a-z0-9._-]+)?|@preset\/[a-z0-9._-]+)$/i;
+// Another OpenAI-compatible server names models its own way: `llama3.1:8b`, `gpt-4o`, `openai/gpt-4o`.
+const CUSTOM_ENDPOINT_MODEL_PATTERN = /^[a-z0-9][a-z0-9._:/@+-]*$/i;
 
 function isValidModelId(provider: AiProvider, model: unknown): model is string {
   if (typeof model !== 'string') return false;
   const trimmed = model.trim();
   if (!trimmed || trimmed.length > 150) return false;
-  return provider === 'openrouter'
-    ? OPENROUTER_MODEL_PATTERN.test(trimmed)
-    : GEMINI_MODEL_PATTERN.test(trimmed);
+  if (provider === 'openrouter') {
+    return (isCustomAiEndpoint() ? CUSTOM_ENDPOINT_MODEL_PATTERN : OPENROUTER_MODEL_PATTERN).test(trimmed);
+  }
+  return GEMINI_MODEL_PATTERN.test(trimmed);
 }
 
 function isPresetModel(model: unknown): boolean {
@@ -25,6 +29,7 @@ function isPresetModel(model: unknown): boolean {
 }
 
 function withWebSearch(model: string, enabled: boolean): string {
+  if (isCustomAiEndpoint()) return model;
   const bare = model.replace(/:online$/, '');
   return enabled && !isPresetModel(bare) ? `${bare}:online` : bare;
 }

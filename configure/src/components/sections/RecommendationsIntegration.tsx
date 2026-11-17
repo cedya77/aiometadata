@@ -103,9 +103,9 @@ function Avatar({ viewer, index }: { viewer: Viewer; index: number }) {
 }
 
 export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { config, setConfig, auth, hasBuiltInGemini } = useConfig();
+  const { config, setConfig, auth, hasBuiltInGemini, aiCustomEndpoint } = useConfig();
   const { models: openRouterModels, loading: openRouterModelsLoading } =
-    useOpenRouterModels(config.apiKeys?.openrouter);
+    useOpenRouterModels(config.apiKeys?.openrouter, aiCustomEndpoint);
 
   const [status, setStatus] = useState<Status | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
@@ -316,7 +316,9 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
   const currentModel = usingOpenRouter
     ? draft.openrouter_model || ''
     : draft.gemini_model || '';
-  const presetModel = usingOpenRouter && isPresetModel(currentModel || resolveCatalogModel(config, 'openrouter'));
+  const presetModel = usingOpenRouter && isPresetModel(currentModel || resolveCatalogModel(config, 'openrouter', !!aiCustomEndpoint));
+  // Another OpenAI-compatible endpoint has neither OpenRouter's search nor its thinking control.
+  const customEndpoint = usingOpenRouter && !!aiCustomEndpoint;
   const thinkingValue = draft.reasoning_effort || (presetModel ? 'preset' : thinking);
 
   const possessive = isMain ? 'your' : `${viewer.name}'s`;
@@ -565,7 +567,7 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
                       )}
                     </div>
 
-                    <SettingRow
+                    {!customEndpoint && <SettingRow
                       htmlFor="recommendation-web-search"
                       label="Web search"
                       description={presetModel
@@ -588,9 +590,9 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
                           recommended, however recent the rest of your library is.
                         </Callout>
                       ) : undefined}
-                    />
+                    />}
 
-                    {usingOpenRouter && (
+                    {usingOpenRouter && !customEndpoint && (
                       <SettingRow
                         htmlFor="recommendation-thinking"
                         label="Thinking"

@@ -1451,7 +1451,7 @@ async function performAiSearch(query: string, language: string, config: any): Pr
     ? (config.search?.ai_model || 'google/gemini-2.5-flash')
     : resolveGeminiModel(config.search?.ai_model);
   const aiWebSearch = aiProvider === 'openrouter'
-    ? config.search?.ai_openrouter_web_search !== false
+    ? config.search?.ai_openrouter_web_search !== false && !require('../utils/ai-endpoint').isCustomAiEndpoint()
     : config.search?.ai_web_search === true;
 
   logger.info(`Starting AI search for query: "${query}" (provider: ${aiProvider}, model: ${aiModel}, webSearch: ${aiWebSearch})`);

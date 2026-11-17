@@ -288,6 +288,12 @@ to every visitor, so which one you reach for depends on who uses the instance.
 - **Description**: Google Gemini API key for AI search features
 - **Get it**: https://makersuite.google.com/app/apikey
 
+#### `OPENROUTER_BASE_URL`
+- **Optional**: Yes
+- **Default**: empty (OpenRouter)
+- **Description**: Sends every OpenRouter request (AI search, AI catalogs, recommendations) to another OpenAI-compatible API instead, such as LiteLLM, Ollama or vLLM. Users then enter that API's key in the OpenRouter key field (shown as **AI Endpoint API Key**) and pick its model names; the model list comes from its `/models`. OpenRouter's web search, presets and thinking control do not apply there and are hidden. An API that accepts any key can be used by every user of the instance. Also editable under **API Keys** in the dashboard settings.
+- **Example**: `OPENROUTER_BASE_URL=http://litellm:4000/v1`
+
 ---
 
 ## Timezone Configuration
