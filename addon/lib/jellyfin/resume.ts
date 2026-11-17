@@ -81,8 +81,17 @@ async function playbackFingerprint(service: Capable, credential: string, config:
 
 const inFlight = new Map<string, Promise<HeldRows>>();
 
-const generations = new Map<string, number>();
-export const generationOf = (userUUID: string): number => generations.get(userUUID) ?? 0;
+// Numbered from one counter, so a user forgotten here and seen again never repeats a number it had.
+const generations = new LRUCache<string, number>({ max: 20000, ttl: 24 * 60 * 60 * 1000, updateAgeOnGet: true });
+let lastGeneration = 0;
+export function generationOf(userUUID: string): number {
+  let held = generations.get(userUUID);
+  if (held === undefined) {
+    held = ++lastGeneration;
+    generations.set(userUUID, held);
+  }
+  return held;
+}
 
 /**
  * A tracker names an episode in its own space, which for anime is rarely the
@@ -623,7 +632,7 @@ export function invalidateResume(userUUID: string): void {
 
 /** A watch this server recorded: what is built from its table is rebuilt, the tracker reads are kept. */
 export function forgetOwnWatches(userUUID: string): void {
-  generations.set(userUUID, generationOf(userUUID) + 1);
+  generations.set(userUUID, ++lastGeneration);
   for (const cache of [nextUpPages, lastNextUp]) {
     for (const key of [...cache.keys()]) {
       if (String(key).startsWith(`${userUUID}:`)) cache.delete(key);

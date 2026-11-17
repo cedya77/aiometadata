@@ -123,9 +123,22 @@ interface SimklBucket {
 
 const simklBuckets = new Map<string, SimklBucket>();
 
+let bucketsSweptAt = 0;
+
+// Only a bucket with nothing left to remember goes: none cooling down, paused or used in the last hour.
+function sweepSimklBuckets(): void {
+  const now = Date.now();
+  if (simklBuckets.size < 1000 || now - bucketsSweptAt < 60_000) return;
+  bucketsSweptAt = now;
+  for (const [key, bucket] of simklBuckets) {
+    if (now - bucket.lastRequestTime > 60 * 60 * 1000 && bucket.cooldownUntil <= now && bucket.pausedUntil <= now) simklBuckets.delete(key);
+  }
+}
+
 function simklBucket(key: string): SimklBucket {
   let bucket = simklBuckets.get(key);
   if (!bucket) {
+    sweepSimklBuckets();
     bucket = { lastRequestTime: 0, recentRateLimitHits: 0, cooldownUntil: 0, pausedUntil: 0 };
     simklBuckets.set(key, bucket);
   }
