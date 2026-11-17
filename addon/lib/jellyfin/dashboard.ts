@@ -23,6 +23,9 @@ import redis from '../redisClient';
 
 const database: any = require('../database');
 
+// The cached copy is shared by every reader; these handlers only read it.
+const storedConfig = (userUUID: string): Promise<any> => require('../configApi').loadSharedConfig(userUUID).catch(() => null);
+
 export interface PlayRow {
   profile: string;
   profileKey: string;
@@ -314,14 +317,14 @@ export async function dashboardSearch(query: string): Promise<{ query: string; r
     const needle = q.toLowerCase();
     const seen = ((await seenConfigurations()) ?? []).slice(0, envInt('JELLYFIN_DASHBOARD_NAME_SCAN_MAX', 200, 1));
     const matched = await mapWithConcurrency(seen, envInt('JELLYFIN_DASHBOARD_SEARCH_CONCURRENCY', 8, 1), async (uuid: string) => {
-      const config = await database.getUserConfig(uuid).catch(() => null);
+      const config = await storedConfig(uuid);
       return config && listProfiles(config, uuid).some((p) => p.name.toLowerCase().includes(needle)) ? uuid : null;
     });
     for (const uuid of matched) if (uuid && candidates.size < limit) candidates.add(uuid);
   }
 
   const results = (await mapWithConcurrency([...candidates].slice(0, limit), 4, async (uuid: string): Promise<SearchRow | null> => {
-    const config = await database.getUserConfig(uuid).catch(() => null);
+    const config = await storedConfig(uuid);
     if (!config) return null;
     const byProfile: any[] = await database.playstateForConfiguration(uuid);
     const lastActivity = byProfile.reduce((at: number, p: any) => Math.max(at, Number(p.last_played_at) || 0, Number(p.updated_at) || 0), 0) || null;
@@ -612,7 +615,7 @@ const parseDetail = (value: unknown): Record<string, any> => {
 };
 
 export async function dashboardSync(userUUID: string, viewer: string | null): Promise<any | null> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   if (!config) return null;
   const profile = historyKeyOf(config, userUUID, viewer);
   const sources = syncSources(config, userUUID, profile);
@@ -709,7 +712,7 @@ export async function dashboardSync(userUUID: string, viewer: string | null): Pr
 }
 
 export async function dashboardSyncNow(userUUID: string, key: string, full: boolean): Promise<{ ms: number; changed: boolean } | null> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   const source = config ? syncSources(config, userUUID).get(key) : null;
   if (!source) return null;
   const { syncMirror } = require('./trackerMirror');
@@ -721,7 +724,7 @@ export async function dashboardSyncNow(userUUID: string, key: string, full: bool
 }
 
 export async function dashboardOutbox(userUUID: string, action: 'retry' | 'drop', ids: number[]): Promise<number | null> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   if (!config) return null;
   forgetDrift(userUUID);
   if (action === 'retry') {
@@ -846,7 +849,7 @@ async function importGroups(userUUID: string, source: SyncSource, outcomes: Map<
 }
 
 export async function dashboardDrift(userUUID: string, viewer: string | null): Promise<any | null> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   if (!config) return null;
   const profile = historyKeyOf(config, userUUID, viewer);
   const memoKey = `${userUUID}|${profile ?? '*'}`;
@@ -872,7 +875,7 @@ export async function dashboardDrift(userUUID: string, viewer: string | null): P
 }
 
 export async function dashboardDriftImported(userUUID: string, key: string, origin: string, viewer: string | null): Promise<any[] | null> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   const source = config ? syncSources(config, userUUID, historyKeyOf(config, userUUID, viewer)).get(key) : null;
   if (!source) return null;
   const drift = await driftOf(userUUID, key, source);
@@ -884,7 +887,7 @@ function keepsRewatches(source: SyncSource): Promise<boolean> {
 }
 
 export async function dashboardDriftAction(userUUID: string, key: string, action: 'push' | 'pull' | 'leave' | 'restore', items: string[] | null, origin: string | null = null, viewer: string | null = null): Promise<number | null> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   const source = config ? syncSources(config, userUUID, historyKeyOf(config, userUUID, viewer)).get(key) : null;
   if (!source) return null;
   if (action === 'restore') {
@@ -918,7 +921,7 @@ export async function dashboardDriftAction(userUUID: string, key: string, action
 }
 
 export async function dashboardDriftItem(userUUID: string, key: string, side: 'behind' | 'ahead', video: string, bases: string[]): Promise<any | null> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   const source = config ? syncSources(config, userUUID).get(key) : null;
   const { parseStremioId } = require('./idsCodec');
   const parsed = parseStremioId(video);
@@ -1031,7 +1034,7 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
 }
 
 async function matchSource(userUUID: string, key: string): Promise<SyncSource | null> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   const source = config ? syncSources(config, userUUID).get(key) ?? null : null;
   return source && isMatchable(source.service) ? source : null;
 }
@@ -1175,7 +1178,7 @@ function copySide(source: SyncSource, key: string): any {
 }
 
 async function copyPair(userUUID: string, viewer: string | null, fromKey: string, toKey: string, what: string): Promise<{ from: SyncSource; to: SyncSource } | null> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   if (!config || fromKey === toKey) return null;
   const sources = syncSources(config, userUUID, historyKeyOf(config, userUUID, viewer));
   const from = sources.get(fromKey);
@@ -1298,7 +1301,7 @@ function smallAvatar(url: string | null | undefined): string | null {
 
 /** One configuration: its profiles with counts, and the sessions, positions and recent plays of one profile or all. */
 export async function dashboardConfiguration(userUUID: string, profile: string | null, rows?: number, offsetMinutes = 0): Promise<any> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   if (!config) return null;
   const names = profileNames(config, userUUID);
   const limit = Math.min(100, Math.max(1, rows || envInt('JELLYFIN_DASHBOARD_ROWS', 30, 1)));
@@ -1369,7 +1372,7 @@ async function foldedPlays(userUUID: string, names: Map<string, string>, kind: P
 }
 
 export async function dashboardPlays(userUUID: string, profile: string | null, kind: PlayKind, offset: number, limit: number): Promise<any | null> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   if (!config) return null;
   const from = Math.max(0, offset);
   const size = Math.min(100, Math.max(1, limit));
@@ -2079,7 +2082,7 @@ export async function dashboardTitleAction(userUUID: string, profile: string | n
 }
 
 export async function dashboardClearResume(userUUID: string, profileKey: string, videoId: string): Promise<boolean | null> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   if (!config) return null;
   const { parseStremioId } = require('./idsCodec');
   if (!parseStremioId(videoId)) return false;
@@ -2112,7 +2115,7 @@ export async function dashboardWatchDate(userUUID: string, profile: string | nul
 }
 
 export async function dashboardSameViewing(userUUID: string, profileKey: string, video: string, at: number, theirs: number): Promise<boolean | 'invalid' | null> {
-  const config = await database.getUserConfig(userUUID).catch(() => null);
+  const config = await storedConfig(userUUID);
   if (!config) return null;
   if (!parseStremioId(video) || !(theirs > 0) || !(at > theirs)) return 'invalid';
   if (profileKey && !listProfiles(config, userUUID).some((p) => p.id === profileKey)) return 'invalid';
