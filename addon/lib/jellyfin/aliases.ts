@@ -93,7 +93,7 @@ const aliasMemo = new LRUCache<string, Promise<string[]>>({
 });
 
 function memoKey(videoId: string, config: any): string {
-  return `${require('../getTmdb').hasTmdbKey(config) ? 'k' : '-'}|${videoId}`;
+  return `${require('../getTmdb').tmdbKeyId(config)}|${videoId}`;
 }
 
 export function videoIdAliases(videoId: string, config: any = {}): Promise<string[]> {
