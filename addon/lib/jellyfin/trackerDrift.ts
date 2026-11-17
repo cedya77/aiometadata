@@ -117,13 +117,8 @@ const coordinateOf = (id: string): string => {
 function titlesOf(id: string): string[] {
   const parsed = parseStremioId(id);
   if (!parsed) return [id];
-  const type = parsed.episode === null || parsed.episode === undefined ? 'movie' : 'series';
-  const number = parsed.base.split(':')[1];
   try {
-    const found = parsed.idType === 'imdb' ? idMappings.getByImdbId(parsed.base, type)
-      : parsed.idType === 'tmdb' ? idMappings.getByTmdbId(number, type)
-      : parsed.idType === 'tvdb' ? idMappings.getByTvdbId(number, type)
-      : null;
+    const found = idMappings.getByParsedId(parsed, parsed.episode === null || parsed.episode === undefined ? 'movie' : 'series');
     return [...new Set([parsed.base, found?.imdbId, found?.tmdbId && `tmdb:${found.tmdbId}`, found?.tvdbId && `tvdb:${found.tvdbId}`].filter(Boolean) as string[])];
   } catch {
     return [parsed.base];

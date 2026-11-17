@@ -223,10 +223,10 @@ function otherFilmSpelling(videoId: string): string | null {
   const parsed = parseStremioId(videoId);
   if (!parsed || (parsed.episode !== null && parsed.episode !== undefined)) return null;
   if (parsed.idType === 'imdb') {
-    const tmdbId = idMappings.getByImdbId?.(parsed.base, 'movie')?.tmdbId;
+    const tmdbId = idMappings.getByParsedId(parsed, 'movie')?.tmdbId;
     return tmdbId ? `tmdb:${tmdbId}` : null;
   }
-  if (parsed.idType === 'tmdb') return idMappings.getByTmdbId?.(String(parsed.base).split(':')[1], 'movie')?.imdbId ?? null;
+  if (parsed.idType === 'tmdb') return idMappings.getByParsedId(parsed, 'movie')?.imdbId ?? null;
   return null;
 }
 

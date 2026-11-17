@@ -35,11 +35,7 @@ function mappedIds(parsed: any, series: boolean): { imdb?: string; tmdb?: string
   if (parsed.idType === 'imdb' || parsed.idType === 'tmdb' || parsed.idType === 'tvdb' || parsed.idType === 'tvmaze') {
     let ids: any;
     try {
-      const type = series ? 'series' : 'movie';
-      ids = parsed.idType === 'imdb' ? idMappings.getByImdbId(id, type)
-        : parsed.idType === 'tmdb' ? idMappings.getByTmdbId(id, type)
-        : parsed.idType === 'tvdb' ? idMappings.getByTvdbId(id, type)
-        : idMappings.getSeriesByTvmaze(id);
+      ids = idMappings.getByParsedId(parsed, series ? 'series' : 'movie');
     } catch { /* the mapping file is not loaded yet */ }
     return {
       imdb: parsed.idType === 'imdb' ? id : ids?.imdbId || undefined,
