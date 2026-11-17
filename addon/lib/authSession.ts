@@ -12,6 +12,15 @@ const logger = consola.withTag('AuthSession');
 export const SESSION_COOKIE = 'aiom_session';
 const SESSION_PREFIX = 'auth:session:';
 const ACCOUNT_SESSIONS_PREFIX = 'auth:account-sessions:';
+const INDEX_COMPLETE_KEY = 'auth:account-sessions-complete';
+
+async function indexComplete(): Promise<boolean> {
+  try {
+    return (await redis.exists(INDEX_COMPLETE_KEY)) === 1;
+  } catch {
+    return false;
+  }
+}
 
 function accountSessionsKey(accountId: string): string {
   return `${ACCOUNT_SESSIONS_PREFIX}${accountId}`;
@@ -56,6 +65,7 @@ export async function createSession(data: Omit<SessionData, 'createdAt'>): Promi
     await refreshIndexExpiry(key);
   } catch (error: any) {
     logger.warn(`Could not index session for ${data.accountId}: ${error.message}`);
+    await redis.del(INDEX_COMPLETE_KEY).catch(() => undefined);
   }
   return id;
 }
@@ -145,6 +155,7 @@ async function scanSessions(
  */
 export async function backfillSessionIndex(): Promise<number> {
   let adopted = 0;
+  if (await indexComplete()) return 0;
   try {
     await scanSessions(async (id, record) => {
       const accountId = record?.accountId;
@@ -158,6 +169,7 @@ export async function backfillSessionIndex(): Promise<number> {
       adopted += 1;
     });
     if (adopted > 0) logger.info(`Adopted ${adopted} session(s) into the account index`);
+    await redis.set(INDEX_COMPLETE_KEY, String(Date.now()));
   } catch (error: any) {
     logger.warn(`Could not backfill the session index: ${error.message}`);
   }
@@ -166,13 +178,13 @@ export async function backfillSessionIndex(): Promise<number> {
 
 /**
  * Every session for one account, used when its access is revoked. The index
- * answers first, then a sweep catches anything missing from it: revoking is
- * rare and interactive, so it is worth the scan to never report a success that
- * left a session alive.
+ * answers first; until the startup backfill has adopted every older session, or
+ * after an index write failed, a sweep catches anything missing from it.
  */
 export async function destroyAccountSessions(accountId: string): Promise<number> {
   const key = accountSessionsKey(accountId);
   const removed = new Set<string>();
+  let indexRead = true;
 
   try {
     const ids: string[] = await redis.zrange(key, 0, '-1');
@@ -183,7 +195,10 @@ export async function destroyAccountSessions(accountId: string): Promise<number>
     await redis.del(key);
   } catch (error: any) {
     logger.warn(`Could not read the session index for ${accountId}: ${error.message}`);
+    indexRead = false;
   }
+
+  if (indexRead && (await indexComplete())) return removed.size;
 
   try {
     await scanSessions(async (id, record) => {
