@@ -235,11 +235,27 @@ async function pump(): Promise<void> {
         }
       }
 
-      const slots = concurrency() - active.size;
+      const total = concurrency();
+      const slots = total - active.size;
       if (slots > 0) {
-        const rows: any[] = await database.readyTrackerOutbox(now, slots + active.size);
+        const rows: any[] = await database.readyTrackerOutbox(now, total);
         if (pass !== passId) return;
-        const taking = rows.filter((row) => !active.has(row.lane)).slice(0, slots);
+        const running = new Map<string, number>();
+        for (const lane of active) {
+          const service = lane.split(':')[0];
+          running.set(service, (running.get(service) ?? 0) + 1);
+        }
+        // Each tracker gets half the slots first; one may take what the others leave, short of the last.
+        const taking: any[] = [];
+        for (const most of [Math.max(1, Math.ceil(total / 2)), Math.max(1, total - 1)]) {
+          for (const row of rows) {
+            if (taking.length >= slots) break;
+            const held = running.get(row.service) ?? 0;
+            if (held >= most || active.has(row.lane) || taking.includes(row)) continue;
+            running.set(row.service, held + 1);
+            taking.push(row);
+          }
+        }
         const claimed = new Set<number>(await database.claimTrackerOutbox(taking.map((row) => row.id), Date.now() + leaseMs()));
         for (const row of taking) {
           if (claimed.has(row.id)) send(row);

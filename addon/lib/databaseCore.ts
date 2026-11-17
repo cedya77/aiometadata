@@ -1878,20 +1878,25 @@ export class DatabaseCore {
     await this.runTogether(statements);
   }
 
-  async readyTrackerOutbox(now: number, limit: number): Promise<any[]> {
+  async readyTrackerOutbox(now: number, perService: number): Promise<any[]> {
     const sqlite = this.type === 'sqlite';
     const at = sqlite ? '?' : '$1';
     // A title's writes go in order, but a waiting rating holds none back: it may be waiting for the title's own watched mark.
     const rows = await this.allPrimaryQuery(
       `SELECT id, lane, user_uuid, profile, service, op, item_key, payload, attempts, next_at, expires_at, claimed_until, created_at
        FROM tracker_outbox WHERE id IN (
-         SELECT MIN(o.id) FROM tracker_outbox o
-         WHERE o.next_at <= ${at} AND o.claimed_until <= ${at}
-           AND o.lane NOT IN (SELECT c.lane FROM tracker_outbox c WHERE c.claimed_until > ${at})
-           AND NOT EXISTS (SELECT 1 FROM tracker_outbox w WHERE w.lane = o.lane AND w.item_key = o.item_key AND w.id < o.id AND w.next_at > ${at} AND w.op <> 'rate')
-         GROUP BY o.lane
-       ) ORDER BY id LIMIT ${sqlite ? '?' : '$2'}`,
-      sqlite ? [now, now, now, now, limit] : [now, limit]
+         SELECT id FROM (
+           SELECT h.id, ROW_NUMBER() OVER (PARTITION BY h.service ORDER BY h.id) AS service_rank
+           FROM tracker_outbox h WHERE h.id IN (
+             SELECT MIN(o.id) FROM tracker_outbox o
+             WHERE o.next_at <= ${at} AND o.claimed_until <= ${at}
+               AND o.lane NOT IN (SELECT c.lane FROM tracker_outbox c WHERE c.claimed_until > ${at})
+               AND NOT EXISTS (SELECT 1 FROM tracker_outbox w WHERE w.lane = o.lane AND w.item_key = o.item_key AND w.id < o.id AND w.next_at > ${at} AND w.op <> 'rate')
+             GROUP BY o.lane
+           )
+         ) heads WHERE service_rank <= ${sqlite ? '?' : '$2'}
+       ) ORDER BY id`,
+      sqlite ? [now, now, now, now, perService] : [now, perService]
     );
     // Postgres hands BIGINT back as a string.
     return rows.map((row: any) => ({
