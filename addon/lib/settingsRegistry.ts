@@ -3347,7 +3347,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     description: 'How many configurations\' watched snapshots are held in memory.',
     category: 'Cache',
     type: 'number',
-    default: 200,
+    default: 1000,
     min: 1,
   },
   {

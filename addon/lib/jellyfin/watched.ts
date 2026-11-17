@@ -821,7 +821,7 @@ interface SummaryData {
   listedAnime?: string[];
 }
 
-const summaries = new LRUCache<string, WatchedSnapshot>({ max: envInt('JELLYFIN_WATCHED_CACHE_MAX', 200, 1) });
+const summaries = new LRUCache<string, WatchedSnapshot>({ max: envInt('JELLYFIN_WATCHED_CACHE_MAX', 1000, 1) });
 // One build per account at a time, each after the last, so two versions never write the index at once.
 const indexBuilds = new Map<string, Promise<unknown>>();
 
@@ -1358,7 +1358,7 @@ export async function assemblePmdb(data: PmdbData, config: any): Promise<RawSnap
 // A request answers from the snapshot held here and a refresh follows behind it, so a
 // tracker slow to answer never holds up a client; only the first read waits on one.
 const served = new LRUCache<string, { snapshot: WatchedSnapshot; at: number }>({
-  max: envInt('JELLYFIN_WATCHED_CACHE_MAX', 200, 1),
+  max: envInt('JELLYFIN_WATCHED_CACHE_MAX', 1000, 1),
 });
 const refreshing = new Set<string>();
 
@@ -1463,7 +1463,7 @@ export async function watchedSnapshot(userUUID: string, config: any, opts: { pat
   return local.size ? { ...snapshot, dropped: new Set([...snapshot.dropped, ...local]) } : snapshot;
 }
 
-const unmarksFollowed = new LRUCache<string, string>({ max: envInt('JELLYFIN_WATCHED_CACHE_MAX', 200, 1) });
+const unmarksFollowed = new LRUCache<string, string>({ max: Math.max(5000, envInt('JELLYFIN_WATCHED_CACHE_MAX', 1000, 1)) });
 const unmarksInFlight = new Map<string, Promise<void>>();
 
 // A title that left the tracker's list since the last read was unmarked there.

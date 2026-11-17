@@ -532,7 +532,7 @@ async function serviceSnapshot(userUUID: string, config: any, service: Capable):
 // rewatch is, so Played comes from the watch history rather than being assumed
 // false because the row is resumable.
 /** Dropped when this server is itself the thing that changed the state. */
-const clearsFollowed = new LRUCache<string, string>({ max: envInt('JELLYFIN_RESUME_CACHE_MAX', 500, 1) });
+const clearsFollowed = new LRUCache<string, string>({ max: Math.max(5000, envInt('JELLYFIN_RESUME_CACHE_MAX', 500, 1)) });
 const clearsInFlight = new Map<string, Promise<void>>();
 
 async function followTrackerClears(userUUID: string, config: any, rows: ResumeRow[]): Promise<void> {
