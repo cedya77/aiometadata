@@ -4,7 +4,7 @@ import consola from 'consola';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { trackerConfig, type AccountService } from '../accounts';
-import { videoIdAliases } from './aliases';
+import { aliasConfigFor, videoIdAliases } from './aliases';
 import { listProfiles, scopeConfigToProfile } from './profiles';
 import { credentialFor, type Capable } from './trackerSource';
 import { asListed, belongsOn, furthestPerEntry, pullDrift, spellingFor, spellingsFor, viewingOf, type Viewing } from './trackerDrift';
@@ -50,7 +50,7 @@ async function nativeEntries(service: string, credential: string, config: any): 
     }
     const spellings = spellingsOf(watch);
     const ids = new Set(spellings);
-    for (const spelling of spellings) for (const alias of await videoIdAliases(spelling).catch(() => [] as string[])) ids.add(alias);
+    for (const spelling of spellings) for (const alias of await videoIdAliases(spelling, config).catch(() => [] as string[])) ids.add(alias);
     if (kind === 'movie') for (const spelling of spellings) for (const more of await movieSpellings(spelling, config)) ids.add(more);
     const list = [...ids];
     byKey.set(key, { ids: list, kind, metaId: kind === 'movie' ? list[0] : imdb ?? `tmdb:${tmdb}`, season, episode, at, native: { tmdb, imdb, season, episode } });
@@ -133,6 +133,7 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
   await readFresh(from);
   await readFresh(to);
   const { indexedSnapshot, watchedAmong, movieSpellings } = require('./watched');
+  const aliasConfig = await aliasConfigFor(userUUID);
   if (tmdbNumbered(from.service) && tmdbNumbered(to.service)) {
     const target = await indexedSnapshot(to.service, to.credential, to.scoped);
     const { shouldTrackServiceMediaType } = require('../watchTracking');
@@ -172,7 +173,7 @@ export async function planCopy(userUUID: string, from: CopySide, to: CopySide, s
   const viewings: Viewing[] = [];
   let excluded = 0;
   for (const row of rows) {
-    const ids = [String(row.video_id), ...(await videoIdAliases(String(row.video_id)).catch(() => [] as string[]))];
+    const ids = [String(row.video_id), ...(await videoIdAliases(String(row.video_id), aliasConfig).catch(() => [] as string[]))];
     if (row.kind === 'movie') ids.push(...(await movieSpellings(String(row.video_id), from.scoped)));
     const viewing = viewingOf('', Number(row.at) || 0, [...new Set(ids)]);
     if (!viewing) continue;

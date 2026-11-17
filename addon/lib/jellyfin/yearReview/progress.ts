@@ -3,6 +3,7 @@
 import { parseStremioId } from '../idsCodec';
 import { episodeKey } from './facts';
 import { foldPlays } from './plays';
+import { aliasConfigFor } from '../aliases';
 import type { TimedYear } from './timed';
 
 const database: any = require('../../database');
@@ -36,7 +37,7 @@ export async function showProgress(userUUID: string, historyKey: string, to: num
   const releasesOf = new Map(shows.map((title) => [title.key, title.facts!.releases]));
   const rows = (await database.listEpisodeWatchesBefore(userUUID, historyKey, [...owner.keys()], to)).filter((row: { video_id: string }) => owner.has(baseOf(row.video_id)));
   const firstSeen = new Map<string, Map<string, number>>();
-  for (const play of await foldPlays(rows)) {
+  for (const play of await foldPlays(rows, await aliasConfigFor(userUUID))) {
     if (play.episode === null) continue;
     const key = play.spellings.map((id) => owner.get(baseOf(id))).find(Boolean);
     if (!key) continue;

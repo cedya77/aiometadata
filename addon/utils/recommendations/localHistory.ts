@@ -127,7 +127,7 @@ export async function collectLocalRows(config: any, userUUID: string, profile: s
   type Title = { bases: Set<string>; episode: boolean; episodes: Set<string>; played: boolean; at: number };
   const titles = new Map<string, Title>();
   const titleOf = new Map<string, string>();
-  for (const group of (await groupBySpelling(plays)) as any[][]) {
+  for (const group of (await groupBySpelling(plays, config)) as any[][]) {
     const bases = new Set<string>();
     let number: string | null = null;
     for (const row of group) {

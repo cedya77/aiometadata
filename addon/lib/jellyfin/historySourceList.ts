@@ -257,7 +257,7 @@ export const listHistorySource: HistorySource = {
         kind === 'movie' ? await filmSpellings(ids)
         : kind === 'show' ? showSpellings(ids)
         : kind === 'season' ? tmdbSeasonSpellings(ids, season!)
-        : await tmdbEpisodeSpellings(ids, season!, episode!);
+        : await tmdbEpisodeSpellings(ids, season!, episode!, null, config);
       if (!spellings.length) {
         miss(labelOf(row, kind), 'No id this server can use');
         return null;

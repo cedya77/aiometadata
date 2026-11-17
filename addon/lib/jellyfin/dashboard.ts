@@ -127,9 +127,10 @@ async function describe(userUUID: string, videoId: string): Promise<Named> {
       const video = index?.videos.find((v) => v.id === videoId)
         ?? index?.videos.find((v) => v.episode === parsed.episode && (parsed.season === null ? v.season === null : v.season === parsed.season));
       const number = parsed.season === null || parsed.season === undefined ? `E${parsed.episode}` : `S${parsed.season}E${parsed.episode}`;
-      const { videoIdAliases } = require('./aliases');
-      const keys = [videoId, ...(await videoIdAliases(videoId))];
-      if (video?.id) keys.push(video.id, ...(await videoIdAliases(video.id)));
+      const { aliasConfigFor, videoIdAliases } = require('./aliases');
+      const config = await aliasConfigFor(userUUID);
+      const keys = [videoId, ...(await videoIdAliases(videoId, config))];
+      if (video?.id) keys.push(video.id, ...(await videoIdAliases(video.id, config)));
       out = {
         keys,
         title: index?.name ?? videoId,
@@ -497,12 +498,13 @@ async function readStatsRows(userUUID: string, profile: string, watchedMs: numbe
 async function readProfileStats(userUUID: string, profiles: string[]): Promise<Map<string, ProfileStats>> {
   const since = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
   const watchedMs = envInt('JELLYFIN_DASHBOARD_WATCHED_MINUTES', 5, 1) * 60_000;
-  const { spellingRoots } = require('./aliases');
+  const { aliasConfigFor, spellingRoots } = require('./aliases');
+  const config = await aliasConfigFor(userUUID);
   const out = new Map<string, ProfileStats>();
   for (const profile of profiles) {
     const { ids, times, flags } = await readStatsRows(userUUID, profile, watchedMs);
     if (!ids.length) continue;
-    const rootOf: (id: string) => string = await spellingRoots(ids, (i: number) => (flags[i] & WRITTEN_HERE ? times[i] : null), true);
+    const rootOf: (id: string) => string = await spellingRoots(ids, (i: number) => (flags[i] & WRITTEN_HERE ? times[i] : null), true, config);
     const titles = new Map<string, { id: string; flags: number; at: number; finishes: Set<number> | null }>();
     const known = new Set(ids);
     for (let i = 0; i < ids.length; i += 1) {
@@ -936,7 +938,7 @@ export async function dashboardDriftItem(userUUID: string, key: string, side: 'b
   const match = isMatchable(source.service)
     ? (await Promise.all(shows.map((base) => matchFor(userUUID, source.service, base).catch(() => null)))).find(Boolean) ?? null
     : null;
-  const aliases: string[] = await videoIdAliases(video).catch(() => []);
+  const aliases: string[] = await videoIdAliases(video, config).catch(() => []);
   // An episode matched to a film there is sent, and looked for, as that film.
   const film = isMatchable(source.service) && parsed.episode !== null && parsed.episode !== undefined
     ? await require('./trackerMatch').filmFor(userUUID, source.service, [video, ...aliases]).catch(() => null)
@@ -1900,7 +1902,7 @@ async function titleWatches(userUUID: string, config: any, meta: any, item: any,
   }
   await mapWithConcurrency(episodes, 8, async (ep: any) => {
     const own = await videoOf(ep.Id);
-    if (own) spellings.set(String(ep.Id), [own, ...(await videoIdAliases(own).catch(() => [] as string[]))]);
+    if (own) spellings.set(String(ep.Id), [own, ...(await videoIdAliases(own, config).catch(() => [] as string[]))]);
   });
   const rows = await database.listWatchesFor(userUUID, profileKey(config), [...spellings.values()].flat());
   const byVideo = new Map<string, number[]>();
@@ -2120,7 +2122,7 @@ export async function dashboardSameViewing(userUUID: string, profileKey: string,
   if (!parseStremioId(video) || !(theirs > 0) || !(at > theirs)) return 'invalid';
   if (profileKey && !listProfiles(config, userUUID).some((p) => p.id === profileKey)) return 'invalid';
   const { videoIdAliases } = require('./aliases');
-  const spellings = [video, ...(await videoIdAliases(video).catch(() => [] as string[]))];
+  const spellings = [video, ...(await videoIdAliases(video, config).catch(() => [] as string[]))];
   const gap = envInt('JELLYFIN_TRACKER_REWATCH_GAP_HOURS', 48, 48) * 60 * 60 * 1000;
   const own: number[] = ((await database.listWatchesFor(userUUID, profileKey, spellings)) as any[]).map((row) => Number(row.watched_at));
   const kept = own

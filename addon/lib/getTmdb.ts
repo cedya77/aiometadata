@@ -414,7 +414,7 @@ async function getAccountDetails(sessionId: string, apiKey: string) {
 }
 function getApiKey(config: UserConfig = {} as UserConfig): string {
     const key = config?.apiKeys?.tmdb || process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY;
-    if (!key) throw new Error("TMDB API key not found in config or environment.");
+    if (!key) throw Object.assign(new Error("TMDB API key not found in config or environment."), { code: 'TMDB_KEY_MISSING' });
     return key;
 }
 
@@ -1155,7 +1155,8 @@ export async function tvImages(params: any, config: UserConfig) {
 }
 
 module.exports = {
-  makeTmdbRequest, 
+  hasTmdbKey,
+  makeTmdbRequest,
   movieRecommendations,
   tvRecommendations,
   movieInfo,

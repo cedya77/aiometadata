@@ -138,7 +138,7 @@ async function pairFilmSpellings(rows: Array<{ video_id: string; watched_at: num
 export async function foldPlays(rows: Array<{ video_id: string; watched_at: number; origin: string | null }>, config: any = {}): Promise<YearPlay[]> {
   const ids = [...new Set(rows.map((row) => row.video_id))];
   const spellings = unionFind(ids);
-  const aliases = await mapWithConcurrency(ids, envInt('JELLYFIN_YEAR_REVIEW_ALIAS_CONCURRENCY', 8, 1), (id) => videoIdAliases(id).catch(() => [] as string[]));
+  const aliases = await mapWithConcurrency(ids, envInt('JELLYFIN_YEAR_REVIEW_ALIAS_CONCURRENCY', 8, 1), (id) => videoIdAliases(id, config).catch(() => [] as string[]));
   ids.forEach((id, i) => {
     for (const alias of aliases[i]) spellings.union(id, alias);
   });

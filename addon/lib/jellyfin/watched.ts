@@ -16,7 +16,8 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
   const database: any = require('../database');
   const { parseStremioId } = require('./ids');
   const { envInt } = require('../../utils/envNumber');
-  const { videoIdAliases, groupBySpelling } = require('./aliases');
+  const { videoIdAliases, groupBySpelling, aliasConfigFor } = require('./aliases');
+  const aliasConfig = await aliasConfigFor(userUUID);
 
   const since = Date.now() - envInt('JELLYFIN_NEXTUP_OWN_DAYS', 120, 1) * 24 * 60 * 60 * 1000;
   const shows = envInt('JELLYFIN_NEXTUP_OWN_LIMIT', 300, 1);
@@ -47,7 +48,7 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
     const last = records[records.length - 1];
     if (last) after = { at: Number(last.last_played_at), videoId: String(last.video_id) };
     const groupOf = new Map<string, any[]>();
-    for (const group of (await groupBySpelling([...carry, ...records])) as any[][]) {
+    for (const group of (await groupBySpelling([...carry, ...records], aliasConfig)) as any[][]) {
       for (const row of group) groupOf.set(String(row.video_id), group);
     }
     const byShow = new Map<string, any[]>();
@@ -84,7 +85,7 @@ export async function ownNextUpRows(userUUID: string, profile: string): Promise<
           bases.add(base);
         }
       }
-      for (const alias of await videoIdAliases(String(r.video_id))) {
+      for (const alias of await videoIdAliases(String(r.video_id), aliasConfig)) {
         const base = parseStremioId(alias)?.base;
         if (base) seen.add(base);
       }
@@ -481,7 +482,7 @@ export interface AnimeListEntry {
   finished?: boolean;
 }
 
-export async function assembleAnimeList(entries: AnimeListEntry[]): Promise<RawSnapshot> {
+export async function assembleAnimeList(entries: AnimeListEntry[], config: any = {}): Promise<RawSnapshot> {
   const idMapper: any = require('../id-mapper');
   const { videoIdAliases, groupBySpelling } = require('./aliases');
   const snapshot: Collecting = {
@@ -526,7 +527,7 @@ export async function assembleAnimeList(entries: AnimeListEntry[]): Promise<RawS
 
     for (let number = 1; number <= watchedCount; number += 1) {
       const videoId = `${metaId}:${number}`;
-      for (const id of [videoId, ...(await videoIdAliases(videoId))]) snapshot.episodes.add(id);
+      for (const id of [videoId, ...(await videoIdAliases(videoId, config))]) snapshot.episodes.add(id);
     }
     if (watchedCount > 0) {
       const last = `${metaId}:${watchedCount}`;
@@ -880,7 +881,7 @@ async function assembleFromMirror(service: MirroredService, credential: string, 
     return { ...(await assembleMdblist({ movieRows, episodeRows, showRows, upNext, droppedShows: dropped.shows ?? [], droppedUnread: dropped.unread === true }, config)), following: [] };
   }
   if (service === 'anilist' || service === 'mal') {
-    return assembleAnimeList(rows.filter((row) => row.key.startsWith('entry:')).map((row) => row.data));
+    return assembleAnimeList(rows.filter((row) => row.key.startsWith('entry:')).map((row) => row.data), config);
   }
   const plays: any[] = [];
   let dropped: any = { items: [], unread: false };
@@ -1534,7 +1535,7 @@ async function clearUnmarked(userUUID: string, profile: string, config: any, bef
   for (const id of gone) {
     const parsed = parseStremioId(id);
     const isEpisode = Boolean(parsed && parsed.episode !== null && parsed.episode !== undefined);
-    const spellings = [id, ...(isEpisode ? await videoIdAliases(id) : await movieSpellings(id, config))];
+    const spellings = [id, ...(isEpisode ? await videoIdAliases(id, config) : await movieSpellings(id, config))];
     if (spellings.some((spelling) => current.has(spelling))) continue;
 
     const rows = [...(await database.getPlaystates(userUUID, spellings, profile)).values()].filter((row: any) => row.played);
@@ -1754,7 +1755,7 @@ export async function applyWatchedState(
     try {
       const database: any = require('../database');
       const { getPlaystatesAcross } = require('./aliases');
-      own = await getPlaystatesAcross(userUUID, videoIds, profile);
+      own = await getPlaystatesAcross(userUUID, videoIds, profile, config);
     } catch {
       own = new Map();
     }
@@ -1804,9 +1805,10 @@ export async function applyWatchedState(
   ];
   const watched = await watchedAmong(snapshot, direct);
   const aliasesOf = new Map<string, string[]>();
-  const { videoIdAliases, groupBySpelling } = require('./aliases');
+  const { videoIdAliases, groupBySpelling, aliasConfigFor } = require('./aliases');
+  const aliasConfig = config ?? (await aliasConfigFor(userUUID));
   for (const videoId of new Set(showEpisodes)) {
-    if (!watched.has(videoId) && !ownPlayed.has(videoId)) aliasesOf.set(videoId, await videoIdAliases(videoId));
+    if (!watched.has(videoId) && !ownPlayed.has(videoId)) aliasesOf.set(videoId, await videoIdAliases(videoId, aliasConfig));
   }
   for (const [id, at] of await watchedAmong(snapshot, [...aliasesOf.values()].flat())) watched.set(id, at);
   const unwatchedHere = (id: string): boolean => {

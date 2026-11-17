@@ -59,7 +59,7 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
       runtimeMs,
       lastPlayedAt: row.updatedAt || null,
       origin: row.service ?? null,
-    }, profile);
+    }, profile, [], config);
     added += 1;
   }
 
@@ -71,7 +71,7 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
   const paused = new Set(resume.map((row) => row.videoId));
   const watched = await allWatched(snapshot);
   const finished = [...watched.episodes, ...watched.movies];
-  const known = await getPlaystatesAcross(userUUID, finished, profile);
+  const known = await getPlaystatesAcross(userUUID, finished, profile, config);
   for (const [videoId, row] of await filmsHeldElsewhere(userUUID, finished.filter((id: string) => !known.has(id)), profile)) known.set(videoId, row);
   const logged = await database.watchedVideoIds(userUUID, profile);
   // A tracker dates a mark sent to it without one by when it came, so a bulk of them is no viewing date.
@@ -87,14 +87,14 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
         skipped += 1;
         continue;
       }
-      await upsertPlaystateEverywhere(userUUID, videoId, { lastPlayedAt: trackerAt, origin, watch: { at: trackerAt, kind: 'dated' } }, profile, heldAs);
+      await upsertPlaystateEverywhere(userUUID, videoId, { lastPlayedAt: trackerAt, origin, watch: { at: trackerAt, kind: 'dated' } }, profile, heldAs, config);
       added += 1;
       continue;
     }
     const watchedAt = trackerAt ?? 0;
     if (row && row.played && Number(row.position_ms) > 0 && !paused.has(videoId) && watchedAt > Number(row.updated_at)) {
       const runtimeMs = Number(row.runtime_ms) || 0;
-      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: watchedAt, lastPlayedKind: bulk.has(watchedAt) ? 'mark' : 'viewing', origin, watch: { at: watchedAt, kind: 'finish', gapMs: rewatchGapMs(runtimeMs) } }, profile, heldAs);
+      await upsertPlaystateEverywhere(userUUID, videoId, { positionMs: 0, played: true, lastPlayedAt: watchedAt, lastPlayedKind: bulk.has(watchedAt) ? 'mark' : 'viewing', origin, watch: { at: watchedAt, kind: 'finish', gapMs: rewatchGapMs(runtimeMs) } }, profile, heldAs, config);
       added += 1;
       continue;
     }
@@ -116,7 +116,7 @@ export async function syncPlaystateFor(userUUID: string, config: any): Promise<{
       continue;
     }
     const watch = trackerAt ? { watch: { at: trackerAt, kind: 'first' } } : {};
-    await upsertPlaystateEverywhere(userUUID, videoId, row ? { positionMs: 0, played: true, origin, ...watch } : { positionMs: 0, played: true, lastPlayedAt: trackerAt ?? null, lastPlayedKind: trackerAt && bulk.has(trackerAt) ? 'mark' : 'viewing', origin, ...watch }, profile, heldAs);
+    await upsertPlaystateEverywhere(userUUID, videoId, row ? { positionMs: 0, played: true, origin, ...watch } : { positionMs: 0, played: true, lastPlayedAt: trackerAt ?? null, lastPlayedKind: trackerAt && bulk.has(trackerAt) ? 'mark' : 'viewing', origin, ...watch }, profile, heldAs, config);
     added += 1;
   }
 
