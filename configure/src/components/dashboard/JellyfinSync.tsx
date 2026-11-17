@@ -611,7 +611,7 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
       )}
 
       <p className="text-[11px] text-muted-foreground/80">
-        Every watch made here or imported is checked{trackers.animeOnly(lane.service) ? "" : `, and ${name}'s own from the last ${days} days`}{drift?.unread ? `; ${watches(drift.unread)} newer than the last read wait for the next one` : ""}. Reading never changes {name}; sending dates each watch when it happened, where that is known.
+        Every watch made here or imported is checked{trackers.animeOnly(lane.service) ? "" : `, and ${name}'s own from the last ${days} days`}{drift?.unread ? `; ${watches(drift.unread)} newer than the last read ${drift.reading ? "wait for the read under way" : "wait for the next one"}` : ""}. Reading never changes {name}; sending dates each watch when it happened, where that is known.
       </p>
     </div>
   );
@@ -1035,7 +1035,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
       queue={(data?.queue ?? []).filter((w) => w.lane === lane.key)}
       events={eventsOf(lane)}
       now={now}
-      reading={running.has(lane.key)}
+      reading={running.has(lane.key) || drifts.get(lane.key)?.reading === true}
       busy={busy}
       onRun={(full) => void runLane(lane, full)}
       onOutbox={outbox}

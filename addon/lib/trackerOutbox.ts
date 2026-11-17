@@ -385,6 +385,7 @@ async function deliver(row: any): Promise<void> {
     if (calls.length) noteDelivery(row, config, payload, 'sent', { status: calls[calls.length - 1]?.status ?? null, attempts: row.attempts + 1, ...(calls.some((call) => call.rewatch) ? { rewatch: true } : {}) });
     if (row.attempts > 0) logger.info(`Sent ${label} after ${row.attempts + 1} attempts`);
     settle(row.user_uuid, config, [row.op]);
+    require('./jellyfin/trackerDrift').recoverWhenAnswering(row.service, config);
     return;
   }
   if (outcome.kind === 'drop') {

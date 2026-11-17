@@ -760,6 +760,27 @@ function forgetDrift(userUUID: string): void {
   for (const key of [...drifts.keys()]) if (key.startsWith(`${userUUID}|`)) drifts.delete(key);
 }
 
+const behindReads = new LRUCache<string, number>({ max: 20000, ttl: 24 * 60 * 60 * 1000 });
+const readingBehind = new Set<string>();
+
+// A tracker read only while someone looks at its comparison costs nothing for the many who never do; one read
+// per settle window is all a comparison can use, since a write is judged only once that long has passed.
+function readBehind(userUUID: string, key: string, source: SyncSource): boolean {
+  if (readingBehind.has(key)) return true;
+  const gapMs = Math.max(1, envInt('JELLYFIN_TRACKER_DRIFT_SETTLE_MINUTES', 15, 0)) * 60 * 1000;
+  if (Date.now() - (behindReads.get(key) ?? 0) < gapMs) return false;
+  behindReads.set(key, Date.now());
+  readingBehind.add(key);
+  const { syncMirror } = require('./trackerMirror');
+  syncMirror(source.service, source.credential, source.scoped)
+    .catch(() => 0)
+    .finally(() => {
+      readingBehind.delete(key);
+      forgetDrift(userUUID);
+    });
+  return true;
+}
+
 async function driftOf(userUUID: string, key: string, source: SyncSource): Promise<any> {
   const { driftFor } = require('./trackerDrift');
   return driftFor(userUUID, { service: source.service, credential: source.credential, keys: source.keys, scoped: source.scoped });
@@ -867,9 +888,10 @@ export async function dashboardDrift(userUUID: string, viewer: string | null): P
       const outcomes = await driftOutcomes(key);
       const items = (viewings: any[]) => driftItems(userUUID, source, outcomes, viewings);
       const rewatchNote = drift.rewatched.length && !(await keepsRewatches(source)) ? 'free' : null;
-      return { key, behind: await items(drift.behind), imported: await importGroups(userUUID, source, outcomes, drift), ahead: await items(drift.ahead), rewatched: await items(drift.rewatched), rewatchNote, unread: drift.unread, readAt: drift.readAt, error: null };
+      const reading = drift.due ? readBehind(userUUID, key, source) : readingBehind.has(key);
+      return { key, behind: await items(drift.behind), imported: await importGroups(userUUID, source, outcomes, drift), ahead: await items(drift.ahead), rewatched: await items(drift.rewatched), rewatchNote, unread: drift.unread, readAt: drift.readAt, reading, error: null };
     } catch (error: any) {
-      return { key, behind: [], imported: [], ahead: [], rewatched: [], rewatchNote: null, unread: 0, readAt: null, error: String(error?.message || error).slice(0, 200) };
+      return { key, behind: [], imported: [], ahead: [], rewatched: [], rewatchNote: null, unread: 0, readAt: null, reading: readingBehind.has(key), error: String(error?.message || error).slice(0, 200) };
     }
   });
   const out = { checkedAt: Date.now(), days: driftWindowDays(), lanes };

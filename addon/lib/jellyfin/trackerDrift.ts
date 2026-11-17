@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
+import consola from 'consola';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { yieldEvery } from '../../utils/yieldEvery';
@@ -7,10 +8,11 @@ import { parseStremioId } from './idsCodec';
 import { bulkTimes } from './bulkMarks';
 import { groupBySpelling, getPlaystatesAcross, upsertPlaystateEverywhere, videoIdAliases } from './aliases';
 import { scopeConfigToProfile } from './profiles';
-import { credentialFor, type Capable } from './trackerSource';
+import { CAPABLE, credentialFor, type Capable } from './trackerSource';
 import { isAnimeList, trackerOf } from '../trackers';
 import { trackerConfig } from '../accounts';
 
+const logger = consola.withTag('Trackers');
 const database: any = require('../database');
 const idMappings: any = require('../id-mappings');
 
@@ -46,6 +48,8 @@ export interface Drift {
   ahead: Viewing[];
   rewatched: Viewing[];
   unread: number;
+  /** Watches made here that a read now could judge, which the last read was too early for. */
+  due: boolean;
   since: number;
   readAt: number | null;
 }
@@ -209,7 +213,7 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   const since = Date.now() - driftWindowDays() * DAY_MS;
   const state = await database.getTrackerSync(sourceKey).catch(() => null);
   const readAt = Number(state?.synced_at) || null;
-  const empty: Drift = { behind: [], imported: [], leftOut: {}, ahead: [], rewatched: [], unread: 0, since, readAt };
+  const empty: Drift = { behind: [], imported: [], leftOut: {}, ahead: [], rewatched: [], unread: 0, due: false, since, readAt };
   if (!readAt || !(Number(state?.version) > 0)) return empty;
 
   const snapshot = await indexedSnapshot(source.service, source.credential, source.scoped);
@@ -217,7 +221,8 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
   const pending = await pendingWatches(source.service, source.credential).catch(() => []);
   const waiting = new Set<string>(pending.filter((p: any) => p.played).map((p: any) => String(p.videoId)));
   const unmarking = new Set<string>(pending.filter((p: any) => !p.played).map((p: any) => String(p.videoId)));
-  const settled = readAt - envInt('JELLYFIN_TRACKER_DRIFT_SETTLE_MINUTES', 15, 0) * 60 * 1000;
+  const settleMs = envInt('JELLYFIN_TRACKER_DRIFT_SETTLE_MINUTES', 15, 0) * 60 * 1000;
+  const settled = readAt - settleMs;
 
   const mine = (await ownViewings(userUUID, source.keys, source.scoped)).map((v) => asListed(source.service, v)).filter((v) => belongsOn(source.service, v, source.scoped));
   const sent = new Map<string, number>();
@@ -327,7 +332,8 @@ export async function driftFor(userUUID: string, source: DriftSource): Promise<D
     : [];
 
   const ahead = isAnimeList(source.service) ? [] : await aheadOf(userUUID, source, sourceKey, since, unmarking);
-  return { behind, imported, leftOut, ahead, rewatched, unread: mine.filter((v) => v.at > settled).length, since, readAt };
+  const unread = mine.filter((v) => v.at > settled);
+  return { behind, imported, leftOut, ahead, rewatched, unread: unread.length, due: unread.some((v) => v.at <= Date.now() - settleMs), since, readAt };
 }
 
 async function sendSpellings(userUUID: string, source: DriftSource, viewings: Viewing[]): Promise<Map<Viewing, string[]>> {
@@ -533,13 +539,12 @@ export async function keepsRewatches(source: { service: string; credential: stri
 
 const recovering = new LRUCache<string, number>({ max: 20000, ttl: 24 * 60 * 60 * 1000 });
 
-export async function recoverFailed(sourceKey: string, service: Capable): Promise<number> {
-  const now = Date.now();
-  if (now - (recovering.get(sourceKey) ?? 0) < envInt('JELLYFIN_TRACKER_RECOVER_MINUTES', 10, 1) * 60 * 1000) return 0;
-  recovering.set(sourceKey, now);
-  const { readGlobalCache, writeGlobalCache } = require('../getCache');
-  const since = now - driftWindowDays() * DAY_MS;
-  const failed = ((await database.listTrackerActivity([sourceKey], since, 2000, 'failed')) as any[]).filter((row) => {
+const recoverMs = () => envInt('JELLYFIN_TRACKER_RECOVER_MINUTES', 10, 1) * 60 * 1000;
+
+/** Watch writes to this account that gave up on an answer a later read may get past, and were not sent again since. */
+async function owedWrites(sourceKey: string): Promise<any[]> {
+  const { readGlobalCache } = require('../getCache');
+  const failed = ((await database.listTrackerActivity([sourceKey], Date.now() - driftWindowDays() * DAY_MS, 2000, 'failed')) as any[]).filter((row) => {
     if (row.kind !== 'failed' || !row.video || !row.user_uuid || !WATCH_OPS.has(String(row.op))) return false;
     try {
       return passing(JSON.parse(row.detail ?? '{}'));
@@ -547,10 +552,37 @@ export async function recoverFailed(sourceKey: string, service: Capable): Promis
       return false;
     }
   });
+  const owed: any[] = [];
+  for (const row of failed) if (!(await readGlobalCache(`tracker_recovered:${row.id}`))) owed.push(row);
+  return owed;
+}
+
+const answered = new LRUCache<string, number>({ max: 20000, ttl: 24 * 60 * 60 * 1000 });
+
+/** A write that landed shows the account answers again, so one it gave up on earlier is read for and sent again. */
+export function recoverWhenAnswering(service: string, config: any): void {
+  if (!(CAPABLE as readonly string[]).includes(service)) return;
+  const credential = credentialFor(config, service as Capable);
+  if (!credential) return;
+  const { sourceKeyFor, syncMirror } = require('./trackerMirror');
+  const sourceKey = sourceKeyFor(service, credential);
+  const now = Date.now();
+  if (now - (answered.get(sourceKey) ?? 0) < recoverMs()) return;
+  answered.set(sourceKey, now);
+  // The read resends what is still missing once it lands.
+  void owedWrites(sourceKey)
+    .then((owed) => (owed.length ? syncMirror(service, credential, config) : 0))
+    .catch((error: any) => logger.debug(`Could not read ${service} to resend the writes it missed: ${error?.message || error}`));
+}
+
+export async function recoverFailed(sourceKey: string, service: Capable): Promise<number> {
+  const now = Date.now();
+  if (now - (recovering.get(sourceKey) ?? 0) < recoverMs()) return 0;
+  recovering.set(sourceKey, now);
+  const { writeGlobalCache } = require('../getCache');
   let queued = 0;
   const byOwner = new Map<string, any[]>();
-  for (const row of failed) {
-    if (await readGlobalCache(`tracker_recovered:${row.id}`)) continue;
+  for (const row of await owedWrites(sourceKey)) {
     const owner = `${row.user_uuid}|${row.profile ?? ''}`;
     byOwner.set(owner, [...(byOwner.get(owner) ?? []), row]);
   }

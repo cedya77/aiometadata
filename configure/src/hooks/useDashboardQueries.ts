@@ -2523,6 +2523,8 @@ export interface JellyfinDriftLane {
   rewatchNote?: 'free' | null;
   unread: number;
   readAt: number | null;
+  /** Being read now, because its last read left watches made here unjudged. */
+  reading?: boolean;
   error: string | null;
 }
 
