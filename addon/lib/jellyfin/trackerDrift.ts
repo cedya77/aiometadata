@@ -528,7 +528,7 @@ export async function recoverFailed(sourceKey: string, service: Capable): Promis
   recovering.set(sourceKey, now);
   const { readGlobalCache, writeGlobalCache } = require('../getCache');
   const since = now - driftWindowDays() * DAY_MS;
-  const failed = ((await database.listTrackerActivity([sourceKey], since, 2000)) as any[]).filter((row) => {
+  const failed = ((await database.listTrackerActivity([sourceKey], since, 2000, 'failed')) as any[]).filter((row) => {
     if (row.kind !== 'failed' || !row.video || !row.user_uuid || !WATCH_OPS.has(String(row.op))) return false;
     try {
       return passing(JSON.parse(row.detail ?? '{}'));
