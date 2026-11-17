@@ -349,30 +349,20 @@ export class DatabaseCore {
   }
 
   protected async fillTokenRefs(after: number, upTo: number): Promise<void> {
-    if (this.type === 'sqlite') {
-      this.timedSQLite(() => this.db.transaction(() => {
-        this.db.prepare(`INSERT OR IGNORE INTO token_refs (field, token_id, user_uuid)
-          ${sqliteTokenRefs('c.config_data', 'c.user_uuid', 'user_configs c, ')} AND c.id > ? AND c.id <= ?`).run(after, upTo);
-        this.db.prepare('UPDATE token_refs_backfill SET last_id = MAX(last_id, ?) WHERE tag = ?').run(upTo, TOKEN_REF_TAG);
-      })());
-      return;
-    }
-    const client = await this.db.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(`INSERT INTO token_refs (field, token_id, user_uuid)
-        SELECT r.field, r.token_id, r.user_uuid FROM user_configs c
-        CROSS JOIN LATERAL (${postgresTokenRefs('c.config_data::jsonb', 'c.user_uuid')}) r
-        WHERE c.id > $1 AND c.id <= $2
-        ON CONFLICT DO NOTHING`, [after, upTo]);
-      await client.query('UPDATE token_refs_backfill SET last_id = GREATEST(last_id, $1) WHERE tag = $2', [upTo, TOKEN_REF_TAG]);
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
+    await this.runTogether(this.type === 'sqlite'
+      ? [
+          [`INSERT OR IGNORE INTO token_refs (field, token_id, user_uuid)
+            ${sqliteTokenRefs('c.config_data', 'c.user_uuid', 'user_configs c, ')} AND c.id > ? AND c.id <= ?`, [after, upTo]],
+          ['UPDATE token_refs_backfill SET last_id = MAX(last_id, ?) WHERE tag = ?', [upTo, TOKEN_REF_TAG]],
+        ]
+      : [
+          [`INSERT INTO token_refs (field, token_id, user_uuid)
+            SELECT r.field, r.token_id, r.user_uuid FROM user_configs c
+            CROSS JOIN LATERAL (${postgresTokenRefs('c.config_data::jsonb', 'c.user_uuid')}) r
+            WHERE c.id > $1 AND c.id <= $2
+            ON CONFLICT DO NOTHING`, [after, upTo]],
+          ['UPDATE token_refs_backfill SET last_id = GREATEST(last_id, $1) WHERE tag = $2', [upTo, TOKEN_REF_TAG]],
+        ]);
   }
 
   /** The profile is part of the key, which neither dialect can add in place. */
