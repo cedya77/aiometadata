@@ -17,6 +17,7 @@ import { isMatchable, scrobblingTrackers, trackerName, trackerOf, type Mark } fr
 import { sourceOfApp } from '../playSources';
 import { shouldTrackServiceMediaType } from '../watchTracking';
 import { sourceKeyFor } from './trackerMirror';
+import { HERE } from './trackerCopyHome';
 import { rewatchGapMs } from './bulkMarks';
 import { mapWithConcurrency } from '../../utils/concurrency';
 import redis from '../redisClient';
@@ -914,11 +915,8 @@ export async function dashboardDriftAction(userUUID: string, key: string, action
   const done = action === 'push'
     ? await pushDrift(userUUID, config, driftSource, [...(origin ? [] : drift.behind), ...brought].filter(wanted), again)
     : await pullDrift(userUUID, driftSource, drift.ahead.filter(wanted));
-  forgetDrift(userUUID);
-  if (action === 'pull') {
-    forgetMemos(userUUID);
-    require('./resume').invalidateResume(userUUID);
-  }
+  if (action === 'pull') forgetPulled(userUUID);
+  else forgetDrift(userUUID);
   return done;
 }
 
@@ -1184,9 +1182,11 @@ async function copyPair(userUUID: string, viewer: string | null, fromKey: string
   if (!config || fromKey === toKey) return null;
   const sources = syncSources(config, userUUID, historyKeyOf(config, userUUID, viewer));
   const from = sources.get(fromKey);
+  const source = from ? trackerOf(from.service) : undefined;
+  // The history here fills the profiles the tracker is read for.
+  if (toKey === HERE) return from && what === 'watches' && source?.datedHistory ? { from, to: { ...from, service: HERE } } : null;
   const to = sources.get(toKey);
   if (!from || !to) return null;
-  const source = trackerOf(from.service);
   if (what === 'watches') return source?.datedHistory ? { from, to } : null;
   return source?.marks.from.includes(what as Mark) && trackerOf(to.service)?.marks.to.includes(what as Mark) ? { from, to } : null;
 }
@@ -2101,6 +2101,13 @@ export async function dashboardClearResume(userUUID: string, profileKey: string,
 function forgetMemos(userUUID: string): void {
   for (const key of [...showsMemo.keys()]) if (key.startsWith(`${userUUID}:`)) showsMemo.delete(key);
   for (const key of [...droppedMemo.keys()]) if (key.startsWith(`${userUUID}:`)) droppedMemo.delete(key);
+}
+
+/** After watches are brought in from a tracker, so the comparison, shelves and resume row read them. */
+export function forgetPulled(userUUID: string): void {
+  forgetDrift(userUUID);
+  forgetMemos(userUUID);
+  require('./resume').invalidateResume(userUUID);
 }
 
 export async function dashboardWatchDate(userUUID: string, profile: string | null, itemId: string, from: number | null, to: number): Promise<boolean | null> {

@@ -7,7 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinCopyJobs, useJellyfinSyncActions, type DashboardTab, type JellyfinCopyJob, type JellyfinCopyNamed, type JellyfinCopyPreview, type JellyfinCopyTitle, type JellyfinCopyWhat, type JellyfinSyncLane } from "@/hooks/useDashboardQueries";
 import { Eyebrow, Logo, Still, Toggle } from "./TrackerParts";
-import { useTrackers } from "./trackers";
+import { HERE, useTrackers } from "./trackers";
 import { when } from "./jellyfinUtils";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
@@ -49,7 +49,7 @@ function Side({ label, lane, lanes, onPick, accent }: { label: string; lane: Jel
           <span className="min-w-0 flex-1">
             <span className={cx("block text-[11px] font-medium uppercase tracking-[0.14em]", accent ? "text-blue-300" : "text-muted-foreground")}>{label}</span>
             <span className="block truncate text-lg font-bold">{lane ? trackers.name(lane.service) : "Pick a tracker"}</span>
-            {lane && lane.profiles.length > 0 && <span className="block truncate text-xs text-muted-foreground">{lane.profiles.join(", ")} · read {lane.syncedAt ? when(lane.syncedAt) : "never"}</span>}
+            {lane && lane.profiles.length > 0 && <span className="block truncate text-xs text-muted-foreground">{lane.profiles.join(", ")} · {lane.service === HERE ? "on this server" : `read ${lane.syncedAt ? when(lane.syncedAt) : "never"}`}</span>}
           </span>
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
         </button>
@@ -80,7 +80,7 @@ function JobCard({ job, onControl }: { job: JellyfinCopyJob; onControl: (id: num
           <Logo service={job.toService} size={28} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold">{trackers.name(job.fromService)} to {trackers.name(job.toService)}</span>
+          <span className="block text-sm font-semibold">{trackers.name(job.fromService)} to {trackers.inline(job.toService)}</span>
           <span className="block text-xs text-muted-foreground">
             {job.status === "done" ? `Finished ${when(job.finishedAt ?? job.createdAt)}` : job.status === "stopped" ? `Stopped ${when(job.finishedAt ?? job.createdAt)}` : job.status === "failed" ? "Gave up" : job.status === "paused" ? "Paused" : waiting ? `Waiting, resumes ${new Date(job.nextAt!).toLocaleString(undefined, { hour: "numeric", minute: "2-digit", month: "short", day: "numeric" })}` : "Copying"}
             {" · started "}{when(job.createdAt)}
@@ -97,7 +97,7 @@ function JobCard({ job, onControl }: { job: JellyfinCopyJob; onControl: (id: num
       </div>
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-xl font-bold tabular-nums">{job.done.toLocaleString()} <span className="text-sm font-medium text-muted-foreground">of {nounOf(job.what ?? "watches", job.total)}</span></span>
-        <span className="text-xs tabular-nums text-muted-foreground">{job.sent.toLocaleString()} sent{job.skipped ? ` · ${job.skipped.toLocaleString()} already there` : ""}{job.failed ? ` · ${job.failed.toLocaleString()} not found` : ""}</span>
+        <span className="text-xs tabular-nums text-muted-foreground">{job.sent.toLocaleString()} {job.toService === HERE ? "brought in" : "sent"}{job.skipped ? ` · ${job.skipped.toLocaleString()} already there` : ""}{job.failed ? ` · ${job.failed.toLocaleString()} not found` : ""}</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-white/[0.07]">
         <div style={{ width: `${share}%` }} className={cx("h-full rounded-full transition-[width] duration-700", job.status === "failed" ? "bg-red-400" : live ? "bg-gradient-to-r from-blue-500 to-blue-300 shadow-[0_0_14px_rgba(96,165,250,0.6)]" : "bg-emerald-400/80")} />
@@ -118,10 +118,15 @@ export default function JellyfinCopy({ userUUID, profile, lanes, activeTab, init
   const [retry, setRetry] = useState(false);
   const trackers = useTrackers();
   const sources = useMemo(() => lanes.filter((lane) => trackers.copiesFrom(lane.service, what)), [lanes, trackers, what]);
-  const targets = useMemo(() => lanes.filter((lane) => trackers.copiesTo(lane.service, what)), [lanes, trackers, what]);
   const firstSource = lanes.find((lane) => trackers.copiesFrom(lane.service, "watches"))?.key;
   const [from, setFrom] = useState<string>(initial?.from ?? firstSource ?? "");
   const [to, setTo] = useState<string>(initial?.to ?? lanes.find((lane) => lane.key !== (initial?.from ?? firstSource))?.key ?? "");
+  // The history here is filled for the profiles the source tracker is read for.
+  const targets = useMemo(() => {
+    const listed = lanes.filter((lane) => trackers.copiesTo(lane.service, what));
+    const source = lanes.find((lane) => lane.key === from);
+    return source && trackers.copiesTo(HERE, what) ? [...listed, { ...source, key: HERE, service: HERE }] : listed;
+  }, [lanes, trackers, what, from]);
   const [range, setRange] = useState<Range>("all");
   const [sinceDay, setSinceDay] = useState(() => new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10));
   const [preview, setPreview] = useState<JellyfinCopyPreview | null>(null);
@@ -158,7 +163,7 @@ export default function JellyfinCopy({ userUUID, profile, lanes, activeTab, init
 
   const since = range === "since" ? new Date(`${sinceDay}T00:00:00`).getTime() : 0;
   const fromLane = lanes.find((lane) => lane.key === from);
-  const toLane = lanes.find((lane) => lane.key === to);
+  const toLane = targets.find((lane) => lane.key === to);
 
   useEffect(() => {
     if (!from || !to || from === to || busyId !== null) {
@@ -203,6 +208,8 @@ export default function JellyfinCopy({ userUUID, profile, lanes, activeTab, init
     : refused > 0 ? <p><button type="button" onClick={() => setRetry(true)} className="font-semibold text-blue-300 hover:text-blue-200">Try the {refused.toLocaleString()} sent before again</button></p> : null;
   const posters = (preview?.titles ?? []).slice(0, 8).map((t) => names[t.video]?.posterUrl ?? names[t.video]?.imageUrl).filter(Boolean) as string[];
   const toName = toLane ? trackers.name(toLane.service) : "";
+  const toInline = toLane ? trackers.inline(toLane.service) : "";
+  const home = toLane?.service === HERE;
   const toTracker = toLane ? trackers.of(toLane.service) : undefined;
   const toAnime = toTracker?.animeOnly === true;
   const pace = toTracker?.pace ?? null;
@@ -220,7 +227,7 @@ export default function JellyfinCopy({ userUUID, profile, lanes, activeTab, init
     setStarting(true);
     try {
       await actions.copyStart(userUUID, { profile, from, to, since, titles: range === "pick" ? [...picked] : null, what, retry });
-      toast.success(`Copying ${nounOf(what, chosenWatches)} to ${toName}`, { description: "It runs in the background; you can leave this page." });
+      toast.success(`Copying ${nounOf(what, chosenWatches)} to ${toInline}`, { description: "It runs in the background; you can leave this page." });
       await refetchJobs();
       setPreview(null);
     } catch (error) {
@@ -271,14 +278,14 @@ export default function JellyfinCopy({ userUUID, profile, lanes, activeTab, init
 
       <div className="flex min-w-0 flex-col gap-5 rounded-2xl border border-white/[0.07] bg-black/20 p-5 backdrop-blur-sm sm:p-6">
         {busy ? (
-          <p className="text-sm text-muted-foreground">{busy.status === "paused" ? "A copy" : "Copying"} from {fromName} to {toName}{busy.status === "paused" ? " is paused" : ""}, see the progress above. The comparison comes back when it's done.</p>
+          <p className="text-sm text-muted-foreground">{busy.status === "paused" ? "A copy" : "Copying"} from {fromName} to {toInline}{busy.status === "paused" ? " is paused" : ""}, see the progress above. The comparison comes back when it's done.</p>
         ) : !sources.length ? (
           <p className="text-sm text-muted-foreground">{what === "ratings" ? "Ratings copy from MDBList or Simkl. PublicMetaDB has no way to list the ratings you've given." : "Connect MDBList, Simkl or PublicMetaDB to copy from."}</p>
         ) : failure ? (
           <p className="text-sm text-red-300">{failure}</p>
         ) : comparing || !preview ? (
           <div className="flex flex-col gap-4">
-            <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Comparing {fromName} with {toName}…</p>
+            <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Comparing {fromName} with {toInline}…</p>
             <Skeleton className="h-16 w-2/3 rounded-xl" />
             <Skeleton className="h-36 rounded-xl" />
           </div>
@@ -339,7 +346,9 @@ export default function JellyfinCopy({ userUUID, profile, lanes, activeTab, init
               </div>
             )}
             <div className="space-y-1 text-xs leading-relaxed text-muted-foreground">
-              {what === "watches" && <p>Each watch keeps the date {fromName} has, and anything not yet in your history comes in too. Nothing is removed from {toName}, and what it already has is skipped, so copying again is safe.</p>}
+              {what === "watches" && (home
+                ? <p>Each watch keeps the date {fromName} has, and one it has no date for marks the title watched without a date. What your history here already has, or changed after that date, is skipped, so copying again is safe. Nothing is sent to your trackers.</p>
+                : <p>Each watch keeps the date {fromName} has, and anything not yet in your history comes in too. Nothing is removed from {toName}, and what it already has is skipped, so copying again is safe.</p>)}
               {what === "ratings" && <p>Each rating keeps the date {fromName} has. Titles {toName} has already rated keep their own rating, so copying again is safe, and films and shows not rated here yet are rated here too.{toTracker?.wholeRatings ? ` ${toName} rates in whole numbers, so half points are rounded.` : ""}</p>}
               {what === "watchlist" && <p>Titles already on {toName} are skipped, and nothing is removed from it, so copying again is safe.{toTracker?.notes?.watchlist ? ` ${toTracker.notes.watchlist}` : ""}</p>}
               {what === "dropped" && <p>Shows {toName} already has as dropped are skipped. Your watch history on {toName} stays as it is.</p>}

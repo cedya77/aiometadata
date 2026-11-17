@@ -366,7 +366,8 @@ async function statesFor(userUUID: string, viewings: Viewing[]): Promise<Map<str
   return out;
 }
 
-async function aheadOf(userUUID: string, source: DriftSource, sourceKey: string, since: number, unmarking: Set<string>): Promise<Viewing[]> {
+// films: a film is also looked for under its other id, which the aliases give only for anime films.
+export async function aheadOf(userUUID: string, source: DriftSource, sourceKey: string, since: number, unmarking: Set<string>, films = false): Promise<Viewing[]> {
   const rows: any[] = await database.watchIndexSince(sourceKey, since);
   const config = source.scoped;
   const { ourSpellings } = require('./trackerMatch');
@@ -374,6 +375,7 @@ async function aheadOf(userUUID: string, source: DriftSource, sourceKey: string,
   for (const row of rows) {
     const ours: string[] = await ourSpellings(userUUID, source.service, String(row.video_id), config).catch(() => []);
     const ids = [...ours, String(row.video_id), ...(await videoIdAliases(String(row.video_id), config).catch(() => [] as string[]))];
+    if (films && row.kind === 'movie') ids.push(...(await require('./watched').movieSpellings(String(row.video_id), config)));
     if (ids.some((id) => unmarking.has(id))) continue;
     const viewing = viewingOf('', row.at, ids);
     if (viewing) candidates.push(viewing);
@@ -501,6 +503,12 @@ export async function pullDrift(userUUID: string, source: DriftSource, viewings:
     const video = spellingFor(source.service, viewing.ids);
     for (const profile of source.keys) {
       const row = (await getPlaystatesAcross(userUUID, [video], profile, source.scoped)).get(video);
+      // A watch the tracker has no date for marks the title played and logs no viewing.
+      if (!(viewing.at > 0)) {
+        if (!row || Number(row.played) !== 1) await upsertPlaystateEverywhere(userUUID, video, { positionMs: 0, played: true, lastPlayedAt: null, origin: source.service }, profile, viewing.ids, source.scoped);
+        added += 1;
+        continue;
+      }
       if (row && Number(row.played) === 1) {
         for (const id of viewing.ids) await database.logWatch(userUUID, profile, id, { at: viewing.at, kind: 'dated' }, true, source.service);
       } else {

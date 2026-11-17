@@ -5,6 +5,7 @@ import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { listProfiles } from './profiles';
 import { attemptsHeld, pinOpens, resetAttempts, takeAttempt } from './pins';
+import { HERE } from './trackerCopyHome';
 
 // A configuration's own Jellyfin page: the dashboard's routes, reached with a session its password opened.
 
@@ -123,11 +124,12 @@ function openKeys(session: OwnPageSession): Set<string> {
   return out;
 }
 
+// The history here, as a copy's destination, is filled only for the profiles of the tracker copied from.
 function accountsOpen(session: OwnPageSession, keys: string[]): boolean {
   if (session.full) return true;
   const { accountsOpenTo } = require('./dashboard');
   const mine: Set<string> = accountsOpenTo(session.config, session.userUUID, session.open);
-  return keys.every((key) => mine.has(key));
+  return keys.every((key) => key === HERE || mine.has(key));
 }
 
 function refusal(access: OwnPageAccess, req: any, session: OwnPageSession): string | null {

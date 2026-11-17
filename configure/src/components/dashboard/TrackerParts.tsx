@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useState } from "react";
-import { Film } from "lucide-react";
+import { Film, History } from "lucide-react";
 import { CARD_SERVICES } from "@/lib/cardAccounts";
-import { useTrackers } from "./trackers";
+import { HERE, useTrackers } from "./trackers";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
@@ -12,6 +12,13 @@ export function Logo({ service, size = 36, className }: { service: string; size?
   const [failed, setFailed] = useState(false);
   const tracker = useTrackers().of(service);
   const style = { width: size, height: size, borderRadius: Math.round(size * 0.28), ...(tracker ? { backgroundColor: tracker.color } : {}) };
+  if (service === HERE) {
+    return (
+      <span aria-hidden style={style} className={cx("inline-flex shrink-0 items-center justify-center bg-gradient-to-br from-zinc-600 to-zinc-900 ring-1 ring-inset ring-white/10", className)}>
+        <History style={{ width: Math.round(size * 0.45), height: Math.round(size * 0.45) }} className="text-zinc-200" />
+      </span>
+    );
+  }
   return (
     <span aria-hidden style={style} className={cx("inline-flex shrink-0 items-center justify-center overflow-hidden ring-1 ring-inset ring-white/10", !tracker && "bg-zinc-700", className)}>
       {icon && !failed

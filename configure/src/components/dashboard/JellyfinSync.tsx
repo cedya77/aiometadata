@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJellyfinDriftImported, useJellyfinSync, useJellyfinSyncActions, useJellyfinSyncDrift, useJellyfinTrackerMatches, type DashboardTab, type JellyfinDriftImport, type JellyfinDriftItem, type JellyfinDriftLane, type JellyfinSyncFeedItem, type JellyfinSyncLane, type JellyfinSyncRow, type JellyfinSyncWrite, type JellyfinTrackerMatch } from "@/hooks/useDashboardQueries";
 import { Eyebrow, Logo, Still, Toggle } from "./TrackerParts";
-import { useTrackers, type Trackers } from "./trackers";
+import { HERE, useTrackers, type Trackers } from "./trackers";
 import JellyfinCopy from "./JellyfinCopy";
 import { ownPageFull } from "@/lib/ownPage";
 import TrackerMatchDialog, { Poster, type MatchSubject } from "./JellyfinTrackerMatch";
@@ -453,7 +453,7 @@ function MatchRow({ match, service, onEdit, onRemove }: { match: JellyfinTracker
   );
 }
 
-function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, events, now, reading, busy, phases, onRun, onOutbox, onDrift, onImport, onSame, onChanged }: {
+function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, events, now, reading, busy, phases, onRun, onOutbox, onDrift, onImport, onSame, onChanged, onCopyHere }: {
   userUUID: string;
   profile: string | null;
   activeTab: DashboardTab;
@@ -472,6 +472,7 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
   onImport: (group: JellyfinDriftImport, action: "push" | "leave" | "restore", items: JellyfinDriftItem[] | null) => Promise<void>;
   onSame: (item: JellyfinDriftItem) => void;
   onChanged: () => void;
+  onCopyHere?: () => void;
 }) {
   const trackers = useTrackers();
   const name = trackers.name(lane.service);
@@ -541,6 +542,7 @@ function LaneDetail({ userUUID, profile, activeTab, lane, drift, days, queue, ev
             </DropdownMenuTrigger>
             <DropdownMenuContent sheet align="end" className="w-64">
               <DropdownMenuItem disabled={reading} onSelect={() => onRun(true)}><RotateCcw className="size-4" /> Read all of {name} again</DropdownMenuItem>
+              {onCopyHere && <DropdownMenuItem onSelect={onCopyHere}><ArrowDownToLine className="size-4" /> Copy its history here</DropdownMenuItem>}
               <DropdownMenuItem disabled={!ids.length} onSelect={() => void onOutbox("retry", ids)}><Send className="size-4" /> Send waiting writes now</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem disabled={!ids.length} onSelect={() => void onOutbox("drop", ids)} className="text-red-300 focus:text-red-200"><Trash2 className="size-4" /> Drop waiting writes</DropdownMenuItem>
@@ -645,7 +647,7 @@ function HistoryRow({ watched }: { watched: number }) {
   return (
     <div className="flex items-center gap-3 rounded-xl py-2.5 pl-2 pr-3">
       <span className="w-7 shrink-0" />
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-zinc-600 to-zinc-900 ring-1 ring-inset ring-white/10"><History className="size-4 text-zinc-200" /></span>
+      <Logo service={HERE} />
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-semibold leading-tight">Your history here</span>
         <span className="block truncate text-[11px] text-muted-foreground">{watched.toLocaleString()} films and episodes, what each tracker is checked against</span>
@@ -726,10 +728,18 @@ function Hub({ lanes, states, selected, watched, onPick, onCopy }: { lanes: Jell
           </span>
         );
       })}
-      <div style={{ left: midX - hub, top: midY - hub, width: hub * 2, height: hub * 2 }} className="absolute flex flex-col items-center justify-center gap-1 rounded-full border border-white/15 bg-[radial-gradient(circle_at_35%_30%,rgba(255,255,255,0.13),rgba(255,255,255,0.03))] text-center shadow-[0_0_60px_rgba(59,130,246,0.18),inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur">
+      <div
+        style={{ left: midX - hub, top: midY - hub, width: hub * 2, height: hub * 2 }}
+        onDragOver={(event) => { if (dragging !== null) { event.preventDefault(); setOver(HERE); } }}
+        onDragLeave={() => setOver((held) => (held === HERE ? null : held))}
+        onDrop={(event) => { event.preventDefault(); if (dragging) onCopy(dragging, HERE); setDragging(null); setOver(null); }}
+        className={cx("absolute flex flex-col items-center justify-center gap-1 rounded-full border border-white/15 bg-[radial-gradient(circle_at_35%_30%,rgba(255,255,255,0.13),rgba(255,255,255,0.03))] text-center shadow-[0_0_60px_rgba(59,130,246,0.18),inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur transition-all duration-300", over === HERE ? "scale-110 ring-2 ring-emerald-300 shadow-[0_0_40px_rgba(110,231,183,0.5)]" : dragging !== null && "outline outline-2 outline-offset-4 outline-dashed outline-white/40")}
+      >
         <History className="size-5 text-zinc-200" />
         <span className="text-sm font-bold">Your history</span>
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{watched.toLocaleString()} watched</span>
+        {dragging !== null
+          ? <span className="text-[11px] text-emerald-200">{over === HERE ? "Drop to copy here" : "Copy here"}</span>
+          : <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{watched.toLocaleString()} watched</span>}
       </div>
       {points.map(({ lane, x, y }) => {
         const on = lane.key === selected;
@@ -1008,6 +1018,10 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
   const selectedDrift = selected ? drifts.get(selected.key) : undefined;
   const backdrop = selectedDrift?.behind[0]?.imageUrl ?? selectedDrift?.ahead[0]?.imageUrl ?? null;
   const showHub = view === "hub" && wide;
+  const copy = (from: string, to: string) => {
+    setCopyPair({ from, to });
+    setTab("copy");
+  };
 
   const detailOf = (lane: JellyfinSyncLane) => (
     <LaneDetail
@@ -1030,6 +1044,7 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
       phases={phases}
       onSame={(item) => void sameViewing(lane, item)}
       onChanged={refresh}
+      onCopyHere={trackers.copiesFrom(lane.service, "watches") ? () => copy(lane.key, HERE) : undefined}
     />
   );
 
@@ -1080,8 +1095,8 @@ export default function JellyfinSync({ userUUID, profile, profileName, watched, 
           </div>
         ) : showHub ? (
           <div className="flex flex-col gap-5">
-            <Hub lanes={lanes} states={states} selected={selected?.key} watched={watched} onPick={pick} onCopy={(from, to) => { setCopyPair({ from, to }); setTab("copy"); }} />
-            <p className="-mt-3 text-center text-[11px] text-muted-foreground">Drag a tracker onto another to copy its history there.</p>
+            <Hub lanes={lanes} states={states} selected={selected?.key} watched={watched} onPick={pick} onCopy={copy} />
+            <p className="-mt-3 text-center text-[11px] text-muted-foreground">Drag a tracker onto another, or onto your history, to copy its history there.</p>
             <div ref={detail} className="mx-auto w-full max-w-4xl scroll-mt-20">{selected && detailOf(selected)}</div>
           </div>
         ) : (
