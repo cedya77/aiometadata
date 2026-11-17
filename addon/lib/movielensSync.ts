@@ -170,7 +170,7 @@ async function bootstrapMovieLensAccount(config: any): Promise<any> {
 }
 
 async function syncAllMovieLensAccounts(): Promise<{ processed: number; synced: number }> {
-  const uuids: string[] = await database.getAllUserUUIDs();
+  const uuids: string[] = await database.configsHoldingField('movieLensCredId');
   let processed = 0;
   let synced = 0;
   for (const uuid of uuids) {

@@ -2665,6 +2665,21 @@ export class DatabaseCore {
     }
   }
 
+  /** Configurations that may hold a value for this field; each caller still reads the field from the config. */
+  async configsHoldingField(field: string): Promise<string[]> {
+    if (!this.initialized) await this.initialize();
+    const from = TOKEN_REF_FIELDS.includes(field) ? this.tokenRefsFrom : null;
+    if (from === null) return this.getAllUserUUIDs();
+    const sqlite = this.type === 'sqlite';
+    const rows = await this.allPrimaryQuery(
+      from === Infinity
+        ? `SELECT DISTINCT user_uuid FROM token_refs WHERE field = ${sqlite ? '?' : '$1'} AND token_id <> ''`
+        : `SELECT user_uuid FROM token_refs WHERE field = ${sqlite ? '?' : '$1'} AND token_id <> '' UNION SELECT user_uuid FROM user_configs WHERE id > ${sqlite ? '?' : '$2'}`,
+      from === Infinity ? [field] : [field, from]
+    );
+    return rows.map((row: any) => String(row.user_uuid));
+  }
+
   /** Every configuration referring to one of these tokens, at the top level or on a Jellyfin user. */
   async findTokenReferences(field: string, tokenIds: string[]): Promise<Array<{ uuid: string; passwordHash: string; config: any; owners: string[] }>> {
     if (!tokenIds.length || !/^[A-Za-z]+$/.test(field)) return [];
