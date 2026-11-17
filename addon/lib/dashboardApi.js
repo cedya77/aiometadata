@@ -2570,8 +2570,7 @@ class DashboardAPI {
       if (this.database) {
         try {
           // Total users = non-deleted users in database
-          const userUUIDs = await this.database.getAllUserUUIDs();
-          totalUsers = userUUIDs.length;
+          totalUsers = await this.database.countUserConfigs();
 
           // New users today from database
           newUsersToday = await this.database.getUsersCreatedToday();

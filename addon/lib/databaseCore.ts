@@ -1245,6 +1245,11 @@ export class DatabaseCore {
     return rows ? rows.map(row => row.user_uuid) : [];
   }
 
+  async countUserConfigs(): Promise<number> {
+    const row = await this.getQuery('SELECT COUNT(*) AS count FROM user_configs');
+    return Number(row?.count) || 0;
+  }
+
 
   async getUsersCreatedToday(): Promise<number> {
     const today = new Date().toISOString().substring(0, 10);
