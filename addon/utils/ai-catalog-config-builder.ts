@@ -48,7 +48,8 @@ function deriveFormState(source: string, catalogType: string, params: Record<str
     }
 
     if (catalogType === 'movie') {
-      const release = tmdbDateRange(params, 'primary_release_date');
+      const byReleaseType = !!fs.tmdbMovieReleaseTypes && params['primary_release_date.gte'] === undefined && params['primary_release_date.lte'] === undefined;
+      const release = tmdbDateRange(params, byReleaseType ? 'release_date' : 'primary_release_date');
       if (release.preset) fs.movieDatePreset = release.preset;
       if (release.from) fs.primaryReleaseFrom = release.from;
       if (release.to) fs.primaryReleaseTo = release.to;

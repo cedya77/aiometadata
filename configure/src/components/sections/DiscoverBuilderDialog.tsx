@@ -731,27 +731,24 @@ function applyDynamicTmdbDateTokens(
   seriesDatePreset: DatePresetKey,
   airDatePreset: DatePresetKey,
   releasedOnly: boolean,
-  movieReleaseTypesSelected: boolean = false
+  movieReleaseTypesSelected: boolean = false,
+  movieDatesSet: boolean = false
 ): Record<string, string | number | boolean> {
   const serializedParams = { ...params };
 
-  if (catalogType === 'movie' && releasedOnly && serializedParams['release_date.lte']) {
+  if (catalogType === 'movie' && releasedOnly && !movieReleaseTypesSelected && serializedParams['release_date.lte']) {
     serializedParams['release_date.lte'] = buildTmdbDateToken('today', 'to');
   }
 
   if (catalogType === 'movie' && isRelativeDatePreset(movieDatePreset)) {
-    serializedParams['primary_release_date.gte'] = buildTmdbDateToken(movieDatePreset, 'from');
-    serializedParams['primary_release_date.lte'] = buildTmdbDateToken(movieDatePreset, 'to');
-    if (movieReleaseTypesSelected) {
-      serializedParams['release_date.gte'] = buildTmdbDateToken(movieDatePreset, 'from');
-      serializedParams['release_date.lte'] = buildTmdbDateToken(movieDatePreset, 'to');
-    }
+    const dated = movieReleaseTypesSelected ? 'release_date' : 'primary_release_date';
+    serializedParams[`${dated}.gte`] = buildTmdbDateToken(movieDatePreset, 'from');
+    serializedParams[`${dated}.lte`] = buildTmdbDateToken(movieDatePreset, 'to');
   } else if (
     catalogType === 'movie'
     && movieReleaseTypesSelected
-    && !releasedOnly
+    && !movieDatesSet
     && serializedParams['release_date.lte']
-    && !serializedParams['primary_release_date.lte']
   ) {
     serializedParams['release_date.lte'] = buildTmdbDateToken('today', 'to');
   }
@@ -1144,6 +1141,14 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     () => (references?.countries || []).slice().sort((a, b) => (a.english_name || a.iso_3166_1).localeCompare(b.english_name || b.iso_3166_1)),
     [references]
   );
+
+  // The picked release types, as the movie date fields name them.
+  const releaseTypeNames = catalogType === 'movie' && tmdbMovieReleaseTypes.length > 0
+    ? TMDB_MOVIE_RELEASE_TYPE_OPTIONS
+      .filter(option => tmdbMovieReleaseTypes.includes(option.value))
+      .map(option => (option.value === '6' ? option.label : option.label.toLowerCase()))
+      .join(' or ')
+    : null;
 
   const sortedRegions = useMemo(
     () => (references?.watchRegions || []).slice().sort((a, b) => (a.english_name || a.iso_3166_1).localeCompare(b.english_name || b.iso_3166_1)),
@@ -2521,15 +2526,12 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     }
 
     if (catalogType === 'movie') {
-      if (primaryReleaseFrom) params['primary_release_date.gte'] = primaryReleaseFrom;
-      if (primaryReleaseTo) params['primary_release_date.lte'] = primaryReleaseTo;
-      if (tmdbMovieReleaseTypes.length > 0) {
-        if (primaryReleaseFrom || primaryReleaseTo) {
-          if (primaryReleaseFrom) params['release_date.gte'] = primaryReleaseFrom;
-          if (primaryReleaseTo) params['release_date.lte'] = primaryReleaseTo;
-        } else {
-          params['release_date.lte'] = getTodayLocalDateString();
-        }
+      // With release types picked, the dates are those releases' own, whenever the film first came out.
+      const dated = tmdbMovieReleaseTypes.length > 0 ? 'release_date' : 'primary_release_date';
+      if (primaryReleaseFrom) params[`${dated}.gte`] = primaryReleaseFrom;
+      if (primaryReleaseTo) params[`${dated}.lte`] = primaryReleaseTo;
+      if (tmdbMovieReleaseTypes.length > 0 && !primaryReleaseFrom && !primaryReleaseTo) {
+        params['release_date.lte'] = getTodayLocalDateString();
       }
     } else {
       if (firstAirFrom) params['first_air_date.gte'] = firstAirFrom;
@@ -2770,7 +2772,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     try {
       const params = buildDiscoverParams();
       const persistedParams = discoverSource === 'tmdb'
-        ? applyDynamicTmdbDateTokens(params, catalogType, movieDatePreset, seriesDatePreset, airDatePreset, releasedOnly, tmdbMovieReleaseTypes.length > 0)
+        ? applyDynamicTmdbDateTokens(params, catalogType, movieDatePreset, seriesDatePreset, airDatePreset, releasedOnly, tmdbMovieReleaseTypes.length > 0, Boolean(primaryReleaseFrom || primaryReleaseTo))
         : params;
       const formState = buildFormState();
   
@@ -3906,7 +3908,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                   )}
                   {catalogType === 'movie' && (
                     <div className="space-y-2">
-                      <LabelWithTooltip tooltip="Filter movies by how they were released. Select multiple to include movies matching any of the chosen types. Pair this with a release region to ask about that country's releases.">
+                      <LabelWithTooltip tooltip="Filter movies by how they were released. Select multiple to include movies matching any of the chosen types. Pair this with a release region to ask about that country's releases. The release dates then match these releases.">
                         Release Type
                       </LabelWithTooltip>
                       <div className="flex flex-wrap gap-2">
@@ -5588,12 +5590,15 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                 {catalogType === 'movie' ? (
                   <div className="space-y-3">
                     <div className="space-y-2">
-                      <Label>Primary Release Presets</Label>
+                      <Label>{releaseTypeNames ? 'Release Presets' : 'Primary Release Presets'}</Label>
+                      {releaseTypeNames && (
+                        <p className="text-xs text-muted-foreground">Dates of each movie's {releaseTypeNames} release, whenever it first came out.</p>
+                      )}
                       <DatePresetPicker value={movieDatePreset} onPick={(preset) => applyDatePreset('movie', preset)} />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="primary-release-from">Primary Release From</Label>
+                        <Label htmlFor="primary-release-from">{releaseTypeNames ? 'Release From' : 'Primary Release From'}</Label>
                         <Input
                           id="primary-release-from"
                           type="date"
@@ -5605,7 +5610,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="primary-release-to">Primary Release To</Label>
+                        <Label htmlFor="primary-release-to">{releaseTypeNames ? 'Release To' : 'Primary Release To'}</Label>
                         <Input
                           id="primary-release-to"
                           type="date"

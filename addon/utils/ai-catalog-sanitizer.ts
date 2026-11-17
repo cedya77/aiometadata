@@ -839,9 +839,11 @@ function applyTmdbReleaseFilters(catalog: AICatalogOutput, options: NormalizeCat
     params.with_release_type = TMDB_RELEASED_MOVIE_TYPES;
     params['release_date.lte'] = tmdbDateToken('today', 'to');
   } else if (params.with_release_type !== undefined) {
+    // The dates are those releases' own, whenever the film first came out.
     for (const suffix of ['.gte', '.lte']) {
       if (params[`release_date${suffix}`] === undefined && params[`primary_release_date${suffix}`] !== undefined) {
         params[`release_date${suffix}`] = params[`primary_release_date${suffix}`];
+        delete params[`primary_release_date${suffix}`];
       }
     }
     if (params['release_date.lte'] === undefined) params['release_date.lte'] = tmdbDateToken('today', 'to');
