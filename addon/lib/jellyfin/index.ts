@@ -915,14 +915,18 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const limit = Math.min(Math.max(1, parseInt(String(req.query.limit ?? req.query.Limit ?? 50), 10) || 50), 200);
     const localOnly = String(req.query.source ?? '') === 'local';
     const serverId = serverIdFor(userUUID);
-    const { entries, cursor } = await historyPage(
+    const page = (from: string | undefined) => historyPage(
       (take, after) => database.listHistoryRows(userUUID, keys, { limit: take, after, localOnly }),
       (candidates) => mapWithConcurrency(candidates, envInt('JELLYFIN_DASHBOARD_DESCRIBE_CONCURRENCY', 8, 1), (entry) =>
         nowPlayingItem(userUUID, config, serverId, itemIdForVideo(entry.videoId)).catch(() => null)
       ),
       limit,
-      decodeCursor(req.query.cursor)
+      decodeCursor(from),
+      (videoIds, pagedThrough) => database.listHistoryRows(userUUID, keys, { limit: videoIds.length * keys.length, localOnly, videoIds, pagedThrough })
     );
+    let { entries, cursor } = await page(req.query.cursor);
+    // An app can take an empty page for the end.
+    for (let skipped = 0; !entries.length && cursor && skipped < 20; skipped += 1) ({ entries, cursor } = await page(cursor));
     res.json({
       items: entries.map((entry) => {
         const episode = isEpisodeVideo(entry.videoId);

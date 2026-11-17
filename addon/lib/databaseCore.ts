@@ -20,6 +20,9 @@ export interface WatchPatch {
 
 type DbType = 'sqlite' | 'postgres';
 
+/** A row's place in the history order: newest first, then profile and id. */
+type HistoryPosition = { sortAt: number; profile: string; videoId: string };
+
 // A row a tracker sync wrote rather than a play here: a tracker's origin, or an
 // unmarked row whose last play is not when it was written.
 const IMPORTED_PLAYSTATE = `(origin IS NOT NULL AND origin NOT IN ('server', 'play'))
@@ -1631,35 +1634,39 @@ export class DatabaseCore {
     return Number(row?.count) || 0;
   }
 
-  /** A title's play state, newest first, for the profiles given; imported rows left out for localOnly. */
+  /** Play state, newest first, for the profiles and ids given; imported rows left out for localOnly, `earlier` set at or before pagedThrough. */
   async listHistoryRows(
     userUUID: string,
     profiles: string[],
-    opts: { limit: number; after?: { sortAt: number; profile: string; videoId: string }; localOnly?: boolean }
+    opts: { limit: number; after?: HistoryPosition; localOnly?: boolean; videoIds?: string[]; pagedThrough?: HistoryPosition }
   ): Promise<any[]> {
-    if (!profiles.length) return [];
+    if (!profiles.length || opts.videoIds?.length === 0) return [];
     const params: any[] = [];
     const mark = (value: any) => {
       params.push(value);
       return this.type === 'sqlite' ? '?' : `$${params.length}`;
     };
     const sortAt = 'COALESCE(last_played_at, updated_at)';
+    const pastPosition = (position: HistoryPosition) => {
+      const at = mark(position.sortAt);
+      const at2 = mark(position.sortAt);
+      const profile = mark(position.profile);
+      const profile2 = mark(position.profile);
+      const videoId = mark(position.videoId);
+      return `(${sortAt} < ${at} OR (${sortAt} = ${at2} AND (profile > ${profile} OR (profile = ${profile2} AND video_id > ${videoId}))))`;
+    };
+    // Built before the filters, as its marks come first in the query.
+    const earlier = opts.pagedThrough ? `CASE WHEN ${pastPosition(opts.pagedThrough)} THEN 0 ELSE 1 END` : '0';
     const where = [
       `user_uuid = ${mark(userUUID)}`,
       `profile IN (${profiles.map((profile) => mark(profile)).join(', ')})`,
       '(played = 1 OR position_ms > 0)',
     ];
     if (opts.localOnly) where.push(`NOT (${IMPORTED_PLAYSTATE})`);
-    if (opts.after) {
-      const at = mark(opts.after.sortAt);
-      const at2 = mark(opts.after.sortAt);
-      const profile = mark(opts.after.profile);
-      const profile2 = mark(opts.after.profile);
-      const videoId = mark(opts.after.videoId);
-      where.push(`(${sortAt} < ${at} OR (${sortAt} = ${at2} AND (profile > ${profile} OR (profile = ${profile2} AND video_id > ${videoId}))))`);
-    }
+    if (opts.videoIds) where.push(`video_id IN (${opts.videoIds.map((id) => mark(id)).join(', ')})`);
+    if (opts.after) where.push(pastPosition(opts.after));
     const limit = mark(opts.limit);
-    const query = `SELECT profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin, ${sortAt} AS sort_at
+    const query = `SELECT profile, video_id, position_ms, runtime_ms, played, play_count, last_played_at, updated_at, origin, ${sortAt} AS sort_at, ${earlier} AS earlier
       FROM jellyfin_playstate WHERE ${where.join(' AND ')}
       ORDER BY sort_at DESC, profile, video_id LIMIT ${limit}`;
     return (await this.allQuery(query, params)) || [];
