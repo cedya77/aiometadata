@@ -32,6 +32,28 @@ const IMPORTED_PLAYSTATE = `(origin IS NOT NULL AND origin NOT IN ('server', 'pl
 // Under SQLite's bound-parameter limit with room for the other parameters.
 export const PLAYSTATE_KEY_BATCH = 500;
 
+// token_refs holds every value of these fields in a configuration's apiKeys or a Jellyfin user's, kept by triggers.
+const TOKEN_REF_FIELDS = ['simklTokenId', 'malTokenId', 'anilistTokenId', 'traktTokenId', 'movieLensCredId', 'mdblist', 'publicmetadb'];
+const TOKEN_REF_MAX = 255;
+const TOKEN_REF_TAG = crypto.createHash('sha1').update(`1:${TOKEN_REF_MAX}:${TOKEN_REF_FIELDS.join(',')}`).digest('hex').slice(0, 8);
+const TOKEN_REF_NAMES = TOKEN_REF_FIELDS.map((field) => `'${field}'`).join(', ');
+
+function sqliteTokenRefs(doc: string, uuid: string, source = ''): string {
+  return `SELECT t.key, t.atom, ${uuid} FROM ${source}json_tree(CASE WHEN json_valid(${doc}) THEN ${doc} ELSE '{}' END) t
+    WHERE t.type = 'text' AND t.key IN (${TOKEN_REF_NAMES}) AND length(t.atom) <= ${TOKEN_REF_MAX}
+      AND (t.path = '$.apiKeys' OR t.path LIKE '$.jellyfinUsers[%].accounts.apiKeys')`;
+}
+
+function postgresTokenRefs(doc: string, uuid: string): string {
+  return `SELECT k.key AS field, k.value #>> '{}' AS token_id, ${uuid} AS user_uuid
+    FROM LATERAL (SELECT ${doc} -> 'apiKeys' AS keys
+                  UNION ALL
+                  SELECT u -> 'accounts' -> 'apiKeys' FROM jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(${doc} -> 'jellyfinUsers') = 'array' THEN ${doc} -> 'jellyfinUsers' ELSE '[]'::jsonb END) u) s
+    CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(s.keys) = 'object' THEN s.keys ELSE '{}'::jsonb END) k
+    WHERE k.key IN (${TOKEN_REF_NAMES}) AND jsonb_typeof(k.value) = 'string' AND length(k.value #>> '{}') <= ${TOKEN_REF_MAX}`;
+}
+
 function dbTypeFromUri(uri: string | undefined): DbType | null {
   if (!uri) return null;
   if (uri.startsWith('sqlite://')) return 'sqlite';
@@ -64,6 +86,10 @@ export class DatabaseCore {
 
   // SQLite answers on the server's one thread, so after this much of it in a row others get a turn.
   protected sqliteSpentMs = 0;
+
+  // Configurations up to this id are in token_refs; null until that is known, Infinity once all are.
+  protected tokenRefsFrom: number | null = null;
+  tokenRefsBackfill: Promise<void> | null = null;
 
   protected timedSQLite<T>(work: () => T): T {
     const started = performance.now();
@@ -149,6 +175,7 @@ export class DatabaseCore {
     } else {
       logger.info('RUN_MIGRATIONS=false, skipping schema creation (expecting an already-migrated database)');
     }
+    this.tokenRefsBackfill = this.backfillTokenRefs();
 
     const usingReplica = this.readDb && this.readDb !== this.db;
     logger.info(`Initialized ${this.type} database${usingReplica ? ' with a separate read replica' : ''}`);
@@ -212,6 +239,7 @@ export class DatabaseCore {
     } else {
       await this.createPostgreSQLTables();
     }
+    await this.ensureTokenRefTriggers();
     await this.ensureAccountColumns();
     await this.ensurePlaystateProfile();
     await this.ensurePlaystateOrigin();
@@ -219,6 +247,122 @@ export class DatabaseCore {
     await this.ensureWatchlistMetaType();
     await this.ensureTrackerOutboxProfile();
     await this.ensureRatingsMetaType();
+  }
+
+  /** Keeps token_refs in step with every write to user_configs, whichever code makes it. */
+  async ensureTokenRefTriggers(): Promise<void> {
+    try {
+      if (this.type === 'sqlite') {
+        const insert = `INSERT OR IGNORE INTO token_refs (field, token_id, user_uuid) ${sqliteTokenRefs('NEW.config_data', 'NEW.user_uuid')};`;
+        const forget = 'DELETE FROM token_refs WHERE user_uuid = OLD.user_uuid;';
+        const stale = (await this.allPrimaryQuery(
+          `SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'user_configs' AND name LIKE 'user_configs_token_refs_%'`
+        )).map((row: any) => String(row.name)).filter((name: string) => !name.endsWith(`_${TOKEN_REF_TAG}`));
+        this.db.transaction(() => {
+          this.db.prepare(`CREATE TRIGGER IF NOT EXISTS user_configs_token_refs_ai_${TOKEN_REF_TAG} AFTER INSERT ON user_configs
+            BEGIN ${insert} END`).run();
+          this.db.prepare(`CREATE TRIGGER IF NOT EXISTS user_configs_token_refs_au_${TOKEN_REF_TAG} AFTER UPDATE OF config_data, user_uuid ON user_configs
+            BEGIN ${forget} ${insert} END`).run();
+          this.db.prepare(`CREATE TRIGGER IF NOT EXISTS user_configs_token_refs_ad_${TOKEN_REF_TAG} AFTER DELETE ON user_configs
+            BEGIN ${forget} END`).run();
+          for (const name of stale) this.db.prepare(`DROP TRIGGER IF EXISTS "${name}"`).run();
+        })();
+        return;
+      }
+      const name = `user_configs_token_refs_${TOKEN_REF_TAG}`;
+      await this.runQuery(`DO $do$
+        DECLARE stale text;
+        BEGIN
+          PERFORM pg_advisory_xact_lock(hashtext('user_configs_token_refs'));
+          IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'user_configs'::regclass AND tgname = '${name}') THEN
+            CREATE OR REPLACE FUNCTION ${name}() RETURNS trigger LANGUAGE plpgsql AS $fn$
+            BEGIN
+              IF TG_OP <> 'INSERT' THEN
+                DELETE FROM token_refs WHERE user_uuid = OLD.user_uuid;
+              END IF;
+              IF TG_OP <> 'DELETE' THEN
+                INSERT INTO token_refs (field, token_id, user_uuid) ${postgresTokenRefs('NEW.config_data::jsonb', 'NEW.user_uuid')}
+                ON CONFLICT DO NOTHING;
+              END IF;
+              RETURN NULL;
+            END
+            $fn$;
+            CREATE TRIGGER ${name} AFTER INSERT OR DELETE OR UPDATE OF config_data, user_uuid ON user_configs
+              FOR EACH ROW EXECUTE FUNCTION ${name}();
+          END IF;
+          FOR stale IN SELECT tgname FROM pg_trigger WHERE tgrelid = 'user_configs'::regclass
+                         AND starts_with(tgname, 'user_configs_token_refs_') AND tgname <> '${name}' LOOP
+            EXECUTE format('DROP TRIGGER %I ON user_configs', stale);
+          END LOOP;
+        END
+        $do$`);
+    } catch (error: any) {
+      logger.warn(`Could not set up token_refs triggers, so token checks read every configuration: ${error.message}`);
+    }
+  }
+
+  /** Fills token_refs for configurations written before its triggers, a batch at a time; resumes where it stopped. */
+  async backfillTokenRefs(): Promise<void> {
+    const sqlite = this.type === 'sqlite';
+    let last = 0;
+    try {
+      const [trigger] = await this.allPrimaryQuery(sqlite
+        ? `SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'user_configs' AND name IN (?, ?, ?)`
+        : `SELECT COUNT(*) AS n FROM pg_trigger WHERE tgrelid = 'user_configs'::regclass AND tgname = $1`,
+      sqlite ? ['ai', 'au', 'ad'].map((kind) => `user_configs_token_refs_${kind}_${TOKEN_REF_TAG}`) : [`user_configs_token_refs_${TOKEN_REF_TAG}`]);
+      if (Number(trigger?.n) !== (sqlite ? 3 : 1)) {
+        logger.warn('token_refs triggers are missing, so token checks read every configuration');
+        return;
+      }
+      await this.runQuery(sqlite
+        ? 'INSERT OR IGNORE INTO token_refs_backfill (tag) VALUES (?)'
+        : 'INSERT INTO token_refs_backfill (tag) VALUES ($1) ON CONFLICT DO NOTHING', [TOKEN_REF_TAG]);
+      const [state] = await this.allPrimaryQuery(`SELECT last_id, done FROM token_refs_backfill WHERE tag = ${sqlite ? '?' : '$1'}`, [TOKEN_REF_TAG]);
+      if (Number(state?.done)) {
+        this.tokenRefsFrom = Infinity;
+        return;
+      }
+      last = Number(state?.last_id) || 0;
+      this.tokenRefsFrom = last;
+      logger.info(`Filling token_refs from configuration id ${last}`);
+      let size = 64;
+      for (;;) {
+        const [next] = await this.allPrimaryQuery(sqlite
+          ? 'SELECT MAX(id) AS id FROM (SELECT id FROM user_configs WHERE id > ? ORDER BY id LIMIT ?)'
+          : 'SELECT MAX(id) AS id FROM (SELECT id FROM user_configs WHERE id > $1 ORDER BY id LIMIT $2) b', [last, size]);
+        const upTo = Number(next?.id);
+        if (!upTo) break;
+        const started = performance.now();
+        await this.fillTokenRefs(last, upTo);
+        const spent = performance.now() - started;
+        last = upTo;
+        this.tokenRefsFrom = last;
+        size = Math.max(8, Math.min(2000, Math.round(size * Math.min(2, 25 / Math.max(spent, 1)))));
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      await this.runQuery(`UPDATE token_refs_backfill SET done = 1 WHERE tag = ${sqlite ? '?' : '$1'}`, [TOKEN_REF_TAG]);
+      this.tokenRefsFrom = Infinity;
+      logger.info('Filled token_refs');
+    } catch (error: any) {
+      logger.warn(`Filling token_refs stopped after configuration id ${last}; token checks read the rest: ${error.message}`);
+    }
+  }
+
+  protected async fillTokenRefs(after: number, upTo: number): Promise<void> {
+    await this.runTogether(this.type === 'sqlite'
+      ? [
+          [`INSERT OR IGNORE INTO token_refs (field, token_id, user_uuid)
+            ${sqliteTokenRefs('c.config_data', 'c.user_uuid', 'user_configs c, ')} AND c.id > ? AND c.id <= ?`, [after, upTo]],
+          ['UPDATE token_refs_backfill SET last_id = MAX(last_id, ?) WHERE tag = ?', [upTo, TOKEN_REF_TAG]],
+        ]
+      : [
+          [`INSERT INTO token_refs (field, token_id, user_uuid)
+            SELECT r.field, r.token_id, r.user_uuid FROM user_configs c
+            CROSS JOIN LATERAL (${postgresTokenRefs('c.config_data::jsonb', 'c.user_uuid')}) r
+            WHERE c.id > $1 AND c.id <= $2
+            ON CONFLICT DO NOTHING`, [after, upTo]],
+          ['UPDATE token_refs_backfill SET last_id = GREATEST(last_id, $1) WHERE tag = $2', [upTo, TOKEN_REF_TAG]],
+        ]);
   }
 
   /** The profile is part of the key, which neither dialect can add in place. */
@@ -490,6 +634,8 @@ export class DatabaseCore {
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_coalesce ON tracker_outbox(lane, coalesce_key)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_user ON tracker_outbox(user_uuid, id)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_claimed ON tracker_outbox(claimed_until, lane)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_next ON tracker_outbox(next_at)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_watch_index (
         source_key TEXT NOT NULL,
         video_id TEXT NOT NULL,
@@ -599,7 +745,19 @@ export class DatabaseCore {
         PRIMARY KEY (account_id, user_uuid),
         FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
       )`,
-      `CREATE INDEX IF NOT EXISTS idx_account_configs_uuid ON account_configs(user_uuid)`
+      `CREATE INDEX IF NOT EXISTS idx_account_configs_uuid ON account_configs(user_uuid)`,
+      `CREATE TABLE IF NOT EXISTS token_refs (
+        field TEXT NOT NULL,
+        token_id TEXT NOT NULL,
+        user_uuid TEXT NOT NULL,
+        PRIMARY KEY (field, token_id, user_uuid)
+      ) WITHOUT ROWID`,
+      `CREATE INDEX IF NOT EXISTS idx_token_refs_uuid ON token_refs(user_uuid)`,
+      `CREATE TABLE IF NOT EXISTS token_refs_backfill (
+        tag TEXT PRIMARY KEY,
+        last_id INTEGER NOT NULL DEFAULT 0,
+        done INTEGER NOT NULL DEFAULT 0
+      )`
     ];
 
     for (const query of queries) {
@@ -720,6 +878,8 @@ export class DatabaseCore {
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_coalesce ON tracker_outbox(lane, coalesce_key)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_title ON tracker_outbox(lane, item_key, id)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_user ON tracker_outbox(user_uuid, id)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_claimed ON tracker_outbox(claimed_until, lane)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_outbox_next ON tracker_outbox(next_at)`,
       `CREATE TABLE IF NOT EXISTS jellyfin_watch_index (
         source_key VARCHAR(64) NOT NULL,
         video_id TEXT NOT NULL,
@@ -828,7 +988,19 @@ export class DatabaseCore {
         last_opened_at TIMESTAMP,
         PRIMARY KEY (account_id, user_uuid)
       )`,
-      `CREATE INDEX IF NOT EXISTS idx_account_configs_uuid ON account_configs(user_uuid)`
+      `CREATE INDEX IF NOT EXISTS idx_account_configs_uuid ON account_configs(user_uuid)`,
+      `CREATE TABLE IF NOT EXISTS token_refs (
+        field VARCHAR(64) NOT NULL,
+        token_id VARCHAR(255) NOT NULL,
+        user_uuid VARCHAR(255) NOT NULL,
+        PRIMARY KEY (field, token_id, user_uuid)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_token_refs_uuid ON token_refs(user_uuid)`,
+      `CREATE TABLE IF NOT EXISTS token_refs_backfill (
+        tag VARCHAR(64) PRIMARY KEY,
+        last_id BIGINT NOT NULL DEFAULT 0,
+        done SMALLINT NOT NULL DEFAULT 0
+      )`
     ];
 
     for (const query of queries) {
@@ -899,6 +1071,44 @@ export class DatabaseCore {
     }
     const result = await this.db.query(query, params);
     return result.rows;
+  }
+
+  protected async runTogether(statements: Array<[string, any[]]>): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    if (this.type === 'sqlite') {
+      const prepared = new Map<string, any>();
+      this.timedSQLite(() => this.db.transaction(() => {
+        for (const [query, params] of statements) {
+          let statement = prepared.get(query);
+          if (!statement) {
+            statement = this.db.prepare(query);
+            prepared.set(query, statement);
+          }
+          this.executeSQLiteStatement(statement, 'run', params);
+        }
+      })());
+      await this.sqliteBreath();
+      return;
+    }
+
+    for (let attempt = 0; ; attempt++) {
+      const client = await this.db.connect();
+      try {
+        await client.query('BEGIN');
+        for (const [query, params] of statements) await client.query(query, params);
+        await client.query('COMMIT');
+        return;
+      } catch (error: any) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        // 40P01: two batches deadlocked, and Postgres ended this one.
+        if (error?.code !== '40P01' || attempt >= 2) throw error;
+      } finally {
+        client.release();
+      }
+    }
   }
 
   generateUserUUID(): string {
@@ -1023,6 +1233,11 @@ export class DatabaseCore {
     const query = 'SELECT user_uuid FROM user_configs';
     const rows = await this.allQuery(query);
     return rows ? rows.map(row => row.user_uuid) : [];
+  }
+
+  async countUserConfigs(): Promise<number> {
+    const row = await this.getQuery('SELECT COUNT(*) AS count FROM user_configs');
+    return Number(row?.count) || 0;
   }
 
 
@@ -1498,9 +1713,10 @@ export class DatabaseCore {
     videoId: string,
     patch: { positionMs?: number; runtimeMs?: number; played?: boolean; lastPlayedAt?: number | null; lastPlayedKind?: 'viewing' | 'mark'; origin?: string | null; watch?: WatchPatch },
     profile = '',
-    writtenAt?: number
+    writtenAt?: number,
+    held?: any
   ): Promise<void> {
-    const existing = await this.getPlaystate(userUUID, videoId, profile);
+    const existing = held === undefined ? await this.getPlaystate(userUUID, videoId, profile) : held;
     const now = writtenAt ?? Date.now();
 
     const positionMs = patch.positionMs ?? existing?.position_ms ?? 0;
@@ -1808,38 +2024,52 @@ export class DatabaseCore {
   async enqueueTrackerOutbox(rows: Array<{ lane: string; userUUID: string; profile: string; service: string; op: string; item: string; coalesce: string | null; payload: any; expiresAt: number }>): Promise<void> {
     const sqlite = this.type === 'sqlite';
     const now = Date.now();
-    for (const row of rows) {
-      // A newer write for the same thing replaces one still waiting, never one being sent.
-      if (row.coalesce) {
-        await this.runQuery(
-          sqlite
-            ? 'DELETE FROM tracker_outbox WHERE lane = ? AND coalesce_key = ? AND claimed_until <= ?'
-            : 'DELETE FROM tracker_outbox WHERE lane = $1 AND coalesce_key = $2 AND claimed_until <= $3',
-          [row.lane, row.coalesce, now]
-        );
-      }
-      await this.runQuery(
-        sqlite
-          ? `INSERT INTO tracker_outbox (lane, user_uuid, profile, service, op, item_key, coalesce_key, payload, next_at, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          : `INSERT INTO tracker_outbox (lane, user_uuid, profile, service, op, item_key, coalesce_key, payload, next_at, expires_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [row.lane, row.userUUID, row.profile || '', row.service, row.op, row.item, row.coalesce, JSON.stringify(row.payload), now, Math.round(row.expiresAt), now]
-      );
+    const remove = sqlite
+      ? 'DELETE FROM tracker_outbox WHERE lane = ? AND coalesce_key = ? AND claimed_until <= ?'
+      : 'DELETE FROM tracker_outbox WHERE claimed_until <= $3 AND (lane, coalesce_key) IN (SELECT * FROM unnest($1::text[], $2::text[]))';
+    const insert = sqlite
+      ? `INSERT INTO tracker_outbox (lane, user_uuid, profile, service, op, item_key, coalesce_key, payload, next_at, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      : `INSERT INTO tracker_outbox (lane, user_uuid, profile, service, op, item_key, coalesce_key, payload, next_at, expires_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`;
+    // A newer write for the same thing replaces one still waiting, never one being sent.
+    const last = new Map<string, number>();
+    rows.forEach((row, at) => {
+      if (row.coalesce) last.set(JSON.stringify([row.lane, row.coalesce]), at);
+    });
+    const kept = rows.filter((row, at) => !row.coalesce || last.get(JSON.stringify([row.lane, row.coalesce])) === at);
+    const replacing = kept.filter((row) => row.coalesce);
+    const statements: Array<[string, any[]]> = [];
+    if (sqlite) {
+      for (const row of replacing) statements.push([remove, [row.lane, row.coalesce, now]]);
+    } else {
+      // One account's batches queue in turn, so two of them never hold each other's rows.
+      statements.push([`SELECT pg_advisory_xact_lock(hashtext('tracker_outbox'), hashtext(lane)) FROM unnest($1::text[]) AS lane`, [[...new Set(rows.map((row) => row.lane))].sort()]]);
+      if (replacing.length) statements.push([remove, [replacing.map((row) => row.lane), replacing.map((row) => row.coalesce), now]]);
     }
+    for (const row of kept) {
+      statements.push([insert, [row.lane, row.userUUID, row.profile || '', row.service, row.op, row.item, row.coalesce, JSON.stringify(row.payload), now, Math.round(row.expiresAt), now]]);
+    }
+    await this.runTogether(statements);
   }
 
-  async readyTrackerOutbox(now: number, limit: number): Promise<any[]> {
+  async readyTrackerOutbox(now: number, perService: number): Promise<any[]> {
     const sqlite = this.type === 'sqlite';
     const at = sqlite ? '?' : '$1';
     // A title's writes go in order, but a waiting rating holds none back: it may be waiting for the title's own watched mark.
     const rows = await this.allPrimaryQuery(
-      `SELECT id, lane, user_uuid, profile, service, op, item_key, payload, attempts, next_at, expires_at, claimed_until, created_at FROM (
-         SELECT o.*, ROW_NUMBER() OVER (PARTITION BY o.lane ORDER BY o.id) AS lane_rank
-         FROM tracker_outbox o
-         WHERE o.next_at <= ${at} AND o.claimed_until <= ${at}
-           AND NOT EXISTS (SELECT 1 FROM tracker_outbox c WHERE c.lane = o.lane AND c.claimed_until > ${at})
-           AND NOT EXISTS (SELECT 1 FROM tracker_outbox w WHERE w.lane = o.lane AND w.item_key = o.item_key AND w.id < o.id AND w.next_at > ${at} AND w.op <> 'rate')
-       ) ready WHERE lane_rank = 1 ORDER BY id LIMIT ${sqlite ? '?' : '$2'}`,
-      sqlite ? [now, now, now, now, limit] : [now, limit]
+      `SELECT id, lane, user_uuid, profile, service, op, item_key, payload, attempts, next_at, expires_at, claimed_until, created_at
+       FROM tracker_outbox WHERE id IN (
+         SELECT id FROM (
+           SELECT h.id, ROW_NUMBER() OVER (PARTITION BY h.service ORDER BY h.id) AS service_rank
+           FROM tracker_outbox h WHERE h.id IN (
+             SELECT MIN(o.id) FROM tracker_outbox o
+             WHERE o.next_at <= ${at} AND o.claimed_until <= ${at}
+               AND o.lane NOT IN (SELECT c.lane FROM tracker_outbox c WHERE c.claimed_until > ${at})
+               AND NOT EXISTS (SELECT 1 FROM tracker_outbox w WHERE w.lane = o.lane AND w.item_key = o.item_key AND w.id < o.id AND w.next_at > ${at} AND w.op <> 'rate')
+             GROUP BY o.lane
+           )
+         ) heads WHERE service_rank <= ${sqlite ? '?' : '$2'}
+       ) ORDER BY id`,
+      sqlite ? [now, now, now, now, perService] : [now, perService]
     );
     // Postgres hands BIGINT back as a string.
     return rows.map((row: any) => ({
@@ -1857,8 +2087,12 @@ export class DatabaseCore {
     const sqlite = this.type === 'sqlite';
     const at = sqlite ? '?' : '$1';
     const [row] = await this.allPrimaryQuery(
-      `SELECT MIN(CASE WHEN claimed_until > ${at} THEN claimed_until ELSE next_at END) AS wake_at FROM tracker_outbox WHERE claimed_until > ${at} OR next_at > ${at}`,
-      sqlite ? [now, now, now] : [now]
+      `SELECT MIN(at) AS wake_at FROM (
+         SELECT MIN(claimed_until) AS at FROM tracker_outbox WHERE claimed_until > ${at}
+         UNION ALL
+         SELECT MIN(next_at) AS at FROM tracker_outbox WHERE next_at > ${at}
+       ) AS wake`,
+      sqlite ? [now, now] : [now]
     );
     const wakeAt = Number(row?.wake_at);
     return Number.isFinite(wakeAt) && wakeAt > 0 ? wakeAt : null;
@@ -1880,14 +2114,15 @@ export class DatabaseCore {
     return rows;
   }
 
-  async claimTrackerOutbox(id: number, until: number): Promise<boolean> {
-    const result = await this.runQuery(
-      this.type === 'sqlite'
-        ? 'UPDATE tracker_outbox SET claimed_until = ? WHERE id = ? AND claimed_until <= ?'
-        : 'UPDATE tracker_outbox SET claimed_until = $1 WHERE id = $2 AND claimed_until <= $3',
-      [until, id, Date.now()]
+  async claimTrackerOutbox(ids: number[], until: number): Promise<number[]> {
+    if (!ids.length) return [];
+    const sqlite = this.type === 'sqlite';
+    const marks = ids.map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
+    const rows = await this.allPrimaryQuery(
+      `UPDATE tracker_outbox SET claimed_until = ${sqlite ? '?' : '$1'} WHERE claimed_until <= ${sqlite ? '?' : '$2'} AND id IN (${marks}) RETURNING id`,
+      [until, Date.now(), ...ids]
     );
-    return Number(result?.changes ?? result?.rowCount ?? 0) === 1;
+    return rows.map((row: any) => Number(row.id));
   }
 
   async retryTrackerOutbox(id: number, attempts: number, nextAt: number, error: string): Promise<void> {
@@ -1899,11 +2134,13 @@ export class DatabaseCore {
     );
   }
 
-  async listTrackerOutboxLane(lane: string): Promise<Array<{ op: string; item_key: string; payload: string; created_at: number }>> {
+  async listTrackerOutboxLane(lane: string, ops: string[]): Promise<Array<{ op: string; item_key: string; payload: string; created_at: number }>> {
+    if (!ops.length) return [];
     const sqlite = this.type === 'sqlite';
-    const rows = await this.allQuery(
-      `SELECT op, item_key, payload, created_at FROM tracker_outbox WHERE lane = ${sqlite ? '?' : '$1'} AND expires_at > ${sqlite ? '?' : '$2'} ORDER BY id`,
-      [lane, Date.now()]
+    const marks = ops.map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
+    const rows = await this.allPrimaryQuery(
+      `SELECT op, item_key, payload, created_at FROM tracker_outbox WHERE lane = ${sqlite ? '?' : '$1'} AND expires_at > ${sqlite ? '?' : '$2'} AND op IN (${marks}) ORDER BY id`,
+      [lane, Date.now(), ...ops]
     );
     return rows.map((row: any) => ({ ...row, created_at: Number(row.created_at) }));
   }
@@ -2396,58 +2633,75 @@ export class DatabaseCore {
   async getUsersByOAuthTokenIds(tokenField: string, tokenIds: string[]): Promise<any[]> {
     if (!tokenIds.length) return [];
     try {
-      if (this.type === 'sqlite') {
-        const placeholders = tokenIds.map(() => '?').join(', ');
-        const query = `SELECT user_uuid, password_hash, config_data FROM user_configs
-          WHERE json_extract(config_data, '$.apiKeys.${tokenField}') IN (${placeholders})`;
-        const rows = await this.allQuery(query, tokenIds);
-        return rows.map(row => ({
-          id: row.user_uuid,
-          password_hash: row.password_hash,
-          config: typeof row.config_data === 'string' ? JSON.parse(row.config_data) : row.config_data
-        }));
-      } else {
-        const placeholders = tokenIds.map((_, i) => `$${i + 1}`).join(', ');
-        const query = `SELECT user_uuid, password_hash, config_data FROM user_configs
-          WHERE config_data::jsonb->'apiKeys'->>'${tokenField}' IN (${placeholders})`;
-        const rows = await this.allQuery(query, tokenIds);
-        return rows.map(row => ({
-          id: row.user_uuid,
-          password_hash: row.password_hash,
-          config: typeof row.config_data === 'string' ? JSON.parse(row.config_data) : row.config_data
-        }));
-      }
+      const refs = await this.findTokenReferences(tokenField, tokenIds);
+      return refs
+        .filter((ref) => ref.owners.includes(''))
+        .map((ref) => ({ id: ref.uuid, password_hash: ref.passwordHash, config: ref.config }));
     } catch (error) {
       logger.error(`Error finding users by ${tokenField}:`, error);
       return [];
     }
   }
 
+  /** Configurations that may hold a value for this field; each caller still reads the field from the config. */
+  async configsHoldingField(field: string): Promise<string[]> {
+    if (!this.initialized) await this.initialize();
+    const from = TOKEN_REF_FIELDS.includes(field) ? this.tokenRefsFrom : null;
+    if (from === null) return this.getAllUserUUIDs();
+    const sqlite = this.type === 'sqlite';
+    const rows = await this.allPrimaryQuery(
+      from === Infinity
+        ? `SELECT DISTINCT user_uuid FROM token_refs WHERE field = ${sqlite ? '?' : '$1'} AND token_id <> ''`
+        : `SELECT user_uuid FROM token_refs WHERE field = ${sqlite ? '?' : '$1'} AND token_id <> '' UNION SELECT user_uuid FROM user_configs WHERE id > ${sqlite ? '?' : '$2'}`,
+      from === Infinity ? [field] : [field, from]
+    );
+    return rows.map((row: any) => String(row.user_uuid));
+  }
+
   /** Every configuration referring to one of these tokens, at the top level or on a Jellyfin user. */
   async findTokenReferences(field: string, tokenIds: string[]): Promise<Array<{ uuid: string; passwordHash: string; config: any; owners: string[] }>> {
     if (!tokenIds.length || !/^[A-Za-z]+$/.test(field)) return [];
+    if (!this.initialized) await this.initialize();
     const sqlite = this.type === 'sqlite';
-    const marks = tokenIds.map((_, i) => (sqlite ? '?' : `$${i + 1}`)).join(', ');
-    const query = sqlite
-      ? `SELECT user_uuid, password_hash, config_data FROM user_configs
-         WHERE json_extract(config_data, '$.apiKeys.${field}') IN (${marks})
-            OR EXISTS (SELECT 1 FROM json_each(config_data, '$.jellyfinUsers') u
-                       WHERE json_extract(config_data, u.fullkey || '.accounts.apiKeys.${field}') IN (${marks}))`
-      : `SELECT user_uuid, password_hash, config_data FROM user_configs
-         WHERE config_data::jsonb->'apiKeys'->>'${field}' IN (${marks})
-            OR EXISTS (
-                 SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(config_data::jsonb->'jellyfinUsers') = 'array'
-                                                         THEN config_data::jsonb->'jellyfinUsers' ELSE '[]'::jsonb END) u
-                 WHERE u->'accounts'->'apiKeys'->>'${field}' IN (${marks}))`;
+    const mark = (n: number) => (sqlite ? '?' : `$${n}`);
+    const indexed = TOKEN_REF_FIELDS.includes(field) && tokenIds.every((id) => typeof id === 'string' && id.length <= TOKEN_REF_MAX);
+    // Configurations above this id are not all in token_refs yet, so those are read in full.
+    const scanAbove = indexed ? this.tokenRefsFrom : null;
     // The release check must see this process's own just-committed write, so this reads the
     // primary directly rather than through allQuery's (possibly lagging) read replica.
-    if (!this.initialized) await this.initialize();
     try {
-      const rows = sqlite
-        ? this.executeSQLiteStatement(this.db.prepare(query), 'all', [...tokenIds, ...tokenIds])
-        : (await this.db.query(query, tokenIds)).rows;
+      const rows: any[] = [];
+      if (scanAbove !== null) {
+        rows.push(...await this.allPrimaryQuery(
+          `SELECT id, user_uuid, password_hash, config_data FROM user_configs
+           WHERE user_uuid IN (SELECT user_uuid FROM token_refs WHERE field = ${mark(1)} AND token_id IN (${tokenIds.map((_, i) => mark(i + 2)).join(', ')}))`,
+          [field, ...tokenIds]
+        ));
+      }
+      if (scanAbove !== Infinity) {
+        const marks = tokenIds.map((_, i) => mark(i + 1)).join(', ');
+        const matches = sqlite
+          ? `(json_extract(config_data, '$.apiKeys.${field}') IN (${marks})
+              OR EXISTS (SELECT 1 FROM json_each(config_data, '$.jellyfinUsers') u
+                         WHERE json_extract(config_data, u.fullkey || '.accounts.apiKeys.${field}') IN (${marks})))`
+          : `(config_data::jsonb->'apiKeys'->>'${field}' IN (${marks})
+              OR EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(config_data::jsonb->'jellyfinUsers') = 'array'
+                                                           THEN config_data::jsonb->'jellyfinUsers' ELSE '[]'::jsonb END) u
+                   WHERE u->'accounts'->'apiKeys'->>'${field}' IN (${marks})))`;
+        const params: any[] = sqlite ? [...tokenIds, ...tokenIds] : [...tokenIds];
+        if (scanAbove) params.push(scanAbove);
+        rows.push(...await this.allPrimaryQuery(
+          `SELECT id, user_uuid, password_hash, config_data FROM user_configs WHERE ${matches}${scanAbove ? ` AND id > ${mark(tokenIds.length + 1)}` : ''}`,
+          params
+        ));
+      }
+      const seen = new Set<string>();
+      const unique = rows
+        .sort((a, b) => Number(a.id) - Number(b.id))
+        .filter((row) => !seen.has(row.user_uuid) && seen.add(row.user_uuid));
       const wanted = new Set(tokenIds);
-      return rows.map((row: any) => {
+      return unique.map((row: any) => {
         const config = typeof row.config_data === 'string' ? JSON.parse(row.config_data) : row.config_data;
         const owners: string[] = [];
         if (wanted.has(config?.apiKeys?.[field])) owners.push('');

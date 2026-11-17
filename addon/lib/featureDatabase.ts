@@ -561,13 +561,15 @@ export class FeatureDatabase extends DatabaseCore {
     await this.runQuery(query, [row.sourceKey, row.service, row.kind, row.userUUID ?? null, row.profile ?? null, row.op ?? null, row.video ?? null, row.detail ? JSON.stringify(row.detail) : null, row.at]);
   }
 
-  async listTrackerActivity(sourceKeys: string[], since: number, limit = 2000): Promise<any[]> {
+  async listTrackerActivity(sourceKeys: string[], since: number, limit = 2000, kind?: string): Promise<any[]> {
     if (!sourceKeys.length) return [];
     const sqlite = this.type === 'sqlite';
     const marks = sourceKeys.map((_, i) => (sqlite ? '?' : `$${i + 3}`)).join(', ');
+    const only = kind ? ` AND kind = ${sqlite ? '?' : `$${sourceKeys.length + 3}`}` : '';
     const query = `SELECT id, source_key, service, kind, user_uuid, profile, op, video, detail, at FROM tracker_activity
-      WHERE at >= ${sqlite ? '?' : '$1'} AND source_key IN (${marks}) ORDER BY at DESC, id DESC LIMIT ${sqlite ? '?' : '$2'}`;
-    const params = sqlite ? [since, ...sourceKeys, limit] : [since, limit, ...sourceKeys];
+      WHERE at >= ${sqlite ? '?' : '$1'} AND source_key IN (${marks})${only} ORDER BY at DESC, id DESC LIMIT ${sqlite ? '?' : '$2'}`;
+    const filter = kind ? [kind] : [];
+    const params = sqlite ? [since, ...sourceKeys, ...filter, limit] : [since, limit, ...sourceKeys, ...filter];
     return (await this.allQuery(query, params)) || [];
   }
 
@@ -934,6 +936,8 @@ const FEATURE_SQLITE_TABLES = [
       )`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_activity_source ON tracker_activity(source_key, at)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_activity_user ON tracker_activity(user_uuid, at)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_activity_at ON tracker_activity(at)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_activity_kind ON tracker_activity(source_key, kind, at)`,
       `CREATE TABLE IF NOT EXISTS tracker_copy_jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_uuid TEXT NOT NULL,
@@ -1050,6 +1054,8 @@ const FEATURE_POSTGRES_TABLES = [
       )`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_activity_source ON tracker_activity(source_key, at)`,
       `CREATE INDEX IF NOT EXISTS idx_tracker_activity_user ON tracker_activity(user_uuid, at)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_activity_at ON tracker_activity(at)`,
+      `CREATE INDEX IF NOT EXISTS idx_tracker_activity_kind ON tracker_activity(source_key, kind, at)`,
       `CREATE TABLE IF NOT EXISTS tracker_copy_jobs (
         id BIGSERIAL PRIMARY KEY,
         user_uuid VARCHAR(64) NOT NULL,

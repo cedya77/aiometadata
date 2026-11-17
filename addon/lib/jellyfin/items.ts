@@ -67,11 +67,18 @@ const ART_SCOPE_SKIPPED = new Set([
 ]);
 const ART_SCOPE_SKIPPED_KEYS = new Set(['malTokenId', 'anilistTokenId', 'simklTokenId', 'traktTokenId', 'movieLensCredId', 'trakt', 'simkl']);
 const artSignatures = new WeakMap<object, string>();
+const artSignaturesByStamp = new LRUCache<string, string>({ max: 5000 });
 const artScopes = new LRUCache<string, string>({ max: envInt('JELLYFIN_IMAGE_CACHE_MAX', 20000, 1) });
 
 function artSignature(config: any): string {
   const held = artSignatures.get(config);
   if (held) return held;
+  const stamp: string | undefined = require('../configCache').stampOf(config);
+  const known = stamp ? artSignaturesByStamp.get(stamp) : undefined;
+  if (known) {
+    artSignatures.set(config, known);
+    return known;
+  }
   const view: Record<string, any> = {};
   for (const [field, value] of Object.entries(config)) {
     if (ART_SCOPE_SKIPPED.has(field) || field.startsWith('_') || field.endsWith('WatchTracking')) continue;
@@ -81,6 +88,7 @@ function artSignature(config: any): string {
   }
   const signature = `art-${createHash('sha256').update(JSON.stringify(view)).digest('hex').slice(0, 32)}`;
   artSignatures.set(config, signature);
+  if (stamp) artSignaturesByStamp.set(stamp, signature);
   return signature;
 }
 

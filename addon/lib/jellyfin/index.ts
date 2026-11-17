@@ -612,12 +612,12 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     };
   };
 
-  const seenClients = new Set<string>();
+  const seenClients = new LRUCache<string, true>({ max: 2000 });
   router.use((req: any, res: any, next: any) => {
     const info = clientInfo(req);
     const label = `${info.client} | ${info.device}`;
     if (!seenClients.has(label) && info.client !== 'Unknown') {
-      seenClients.add(label);
+      seenClients.set(label, true);
       logger.info(`Client seen: ${label} (${info.version})`);
     }
     const started = Date.now();

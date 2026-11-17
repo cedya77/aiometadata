@@ -5863,7 +5863,8 @@ addon.post(["/stremio/:userUUID/watch_state/push/:type/:id.json", "/stremio/:use
   // a 5xx would have the sender retrying it for a day.
   let config;
   try {
-    config = await loadConfigFromDatabase(userUUID);
+    const stored = await loadSharedConfig(userUUID);
+    config = stored ? { ...stored } : null;
   } catch {
     config = null;
   }

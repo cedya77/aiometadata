@@ -12,6 +12,15 @@ const logger = consola.withTag('AuthSession');
 export const SESSION_COOKIE = 'aiom_session';
 const SESSION_PREFIX = 'auth:session:';
 const ACCOUNT_SESSIONS_PREFIX = 'auth:account-sessions:';
+const INDEX_COMPLETE_KEY = 'auth:account-sessions-complete';
+
+async function indexComplete(): Promise<boolean> {
+  try {
+    return (await redis.exists(INDEX_COMPLETE_KEY)) === 1;
+  } catch {
+    return false;
+  }
+}
 
 function accountSessionsKey(accountId: string): string {
   return `${ACCOUNT_SESSIONS_PREFIX}${accountId}`;
@@ -56,6 +65,7 @@ export async function createSession(data: Omit<SessionData, 'createdAt'>): Promi
     await refreshIndexExpiry(key);
   } catch (error: any) {
     logger.warn(`Could not index session for ${data.accountId}: ${error.message}`);
+    await redis.del(INDEX_COMPLETE_KEY).catch(() => undefined);
   }
   return id;
 }
@@ -129,22 +139,26 @@ async function scanSessions(
     for (const key of keys) {
       const raw = await redis.get(key);
       if (!raw) continue;
+      let record: any;
       try {
-        await visit(key.slice(SESSION_PREFIX.length), JSON.parse(raw));
+        record = JSON.parse(raw);
       } catch {
         // Unreadable value, leave it to expire on its own.
+        continue;
       }
+      await visit(key.slice(SESSION_PREFIX.length), record);
     }
   } while (cursor !== '0');
 }
 
 /**
  * Sessions minted before the per-account index existed carry no member, so the
- * index alone would report them revoked while they kept working. One sweep at
- * startup adopts them; after that createSession is the only writer it needs.
+ * index alone would undercount them. One sweep at startup adopts them; once a
+ * sweep finishes without an error, later startups skip it.
  */
 export async function backfillSessionIndex(): Promise<number> {
   let adopted = 0;
+  if (await indexComplete()) return 0;
   try {
     await scanSessions(async (id, record) => {
       const accountId = record?.accountId;
@@ -158,6 +172,7 @@ export async function backfillSessionIndex(): Promise<number> {
       adopted += 1;
     });
     if (adopted > 0) logger.info(`Adopted ${adopted} session(s) into the account index`);
+    await redis.set(INDEX_COMPLETE_KEY, String(Date.now()));
   } catch (error: any) {
     logger.warn(`Could not backfill the session index: ${error.message}`);
   }

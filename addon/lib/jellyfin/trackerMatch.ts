@@ -47,7 +47,9 @@ interface Index {
 }
 
 const indexes = new LRUCache<string, Index>({ max: 500, ttl: 10 * 60 * 1000 });
-const epochs = new Map<string, number>();
+// Numbered from one counter, so a key forgotten here and seen again never repeats a number it had.
+const epochs = new LRUCache<string, number>({ max: 20000, ttl: 6 * 60 * 60 * 1000, updateAgeOnGet: true });
+let lastEpoch = 0;
 
 function theirBases(target: MatchTarget): string[] {
   const out: string[] = [];
@@ -103,7 +105,7 @@ async function indexFor(userUUID: string, service: string): Promise<Index> {
 /** Matches written outside saveMatch and removeMatch are read again. */
 export function forgetMatches(userUUID: string, service: string): void {
   const key = `${userUUID}|${service}`;
-  epochs.set(key, (epochs.get(key) ?? 0) + 1);
+  epochs.set(key, ++lastEpoch);
   indexes.delete(key);
 }
 

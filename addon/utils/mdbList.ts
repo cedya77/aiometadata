@@ -141,8 +141,23 @@ async function globalThrottle(): Promise<void> {
 }
 // ---------------------------------------
 
+let statesSweptAt = 0;
+
+// Only a state with nothing left to remember goes: no cooldown, no quota window open, no limit hit in the last hour.
+function sweepRateLimitStates(): void {
+  const now = Date.now();
+  if (rateLimitStates.size < 1000 || now - statesSweptAt < 60_000) return;
+  statesSweptAt = now;
+  for (const [key, state] of rateLimitStates) {
+    const cooling = state.isRateLimited && state.rateLimitResetTime > now;
+    const windowOpen = Boolean(state.lastReset && state.lastReset * 1000 > now);
+    if (!cooling && !windowOpen && now - state.lastRateLimitTime > 60 * 60 * 1000) rateLimitStates.delete(key);
+  }
+}
+
 function getRateLimitState(apiKey: string = 'global'): RateLimitState {
   if (!rateLimitStates.has(apiKey)) {
+    sweepRateLimitStates();
     rateLimitStates.set(apiKey, {
       recentRateLimitHits: 0,
       lastRateLimitTime: 0,

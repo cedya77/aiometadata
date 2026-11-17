@@ -27,14 +27,18 @@ function isPrivateIPv4(ip: string): boolean {
   if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
     return true; // Unparseable is not provably public.
   }
-  const [a, b] = parts;
+  const [a, b, c] = parts;
   if (a === 0) return true;                        // 0.0.0.0/8
   if (a === 10) return true;                       // private
   if (a === 127) return true;                      // loopback
   if (a === 169 && b === 254) return true;         // link-local (cloud metadata)
   if (a === 172 && b >= 16 && b <= 31) return true; // private
   if (a === 192 && b === 168) return true;         // private
-  if (a === 192 && b === 0) return true;           // IETF protocol assignments
+  if (a === 192 && b === 0 && c === 0) return true; // IETF protocol assignments
+  if (a === 192 && b === 0 && c === 2) return true; // documentation
+  if (a === 198 && b === 51 && c === 100) return true; // documentation
+  if (a === 203 && b === 0 && c === 113) return true; // documentation
+  if (a === 192 && b === 88 && c === 99) return true; // deprecated 6to4 relay anycast
   if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
   if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
   if (a >= 224) return true;                       // multicast + reserved
@@ -74,10 +78,21 @@ function isPrivateIPv6(ip: string): boolean {
     if (g5 === 0 && g6 === 0 && (g7 === 0 || g7 === 1)) return true; // :: and ::1
     return isPrivateIPv4(embeddedIPv4(g6, g7)); // IPv4-mapped and IPv4-compatible
   }
-  if (g0 === 0x64 && g1 === 0xff9b) return isPrivateIPv4(embeddedIPv4(g6, g7)); // NAT64
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0xffff && g5 === 0) return isPrivateIPv4(embeddedIPv4(g6, g7)); // IPv4-translated
+  if (g0 === 0x64 && g1 === 0xff9b) {
+    // Only the well-known /96 embeds the address where it is read; local-use NAT64 prefixes may put it anywhere.
+    if (g2 !== 0 || g3 !== 0 || g4 !== 0 || g5 !== 0) return true;
+    return isPrivateIPv4(embeddedIPv4(g6, g7));
+  }
   if (g0 === 0x2002) return isPrivateIPv4(embeddedIPv4(g1, g2)); // 6to4
+  if (g0 === 0x0100 && g1 === 0 && g2 === 0 && (g3 === 0 || g3 === 1)) return true; // discard-only and dummy prefixes
+  if (g0 === 0x2001 && g1 === 0x0002 && g2 === 0) return true; // 2001:2::/48 benchmarking
+  if (g0 === 0x2001 && g1 === 0x0db8) return true; // 2001:db8::/32 documentation
+  if (g0 === 0x3fff && (g1 & 0xf000) === 0) return true; // 3fff::/20 documentation
+  if (g0 === 0x5f00) return true; // 5f00::/16 SRv6 SIDs
   if ((g0 & 0xfe00) === 0xfc00) return true; // fc00::/7 unique local
   if ((g0 & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+  if ((g0 & 0xffc0) === 0xfec0) return true; // fec0::/10 deprecated site-local
   if ((g0 & 0xff00) === 0xff00) return true; // multicast
   return false;
 }

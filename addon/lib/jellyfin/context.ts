@@ -102,10 +102,19 @@ export function parseMediaBrowserHeader(value: string | undefined): Record<strin
   return out;
 }
 
+const authHeaders = new WeakMap<object, Record<string, string>>();
+
+function authHeaderOf(req: any): Record<string, string> {
+  let held = authHeaders.get(req);
+  if (!held) {
+    held = parseMediaBrowserHeader(req.get('authorization') || req.get('x-emby-authorization'));
+    authHeaders.set(req, held);
+  }
+  return held;
+}
+
 export function extractToken(req: any): string | undefined {
-  const header = parseMediaBrowserHeader(
-    req.get('authorization') || req.get('x-emby-authorization')
-  );
+  const header = authHeaderOf(req);
   return (
     header.token ||
     req.get('x-emby-token') ||
@@ -142,9 +151,7 @@ export function clientHasOwnWatchlist(): boolean {
 }
 
 export function clientInfo(req: any): { client: string; device: string; deviceId: string; version: string } {
-  const header = parseMediaBrowserHeader(
-    req.get('authorization') || req.get('x-emby-authorization')
-  );
+  const header = authHeaderOf(req);
   return {
     client: header.client || 'Unknown',
     device: header.device || 'Unknown',
@@ -174,8 +181,17 @@ async function profileExists(userUUID: string, profileId: string): Promise<boole
     if (error?.code === 'CONFIG_NOT_FOUND') return false;
     throw error;
   }
-  return Boolean(stored) && listProfiles(stored, userUUID).some((profile) => profile.id === profileId);
+  if (!stored) return false;
+  let ids = profileIds.get(stored);
+  if (!ids) {
+    ids = new Set(listProfiles(stored, userUUID).map((profile) => profile.id));
+    profileIds.set(stored, ids);
+  }
+  return ids.has(profileId);
 }
+
+const profileIds = new WeakMap<object, Set<string | null>>();
+const scopedConfigs = new WeakMap<object, Map<string, any>>();
 
 export async function attachJellyfinContext(req: any, _res: any, next: any): Promise<void> {
   const userUUID = req.params?.userUUID;
@@ -223,7 +239,18 @@ export async function loadConfig(req: any): Promise<any> {
 
   // The cached copy is every reader's, so a request changes only its own top level.
   require('./items').noteArtScope(serverIdFor(req.jellyfin.userUUID), stored);
-  const config = scopeConfigToProfile({ ...stored }, req.jellyfin.userUUID, req.jellyfin.profileId ?? null);
+  let scoped = scopedConfigs.get(stored);
+  if (!scoped) {
+    scoped = new Map();
+    scopedConfigs.set(stored, scoped);
+  }
+  const profileId = req.jellyfin.profileId ?? '';
+  let held = scoped.get(profileId);
+  if (!held) {
+    held = scopeConfigToProfile(stored, req.jellyfin.userUUID, req.jellyfin.profileId ?? null);
+    scoped.set(profileId, held);
+  }
+  const config = { ...held };
   config.userUUID = req.jellyfin.userUUID;
   req.jellyfin.config = config;
   noteAccountOwner(accountOwner(config));

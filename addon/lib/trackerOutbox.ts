@@ -55,6 +55,8 @@ const CHANGES_WATCHED = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'red
 const CHANGES_RESUME = new Set<OutboxOp>(['scrobble', 'credit', 'unwatch', 'clearResume', 'episodes']);
 const CHANGES_UPCOMING = new Set<OutboxOp>(['watchlist']);
 
+const WATCH_OPS: OutboxOp[] = ['scrobble', 'credit', 'unwatch', 'catchUp', 'catchUps', 'episodes', 'anime'];
+
 const LEASE_MS = 5 * 60 * 1000;
 const HEARTBEAT_MS = 60 * 1000;
 const PASS_STUCK_MS = 60 * 1000;
@@ -102,7 +104,7 @@ export async function pendingWatches(service: WatchTrackingService, credential: 
     const kind = parsed.episode !== null && parsed.episode !== undefined ? 'episode' : 'movie';
     out.set(videoId, { videoId, kind, metaId: kind === 'episode' ? parsed.base : videoId, played, at });
   };
-  for (const row of await database.listTrackerOutboxLane(laneKey(service, credential))) {
+  for (const row of await database.listTrackerOutboxLane(laneKey(service, credential), WATCH_OPS)) {
     let p: any;
     try {
       p = JSON.parse(row.payload);
@@ -147,7 +149,7 @@ export async function enqueueTrackerWrites(userUUID: string | undefined, config:
         payload: job.payload,
         expiresAt: now + (job.within ? job.within * 1000 : maxAgeMs()),
       })));
-      kick();
+      if (active.size < concurrency() && rows.some(({ lane }) => !active.has(lane))) kick();
       return;
     } catch (error: any) {
       logger.warn(`Could not queue ${rows.length} tracker write(s), sending them now: ${error?.message || error}`);
@@ -166,6 +168,7 @@ export async function enqueueTrackerWrites(userUUID: string | undefined, config:
 
 const active = new Set<string>();
 let again = false;
+let kickScheduled = false;
 let passId = 0;
 let passStartedAt = 0;
 let lastPurgeAt = 0;
@@ -182,8 +185,13 @@ function kick(): void {
     heartbeat = setInterval(kick, HEARTBEAT_MS);
     heartbeat.unref?.();
   }
+  if (kickScheduled) return;
+  kickScheduled = true;
   // A fresh, empty scope: the pump must not inherit whichever request's viewer queued the write.
-  setImmediate(() => { runInViewerScope(false, () => pump()).catch((error: any) => logger.warn(`Outbox pass failed: ${error?.message || error}`)); });
+  setImmediate(() => {
+    kickScheduled = false;
+    runInViewerScope(false, () => pump()).catch((error: any) => logger.warn(`Outbox pass failed: ${error?.message || error}`));
+  });
 }
 
 function wakeBy(at: number | null): void {
@@ -198,6 +206,34 @@ function wakeBy(at: number | null): void {
   wakeTimer.unref?.();
 }
 
+/**
+ * The ready writes to start now, one per lane. Each tracker with work gets an
+ * even share of the slots first; one may then take what the others leave, short
+ * of the last slot while another tracker has a write ready or in flight.
+ */
+export function pickWrites<R extends { service: string; lane: string }>(rows: R[], active: Set<string>, total: number): R[] {
+  const slots = total - active.size;
+  const running = new Map<string, number>();
+  for (const lane of active) {
+    const service = lane.split(':')[0];
+    running.set(service, (running.get(service) ?? 0) + 1);
+  }
+  const busy = new Set<string>([...running.keys(), ...rows.map((row) => row.service)]);
+  const share = Math.max(1, Math.ceil(total / Math.max(1, busy.size)));
+  const taking: R[] = [];
+  for (const round of [0, 1]) {
+    for (const row of rows) {
+      if (taking.length >= slots) break;
+      const most = round === 0 ? share : [...busy].some((service) => service !== row.service) ? Math.max(1, total - 1) : total;
+      const held = running.get(row.service) ?? 0;
+      if (held >= most || active.has(row.lane) || taking.includes(row)) continue;
+      running.set(row.service, held + 1);
+      taking.push(row);
+    }
+  }
+  return taking;
+}
+
 async function pump(): Promise<void> {
   if (passStartedAt) {
     if (Date.now() - passStartedAt < PASS_STUCK_MS) {
@@ -208,6 +244,7 @@ async function pump(): Promise<void> {
   }
   const pass = ++passId;
   passStartedAt = Date.now();
+  let reclaims = 0;
   try {
     do {
       again = false;
@@ -227,18 +264,18 @@ async function pump(): Promise<void> {
         }
       }
 
-      const slots = concurrency() - active.size;
+      const total = concurrency();
+      const slots = total - active.size;
       if (slots > 0) {
-        const rows: any[] = await database.readyTrackerOutbox(now, slots + active.size);
-        let free = slots;
-        for (const row of rows) {
-          if (pass !== passId) return;
-          if (free <= 0) break;
-          if (active.has(row.lane)) continue;
-          if (!(await database.claimTrackerOutbox(row.id, Date.now() + leaseMs()))) continue;
-          free--;
-          send(row);
+        const rows: any[] = await database.readyTrackerOutbox(now, total);
+        if (pass !== passId) return;
+        const taking = pickWrites(rows, active, total);
+        const claimed = new Set<number>(await database.claimTrackerOutbox(taking.map((row) => row.id), Date.now() + leaseMs()));
+        for (const row of taking) {
+          if (claimed.has(row.id)) send(row);
         }
+        // Another instance took some of them; the other ready writes get those slots now.
+        if (claimed.size < taking.length && reclaims++ < 3) again = true;
       }
       if (pass !== passId) return;
       wakeBy(await database.trackerOutboxWakeAt(Date.now()));
