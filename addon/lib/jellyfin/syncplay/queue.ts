@@ -77,11 +77,10 @@ export function setQueue(q: Queue, itemIds: string[], playingIndex: number, rand
 export function enqueue(q: Queue, itemIds: string[], mode: 'Queue' | 'QueueNext', rand: Rand, now: number): void {
   const added = entries(itemIds, MAX_QUEUE - q.sorted.length, rand);
   if (!added.length) return;
-  const list = active(q);
-  const other = q.shuffle === 'Shuffle' ? q.sorted : null;
-  if (mode === 'QueueNext' && q.playing >= 0) list.splice(q.playing + 1, 0, ...added);
-  else list.push(...added);
-  other?.push(...added);
+  const playing = current(q);
+  const at = (list: Entry[]) => (mode === 'QueueNext' && playing ? indexOf(list, playing) + 1 : list.length);
+  q.sorted.splice(at(q.sorted), 0, ...added);
+  if (q.shuffle === 'Shuffle') q.shuffled.splice(at(q.shuffled), 0, ...added);
   if (q.playing < 0) q.playing = 0;
   q.lastUpdate = now;
 }

@@ -139,7 +139,8 @@ class Turn {
       to: to.map(recipient),
       kind: 'command',
       command,
-      whenMs: whenMs ?? (command === 'Unpause' ? g.lastActivity : this.now),
+      // A repeat of an unchanged state must match exactly, or clients treat it as new and seek again.
+      whenMs: whenMs ?? g.lastActivity,
       positionTicks: Math.max(g.positionTicks, 0),
       playlistItemId: Q.current(g.queue)?.playlistItemId ?? '',
       emittedMs: this.now,
@@ -247,6 +248,8 @@ class Turn {
   }
 }
 
+const intent = (g: Group): 'Playing' | 'Paused' => (g.state === 'Playing' ? 'Playing' : g.state === 'Paused' ? 'Paused' : g.wanted);
+
 export function livePosition(g: Group, now: number): number {
   if (g.state !== 'Playing') return Math.max(g.positionTicks, 0);
   return Math.max(g.positionTicks + Math.max(now - g.lastActivity, 0) * TICKS_PER_MS, 0);
@@ -335,7 +338,7 @@ export function join(group: Group, member: Member, ctx: Ctx): Result {
     return t.done();
   }
   if (g.state === 'Playing') t.freezePosition();
-  const wanted = g.state === 'Playing' ? 'Playing' : g.state === 'Paused' ? 'Paused' : g.wanted;
+  const wanted = intent(g);
   t.setState('Waiting');
   g.wanted = wanted;
   g.waitDeadline = ctx.now + LOAD_WAIT_MS;
@@ -395,13 +398,18 @@ export function tick(group: Group, ctx: Ctx, offline: Set<string>, unknown: Set<
   return { group: g.members.length ? g : null, out: t.out };
 }
 
+/** A member reporting on an item other than the group's is sent the queue and waited for. */
+function wrongItem(t: Turn, m: Member, r: Report): boolean {
+  if (r.playlistItemId === Q.current(t.g.queue)?.playlistItemId) return false;
+  m.buffering = true;
+  t.queue([m], 'SetCurrentItem');
+  return true;
+}
+
 function ready(t: Turn, m: Member, r: Report): void {
   const g = t.g;
   const now = t.now;
-  if (r.playlistItemId !== Q.current(g.queue)?.playlistItemId) {
-    t.queue([m], 'SetCurrentItem');
-    return;
-  }
+  if (wrongItem(t, m, r)) return;
   const at = Math.abs(r.when - now) > TIME_SYNC_MS ? now : r.when;
   const elapsed = r.isPlaying ? Math.max(now - at, 0) : 0;
   const clientTicks = Math.max(r.ticks, 0) + elapsed * TICKS_PER_MS;
@@ -501,7 +509,7 @@ export function handle(group: Group, key: string, request: Request, ctx: Ctx): R
         t.stop('Stop');
       } else if (removedCurrent && g.state !== 'Idle') {
         g.positionTicks = 0;
-        t.restartWait('Playing');
+        t.restartWait(intent(g));
         t.queue(t.all(), 'RemoveItems');
         t.stateUpdate(t.all(), 'RemoveFromPlaylist');
       } else {
@@ -513,6 +521,9 @@ export function handle(group: Group, key: string, request: Request, ctx: Ctx): R
       t.stop('Stop');
       return t.done();
   }
+
+  const forcedPlay = g.state === 'Playing' && g.forced;
+  if (request.type === 'Buffer' && g.state !== 'Idle' && !forcedPlay && wrongItem(t, m, request)) return t.done();
 
   switch (g.state) {
     case 'Idle':
@@ -569,7 +580,6 @@ export function handle(group: Group, key: string, request: Request, ctx: Ctx): R
     case 'Waiting':
       if (request.type === 'Pause') {
         g.wanted = 'Paused';
-        t.command(t.all(), 'Pause');
         t.stateUpdate(t.all(), 'Pause');
       } else if (request.type === 'Unpause') {
         if (g.wanted === 'Playing') {
@@ -585,7 +595,8 @@ export function handle(group: Group, key: string, request: Request, ctx: Ctx): R
         t.stateUpdate(t.all(), 'Seek');
       } else if (request.type === 'Buffer') {
         m.buffering = true;
-        t.command([m], 'Pause');
+        if (g.wanted === 'Paused') t.command([m], 'Pause');
+        t.stateUpdate(t.all(), 'Buffer');
       } else if (request.type === 'Ready') {
         ready(t, m, request);
       }
