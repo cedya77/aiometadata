@@ -244,6 +244,7 @@ async function pump(): Promise<void> {
   }
   const pass = ++passId;
   passStartedAt = Date.now();
+  let reclaims = 0;
   try {
     do {
       again = false;
@@ -273,6 +274,8 @@ async function pump(): Promise<void> {
         for (const row of taking) {
           if (claimed.has(row.id)) send(row);
         }
+        // Another instance took some of them; the other ready writes get those slots now.
+        if (claimed.size < taking.length && reclaims++ < 3) again = true;
       }
       if (pass !== passId) return;
       wakeBy(await database.trackerOutboxWakeAt(Date.now()));
