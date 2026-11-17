@@ -2643,27 +2643,10 @@ export class DatabaseCore {
   async getUsersByOAuthTokenIds(tokenField: string, tokenIds: string[]): Promise<any[]> {
     if (!tokenIds.length) return [];
     try {
-      if (this.type === 'sqlite') {
-        const placeholders = tokenIds.map(() => '?').join(', ');
-        const query = `SELECT user_uuid, password_hash, config_data FROM user_configs
-          WHERE json_extract(config_data, '$.apiKeys.${tokenField}') IN (${placeholders})`;
-        const rows = await this.allQuery(query, tokenIds);
-        return rows.map(row => ({
-          id: row.user_uuid,
-          password_hash: row.password_hash,
-          config: typeof row.config_data === 'string' ? JSON.parse(row.config_data) : row.config_data
-        }));
-      } else {
-        const placeholders = tokenIds.map((_, i) => `$${i + 1}`).join(', ');
-        const query = `SELECT user_uuid, password_hash, config_data FROM user_configs
-          WHERE config_data::jsonb->'apiKeys'->>'${tokenField}' IN (${placeholders})`;
-        const rows = await this.allQuery(query, tokenIds);
-        return rows.map(row => ({
-          id: row.user_uuid,
-          password_hash: row.password_hash,
-          config: typeof row.config_data === 'string' ? JSON.parse(row.config_data) : row.config_data
-        }));
-      }
+      const refs = await this.findTokenReferences(tokenField, tokenIds);
+      return refs
+        .filter((ref) => ref.owners.includes(''))
+        .map((ref) => ({ id: ref.uuid, password_hash: ref.passwordHash, config: ref.config }));
     } catch (error) {
       logger.error(`Error finding users by ${tokenField}:`, error);
       return [];
