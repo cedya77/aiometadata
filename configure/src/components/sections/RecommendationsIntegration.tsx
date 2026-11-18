@@ -12,8 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Callout } from '@/components/settings/Callout';
 import { SettingRow } from '@/components/settings/SettingRow';
-import { FastcrwSearchRow, WebSearchEngineSelect } from '@/components/settings/WebSearchEngine';
-import { useFastcrw } from '@/hooks/useFastcrw';
+import { EngineOnlySearch, WebSearchEngineSelect } from '@/components/settings/WebSearchEngine';
+import { useWebSearch } from '@/hooks/useWebSearch';
 import { useConfig } from '@/contexts/ConfigContext';
 import type { AppConfig, CatalogConfig } from '@/contexts/config';
 import { GEMINI_MODELS, isPresetModel, resolveCatalogModel, resolveGeminiModel } from '@/data/ai-models';
@@ -163,7 +163,7 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
   const preferred = draft.provider;
   const webSearch = draft.web_search === true;
   const webVia = draft.web_search_via;
-  const fastcrw = useFastcrw();
+  const web = useWebSearch();
   const thinking = draft.reasoning_effort || 'low';
   const stalled = draft.stalled_weight || 'note';
   const staleDays = draft.stale_after_days || 180;
@@ -571,13 +571,13 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
                       )}
                     </div>
 
-                    {customEndpoint && (fastcrw || webVia === 'fastcrw') && (
-                      <FastcrwSearchRow
+                    {customEndpoint && web.offered(webVia) && (
+                      <EngineOnlySearch
                         id="recommendation-web-search"
                         label="Web search"
-                        available={fastcrw}
-                        checked={webSearch && webVia === 'fastcrw'}
-                        onChange={checked => patch(checked ? { web_search: true, web_search_via: 'fastcrw' } : { web_search_via: undefined })}
+                        on={webSearch && Boolean(webVia)}
+                        via={webVia}
+                        onChange={next => patch(next ? { web_search: true, web_search_via: next } : { web_search_via: undefined })}
                       />
                     )}
 
@@ -586,7 +586,7 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
                       label="Web search"
                       description={presetModel
                         ? 'A preset takes web search from its own settings on OpenRouter.'
-                        : webSearch && webVia === 'fastcrw'
+                        : webSearch && webVia
                           ? 'Lets the model look up what has come out lately.'
                           : usingOpenRouter
                           ? 'Adds :online so the model sees live results. Billed by OpenRouter at roughly $0.005 per search, on top of the model.'
@@ -608,12 +608,11 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
                       ) : undefined}
                     />}
 
-                    {!customEndpoint && webSearch && !presetModel && (fastcrw || webVia === 'fastcrw') && (
+                    {!customEndpoint && webSearch && !presetModel && web.offered(webVia) && (
                       <WebSearchEngineSelect
                         id="recommendation-web-search-engine"
                         own={usingOpenRouter ? 'OpenRouter' : 'Google'}
                         via={webVia}
-                        available={fastcrw}
                         onChange={via => patch({ web_search_via: via })}
                       />
                     )}

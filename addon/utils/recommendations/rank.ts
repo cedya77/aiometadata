@@ -39,29 +39,29 @@ async function fetchRecent(profile: TasteProfile, kind: RecommendKind, chosen: a
     + 'List title and year, one per line, with a few words on each. Only titles that have actually been released.';
 
   const { createHash } = require('crypto');
-  const key = `recommendations:recent:${kind}:${chosen.model}:${createHash('md5').update(question).digest('hex')}${chosen.fastcrw ? ':fastcrw' : ''}`;
+  const key = `recommendations:recent:${kind}:${chosen.model}:${createHash('md5').update(question).digest('hex')}${chosen.webSource ? `:${chosen.webSource.engine.id}` : ''}`;
 
   return cacheWrapGlobal(key, async () => {
     const { generateContent } = require(chosen.clientPath);
     try {
       const { reasoningEffort, budgetFor }: any = require('./provider');
-      // Through fastCRW the results are searched here and handed to the model, which then only reads. Short
+      // Through an engine here the results are searched here and handed to the model, which then only reads. Short
       // searches find release lists where a sentence finds news pages, and being the same for everyone they are
       // shared through the search cache; films and shows are asked apart, since one search for both finds neither.
       const searches = kind === 'movie' ? [`best new movies ${now}`]
         : kind === 'series' ? [`best new tv shows ${now}`]
           : kind === 'anime' ? [`new anime ${now}`]
             : [`best new movies ${now}`, `best new tv shows ${now}`];
-      const { webContext } = require('../web-search');
-      const found = chosen.fastcrw
-        ? (await Promise.all(searches.map((search) => webContext(chosen.fastcrw, search, { limit: 10 })))).filter(Boolean).join('\n')
+      const { webContext } = require('../webSearch');
+      const found = chosen.webSource
+        ? (await Promise.all(searches.map((search) => webContext(chosen.webSource, search, { limit: 10 })))).filter(Boolean).join('\n')
         : '';
-      if (chosen.fastcrw && !found) return '';
+      if (chosen.webSource && !found) return '';
       const result = await generateContent({
         apiKey: chosen.apiKey,
         model: chosen.model,
         prompt: found ? `${question}\n\nAnswer from these web results, not from memory:\n${found}` : question,
-        useGrounding: !chosen.fastcrw,
+        useGrounding: !chosen.webSource,
         reasoningEffort: reasoningEffort(config),
         // Floored at the client's own default, which this call used to get.
         maxTokens: budgetFor(2048, reasoningEffort(config), 8192),
@@ -384,7 +384,7 @@ export function picksKey(config: any, userUUID: string, kind: RecommendKind, wan
   const chosen = resolveProvider(config);
   const { resolveSources, viewerKey }: any = require('./history');
   const sources = resolveSources(config).choice;
-  const key = `recommendations:picks:v${RECOMMENDATION_EPOCH}:${viewerKey(config, userUUID)}:${kind}:${want}:${sources}:${chosen?.provider || 'none'}:${chosen?.model || 'none'}:${chosen?.webSearch ? (chosen.fastcrw ? 'web:fastcrw' : 'web') : 'offline'}:${reasoningEffort(config)}`;
+  const key = `recommendations:picks:v${RECOMMENDATION_EPOCH}:${viewerKey(config, userUUID)}:${kind}:${want}:${sources}:${chosen?.provider || 'none'}:${chosen?.model || 'none'}:${chosen?.webSearch ? (chosen.webSource ? `web:${chosen.webSource.engine.id}` : 'web') : 'offline'}:${reasoningEffort(config)}`;
   // English is left off so rows written before reasons followed the language
   // keep their key and are not rebuilt.
   const language = reasonLanguage(config);

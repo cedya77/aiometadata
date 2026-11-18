@@ -637,7 +637,7 @@ const respond = function (req, res, data, opts?) {
       hasBuiltInMdblist: !!getSetting('BUILT_IN_MDBLIST_API_KEY'),
       hasBuiltInGemini: !!getSetting('BUILT_IN_GEMINI_API_KEY'),
       aiCustomEndpoint: require('./utils/ai-endpoint').isCustomAiEndpoint(),
-      webSearchInstance: require('./utils/web-search').instanceWebSearch(),
+      webSearch: require('./utils/webSearch').webSearchInfo(),
       catalogTTL: parseInt(getSetting('CATALOG_TTL') || String(24 * 60 * 60), 10),
       maxCatalogs: parseInt(getSetting('MAX_CATALOGS') || '', 10) || null,
       collectionImportCatalogCap: parseInt(getSetting('COLLECTION_IMPORT_CATALOG_CAP') || '', 10) || 400,

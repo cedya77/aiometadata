@@ -4,6 +4,9 @@ import { DEFAULT_CACHE_EPOCH } from './cacheEpoch';
 import { parseProviderPolicies } from './posterCache/config';
 import { isWindowValue } from './runWindow';
 import { availableParallelism } from 'os';
+import { ENGINES } from '../utils/webSearch/engines';
+
+const WEB_SEARCH_CHOICES = ['off', ...ENGINES.map((engine) => engine.id)];
 
 export interface DisabledRule {
   settingKey: string;
@@ -126,10 +129,21 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     },
   },
   {
-    key: 'FASTCRW_BASE_URL',
-    envVar: 'FASTCRW_BASE_URL',
-    label: 'fastCRW Server URL',
-    description: 'A fastCRW server of this instance\'s own for web search in AI search and recommendations, e.g. http://crw:3000. Every user can then search through it without a key. Empty uses fastCRW\'s hosted API, for users who add their own fastCRW key.',
+    key: 'WEB_SEARCH_ENGINE',
+    envVar: 'WEB_SEARCH_ENGINE',
+    label: 'Web Search Engine',
+    description: 'A web search engine this instance offers every user for AI search and recommendations, so they need no key of their own. It searches the web and hands the model what it found, so any model can use it. Users with a key of their own for an engine\'s hosted API can use it either way.',
+    category: 'API Keys',
+    type: 'select',
+    options: WEB_SEARCH_CHOICES,
+    default: 'off',
+    validate: (value: string) => WEB_SEARCH_CHOICES.includes(value.trim()),
+  },
+  {
+    key: 'WEB_SEARCH_URL',
+    envVar: 'WEB_SEARCH_URL',
+    label: 'Web Search Server URL',
+    description: 'The engine\'s server of this instance\'s own, e.g. http://searxng:8080 or http://crw:3000. Empty uses the engine\'s hosted API with the key below.',
     category: 'API Keys',
     type: 'string',
     default: '',
@@ -145,20 +159,20 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     },
   },
   {
-    key: 'FASTCRW_API_KEY',
-    envVar: 'FASTCRW_API_KEY',
-    label: 'fastCRW API Key',
-    description: 'A fastCRW key this instance pays for, used by users who have none of their own. Each search costs 2 credits.',
+    key: 'WEB_SEARCH_API_KEY',
+    envVar: 'WEB_SEARCH_API_KEY',
+    label: 'Web Search API Key',
+    description: 'A key for the engine\'s hosted API that this instance pays for, used by users who have none of their own.',
     category: 'API Keys',
     type: 'string',
     default: '',
     sensitive: true,
   },
   {
-    key: 'FASTCRW_CACHE_HOURS',
-    envVar: 'FASTCRW_CACHE_HOURS',
+    key: 'WEB_SEARCH_CACHE_HOURS',
+    envVar: 'WEB_SEARCH_CACHE_HOURS',
     label: 'Web Search Cache Hours',
-    description: 'How long a fastCRW search is reused for the same query, by every user, before it is run again.',
+    description: 'How long a web search is reused for the same query, by every user, before it runs again.',
     category: 'Cache',
     type: 'number',
     default: 12,

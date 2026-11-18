@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
 // Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useWebSearch } from '@/hooks/useWebSearch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -32,6 +33,9 @@ interface KeyValidationSummary {
   failureLines: string[];
 }
 
+/** A key's name in the configuration; a web search engine's key goes under its id. */
+type ApiKeyId = Extract<keyof AppConfig['apiKeys'], string>;
+
 const ApiKeyInput = ({
   id,
   label,
@@ -41,12 +45,12 @@ const ApiKeyInput = ({
   onKeyChange,
   forceShow
 }: {
-  id: keyof AppConfig['apiKeys'];
+  id: ApiKeyId;
   label: string;
   linkHref?: string;
   placeholder?: string;
   validationStatus?: 'idle' | 'loading' | 'success' | 'error';
-  onKeyChange?: (id: keyof AppConfig['apiKeys']) => void;
+  onKeyChange?: (id: ApiKeyId) => void;
   forceShow?: boolean;
 }) => {
   const { config, setConfig } = useConfig();
@@ -107,11 +111,14 @@ const ApiKeyInput = ({
   );
 };
 
-/** The keys this page edits and tests. */
-const API_KEY_FIELDS: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'fastcrw', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'publicmetadb'];
+/** The keys this page edits and tests, besides those for web search engines' hosted APIs. */
+const API_KEY_FIELDS: ApiKeyId[] = ['gemini', 'openrouter', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'publicmetadb'];
 
 export function IntegrationsSettings() {
-  const { config, aiCustomEndpoint, webSearchInstance } = useConfig();
+  const { config, aiCustomEndpoint } = useConfig();
+  const { engines: searchEngines, instance: searchInstance } = useWebSearch();
+  const keyEngines = useMemo(() => searchEngines.filter((engine) => engine.userKeys), [searchEngines]);
+  const keyFields = useMemo(() => [...API_KEY_FIELDS, ...keyEngines.map((engine) => engine.id)], [keyEngines]);
   const [validationStatus, setValidationStatus] = useState<Record<string, 'idle' | 'loading' | 'success' | 'error'>>({});
   const [isTesting, setIsTesting] = useState(false);
   const [showAllKeys, setShowAllKeys] = useState(false);
@@ -123,7 +130,7 @@ export function IntegrationsSettings() {
   
   // Check if any keys have changed since last successful validation
   useEffect(() => {
-    const apiKeyFields = API_KEY_FIELDS;
+    const apiKeyFields = keyFields;
 
     let changed = false;
     for (const key of apiKeyFields) {
@@ -151,9 +158,9 @@ export function IntegrationsSettings() {
     }
     
     setHasChangedKeys(changed);
-  }, [config.apiKeys]);
+  }, [config.apiKeys, keyFields]);
   
-  const handleKeyChange = (id: keyof AppConfig['apiKeys']) => {
+  const handleKeyChange = (id: ApiKeyId) => {
     // Reset validation status for this specific key when it changes
     setValidationStatus(prev => ({
       ...prev,
@@ -166,7 +173,7 @@ export function IntegrationsSettings() {
 
   const handleTestAllKeys = async () => {
     setIsTesting(true);
-    const apiKeyFields = API_KEY_FIELDS;
+    const apiKeyFields = keyFields;
     
     // Build the list of keys to test, excluding unchanged successfully validated ones
     const keysToTest: Record<string, string> = {};
@@ -319,7 +326,7 @@ export function IntegrationsSettings() {
   
   // Determine button state and text
   const getButtonState = () => {
-    const apiKeyFields = API_KEY_FIELDS;
+    const apiKeyFields = keyFields;
     const hasAnyKeys = apiKeyFields.some(key => config.apiKeys[key] && config.apiKeys[key]!.trim() !== "");
     
     if (!hasAnyKeys) {
@@ -386,15 +393,18 @@ export function IntegrationsSettings() {
           onKeyChange={handleKeyChange}
           forceShow={showAllKeys || undefined}
         />
-        <ApiKeyInput
-          id="fastcrw"
-          label="fastCRW API Key"
-          linkHref="https://fastcrw.com"
-          placeholder={webSearchInstance ? 'Optional: this instance already searches the web' : 'Web search for AI search and recommendations'}
-          validationStatus={validationStatus.fastcrw || 'idle'}
-          onKeyChange={handleKeyChange}
-          forceShow={showAllKeys || undefined}
-        />
+        {keyEngines.map((engine) => (
+          <ApiKeyInput
+            key={engine.id}
+            id={engine.id}
+            label={`${engine.name} API Key`}
+            linkHref={engine.keyLink ?? undefined}
+            placeholder={searchInstance === engine.id ? 'Optional: this instance already searches the web with it' : 'Web search for AI search and recommendations'}
+            validationStatus={validationStatus[engine.id] || 'idle'}
+            onKeyChange={handleKeyChange}
+            forceShow={showAllKeys || undefined}
+          />
+        ))}
         <ApiKeyInput 
           id="tmdb" 
           label="TMDB API Key" 

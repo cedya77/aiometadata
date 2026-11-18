@@ -1453,17 +1453,17 @@ async function performAiSearch(query: string, language: string, config: any): Pr
   const wantsWebSearch = aiProvider === 'openrouter'
     ? config.search?.ai_openrouter_web_search !== false
     : config.search?.ai_web_search === true;
-  // fastCRW searches here and hands the model its results, so it serves any model; otherwise the provider's own search.
-  const webSearch = require('../utils/web-search');
-  const engine = webSearch.chosenWebSearch(config, config.search?.ai_web_search_via);
-  const fastcrw = wantsWebSearch ? engine.fastcrw : null;
-  const aiWebSearch = engine.provider && wantsWebSearch && (aiProvider !== 'openrouter' || !require('../utils/ai-endpoint').isCustomAiEndpoint());
+  // An engine here searches and hands the model its results, so it serves any model; otherwise the provider's own search.
+  const webSearch = require('../utils/webSearch');
+  const chosen = webSearch.chosenWebSearch(config, config.search?.ai_web_search_via);
+  const webSource = wantsWebSearch ? chosen.source : null;
+  const aiWebSearch = chosen.provider && wantsWebSearch && (aiProvider !== 'openrouter' || !require('../utils/ai-endpoint').isCustomAiEndpoint());
 
-  logger.info(`Starting AI search for query: "${query}" (provider: ${aiProvider}, model: ${aiModel}, webSearch: ${fastcrw ? 'fastcrw' : aiWebSearch})`);
+  logger.info(`Starting AI search for query: "${query}" (provider: ${aiProvider}, model: ${aiModel}, webSearch: ${webSource ? webSource.engine.id : aiWebSearch})`);
 
   try {
     let suggestions: any[];
-    const webResults = fastcrw ? await webSearch.webContext(fastcrw, `${query} movies and TV series`, { limit: 10 }) : '';
+    const webResults = webSource ? await webSearch.webContext(webSource, `${query} movies and TV series`, { limit: 10 }) : '';
 
     if (aiProvider === 'openrouter') {
       const openrouterKey = config.apiKeys?.openrouter;

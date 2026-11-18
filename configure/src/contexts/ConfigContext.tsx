@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-AIOMetadata-FSL-linking
 // Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
+import type { WebSearchEngineInfo } from '@/hooks/useWebSearch';
 import { setSimklListMinTTL } from '@/lib/catalogTTL';
 import { AppConfig, CatalogConfig, SearchConfig } from "./config";
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
@@ -38,8 +39,8 @@ interface ConfigContextType {
   hasBuiltInGemini: boolean;
   /** OpenRouter requests go to another OpenAI-compatible API the instance names; null until the instance answers. */
   aiCustomEndpoint: boolean | null;
-  /** The instance searches the web through fastCRW for every user, without a key of their own. */
-  webSearchInstance: boolean;
+  /** The web search engines, and the one this instance offers every user without a key of their own. */
+  webSearch: { engines: WebSearchEngineInfo[]; instance: string | null };
   traktSearchEnabled: boolean;
   simklSearchEnabled: boolean;
   lumiereEnabled: boolean;
@@ -431,7 +432,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [hasBuiltInMdblist, setHasBuiltInMdblist] = useState(false);
   const [hasBuiltInGemini, setHasBuiltInGemini] = useState(false);
   const [aiCustomEndpoint, setAiCustomEndpoint] = useState<boolean | null>(null);
-  const [webSearchInstance, setWebSearchInstance] = useState(false);
+  const [webSearch, setWebSearch] = useState<{ engines: WebSearchEngineInfo[]; instance: string | null }>({ engines: [], instance: null });
   const [anilistRequiresAuth, setAnilistRequiresAuth] = useState(true);
   const [traktSearchEnabled, setTraktSearchEnabled] = useState(true);
   const [simklSearchEnabled, setSimklSearchEnabled] = useState(true);
@@ -495,7 +496,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
         setHasBuiltInMdblist(!!envApiKeys.hasBuiltInMdblist);
         setHasBuiltInGemini(!!envApiKeys.hasBuiltInGemini);
         setAiCustomEndpoint(!!envApiKeys.aiCustomEndpoint);
-        setWebSearchInstance(!!envApiKeys.webSearchInstance);
+        setWebSearch({ engines: Array.isArray(envApiKeys.webSearch?.engines) ? envApiKeys.webSearch.engines : [], instance: envApiKeys.webSearch?.instance ?? null });
         setAnilistRequiresAuth(envApiKeys.anilistRequiresAuth ?? true);
         setTraktSearchEnabled(envApiKeys.traktSearchEnabled ?? true);
         setSimklSearchEnabled(envApiKeys.simklSearchEnabled ?? true);
@@ -579,7 +580,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, hasBuiltInMdblist, hasBuiltInGemini, aiCustomEndpoint, webSearchInstance, catalogTTL, maxCatalogs, collectionImportCatalogCap, maxEpisodeOrders, refreshInstanceLimits, isLoading, sessionId, setSessionId, anilistRequiresAuth, traktSearchEnabled, simklSearchEnabled, lumiereEnabled, jikanEnabled, aiCatalogMaxPerRequest, manifestFingerprint, manifestChangedSinceInstall, markManifestInstalled }}>
+    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, hasBuiltInMdblist, hasBuiltInGemini, aiCustomEndpoint, webSearch, catalogTTL, maxCatalogs, collectionImportCatalogCap, maxEpisodeOrders, refreshInstanceLimits, isLoading, sessionId, setSessionId, anilistRequiresAuth, traktSearchEnabled, simklSearchEnabled, lumiereEnabled, jikanEnabled, aiCatalogMaxPerRequest, manifestFingerprint, manifestChangedSinceInstall, markManifestInstalled }}>
       {children}
     </ConfigContext.Provider>
   );

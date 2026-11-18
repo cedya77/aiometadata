@@ -29,8 +29,8 @@ import {
 import { Callout } from '@/components/settings/Callout';
 import { ProviderSelect, type SelectableOption } from '@/components/settings/ProviderSelect';
 import { SettingRow } from '@/components/settings/SettingRow';
-import { FastcrwSearchRow, WebSearchEngineSelect } from '@/components/settings/WebSearchEngine';
-import { useFastcrw } from '@/hooks/useFastcrw';
+import { EngineOnlySearch, WebSearchEngineSelect } from '@/components/settings/WebSearchEngine';
+import { useWebSearch } from '@/hooks/useWebSearch';
 import { SearchTagRow } from '@/components/SearchTagRow';
 
 // Keep in sync with addon/utils/aiSearchTrigger.ts
@@ -177,8 +177,8 @@ export function SearchSettings() {
   const hasOpenRouterKey = !!config.apiKeys?.openrouter;
   const hasAnyAiKey = hasGeminiKey || hasOpenRouterKey;
   const { models: openRouterModels, loading: openRouterModelsLoading } = useOpenRouterModels(config.apiKeys?.openrouter, aiCustomEndpoint);
-  const fastcrw = useFastcrw();
-  const setWebVia = (via: 'fastcrw' | undefined) => setConfig(prev => ({ ...prev, search: { ...prev.search, ai_web_search_via: via } }));
+  const web = useWebSearch();
+  const setWebVia = (via: string | undefined) => setConfig(prev => ({ ...prev, search: { ...prev.search, ai_web_search_via: via } }));
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -730,17 +730,17 @@ export function SearchSettings() {
                     const provider = config.search.ai_provider || 'gemini';
                     if (provider !== 'openrouter') return null;
                     const via = config.search.ai_web_search_via;
-                    // Another OpenAI-compatible endpoint has no search of its own; fastCRW is the only one it can have.
+                    // Another OpenAI-compatible endpoint has no search of its own; only an engine here can search for it.
                     if (aiCustomEndpoint) {
-                      return fastcrw || via === 'fastcrw' ? (
-                        <FastcrwSearchRow
+                      return web.offered(via) ? (
+                        <EngineOnlySearch
                           id="ai-openrouter-web-search"
                           label="Web Search"
-                          available={fastcrw}
-                          checked={config.search.ai_openrouter_web_search !== false && via === 'fastcrw'}
-                          onChange={(checked) => setConfig(prev => ({
+                          on={config.search.ai_openrouter_web_search !== false && Boolean(via)}
+                          via={via}
+                          onChange={(next) => setConfig(prev => ({
                             ...prev,
-                            search: { ...prev.search, ...(checked ? { ai_openrouter_web_search: true, ai_web_search_via: 'fastcrw' as const } : { ai_web_search_via: undefined }) },
+                            search: { ...prev.search, ...(next ? { ai_openrouter_web_search: true, ai_web_search_via: next } : { ai_web_search_via: undefined }) },
                           }))}
                         />
                       ) : null;
@@ -755,7 +755,7 @@ export function SearchSettings() {
                           label="Web Search"
                           description={preset
                             ? 'A preset takes web search from its own settings on OpenRouter.'
-                            : enabled && via === 'fastcrw'
+                            : enabled && via
                               ? 'The model sees live results from the web.'
                               : 'Adds :online so the model sees live results. Billed by OpenRouter at roughly $0.005 per search, on top of the model.'}
                           control={
@@ -771,10 +771,10 @@ export function SearchSettings() {
                             />
                           }
                         />
-                        {enabled && (fastcrw || via === 'fastcrw') && (
-                          <WebSearchEngineSelect id="ai-web-search-engine" own="OpenRouter" via={via} available={fastcrw} onChange={setWebVia} />
+                        {enabled && web.offered(via) && (
+                          <WebSearchEngineSelect id="ai-web-search-engine" own="OpenRouter" via={via} onChange={setWebVia} />
                         )}
-                        {enabled && via !== 'fastcrw' && (
+                        {enabled && !via && (
                           <Callout variant="warn" className="text-xs">
                             Needs credits even on :free models. Turn it off to run on a zero balance.
                           </Callout>
@@ -789,17 +789,17 @@ export function SearchSettings() {
                     if (provider !== 'gemini') return null;
                     const selected = GEMINI_MODELS.find(m => m.id === resolveGeminiModel(config.search.ai_model));
                     const via = config.search.ai_web_search_via;
-                    // A model without Google's search can still have fastCRW's.
+                    // A model without Google's search can still have an engine here search for it.
                     if (selected && !selected.grounding) {
-                      return fastcrw || via === 'fastcrw' ? (
-                        <FastcrwSearchRow
+                      return web.offered(via) ? (
+                        <EngineOnlySearch
                           id="ai-web-search"
                           label="Web Search"
-                          available={fastcrw}
-                          checked={!!config.search.ai_web_search && via === 'fastcrw'}
-                          onChange={(checked) => setConfig(prev => ({
+                          on={!!config.search.ai_web_search && Boolean(via)}
+                          via={via}
+                          onChange={(next) => setConfig(prev => ({
                             ...prev,
-                            search: { ...prev.search, ...(checked ? { ai_web_search: true, ai_web_search_via: 'fastcrw' as const } : { ai_web_search_via: undefined }) },
+                            search: { ...prev.search, ...(next ? { ai_web_search: true, ai_web_search_via: next } : { ai_web_search_via: undefined }) },
                           }))}
                         />
                       ) : null;
@@ -810,7 +810,7 @@ export function SearchSettings() {
                         <SettingRow
                           htmlFor="ai-web-search"
                           label="Web Search"
-                          description={config.search.ai_web_search && via === 'fastcrw'
+                          description={config.search.ai_web_search && via
                             ? 'The model sees live results from the web.'
                             : 'Billed by Google on most models. If the key is refused, the search runs without it.'}
                           control={
@@ -825,8 +825,8 @@ export function SearchSettings() {
                             />
                           }
                         />
-                        {config.search.ai_web_search && (fastcrw || via === 'fastcrw') && (
-                          <WebSearchEngineSelect id="ai-web-search-engine" own="Google" via={via} available={fastcrw} onChange={setWebVia} />
+                        {config.search.ai_web_search && web.offered(via) && (
+                          <WebSearchEngineSelect id="ai-web-search-engine" own="Google" via={via} onChange={setWebVia} />
                         )}
                         {!config.search.ai_web_search && (
                           <Callout variant="warn" className="text-xs">

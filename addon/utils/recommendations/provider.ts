@@ -8,10 +8,10 @@ export interface ResolvedProvider {
   provider: AiProvider;
   apiKey: string;
   model: string;
-  /** Gemini grounding, the :online suffix already applied to the model, or fastCRW. */
+  /** Gemini grounding, the :online suffix already applied to the model, or a web search engine here. */
   webSearch: boolean;
-  /** Set when the web is searched through fastCRW rather than the provider. */
-  fastcrw: import('../web-search').WebSearchSource | null;
+  /** Set when the web is searched by an engine here rather than by the provider. */
+  webSource: import('../webSearch').WebSearchSource | null;
   preset: boolean;
   /** Import path for the client, so callers do not repeat the branch. */
   clientPath: string;
@@ -113,10 +113,10 @@ export function resolveProvider(config: any): ResolvedProvider | null {
   const { resolveRecommendationModel, isPresetModel, withWebSearch }: any = require('../ai-model-resolver');
   const { isCustomAiEndpoint }: any = require('../ai-endpoint');
   const wantsWebSearch = config?.recommendations?.web_search === true;
-  // fastCRW searches here and works with any model; another OpenAI-compatible endpoint has no search of its own.
-  const engine = require('../web-search').chosenWebSearch(config, config?.recommendations?.web_search_via);
-  const fastcrw = wantsWebSearch ? engine.fastcrw : null;
-  const webSearch = engine.provider && wantsWebSearch && !(provider === 'openrouter' && isCustomAiEndpoint());
+  // An engine here works with any model; another OpenAI-compatible endpoint has no search of its own.
+  const chosenSearch = require('../webSearch').chosenWebSearch(config, config?.recommendations?.web_search_via);
+  const webSource = wantsWebSearch ? chosenSearch.source : null;
+  const webSearch = chosenSearch.provider && wantsWebSearch && !(provider === 'openrouter' && isCustomAiEndpoint());
 
   // Gemini takes grounding as a request flag, OpenRouter as a model suffix, so
   // the suffix is settled here rather than at the call site.
@@ -128,8 +128,8 @@ export function resolveProvider(config: any): ResolvedProvider | null {
     provider,
     apiKey: provider === 'openrouter' ? openrouterKey : geminiKey,
     model,
-    webSearch: (webSearch && !preset) || Boolean(fastcrw),
-    fastcrw,
+    webSearch: (webSearch && !preset) || Boolean(webSource),
+    webSource,
     preset,
     clientPath: provider === 'openrouter' ? '../openrouter-client' : '../gemini-client',
   };

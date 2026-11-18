@@ -306,8 +306,9 @@ export interface AppConfig {
     malTokenId?: string;
     movieLensCredId?: string;
     publicmetadb?: string;
-    fastcrw?: string;
     customDescriptionBlurb?: string;
+    /** A key for a web search engine's hosted API, under the engine's id. */
+    [engine: string]: string | undefined;
   };
   /**
    * Legacy single-account manager credentials, keyed by manager id, with the API key
@@ -368,8 +369,8 @@ export interface AppConfig {
     profiles?: Record<string, { sources?: 'same' | 'simkl' | 'mdblist' | 'both' | 'local' }>;
     /** Gemini google_search grounding, or the OpenRouter :online suffix. Off unless set. */
     web_search?: boolean;
-    /** Search the web through fastCRW instead of the provider's own search. */
-    web_search_via?: 'fastcrw';
+    /** A web search engine here (an id from /api/config) instead of the provider's own search. */
+    web_search_via?: string;
     /**
      * How much thinking the model may spend before it answers. Billed and
      * counted against the same reply budget as the answer, so a high setting
@@ -430,8 +431,8 @@ export interface AppConfig {
     ai_web_search?: boolean;
     // OpenRouter :online suffix. On unless set to false.
     ai_openrouter_web_search?: boolean;
-    // Search the web through fastCRW instead of the provider's own search.
-    ai_web_search_via?: 'fastcrw';
+    // A web search engine here (an id from /api/config) instead of the provider's own search.
+    ai_web_search_via?: string;
     // Optional keyword that must prefix a query for AI search to run. Blank = always run.
     // Only affects the AI catalog; regular search catalogs always see the original query.
     ai_trigger_keyword?: string;
