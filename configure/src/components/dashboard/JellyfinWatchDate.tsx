@@ -2,7 +2,7 @@
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronLeft, ChevronRight, Clock, ImageOff, Loader2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Clock, ImageOff, Loader2, Trash2 } from "lucide-react";
 import type { TrackerInfo } from "@/hooks/useDashboardQueries";
 import { useTrackers } from "./trackers";
 
@@ -62,6 +62,14 @@ function dateNote(target: WatchDateTarget, sentTo: TrackerInfo[]): string {
   return `Saved here${moved.length ? ` and changed on ${moved.join(", ")}` : ""}.${held}`;
 }
 
+function removeNote(target: WatchDateTarget, sentTo: TrackerInfo[]): string {
+  const removed = sentTo.filter((tracker) => tracker.redates === "all").map((tracker) => tracker.name);
+  const newest = target.from !== null && target.others.every((at) => at <= target.from!);
+  const moved = target.episode && newest ? sentTo.filter((tracker) => tracker.redates === "episodes").map((tracker) => tracker.name) : [];
+  const keeps = moved.length ? ` ${moved.join(", ")} ${moved.length === 1 ? "keeps" : "keep"} one date per episode, so it moves to the latest viewing left.` : "";
+  return `Deleted here${removed.length ? ` and on ${removed.join(", ")}` : ""}. The other viewings stay, so it is still watched.${keeps}`;
+}
+
 function TimeField({ value, min, max, label, onChange }: { value: number; min: number; max: number; label: string; onChange: (value: number) => void }) {
   const [draft, setDraft] = useState<string | null>(null);
   const wrap = (n: number) => (n > max ? min : n < min ? max : n);
@@ -91,11 +99,13 @@ function TimeField({ value, min, max, label, onChange }: { value: number; min: n
   );
 }
 
-export default function WatchDateSheet({ target, anchor, sentTo, onSave, onClose }: {
+export default function WatchDateSheet({ target, anchor, sentTo, onSave, onRemove, onClose }: {
   target: WatchDateTarget;
   anchor: WatchDateAnchor;
   sentTo: string[];
   onSave: (to: number) => Promise<boolean>;
+  /** Offered for a dated viewing of a title watched more than once. */
+  onRemove?: () => Promise<boolean>;
   onClose: () => void;
 }) {
   const trackers = useTrackers();
@@ -110,6 +120,7 @@ export default function WatchDateSheet({ target, anchor, sentTo, onSave, onClose
   const [view, setView] = useState(() => { const d = new Date(target.from ?? now); return { year: d.getFullYear(), month: d.getMonth() }; });
   const [zoom, setZoom] = useState<"days" | "months">("days");
   const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [stillFailed, setStillFailed] = useState(false);
   const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
   const returnTo = useRef<Element | null>(document.activeElement);
@@ -186,6 +197,15 @@ export default function WatchDateSheet({ target, anchor, sentTo, onSave, onClose
     }
   }, [anchor, phone, zoom]);
 
+  // The confirmation is taller than the note it replaces, so the sheet moves up just enough to keep its buttons in view.
+  useLayoutEffect(() => {
+    if (phone || !confirming) return;
+    const box = ref.current?.getBoundingClientRect();
+    if (!box) return;
+    const over = box.bottom + 8 - window.innerHeight;
+    if (over > 0) setPlace((at) => (at ? { ...at, top: Math.max(8, at.top - over) } : at));
+  }, [confirming, phone]);
+
   useEffect(() => {
     grid.current?.querySelector<HTMLButtonElement>("[data-picked=true]")?.focus({ preventScroll: true });
     const back = returnTo.current;
@@ -217,9 +237,18 @@ export default function WatchDateSheet({ target, anchor, sentTo, onSave, onClose
   };
 
   const save = async () => {
-    if (future || unchanged || saving) return;
+    if (future || unchanged || saving || confirming) return;
     setSaving(true);
     if (!(await onSave(picked))) setSaving(false);
+  };
+
+  const remove = async () => {
+    if (!onRemove || saving) return;
+    setSaving(true);
+    if (!(await onRemove())) {
+      setSaving(false);
+      setConfirming(false);
+    }
   };
 
   const setHours = (value: number) => {
@@ -240,7 +269,7 @@ export default function WatchDateSheet({ target, anchor, sentTo, onSave, onClose
       style={phone ? undefined : { left: place?.left ?? -9999, top: place?.top ?? 0, width: WIDTH }}
       className={cx(
         "z-[130] flex flex-col overflow-hidden bg-popover/95 shadow-2xl shadow-black/60 ring-1 ring-white/10 backdrop-blur-xl",
-        phone ? "fixed inset-x-0 bottom-0 max-h-[92dvh] overflow-y-auto rounded-t-3xl pb-[max(1rem,env(safe-area-inset-bottom))] animate-in slide-in-from-bottom duration-300" : "fixed max-w-[calc(100vw-1rem)] rounded-2xl animate-fade-in"
+        phone ? "fixed inset-x-0 bottom-0 max-h-[92dvh] overflow-y-auto rounded-t-3xl pb-[max(1rem,env(safe-area-inset-bottom))] animate-in slide-in-from-bottom duration-300" : "fixed max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-2xl animate-fade-in"
       )}
     >
       {phone && <span aria-hidden className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-white/20" />}
@@ -339,14 +368,37 @@ export default function WatchDateSheet({ target, anchor, sentTo, onSave, onClose
         )}
       </div>
 
-      <p className={cx("px-3 pt-3 text-xs leading-relaxed", future ? "text-amber-300" : "text-muted-foreground")}>
-        {future ? "That's later than now. Pick a time that has passed." : dateNote(target, sentTo.map(trackers.of).filter((tracker): tracker is TrackerInfo => Boolean(tracker)))}
-      </p>
+      {confirming ? (
+        <div role="alert" className="m-3 mb-0 rounded-xl bg-red-500/10 p-3 ring-1 ring-inset ring-red-400/25">
+          <p className="text-sm font-semibold text-red-100">Delete this viewing?</p>
+          <p className="mt-1 text-xs leading-relaxed text-red-100/75">{removeNote(target, sentTo.map(trackers.of).filter((tracker): tracker is TrackerInfo => Boolean(tracker)))}</p>
+        </div>
+      ) : (
+        <p className={cx("px-3 pt-3 text-xs leading-relaxed", future ? "text-amber-300" : "text-muted-foreground")}>
+          {future ? "That's later than now. Pick a time that has passed." : dateNote(target, sentTo.map(trackers.of).filter((tracker): tracker is TrackerInfo => Boolean(tracker)))}
+        </p>
+      )}
       <div className="flex items-center justify-end gap-2 p-3">
-        <button type="button" onClick={onClose} disabled={saving} className="inline-flex h-10 items-center rounded-full px-4 text-sm font-medium text-foreground/70 transition hover:bg-white/10 hover:text-foreground">Cancel</button>
-        <button type="submit" disabled={future || unchanged || saving} className="inline-flex h-10 items-center gap-2 rounded-full bg-white px-5 text-sm font-semibold text-black shadow-lg shadow-black/30 transition hover:bg-white/90 active:scale-[0.98] disabled:opacity-50">
-          {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" strokeWidth={3} />} {target.from === null ? "Add date" : "Save"}
-        </button>
+        {confirming ? (
+          <>
+            <button type="button" onClick={() => setConfirming(false)} disabled={saving} className="inline-flex h-10 items-center rounded-full px-4 text-sm font-medium text-foreground/70 transition hover:bg-white/10 hover:text-foreground">Keep it</button>
+            <button type="button" autoFocus onClick={() => void remove()} disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-full bg-red-500 px-5 text-sm font-semibold text-white shadow-lg shadow-red-950/40 transition hover:bg-red-500/90 active:scale-[0.98] disabled:opacity-50">
+              {saving ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />} Delete
+            </button>
+          </>
+        ) : (
+          <>
+            {onRemove && (
+              <button type="button" onClick={() => setConfirming(true)} disabled={saving} className="mr-auto inline-flex h-10 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-red-300/90 transition hover:bg-red-500/10 hover:text-red-200">
+                <Trash2 className="size-4" /> Delete viewing
+              </button>
+            )}
+            <button type="button" onClick={onClose} disabled={saving} className="inline-flex h-10 items-center rounded-full px-4 text-sm font-medium text-foreground/70 transition hover:bg-white/10 hover:text-foreground">Cancel</button>
+            <button type="submit" disabled={future || unchanged || saving} className="inline-flex h-10 items-center gap-2 rounded-full bg-white px-5 text-sm font-semibold text-black shadow-lg shadow-black/30 transition hover:bg-white/90 active:scale-[0.98] disabled:opacity-50">
+              {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" strokeWidth={3} />} {target.from === null ? "Add date" : "Save"}
+            </button>
+          </>
+        )}
       </div>
     </form>
   );

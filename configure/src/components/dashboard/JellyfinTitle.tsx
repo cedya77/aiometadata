@@ -6,7 +6,7 @@ import { useQueryClient, type Query } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Bookmark, BookmarkCheck, CalendarPlus, Check, CheckCheck, CheckSquare, ChevronLeft, ChevronRight, Clapperboard, Clock, Film, ImageOff, LayoutGrid, ListPlus, ListRestart, Loader2, MoreHorizontal, PencilLine, Play, Plus, Repeat, Rows3, Square, Star, ThumbsDown, Undo2, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useJellyfinTitle, useJellyfinTitleAction, useJellyfinWatchDate, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitlePerson, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
+import { useJellyfinTitle, useJellyfinTitleAction, useJellyfinWatchDate, useJellyfinWatchRemove, type DashboardTab, type JellyfinTitle, type JellyfinTitleAction, type JellyfinTitleEpisode, type JellyfinTitlePerson, type JellyfinTitleRef } from "@/hooks/useDashboardQueries";
 import { sizedArt } from "./art";
 import { ActionMenu } from "./JellyfinShared";
 import JellyfinPersonView, { CastRow } from "./JellyfinPerson";
@@ -403,6 +403,7 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
   const queryClient = useQueryClient();
   const act = useJellyfinTitleAction();
   const moveDate = useJellyfinWatchDate();
+  const removeViewing = useJellyfinWatchRemove();
   const { data, isLoading, isError, isFetching, refetch } = useJellyfinTitle(userUUID, profile, titleRef, { activeTab });
   const [season, setSeason] = useState<number | null | undefined>(initialSeason);
   const [busy, setBusy] = useState<string | null>(null);
@@ -499,6 +500,20 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
       return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not change the date");
+      return false;
+    }
+  };
+
+  const dropViewing = async (itemId: string, at: number): Promise<boolean> => {
+    const since = Date.now();
+    try {
+      await removeViewing(userUUID, profile, itemId, at);
+      await refetch();
+      void queryClient.invalidateQueries({ predicate: (q) => changedBy(q, since) });
+      toast.success("Viewing deleted");
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete the viewing");
       return false;
     }
   };
@@ -804,7 +819,7 @@ function TitleView({ userUUID, profile, profileName, sentTo, titleRef, initialSe
             )}
 
             {title && title.people.length > 0 && <CastRow people={title.people} onPerson={onPerson} />}
-            {dateSheet && <WatchDateSheet target={dateSheet.target} anchor={dateSheet.anchor} sentTo={sentTo} onClose={closeDateSheet} onSave={async (to) => { const saved = await redate(dateSheet.target.itemId, dateSheet.target.from, to); if (saved) setDateSheet(null); return saved; }} />}
+            {dateSheet && <WatchDateSheet target={dateSheet.target} anchor={dateSheet.anchor} sentTo={sentTo} onClose={closeDateSheet} onSave={async (to) => { const saved = await redate(dateSheet.target.itemId, dateSheet.target.from, to); if (saved) setDateSheet(null); return saved; }} onRemove={dateSheet.target.from !== null && dateSheet.target.others.length > 1 ? async () => { const gone = await dropViewing(dateSheet.target.itemId, dateSheet.target.from!); if (gone) setDateSheet(null); return gone; } : undefined} />}
             {watchingTrailer && title && trailer && <TrailerPlayer title={title.title} trailer={trailer} onClose={closeTrailer} />}
             {remote && <RemoteSheet userUUID={userUUID} profile={profile} profileName={profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
 

@@ -223,6 +223,52 @@ export class FeatureDatabase extends DatabaseCore {
     return { moved, latestBefore: latestOf(before), latestAfter: latestOf(after), apart };
   }
 
+  /** Takes back the viewing nearest `at` in every spelling, never a title's last one, and dates the title by the latest left. */
+  async removeWatch(userUUID: string, profile: string, videoIds: string[], at: number, withinMs: number): Promise<{ removed: number; latestBefore: number | null; latestAfter: number | null }> {
+    const sqlite = this.type === 'sqlite';
+    const ids = [...new Set(videoIds)];
+    const latestOf = (rows: Array<{ watched_at: number }>) => (rows.length ? Math.max(...rows.map((row) => row.watched_at)) : null);
+    const before = await this.listWatchesFor(userUUID, profile, ids, true);
+    const viewings = Math.max(0, ...ids.map((id) => before.filter((row) => row.video_id === id).length));
+    if (viewings < 2) return { removed: 0, latestBefore: latestOf(before), latestAfter: latestOf(before) };
+    let removed = 0;
+    for (const id of ids) {
+      const pick = before
+        .filter((row) => row.video_id === id && Math.abs(row.watched_at - at) <= withinMs)
+        .sort((a, b) => Math.abs(a.watched_at - at) - Math.abs(b.watched_at - at))[0];
+      if (!pick) continue;
+      const result = await this.runQuery(
+        sqlite
+          ? 'DELETE FROM jellyfin_watches WHERE user_uuid = ? AND profile = ? AND video_id = ? AND watched_at = ?'
+          : 'DELETE FROM jellyfin_watches WHERE user_uuid = $1 AND profile = $2 AND video_id = $3 AND watched_at = $4',
+        [userUUID, profile, id, pick.watched_at]
+      );
+      if (Number(result?.changes ?? result?.rowCount ?? 0) === 0) continue;
+      removed += 1;
+      await this.runQuery(
+        sqlite
+          ? 'UPDATE jellyfin_playstate SET play_count = MAX(play_count - 1, 1) WHERE user_uuid = ? AND profile = ? AND video_id = ? AND played = 1'
+          : 'UPDATE jellyfin_playstate SET play_count = GREATEST(play_count - 1, 1) WHERE user_uuid = $1 AND profile = $2 AND video_id = $3 AND played = 1',
+        [userUUID, profile, id]
+      );
+    }
+    const after = removed ? await this.listWatchesFor(userUUID, profile, ids, true) : before;
+    if (removed) {
+      const now = Date.now();
+      for (const id of ids) {
+        const latest = latestOf(after.filter((row) => row.video_id === id));
+        if (latest === null) continue;
+        await this.runQuery(
+          sqlite
+            ? 'UPDATE jellyfin_playstate SET last_played_at = ?, updated_at = ? WHERE user_uuid = ? AND profile = ? AND video_id = ? AND played = 1 AND position_ms = 0'
+            : 'UPDATE jellyfin_playstate SET last_played_at = $1, updated_at = $2 WHERE user_uuid = $3 AND profile = $4 AND video_id = $5 AND played = 1 AND position_ms = 0',
+          [latest, now, userUUID, profile, id]
+        );
+      }
+    }
+    return { removed, latestBefore: latestOf(before), latestAfter: latestOf(after) };
+  }
+
   async listWatchesByOrigin(userUUID: string, origins: string[]): Promise<Array<{ profile: string; video_id: string; watched_at: number; origin: string | null }>> {
     const sqlite = this.type === 'sqlite';
     const marks = origins.map((_, i) => (sqlite ? '?' : `$${i + 2}`)).join(', ');

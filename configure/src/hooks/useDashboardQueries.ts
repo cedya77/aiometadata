@@ -2652,6 +2652,19 @@ export function useJellyfinWatchDate() {
   };
 }
 
+export function useJellyfinWatchRemove() {
+  const getHeaders = useApiHeaders();
+  return async (userUUID: string, profile: string | null, itemId: string, at: number): Promise<void> => {
+    const response = await fetch(`/api/dashboard/jellyfin/${encodeURIComponent(userUUID)}/title/watch-remove`, {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemId, at, profile: profile ?? undefined }),
+    });
+    if (response.status === 409) throw new Error('That viewing is no longer in the history');
+    if (!response.ok) throw new Error(`Could not delete the viewing (${response.status})`);
+  };
+}
+
 export interface JellyfinDevice {
   deviceId: string;
   client: string;

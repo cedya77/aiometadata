@@ -481,7 +481,7 @@ export async function deliverUnwatch(service: WatchTrackingService, sent: Report
   if (parsedId) await require('./subtitleHandler').unwatch(parsedId, config, service);
 }
 
-export async function deliverWatchDate(service: WatchTrackingService, sent: { type: string; id: string; from: number; to: number; latest?: number | null; apart?: boolean }, config: any): Promise<void> {
+export async function deliverWatchDate(service: WatchTrackingService, sent: { type: string; id: string; from: number; to: number; latest?: number | null; apart?: boolean; remove?: boolean }, config: any): Promise<void> {
   const p = await onTracker(service, sent, config);
   const parsedId = trackedMediaId(p);
   if (parsedId) await require('./subtitleHandler').redateHistory(parsedId, config, service, p);

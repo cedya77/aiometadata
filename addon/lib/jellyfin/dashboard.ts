@@ -2145,6 +2145,19 @@ export async function dashboardWatchDate(userUUID: string, profile: string | nul
   });
 }
 
+export async function dashboardWatchRemove(userUUID: string, profile: string | null, itemId: string, at: number): Promise<boolean | null> {
+  const { runInViewerScope } = require('./viewer');
+  return runInViewerScope(false, async () => {
+    const req = clientRequest(userUUID, profile || null);
+    const { loadConfig } = require('./context');
+    const config = await loadConfig(req).catch(() => null);
+    if (!config || !scopedTo(config, profile)) return null;
+    const removed = await require('./playstate').recordWatchRemoval(req, itemId, at);
+    forgetMemos(userUUID);
+    return removed;
+  });
+}
+
 export async function dashboardSameViewing(userUUID: string, profileKey: string, video: string, at: number, theirs: number): Promise<boolean | 'invalid' | null> {
   const config = await storedConfig(userUUID);
   if (!config) return null;

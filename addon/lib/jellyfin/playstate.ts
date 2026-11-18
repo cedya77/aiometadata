@@ -924,6 +924,43 @@ export async function recordWatchDate(req: any, itemId: string, from: number | n
   return true;
 }
 
+/** Deletes one viewing of a title watched more than once, here and on the trackers that keep plays. */
+export async function recordWatchRemoval(req: any, itemId: string, at: number): Promise<boolean> {
+  const userUUID = req.params?.userUUID;
+  if (!userUUID) return false;
+  const { loadConfig } = require('./context');
+  const config = await loadConfig(req);
+  if (!config) return false;
+  const session = await resolveSession(userUUID, itemId);
+  if (!session) return false;
+
+  const { profileKey } = require('./profiles');
+  const { videoIdAliases } = require('./aliases');
+  const profile = profileKey(config);
+  const spellings = [session.videoId, ...session.aliases, ...(await videoIdAliases(session.videoId, config).catch(() => [] as string[]))];
+  const runtimeMs = session.runtimeMs ?? 0;
+  const sameViewing = runtimeMs > 0 ? runtimeMs : envInt('JELLYFIN_REWATCH_MIN_GAP_MINUTES', 10, 0) * 60_000;
+  const database: any = require('../database');
+  const { removed, latestBefore, latestAfter } = await database.removeWatch(userUUID, profile, spellings, at, Math.max(sameViewing, 60_000));
+  if (!removed) return false;
+
+  const { invalidateResume } = require('./resume');
+  invalidateResume(userUUID);
+  announce(userUUID, config, profile, session).catch((error: any) =>
+    logger.debug(`User data push failed for ${session.videoId}: ${error?.message || error}`)
+  );
+  if (!tellsTrackers(config, 'dashboard')) return true;
+  const { enqueueTrackerWrites, hasCredential } = require('../trackerOutbox');
+  // A tracker that keeps one date per episode only moves when the latest viewing went.
+  const latest = session.descriptor.k === 'episode' && latestAfter !== null && latestAfter !== latestBefore ? latestAfter : null;
+  const services = ['mdblist', 'publicmetadb', ...(latest ? ['simkl'] : [])].filter((service) => hasCredential(config, service));
+  await enqueueTrackerWrites(userUUID, config, services.map((service) => ({
+    service, op: 'redate', item: session.descriptor.i,
+    payload: { type: session.stremioType, id: session.videoId, from: at, to: at, latest, remove: true },
+  }))).catch((error: any) => logger.debug(`Deleting a viewing on trackers failed for ${session.videoId}: ${error?.message || error}`));
+  return true;
+}
+
 /** The episode and every aired one before it in its series, specials left out. */
 export async function recordPlayedUpTo(req: any, itemId: string, source: PlaySourceId = 'jellyfin'): Promise<void> {
   await markEach(req, { ItemId: itemId }, 'played', 'upTo', source);

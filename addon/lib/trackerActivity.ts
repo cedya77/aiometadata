@@ -41,7 +41,7 @@ export function summariseJob(op: string, payload: any, item: string | null = nul
     }
     case 'credit': return one('Marked watched');
     case 'unwatch': return one('Marked unwatched');
-    case 'redate': return one('Moved the watch date');
+    case 'redate': return one(p.remove ? 'Deleted a viewing' : 'Moved the watch date');
     case 'catchUp': return one('Sent a missed watch');
     case 'catchUps': {
       const videos = (Array.isArray(p.items) ? p.items : []).map((entry: any) => entry?.ids?.[0]).filter(Boolean) as string[];

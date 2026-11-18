@@ -574,6 +574,31 @@ export function registerJellyfinDashboardRoutes(addon: any, deps: any): void {
     }
   });
 
+  addon.post("/api/dashboard/jellyfin/:userUUID/title/watch-remove", jellyfinRoute({ reach: "profile" }), async (req, res) => {
+    try {
+      const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : '';
+      const at = Number(req.body?.at);
+      if (!itemId || !Number.isFinite(at)) {
+        res.status(400).json({ error: 'Name the item and the viewing' });
+        return;
+      }
+      const profile = typeof req.body?.profile === 'string' ? req.body.profile : null;
+      const removed = await require('./dashboard').dashboardWatchRemove(String(req.params.userUUID), profile, itemId, Math.round(at));
+      if (removed === null) {
+        res.status(404).json({ error: 'No such configuration' });
+        return;
+      }
+      if (!removed) {
+        res.status(409).json({ error: 'That viewing is no longer in the history, or it is the only one' });
+        return;
+      }
+      res.json({ removed });
+    } catch (error) {
+      consola.error('[Dashboard API] Error:', error);
+      res.status(500).json({ error: 'Failed to delete the viewing' });
+    }
+  });
+
   addon.get("/api/dashboard/trackers", jellyfinRoute({ reach: "session" }), (req, res) => {
     res.json({ trackers: require('../trackers').trackerFacts() });
   });

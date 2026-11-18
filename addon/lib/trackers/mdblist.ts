@@ -96,6 +96,11 @@ async function redate({ config, ids, mediaType, season, episode, change, within 
   const plays = mediaType === 'movie' ? all : all.filter((play: any) => play.season_num === season && play.episode_num === episode);
   // The viewing being moved is found first, so a destination near it can never stand in for it.
   const old = nearestPlay(plays, change.from, (play: any) => play.watched_at, within);
+  if (change.remove) {
+    if (!old) return nothingToMove('https://api.mdblist.com/sync/history', 'no play near that date');
+    await api.removePlays([old.play_id], apiKey);
+    return;
+  }
   const placed = nearestPlay(plays.filter((play: any) => play !== old), change.to, (play: any) => play.watched_at, SAME_PLAY_MS);
   const { lastTrackerCall, noteTrackerCall } = require('../../utils/trackerCalls');
   if (!old) {
