@@ -258,7 +258,11 @@ async function testKeysRateLimitMiddleware(req, res, next) {
 
   try {
     const minuteBucket = Math.floor(Date.now() / 60000);
-    const rateKey = `rate-limit:test-keys:${minuteBucket}`;
+    // Each caller has its own allowance, so one cannot use up everyone's.
+    const caller = req.session?.accountId
+      ? `account:${req.session.accountId}`
+      : `address:${require('./lib/authRoutes').clientAddress(req)}`;
+    const rateKey = `rate-limit:test-keys:${caller}:${minuteBucket}`;
     const currentCount = await redis.incr(rateKey);
 
     // First hit in this minute bucket: set a short TTL.
