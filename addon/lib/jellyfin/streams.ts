@@ -7,6 +7,7 @@ import { envInt } from '../../utils/envNumber';
 import redis from '../redisClient';
 import { streamSubtitleTracks, type FileHints, type SubtitleTrack } from './subtitles';
 const buildInfo: any = require('../buildInfo');
+const guard: typeof import('../../utils/outboundGuard') = require('../../utils/outboundGuard');
 
 const logger = consola.withTag('Jellyfin');
 
@@ -429,20 +430,24 @@ export async function fetchStreams(
       headers['x-jellyfin-client'] = headerValue(`${client.client}/${client.version}`);
       headers['x-jellyfin-device'] = headerValue(client.device);
     }
-    const response = await fetch(url, { headers, signal: controller.signal });
+    const response = await guard.addonFetch(url, { headers, signal: controller.signal });
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       logger.debug(`Streams ${type}/${id} returned ${response.status}`);
       return { streams: [], failure: describeStatus(response.status) };
     }
-    const body: any = await response.json();
+    const body: any = JSON.parse(await guard.readCappedResponse(response, guard.addonFetchMaxBytes()));
     const streams = Array.isArray(body?.streams) ? body.streams : [];
     return streams.length ? { streams } : { streams, failure: 'No streams found for this title' };
   } catch (error: any) {
     logger.warn(`Streams ${type}/${id} failed: ${error?.message || error}`);
     const failure = error?.name === 'AbortError'
       ? `Stream addon did not answer within ${Math.round(requestTimeoutMs() / 1000)}s`
-      : 'Stream addon not reachable';
+      : guard.isRefusedDestination(error)
+        ? 'Stream addon is on a private network this server does not fetch from'
+        : guard.isResponseTooLarge(error)
+          ? 'Stream addon answered with more than this server reads'
+          : 'Stream addon not reachable';
     return { streams: [], failure };
   } finally {
     clearTimeout(timer);

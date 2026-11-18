@@ -26,7 +26,12 @@ const host = process.env.HOST_NAME.startsWith('http')
  */
 async function _makeRequest(url) {
   try {
-    const response = await httpGet(url, { headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` }, timeout: 30000 });
+    const guard = require('./outboundGuard');
+    const response = await httpGet(url, {
+      headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` },
+      timeout: 30000,
+      ...guard.addonRequest(guard.addonFetchMaxBytes(), 60000),
+    });
     return response.data;
   } catch (err) {
     if (err.response) {

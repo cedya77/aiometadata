@@ -4,6 +4,7 @@ import consola from 'consola';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { resolveLanguage } from './languageTags';
+import { addonFetch, addonFetchMaxBytes, readCappedResponse } from '../../utils/outboundGuard';
 
 const logger = consola.withTag('Jellyfin');
 
@@ -370,9 +371,9 @@ export async function addonServesSubtitles(base: string): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), envInt('JELLYFIN_STREAM_TIMEOUT_MS', 20000, 1000));
-    const response = await fetch(`${base}/manifest.json`, { headers: { accept: 'application/json' }, signal: controller.signal });
+    const response = await addonFetch(`${base}/manifest.json`, { headers: { accept: 'application/json' }, signal: controller.signal });
     clearTimeout(timer);
-    const manifest: any = response.ok ? await response.json() : null;
+    const manifest: any = response.ok ? JSON.parse(await readCappedResponse(response, addonFetchMaxBytes())) : null;
     serves = (Array.isArray(manifest?.resources) ? manifest.resources : []).some(
       (r: any) => r === 'subtitles' || r?.name === 'subtitles'
     );
@@ -417,13 +418,13 @@ export async function fetchAddonSubtitles(base: string, type: string, videoId: s
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), envInt('JELLYFIN_SUBTITLE_FETCH_TIMEOUT_MS', 15000, 1000));
   try {
-    const response = await fetch(url, { headers: { accept: 'application/json', 'user-agent': userAgent }, signal: controller.signal });
+    const response = await addonFetch(url, { headers: { accept: 'application/json', 'user-agent': userAgent }, signal: controller.signal });
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       logger.debug(`Subtitles ${type}/${videoId} returned ${response.status}`);
       return [];
     }
-    const body: any = await response.json();
+    const body: any = JSON.parse(await readCappedResponse(response, addonFetchMaxBytes()));
     const out: SubtitleTrack[] = [];
     const seen = new Set<string>();
     for (const s of Array.isArray(body?.subtitles) ? body.subtitles : []) {
@@ -498,7 +499,7 @@ async function fetchSubtitle(url: string): Promise<{ response: Response; done: (
     };
     const response = await inHostTurn(url, () => {
       timer = setTimeout(() => controller.abort(), envInt('JELLYFIN_SUBTITLE_FETCH_TIMEOUT_MS', 15000, 1000));
-      return fetch(url, { signal: controller.signal, redirect: 'follow' });
+      return addonFetch(url, { signal: controller.signal, redirect: 'follow' });
     });
     if (response.ok || !RETRY_STATUSES.has(response.status) || attempt >= retries) return { response, done };
     done();
@@ -522,11 +523,8 @@ export async function subtitleBody(url: string, to: SubtitleFormat): Promise<{ b
       logger.debug(`Subtitle fetch got ${response.status} for ${url}`);
       return null;
     }
-    const length = Number(response.headers.get('content-length'));
-    if (Number.isFinite(length) && length > MAX_SUBTITLE_BYTES) return null;
-    const raw = Buffer.from(await response.arrayBuffer());
-    if (raw.length > MAX_SUBTITLE_BYTES) return null;
-    const converted = convertSubtitle(raw.toString('utf8'), subtitleExtensionOf(url), to);
+    const text = await readCappedResponse(response, MAX_SUBTITLE_BYTES);
+    const converted = convertSubtitle(text, subtitleExtensionOf(url), to);
     bodies.set(key, converted);
     return converted;
   } catch (error: any) {

@@ -141,7 +141,8 @@ async function fetchJson(url: string): Promise<Fetched> {
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`no answer within ${limit}ms`)), limit);
   });
-  const request = httpGet(url, { timeout: limit, headers: { Accept: 'application/json' } });
+  const guard = require('../utils/outboundGuard');
+  const request = httpGet(url, { timeout: limit, headers: { Accept: 'application/json' }, ...guard.addonRequest(guard.addonFetchMaxBytes(), limit) });
   // Still settles after the deadline has won the race.
   request.catch(() => {});
 

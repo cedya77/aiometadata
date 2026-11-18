@@ -81,7 +81,8 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
 
       const response = await fetch(fetchUrl);
       if (!response.ok) {
-        throw new Error(`Failed to fetch manifest (Status: ${response.status})`);
+        const reason = useProxy ? await response.json().then((body) => body?.error).catch(() => null) : null;
+        throw new Error(reason || `Failed to fetch manifest (Status: ${response.status})`);
       }
 
       const manifestData: CustomManifest = await response.json();

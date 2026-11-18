@@ -4347,9 +4347,11 @@ async function hydraReinstall(instanceUrl: string, apiKey: string, addonUrl: str
   const { httpPost } = require('./utils/httpClient');
   const target = `${managerAccounts.normalizeInstanceUrl(instanceUrl)}/hydra/reinstall`;
   try {
+    const guard = require('./utils/outboundGuard');
     const response = await httpPost(target, { addonUrl }, {
       headers: { 'X-API-Key': apiKey },
-      timeout: 15000
+      timeout: 15000,
+      ...guard.addonRequest(guard.addonFetchMaxBytes(), 30000)
     });
     if (typeof response.data === 'string') {
       consola.warn(`[AIOManager Proxy] Non-JSON response from ${target} (status ${response.status}); this instance does not expose the Hydra API, reinstall was not processed`);
@@ -4357,6 +4359,9 @@ async function hydraReinstall(instanceUrl: string, apiKey: string, addonUrl: str
     }
     return { ok: true, status: 200, data: response.data ?? { success: true } };
   } catch (error: any) {
+    if (require('./utils/outboundGuard').isRefusedDestination(error)) {
+      return { ok: false, status: 400, error: 'That address is on a private network, which this server reads from only when its admin lists the host in OUTBOUND_ALLOWED_PRIVATE_HOSTS' };
+    }
     const upstreamStatus = error.response?.status;
     let upstreamData = error.response?.data;
     if (typeof upstreamData === 'string') {
@@ -4553,7 +4558,8 @@ addon.get("/api/aiomanager/status", async (req, res) => {
 
   try {
     const { httpGet } = require('./utils/httpClient');
-    const response = await httpGet(`${instanceUrl.replace(/\/+$/, '')}/hydra/status`, { timeout: 10000 });
+    const guard = require('./utils/outboundGuard');
+    const response = await httpGet(`${instanceUrl.replace(/\/+$/, '')}/hydra/status`, { timeout: 10000, ...guard.addonRequest(guard.addonFetchMaxBytes(), 20000) });
     // Releases without Hydra answer the SPA catch-all, so HTML means unsupported.
     if (typeof response.data === 'string' || !response.data?.capabilities) {
       return res.json({ supported: false });
@@ -6351,10 +6357,12 @@ addon.get("/api/proxy-manifest", async function (req, res) {
     return res.status(400).json({ error: 'Invalid url parameter' });
   }
 
+  const guard = require('./utils/outboundGuard');
   try {
     const { httpGet } = require('./utils/httpClient');
     const manifestData = await httpGet(url, {
-      timeout: 10000
+      timeout: 10000,
+      ...guard.addonRequest(guard.addonFetchMaxBytes(), 20000)
     });
 
     let data = manifestData.data;
@@ -6371,6 +6379,12 @@ addon.get("/api/proxy-manifest", async function (req, res) {
     res.setHeader('Content-Type', 'application/json');
     res.json(data);
   } catch (error) {
+    if (guard.isRefusedDestination(error)) {
+      return res.status(400).json({ error: 'That address is on a private network, which this server reads from only when its admin lists the host in OUTBOUND_ALLOWED_PRIVATE_HOSTS' });
+    }
+    if (guard.isResponseTooLarge(error)) {
+      return res.status(502).json({ error: 'That link answered with more than this server reads (ADDON_FETCH_MAX_MB)' });
+    }
     consola.error(`[Proxy Manifest] Failed to fetch manifest from ${url}:`, error.message);
     res.status(error.response?.status || 500).json({ 
       error: error.message || 'Failed to fetch manifest' 

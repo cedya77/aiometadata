@@ -58,6 +58,17 @@ cp .env.example .env
 - **Description**: Compress HTTP responses with gzip or brotli, whichever the client negotiates. A 20-item catalog page drops from about 99 KB to about 22 KB for roughly 1 ms of CPU. Images, server-sent events and responses under 1 KB are left alone. Set false only if a reverse proxy in front is already compressing.
 - **Example**: `RESPONSE_COMPRESSION_ENABLED=false`
 
+### `OUTBOUND_ALLOWED_PRIVATE_HOSTS`
+- **Optional**: Yes
+- **Default**: empty
+- **Description**: Comma-separated hosts on a private network that the server may still fetch from when a user or a configuration names them: addon manifests, external catalogs, stream, subtitle and trailer addons, and AIOManager. Any other private, loopback or link-local address is refused, apart from `HOST_NAME` itself (its host on its port). Use `*` to allow every private address on an instance only you can reach. With `HTTPS_PROXY` or `HTTP_PROXY` set, these requests still go through the proxy, checked before they leave. The image cache keeps its own list, `POSTER_CACHE_ALLOWED_HOSTS`. Also editable under **Server & Storage** in the dashboard settings.
+- **Example**: `OUTBOUND_ALLOWED_PRIVATE_HOSTS=aiostreams,192.168.1.20`
+
+### `ADDON_FETCH_MAX_MB`
+- **Optional**: Yes
+- **Default**: `10`
+- **Description**: The largest reply, in megabytes, the server reads from an addon manifest, an external catalog, a stream, subtitle or trailer addon, AIOManager, or a link read for an import. A larger reply is refused rather than read into memory.
+
 ---
 
 ## Database Configuration
