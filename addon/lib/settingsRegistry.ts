@@ -6005,6 +6005,15 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     max: 50,
   },
   {
+    key: 'SEARCH_SUPERSEDE',
+    envVar: 'SEARCH_SUPERSEDE',
+    label: 'Stop Abandoned Searches',
+    description: 'Clients that search while you type send a request for each pause. When the same client has already sent a longer version of a query, or has disconnected, stop that query\'s search before it fetches full details for its results, and answer it with nothing. The client has moved on and ignores it.',
+    category: 'Catalogs & Search',
+    type: 'boolean',
+    default: true,
+  },
+  {
     key: 'LUMIERE_PEOPLE_PAGE_SIZE',
     envVar: 'LUMIERE_PEOPLE_PAGE_SIZE',
     label: 'LumiereDB People Search Page Size',

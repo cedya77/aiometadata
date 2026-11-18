@@ -29,6 +29,7 @@ import { fetchImdbSuggestions, type ImdbSuggestion } from '../utils/imdbSuggesti
 import { fetchLumiereSearch, fetchLumierePeopleSearch, type LumiereResult } from '../utils/lumiereSearch.js';
 import { lumiereApiBase } from '../utils/lumiereLists.js';
 import { mapWithLimit } from '../utils/concurrency.js';
+import { throwIfSearchSuperseded, isSearchSuperseded } from './searchSupersede';
 const idMappings: any = require('./id-mappings');
 
 
@@ -238,6 +239,7 @@ async function performAnimeSearch(type: string, query: string, language: string,
 
   logger.debug(`Found ${searchResults.length} anime results for query: "${query}"`);
 
+  throwIfSearchSuperseded();
   const metas = await Utils.parseAnimeCatalogMetaBatch(searchResults, config, language, false, { light: config._searchLight === true });
   return metas;
 }
@@ -276,6 +278,7 @@ async function performKitsuSearch(type: string, query: string, language: string,
 
     logger.debug(`Found ${searchResults.length} Kitsu results for query: "${query}" of type ${type}`);
 
+    throwIfSearchSuperseded();
     const metas = await Promise.all(
       searchResults.map(async (item: any) => {
         try {
@@ -393,6 +396,7 @@ async function performKitsuSearch(type: string, query: string, language: string,
 
     return finalMetas;
   } catch (error: any) {
+    if (isSearchSuperseded(error)) throw error;
     logger.error(`Kitsu search failed for "${query}":`, error.message);
     return [];
   }
@@ -583,6 +587,7 @@ async function performTmdbSearch(type: string, query: string, language: string, 
     && !(type === 'movie' && config.hideUnreleasedDigitalSearch);
   const lightGenres = light ? await getGenreList('tmdb', language, type === 'movie' ? 'movie' : 'series', config).catch(() => []) : [];
 
+  throwIfSearchSuperseded();
   const hydrationPromises = sortedRawResults.map(async (media: any) => {
     try {
         const mediaType = media.media_type === 'movie' ? 'movie' : 'series';
@@ -752,9 +757,11 @@ function hydrateImdbId(type: string, imdbId: string, language: string, config: a
 
 // Results keep the provider's order, since its ranking is the reason to use it.
 async function hydrateImdbIds(type: string, results: Array<{ imdbId: string; title: string }>, language: string, config: any): Promise<any[]> {
+  throwIfSearchSuperseded();
   const hydrated = await mapWithLimit(results, (result) =>
     hydrateImdbId(type, result.imdbId, language, config)
       .catch((error: any) => {
+        if (isSearchSuperseded(error)) throw error;
         logger.debug(`Could not hydrate ${result.imdbId} (${result.title}): ${error.message}`);
         return [];
       }));
@@ -897,6 +904,7 @@ async function performSimklAnimeSearch(type: string, query: string, language: st
   }
 
   const items = matching.map((item: any) => normalizeSimklSearchItem(item, itemType));
+  throwIfSearchSuperseded();
   const metas = await parseSimklItems(items, itemType, config, config.userUUID, false, true);
 
   logger.info(`Simkl anime search returned ${metas.length} of ${results.length} results in ${Date.now() - startTime}ms`);
@@ -1003,6 +1011,7 @@ async function performSimklSearch(type: string, query: string, language: string,
 
   let detailLookups = 0;
 
+  throwIfSearchSuperseded();
   const built = await mapWithLimit(results, async (item: any) => {
     try {
       const simklId = item?.ids?.simkl_id || item?.ids?.simkl;
@@ -1243,6 +1252,7 @@ async function performTmdbPeopleSearch(type: string, query: string, language: st
     }
 
     const fallbackImage = `${host}/missing_poster.png`;
+    throwIfSearchSuperseded();
     const metas = (await Promise.all(
       pageResults
       .map(async (media: any) => {
@@ -1295,6 +1305,7 @@ async function performTmdbPeopleSearch(type: string, query: string, language: st
     return metas;
 
   } catch (error: any) {
+    if (isSearchSuperseded(error)) throw error;
     logger.error(`[People Search] Error: ${error.message}`);
     return [];
   }
@@ -1463,10 +1474,12 @@ async function performAiSearch(query: string, language: string, config: any): Pr
 
   try {
     let suggestions: any[];
+    throwIfSearchSuperseded();
     const web = webSource ? await webSearch.webContext(webSource, `${query} movies and TV series`, { limit: 10 }) : null;
     const webResults = web?.text || '';
     // A search that ran without the web still answers; the reason goes with it for the catalog to show.
     const degraded = web?.failure ? { webSearchFailed: web.failure } : {};
+    throwIfSearchSuperseded();
 
     if (aiProvider === 'openrouter') {
       const openrouterKey = config.apiKeys?.openrouter;
@@ -1487,6 +1500,7 @@ async function performAiSearch(query: string, language: string, config: any): Pr
     logger.info(`Starting combined TMDB match+enrich for ${suggestions.length} suggestions`);
     const enrichStart = Date.now();
 
+    throwIfSearchSuperseded();
     const enrichPromises = suggestions.map((suggestion: any) =>
       matchAndEnrichFromTMDB(suggestion, language, config)
     );
@@ -1516,6 +1530,7 @@ async function performAiSearch(query: string, language: string, config: any): Pr
     return { metas: filteredResults, ...degraded };
 
   } catch (error: any) {
+    if (isSearchSuperseded(error)) throw error;
     const totalTime = Date.now() - startTime;
     logger.error(`AI search failed after ${totalTime}ms:`, error.message);
     return {
@@ -1542,6 +1557,7 @@ async function performTvdbCollectionsSearch(query: string, language: string, con
 
     logger.debug(`Found ${collectionsResults.length} collection results.`);
 
+    throwIfSearchSuperseded();
     const metas = await Promise.all(
       collectionsResults.map(async (collection: any) => {
         try {
@@ -1583,6 +1599,7 @@ async function performTvdbCollectionsSearch(query: string, language: string, con
 
     return finalMetas;
   } catch (error: any) {
+    if (isSearchSuperseded(error)) throw error;
     logger.error('Error in TVDB collections search:', error.message);
     return [];
   }
@@ -1591,6 +1608,7 @@ async function performTvdbCollectionsSearch(query: string, language: string, con
 async function performTvdbSearch(type: string, query: string, language: string, config: any, page: number = 1): Promise<any[]> {
   if (isImdbId(query)) {
     logger.info(`Detected IMDb ID: ${query}, using TVDB findByImdbId`);
+    throwIfSearchSuperseded();
     try {
       const imdbId = query.trim();
       const results = await tvdb.findByImdbId(imdbId, config);
@@ -1656,6 +1674,7 @@ async function performTvdbSearch(type: string, query: string, language: string, 
   }
   logger.debug(`Found ${uniqueIds.length} unique TVDB IDs to fetch details for.`);
 
+  throwIfSearchSuperseded();
   const detailPromises = uniqueIds.map((id: string) => {
     return type === 'movie'
       ? tvdb.getMovieExtended(id, config)
@@ -1668,6 +1687,7 @@ async function performTvdbSearch(type: string, query: string, language: string, 
 
   logger.debug(`Successfully fetched extended details for ${detailedResults.length} items.`);
 
+  throwIfSearchSuperseded();
   const parsePromises = detailedResults.map((record: any) =>
     parseTvdbSearchResult(type, record, language, config)
   );
@@ -1742,6 +1762,7 @@ async function performTvdbPeopleSearch(type: string, query: string, language: st
   }
   logger.debug(`Found ${uniqueIds.length} unique TVDB IDs to fetch details for.`);
 
+  throwIfSearchSuperseded();
   const detailPromises = uniqueIds.map((id: string) => {
     return type === 'movie'
       ? tvdb.getMovieExtended(id, config)
@@ -1754,6 +1775,7 @@ async function performTvdbPeopleSearch(type: string, query: string, language: st
 
   logger.debug(`Successfully fetched extended details for ${detailedResults.length} items.`);
 
+  throwIfSearchSuperseded();
   const parsePromises = detailedResults.map((record: any) =>
     parseTvdbSearchResult(type, record, language, config)
   );
@@ -1859,9 +1881,11 @@ async function performTvmazeSearch(query: string, language: string, config: any,
     }
   };
 
+  throwIfSearchSuperseded();
   await Promise.all(titleResults.map((result: any) => addResult(result.show, result.score)));
 
   if (peopleResults.length > 0) {
+    throwIfSearchSuperseded();
     const personId = peopleResults[0].person.id;
     const castCredits = await tvmaze.getPersonCastCredits(personId);
     await Promise.all(castCredits.map((credit: any) => addResult(credit._embedded.show, 0)));
@@ -1874,6 +1898,7 @@ async function performTvmazeSearch(query: string, language: string, config: any,
   }
 
   logger.info(`Initial searches failed for "${query}". Trying fallback tiers...`);
+  throwIfSearchSuperseded();
 
   const tmdbResults = await moviedb.searchTv({ query: query, language }, config);
   if (tmdbResults?.results?.length > 0) {
@@ -1981,6 +2006,7 @@ async function performTraktSearch(type: string, query: string, language: string,
 
     logger.debug(`Trakt limiting results to ${limitedResults.length}, sorted by votes`);
 
+    throwIfSearchSuperseded();
     const metas = await Promise.all(
       limitedResults.map(async (media: any) => {
         try {
@@ -2110,6 +2136,7 @@ async function performTraktSearch(type: string, query: string, language: string,
     return finalMetas;
 
   } catch (error: any) {
+    if (isSearchSuperseded(error)) throw error;
     logger.error(`Trakt search failed for "${query}":`, error.message);
     return [];
   }
@@ -2156,6 +2183,7 @@ async function performMdbListSearch(type: string, query: string, language: strin
       .map((m: any) => m?.ids?.tmdbid)
       .filter(Boolean);
 
+    throwIfSearchSuperseded();
     const batchMediaInfo = await fetchMDBListBatchMediaInfo(
       "tmdb",
       searchType,
@@ -2243,6 +2271,7 @@ async function performMdbListSearch(type: string, query: string, language: strin
     return finalMetas;
   }
   catch (error: any) {
+    if (isSearchSuperseded(error)) throw error;
     logger.error(`MDBList search failed for "${query}":`, error.message);
     return [];
   }
@@ -2328,6 +2357,7 @@ async function performTraktPeopleSearch(type: string, query: string, language: s
     const personCount = limitedResults.filter((r: any) => r.matchType === 'person').length;
     logger.debug(`Trakt limiting results to ${limitedResults.length} (${titleCount} title, ${personCount} person), sorted by votes`);
 
+    throwIfSearchSuperseded();
     const metas = await Promise.all(
       limitedResults.map(async (media: any) => {
         try {
@@ -2462,6 +2492,7 @@ async function performTraktPeopleSearch(type: string, query: string, language: s
     return finalMetas;
 
   } catch (error: any) {
+    if (isSearchSuperseded(error)) throw error;
     logger.error(`Trakt search failed for "${query}":`, error.message);
     return [];
   }
@@ -2513,6 +2544,7 @@ async function getSearch(id: string, type: string, language: string, extra: any,
     let metas: any[] = [];
     let webSearchFailed: string | undefined;
     const page = extra.page ? parseInt(extra.page) : 1;
+    throwIfSearchSuperseded();
     switch (id) {
       case 'mal.genre_search':
         if (extra.genre_id) {
@@ -2763,6 +2795,7 @@ async function getSearch(id: string, type: string, language: string, extra: any,
 
     return { metas, ...(webSearchFailed ? { webSearchFailed } : {}) };
   } catch (error: any) {
+    if (isSearchSuperseded(error)) throw error;
     const searchDuration = Date.now() - searchStartTime;
     logger.error(`Search failed after ${searchDuration}ms for "${queryText}" (${id}):`, error);
 

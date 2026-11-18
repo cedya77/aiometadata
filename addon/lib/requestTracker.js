@@ -210,52 +210,70 @@ class RequestTracker {
       }
 
       // Track catalog/search success
-      if (req.path.includes("/catalog/")) {
-        let rawSearch = "";
-        // Query param
-        if (req.query && req.query.search) {
-          rawSearch = String(req.query.search);
-        }
-        // Path extras
-        if (!rawSearch) {
-          try {
-            const extrasMatch = req.path.match(
-              /\/catalog\/[^/]+\/[^/]+\/(.*)\.(json|xml)$/i,
-            );
-            if (extrasMatch && extrasMatch[1]) {
-              const segments = extrasMatch[1].split(/[/&]/);
-              for (const segment of segments) {
-                if (segment.toLowerCase().startsWith("search=")) {
-                  const val = segment.substring("search=".length);
-                  rawSearch = decodeURIComponent(val);
-                  break;
-                }
-              }
-            }
-          } catch (_) {}
-        }
-        const queryNorm = rawSearch.toLowerCase().trim();
-        
-        if (queryNorm) {
-          // Determine type for optional per-type success storage
-          let catalogType = "all";
-          try {
-            const catalogMatch = req.path.match(/\/catalog\/([^/]+)/);
-            if (catalogMatch && catalogMatch[1])
-              catalogType = catalogMatch[1].toLowerCase();
-          } catch (_) {}
-
-          const resultsCount = res.locals?.resultCount ?? 0;
+      const search = this.searchOf(req);
+      if (search) {
+        const slot = req.searchPatternSlot ?? this.claimPatternSlot(req, search, today);
+        if (res.locals?.searchSuperseded) {
+          slot.then(taken => { if (taken) redis.del(taken.key).catch(() => {}); });
+        } else {
+          slot.then(taken => {
+            if (taken) metrics.zincr(`search_patterns:${taken.day}`, search.queryNorm, 86400 * 30);
+          });
 
           // Track search success if results were found
-          if (resultsCount > 0) {
-            metrics.zincr(`search_success:${today}`, queryNorm, 86400 * 30);
+          if ((res.locals?.resultCount ?? 0) > 0) {
+            metrics.zincr(`search_success:${today}`, search.queryNorm, 86400 * 30);
           }
         }
       }
     } catch (error) {
       logger.warn("[Request Tracker] Failed to track response:", error.message);
     }
+  }
+
+  // The normalized search query and catalog type of a catalog search request, or null
+  searchOf(req) {
+    if (!req.path.includes("/catalog/")) return null;
+    let rawSearch = "";
+    if (req.query && req.query.search) {
+      rawSearch = String(req.query.search);
+    }
+    // Stremio-style extras in the path: /catalog/{type}/{id}/.../search={query}.json
+    if (!rawSearch) {
+      try {
+        const extrasMatch = req.path.match(
+          /\/catalog\/[^/]+\/[^/]+\/(.*)\.(json|xml)$/i,
+        );
+        if (extrasMatch && extrasMatch[1]) {
+          const segments = extrasMatch[1].split(/[/&]/);
+          for (const segment of segments) {
+            if (segment.toLowerCase().startsWith("search=")) {
+              rawSearch = decodeURIComponent(segment.substring("search=".length));
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    const queryNorm = rawSearch.toLowerCase().trim();
+    if (!queryNorm) return null;
+    let catalogType = "all";
+    try {
+      const catalogMatch = req.path.match(/\/catalog\/([^/]+)/);
+      if (catalogMatch && catalogMatch[1]) catalogType = catalogMatch[1].toLowerCase();
+    } catch (_) {}
+    return { queryNorm, catalogType };
+  }
+
+  // Debounces a search pattern per user + query for a short window from arrival;
+  // resolves to the slot when this request may count it
+  claimPatternSlot(req, search, today) {
+    const userHash = this.getImprovedUserIdentifier(req);
+    const key = `search_dedupe:${today}:${userHash}:${search.catalogType}:${search.queryNorm}`;
+    return redis.set(key, "1", "NX", "EX", 3)
+      .then(setResult => (setResult ? { day: today, key } : null))
+      // On Redis error, fall back to naive counting
+      .catch(() => ({ day: today, key }));
   }
 
   // Normalize endpoint for tracking (remove IDs, etc.)
@@ -328,6 +346,10 @@ class RequestTracker {
       const path = req.path;
       const today = new Date().toISOString().split("T")[0];
 
+      // Counted when the response shows the search was not abandoned
+      const search = this.searchOf(req);
+      if (search) req.searchPatternSlot = this.claimPatternSlot(req, search, today);
+
       // Track meta requests
       if (path.includes("/meta/")) {
         const metaMatch = path.match(/\/meta\/([^/]+)\/([^/]+)/);
@@ -344,63 +366,6 @@ class RequestTracker {
 
           // Track popular content using normalized key to prevent duplicates
           metrics.zincr(`popular_content:${today}`, cleanContentKey, 86400 * 30);
-        }
-      }
-
-      // Track search requests
-      if (path.includes("/catalog/")) {
-        let rawSearch = "";
-
-        // Case 1: standard query parameter (e.g., ?search=foo)
-        if (req.query && req.query.search) {
-          rawSearch = String(req.query.search);
-        }
-
-        // Case 2: Stremio-style extras in the path: /catalog/{type}/{id}/.../search={query}.json
-        // Example: /catalog/movie/mdblist.12345/genre=action/search=star%20wars.json
-        if (!rawSearch) {
-          try {
-            const extrasMatch = path.match(
-              /\/catalog\/[^/]+\/[^/]+\/(.*)\.(json|xml)$/i,
-            );
-            if (extrasMatch && extrasMatch[1]) {
-              const segments = extrasMatch[1].split(/[/&]/);
-              for (const segment of segments) {
-                if (segment.toLowerCase().startsWith("search=")) {
-                  const val = segment.substring("search=".length);
-                  rawSearch = decodeURIComponent(val);
-                  break;
-                }
-              }
-            }
-          } catch (_) {
-            // ignore parsing errors; fall through
-          }
-        }
-
-        const searchQuery = rawSearch.toLowerCase().trim();
-        if (searchQuery) {
-          // Determine catalog type (movie/series/anime/etc.) if present
-          let catalogType = "all";
-          try {
-            const catalogMatch = path.match(/\/catalog\/([^/]+)/);
-            if (catalogMatch && catalogMatch[1]) {
-              catalogType = catalogMatch[1].toLowerCase();
-            }
-          } catch (_) {}
-
-          // Debounce per user + query for a short window to avoid overcounting
-          const userHash = this.getImprovedUserIdentifier(req);
-          const dedupeKey = `search_dedupe:${today}:${userHash}:${catalogType}:${searchQuery}`;
-          
-          redis.set(dedupeKey, "1", "NX", "EX", 3)
-            .then(setResult => {
-              if (setResult) metrics.zincr(`search_patterns:${today}`, searchQuery, 86400 * 30);
-            })
-            .catch(() => {
-              // On Redis error, fall back to naive increment
-              metrics.zincr(`search_patterns:${today}`, searchQuery, 86400 * 30);
-            });
         }
       }
     } catch (error) {
