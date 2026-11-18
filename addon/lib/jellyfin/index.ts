@@ -18,6 +18,7 @@ import {
   serverIdFor,
   runWithClient,
   clientHasOwnWatchlist,
+  clientListed,
 } from './context';
 import { mintToken, readToken, revokeToken } from './tokens';
 import { pinOpens, splitSecret } from './pins';
@@ -623,7 +624,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const started = Date.now();
     res.on('finish', () => {
       const from = info.client !== 'Unknown' ? `${label} (${info.version})` : `ua ${req.get('user-agent') || 'none'}`;
-      logger.debug(`${req.method} ${String(req.originalUrl || '').split('?')[0]} ${res.statusCode} ${Date.now() - started}ms from ${from}`);
+      const fields = [req.query?.Fields, req.query?.fields].flat().filter((value) => value != null).join(',');
+      logger.debug(`${req.method} ${String(req.originalUrl || '').split('?')[0]} ${res.statusCode} ${Date.now() - started}ms from ${from}${fields ? ` Fields=${fields}` : ''}`);
     });
     const appleTv = APPLE_TV.test(info.client) || APPLE_TV.test(info.device);
     const send = (body: any) => {
@@ -2946,16 +2948,6 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         resolve();
       });
     });
-
-  const clientListed = (req: any, key: string): boolean => {
-    const names = String(require('../settingsService').getSetting(key) || '')
-      .split(',')
-      .map((name) => name.trim().toLowerCase())
-      .filter(Boolean);
-    if (!names.length) return false;
-    const seen = `${clientInfo(req).client} ${req.get('user-agent') || ''}`.toLowerCase();
-    return names.some((name) => seen.includes(name));
-  };
 
   const relaysImages = (req: any): boolean => {
     const { getSetting } = require('../settingsService');

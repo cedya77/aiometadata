@@ -134,9 +134,20 @@ const EXTENSION_CLIENT = /^(aiostreams|pelagica)\b/i;
 export function runWithClient<T>(req: any, fn: () => T): T {
   const { client } = clientInfo(req);
   return runInViewerScope(OWN_WATCHLIST_CLIENT.test(client), () => {
-    noteWantsPeople(requestsField(req, 'people'));
+    noteWantsPeople(requestsField(req, 'people') || clientListed(req, 'JELLYFIN_CAST_IN_LISTS_CLIENTS'));
     return fn();
   }, EXTENSION_CLIENT.test(client));
+}
+
+/** Whether a setting's comma-separated client names match this client, by its client name or user agent. */
+export function clientListed(req: any, key: string): boolean {
+  const names = String(require('../settingsService').getSetting(key) || '')
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
+  if (!names.length) return false;
+  const seen = `${clientInfo(req).client} ${req.get?.('user-agent') || ''}`.toLowerCase();
+  return names.some((name) => seen.includes(name));
 }
 
 /** Whether Fields names a field, however a client spells or repeats the parameter. */

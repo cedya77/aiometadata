@@ -2714,6 +2714,15 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     default: 'infuse',
   },
   {
+    key: 'JELLYFIN_CAST_IN_LISTS_CLIENTS',
+    envVar: 'JELLYFIN_CAST_IN_LISTS_CLIENTS',
+    label: 'Jellyfin Cast in Lists Clients',
+    description: 'Comma-separated client names, matched against the client name and user agent, that get cast and crew on every item in a list, because they show a title from the list without opening it and never ask for People. Every other client gets them only when it asks, as Jellyfin does.',
+    category: 'Features',
+    type: 'string',
+    default: 'infuse',
+  },
+  {
     key: 'JELLYFIN_IMAGE_RELAY_CONCURRENCY',
     envVar: 'JELLYFIN_IMAGE_RELAY_CONCURRENCY',
     label: 'Jellyfin Images Relayed at Once',
