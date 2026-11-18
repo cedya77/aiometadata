@@ -231,6 +231,14 @@ bundled work, and [TRADEMARKS.md](TRADEMARKS.md) covers the name and logo.
 
 ---
 
+## 💖 Sponsors
+
+Thanks to the sponsors who support AIOMetadata's development:
+
+- [ElfHosted](https://elfhosted.com/)
+
+---
+
 ## 🙏 Credits
 
 - [Stremio](https://www.stremio.com/)
