@@ -52,7 +52,7 @@ const { isLandscapeCatalogConfig } = require("./utils/catalogPosterShape");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { resolveDynamicTmdbDiscoverParams } = require('./lib/tmdbDiscoverDateTokens');
 const { applyCatalogKeyArgs, applyCatalogKeyStamps, hiddenCatalogGenre } = require('./lib/catalogKeyArgs');
-const { blurImage, convertBannerToBackground } = require('./utils/imageProcessor');
+const { blurImage, convertBannerToBackground, normaliseBannerOptions } = require('./utils/imageProcessor');
 const { getAiTriggerKeyword, applyAiTrigger } = require('./utils/aiSearchTrigger');
 const { TraktClient } = require('./lib/trakt');
 const movielens = require('./lib/movielens');
@@ -6641,15 +6641,14 @@ addon.get("/api/image/banner-to-background", async function (req, res) {
   if (!imageUrl) { return res.status(400).send('Image URL not provided'); }
   
   try {
-    // Parse options from query parameters
-    const options = {
-      width: parseInt(req.query.width) || 1920,
-      height: parseInt(req.query.height) || 1080,
-      blur: parseFloat(req.query.blur) || 0,
-      brightness: parseFloat(req.query.brightness) || 1,
-      contrast: parseFloat(req.query.contrast) || 1,
-      position: req.query.position || 'center' // Add position parameter
-    };
+    const options = normaliseBannerOptions({
+      width: parseInt(req.query.width),
+      height: parseInt(req.query.height),
+      blur: parseFloat(req.query.blur),
+      brightness: parseFloat(req.query.brightness),
+      contrast: parseFloat(req.query.contrast),
+      position: typeof req.query.position === 'string' ? req.query.position : undefined,
+    });
     
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
