@@ -2,6 +2,77 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.1.0](https://github.com/cedya77/aiometadata/compare/v4.0.0...v4.1.0) (2026-11-18)
+
+
+### Features
+
+* **ai:** let an instance send OpenRouter requests to another OpenAI-compatible API ([d640997](https://github.com/cedya77/aiometadata/commit/d640997e346596f648ff1b1bf9f32a7ac132d32f))
+* **ai:** search the web through fastCRW for AI search and recommendations ([cce45cf](https://github.com/cedya77/aiometadata/commit/cce45cfeff8b1239c71a4305f87f185d1cb9af96))
+* **configure:** let each end of a Discover date range be a number of days from today ([5564ab4](https://github.com/cedya77/aiometadata/commit/5564ab4b621b88c863f69bac9e13ec63005fe153))
+* **jellyfin:** copy a tracker's whole watch history into the history here ([cd6993c](https://github.com/cedya77/aiometadata/commit/cd6993c8f463d7a118d5c5c23394aeebd8fbedff))
+* **jellyfin:** delete one viewing of a title watched more than once ([af5e194](https://github.com/cedya77/aiometadata/commit/af5e194d13c08fa122303d6f42e4272443d87235))
+
+
+### Bug Fixes
+
+* **addons:** fetch addon, catalog and manifest links only from public hosts or ones the admin allows, with a size cap and one deadline ([961a17a](https://github.com/cedya77/aiometadata/commit/961a17ad27c93d3ca1e920802c90fd22873eb068))
+* **api:** give each caller its own allowance for key tests and AI model lists ([04221e2](https://github.com/cedya77/aiometadata/commit/04221e288a111bf479edb9276eebdc2448e71fd4))
+* **art:** redirect to an art fallback only on a known art host, this instance, or a fallback the server signed ([1a94f98](https://github.com/cedya77/aiometadata/commit/1a94f9827495514318bb8c2e8f9a6de1aedd50b5))
+* **auth:** always sweep for sessions when revoking, and mark the index complete only after a clean backfill ([3dd6a0d](https://github.com/cedya77/aiometadata/commit/3dd6a0d3b6acfb3057e3b4835c027bb527e123d5))
+* **configure:** stop phones zooming in when a field is tapped ([d06e272](https://github.com/cedya77/aiometadata/commit/d06e272e7241ea2c8415c2d62a2cbf65c3e9c48d))
+* **database:** fill token_refs through runTogether so a Postgres deadlock is retried ([d3b7101](https://github.com/cedya77/aiometadata/commit/d3b7101f8c74d954563bbc32a729eb8b671d4cc6))
+* **database:** find token references through an indexed table instead of scanning every configuration ([8cdce5d](https://github.com/cedya77/aiometadata/commit/8cdce5ded49dec4f6a9d40f479e94e2f277e9d2e))
+* **deps:** bump undici, axios and transitive deps to patch security advisories ([1721440](https://github.com/cedya77/aiometadata/commit/172144075a70fec9909dc9ce5cad34ddc87ce00b))
+* **deps:** bump undici, axios and transitive deps to patch security advisories ([d5aeeec](https://github.com/cedya77/aiometadata/commit/d5aeeeccbf574c8433eb0b441dd7dfd675686e2f))
+* **discover:** start each new builder catalog without the last one's release types and episode window ([f6b7edd](https://github.com/cedya77/aiometadata/commit/f6b7edd8f66d8010b88c7b619dfec6b8956a6639))
+* **discover:** with a release type picked, filter by that release's date alone ([53124d7](https://github.com/cedya77/aiometadata/commit/53124d7ec80c3eefaa75f7dbb28cfc8ca021f8b6))
+* **docker:** label release and beta images AGPL-3.0-or-later AND FSL-1.1-ALv2 ([491f128](https://github.com/cedya77/aiometadata/commit/491f128e7fb1dad52b458536a430fddfe760606f))
+* **images:** hold background conversion sizes, blur, brightness, contrast and position to what a background needs ([fafa5af](https://github.com/cedya77/aiometadata/commit/fafa5af13577c51e49735b0af95120968ed30fdd))
+* **jellyfin:** align SyncPlay pause, buffering and queue handling with Jellyfin ([c3ee1f5](https://github.com/cedya77/aiometadata/commit/c3ee1f54ab0908ffdaf09b4a01df5c0fc61653c0))
+* **jellyfin:** align SyncPlay pause, buffering and queue handling with Jellyfin ([c7665bd](https://github.com/cedya77/aiometadata/commit/c7665bd51b06f1527ef77752621f2395947972f6))
+* **jellyfin:** count a movie's IMDb and TMDB ids as one title in watch history ([9c3f8af](https://github.com/cedya77/aiometadata/commit/9c3f8af1e44a9060ab35840c2d2ccd546aaba04c))
+* **jellyfin:** key the alias memo by which TMDB key resolved it ([a324e3e](https://github.com/cedya77/aiometadata/commit/a324e3e64bf06af11012d8d7190ddfdc2f2ba7dd))
+* **jellyfin:** list each title once in watch history when its ids fall on different pages ([289fd20](https://github.com/cedya77/aiometadata/commit/289fd205a5e6a730fd7bf5410774ac2861b11ee8))
+* **jellyfin:** pass the drift source's config to episode-to-film matches and drift alias lookups ([5db1f52](https://github.com/cedya77/aiometadata/commit/5db1f52ebd397c69c0356de9f6e0043b4e941511))
+* **jellyfin:** read a tracker whose comparison is behind when it is looked at, and resend writes it gave up on once it answers again ([61eb4c2](https://github.com/cedya77/aiometadata/commit/61eb4c2403486be12304243faa303bd6966ffc95))
+* **jellyfin:** resolve anime episode aliases with the user's TMDB key ([cf2aa4e](https://github.com/cedya77/aiometadata/commit/cf2aa4e7ae22c67f20f6d808feb13bba026ef599))
+* **jellyfin:** resolve anime episode aliases with the user's TMDB key ([dc32612](https://github.com/cedya77/aiometadata/commit/dc32612383b49bfaf4255f78c298526790f255bd))
+* **jellyfin:** send cast in lists to clients that show a title without opening it ([f7b35e2](https://github.com/cedya77/aiometadata/commit/f7b35e24e7a557881e110e08dfd470a9b7ff2baf))
+* **letterboxd:** accept only letterboxd.com and its subdomains as Letterboxd links ([e565199](https://github.com/cedya77/aiometadata/commit/e565199f1dbe05186529915258c38db97826d9f8))
+* **outbox:** fill slots another instance's claims left free in the same pass ([8f2bd33](https://github.com/cedya77/aiometadata/commit/8f2bd33bcc57de6de7d1976c98ef81d6ad4bb491))
+* **outbox:** read waiting watches from the primary so one just queued is not missed ([7c41bff](https://github.com/cedya77/aiometadata/commit/7c41bff9acc79b557a9aa93f4c47aef7dfe2e222))
+* **outbox:** split the sending slots evenly between the trackers with work, and let a lone tracker use them all ([b76ffc4](https://github.com/cedya77/aiometadata/commit/b76ffc4edc63b1997d8b4a0731c1eba6c73a1870))
+* **poster-cache:** refuse only the reserved parts of 192.0.0.0/16, and refuse more non-global IPv4 and IPv6 ranges ([627dea8](https://github.com/cedya77/aiometadata/commit/627dea8c6c8d8c947f80f32451a696adb3ac8978))
+* **publicmetadb:** page lists by the catalog list page size ([bcd7b76](https://github.com/cedya77/aiometadata/commit/bcd7b76c6339bd349e34c711a7150c92d9a15330))
+* **publicmetadb:** page lists by the catalog list page size ([62b08d3](https://github.com/cedya77/aiometadata/commit/62b08d37bd0c86a5044a28f6889950ef9db8aae7))
+* **trackers:** count a deleted viewing as done when the tracker has no play near its date ([27f33eb](https://github.com/cedya77/aiometadata/commit/27f33ebdba5a033e939a1acfbd0abfef880c5e8c))
+
+
+### Performance Improvements
+
+* **auth:** stop sweeping every Redis key for sessions once the account index holds them all ([88a830f](https://github.com/cedya77/aiometadata/commit/88a830f0c0f13138b723fde1fe0d610dbe3bb911))
+* **dashboard:** count configurations in SQL instead of loading every id ([b6cb893](https://github.com/cedya77/aiometadata/commit/b6cb893ab1f8f50db7db20163b0475320eeaaea6))
+* **dashboard:** read the Jellyfin dashboard's configuration from the cache instead of the database on every poll ([162d6d8](https://github.com/cedya77/aiometadata/commit/162d6d83bbe93942deac7d65e34a15b0fa2a15f3))
+* **jellyfin:** hold watched snapshots for 1,000 users before evicting ([881c359](https://github.com/cedya77/aiometadata/commit/881c3598ed64679dfa17bf705d9d5f55fe2d32ba))
+* **jellyfin:** parse a request's sign-in header once and reuse a user's scoped configuration ([abfe87f](https://github.com/cedya77/aiometadata/commit/abfe87fa6f90f56e4bfef051c26392b5c3941c52))
+* **jellyfin:** read a title's play state once for all its spellings before writing them ([187a233](https://github.com/cedya77/aiometadata/commit/187a23367945abcc64d65d6ee44017da60f48429))
+* **jellyfin:** reuse a configuration's art scope when the same stored copy is reloaded ([ec9efa4](https://github.com/cedya77/aiometadata/commit/ec9efa4a6e6ab4e92c529627f06b2bc0361b124b))
+* **jellyfin:** store a playing session's position in Redis at most every ten seconds ([4548d8f](https://github.com/cedya77/aiometadata/commit/4548d8f4a2498dae019030ddc34168a3030f577d))
+* **movielens:** find the configurations to re-sync through token_refs instead of reading every one ([8fcda5c](https://github.com/cedya77/aiometadata/commit/8fcda5c78b7e3d9b162b43223f922e6f7492b266))
+* **outbox:** claim a pass's writes in one statement ([be43fe9](https://github.com/cedya77/aiometadata/commit/be43fe9f4e0357f6eadb5e24a6cb51cb15a7f678))
+* **outbox:** pick ready writes without a per-row scan of the lane ([214bcb4](https://github.com/cedya77/aiometadata/commit/214bcb4411383bf861cfd2fcb5460e6de9f0771f))
+* **outbox:** queue an event's writes in one transaction ([662fbc2](https://github.com/cedya77/aiometadata/commit/662fbc2ff588be519b0bacac660cf417e209e005))
+* **outbox:** read only the waiting watches when layering them over a tracker's history ([1ffe67a](https://github.com/cedya77/aiometadata/commit/1ffe67a3f9255f9aa88e360f4f3fbee00dc79b85))
+* **outbox:** run one pass per burst of queued writes and find the next wake from indexes ([1fb160f](https://github.com/cedya77/aiometadata/commit/1fb160f3a3af72eae1f5a525fd0f49b79837c213))
+* **outbox:** share the sending slots between trackers so one cannot hold them all ([c3da85c](https://github.com/cedya77/aiometadata/commit/c3da85c7e37f041d1a3e9769b15dccf7a4efd712))
+* **tracking:** bound the per-user maps kept by the rate limiters, shelves and recovery ([60d857d](https://github.com/cedya77/aiometadata/commit/60d857dc2fff803899b6cd5fc36033c548340a60))
+* **tracking:** clear a resume point once when a title is marked unwatched ([f741df8](https://github.com/cedya77/aiometadata/commit/f741df872ba6bd09467ea3406ba007a05dd6313a))
+* **tracking:** find an account's failed writes and prune old activity through indexes ([3ad38b6](https://github.com/cedya77/aiometadata/commit/3ad38b6bb2bb059ad2a93b01f24c71689d624475))
+* **tracking:** read the watched threshold with the configuration already loaded ([fec3694](https://github.com/cedya77/aiometadata/commit/fec369412f0efa931ed00b8a62b3b346c469a0ea))
+* **tracking:** take a pushed playback event without copying the whole configuration ([ebd9cc6](https://github.com/cedya77/aiometadata/commit/ebd9cc6a9f993e238ccda94361ae0c4f87d1ef2c))
+* **trakt:** find the configurations to repoint after re-auth through token_refs ([7f6ac8f](https://github.com/cedya77/aiometadata/commit/7f6ac8f14d850ce14816f4c49e7d18b5c99d08b4))
+
 ## [4.0.0](https://github.com/cedya77/aiometadata/compare/v3.9.0...v4.0.0) (2026-11-16)
 
 
