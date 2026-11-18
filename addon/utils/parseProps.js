@@ -385,7 +385,7 @@ function buildPosterProxyUrl(host, type, proxyId, fallback, language, config) {
   }
   
   // RPDB needs proxy endpoint for fallback handling
-  return `${host}/poster/${type}/${proxyId}?fallback=${encodeURIComponent(fallback)}&lang=${language}&key=${apiKey}`;
+  return `${host}/poster/${type}/${proxyId}?${require('../lib/posterCache/proxyArt').fallbackQuery(fallback)}&lang=${language}&key=${apiKey}`;
 }
 
 

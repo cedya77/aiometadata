@@ -317,7 +317,7 @@ async function configLoadRateLimitMiddleware(req, res, next) {
 
 
 const posterCacheConfig = require('./lib/posterCache/config.js');
-const { buildProxyArtUrl, proxyArtUrlVouched } = require('./lib/posterCache/proxyArt.js');
+const { buildProxyArtUrl, followableFallback, proxyArtUrlVouched } = require('./lib/posterCache/proxyArt.js');
 const { applyMetaArt } = require('./lib/metaArt');
 const { serveStoreResult, servePassThrough, openArtStream } = require('./lib/posterCache/artProxyServe.js');
 
@@ -6463,7 +6463,8 @@ function warnRefusedOrigin(context, message) {
 const handlePosterProxy = async function (req, res) {
   const { type, id } = req.params;
   const { fallback, lang, key, url: customUrl, sig } = req.query;
-  const sendFallback = () => (fallback ? res.redirect(302, fallback) : res.status(404).end());
+  const followable = followableFallback(fallback, req.query.fsig);
+  const sendFallback = () => (followable ? res.redirect(302, followable) : res.status(404).end());
   if (!key && !customUrl) {
     return sendFallback();
   }
@@ -6530,9 +6531,10 @@ addon.get("/poster/:type/:id", handlePosterProxy);
 function streamArtWithFallback(assetName) {
   return async function (req, res) {
     const { id } = req.params;
-    const { fallback, url: customUrl, sig } = req.query;
+    const { url: customUrl, sig } = req.query;
+    const followable = followableFallback(req.query.fallback, req.query.fsig);
     if (!customUrl) {
-      return res.redirect(302, fallback || '');
+      return followable ? res.redirect(302, followable) : res.status(404).end();
     }
     const bypassed = posterCacheConfig.isBypassed(customUrl);
     // A property of the URL, not of whether we are storing it — see handlePosterProxy.
@@ -6572,8 +6574,8 @@ function streamArtWithFallback(assetName) {
       } else {
         consola.debug(`Art proxy miss for ${assetName} ${id}: ${error.message}`);
       }
-      if (fallback) {
-        return res.redirect(302, fallback);
+      if (followable) {
+        return res.redirect(302, followable);
       }
       res.status(404).end();
     }

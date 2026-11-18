@@ -133,7 +133,7 @@ async function _processStandardItem(item, provider, language, config, includeVid
 function _createFallbackMeta(item, language, config) {
     const fallbackPosterUrl = item.poster || `${host}/missing_poster.png`;
     const posterProxyUrl = Utils.isPosterRatingEnabled(config)
-        ? `${host}/poster/${item.type}/${item.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`
+        ? `${host}/poster/${item.type}/${item.id}?${require('../lib/posterCache/proxyArt').fallbackQuery(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`
         : fallbackPosterUrl;
     
     return {
