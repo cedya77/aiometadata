@@ -350,3 +350,10 @@
     animation-duration: 1ms !important;
   }
 }
+
+/* Phones zoom into a focused field whose text is under 16px. Left outside the layers so it outranks the size utilities. */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]), textarea, select {
+    font-size: max(16px, 1em);
+  }
+}
