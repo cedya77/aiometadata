@@ -344,8 +344,8 @@ export function validateLetterboxdUrl(url: string): {
   try {
     const urlObj = new URL(url);
 
-    // Must be from letterboxd.com
-    if (!urlObj.hostname.includes('letterboxd.com')) {
+    const host = urlObj.hostname.toLowerCase();
+    if (!/^https?:$/.test(urlObj.protocol) || (host !== 'letterboxd.com' && !host.endsWith('.letterboxd.com'))) {
       return { valid: false, isWatchlist: false, error: 'Not a Letterboxd URL' };
     }
 
