@@ -3241,6 +3241,8 @@ addon.get("/api/recommendations/status", async (req: any, res: any) => {
         provider: chosen ? { provider: chosen.provider, model: chosen.model } : null,
         counts: summarise(rows, require('./utils/recommendations/rows').tuningFrom(viewerConfig)),
         profile: profile ? { summary: profile.summary, builtAt: profile.builtAt, builtFrom: profile.builtFrom } : null,
+        // Only while the settings in front of the user still search through an engine here.
+        webSearchFailure: chosen?.webSource ? await require('./utils/webSearch').lastWebSearchFailure('recommendations', userUUID) : null,
       };
     });
     return res.json({ ...report, profiles, instanceGemini: !!instanceGeminiKey() });
@@ -5265,7 +5267,7 @@ const catalogRoute = async function (req, res) {
             consola.error(`[SEARCH] ${cleanId} failed: ${searchResult.error}`);
             return { metas: [], error: searchResult.error };
           }
-          return { metas: searchResult.metas || [] };
+          return { metas: searchResult.metas || [], ...(searchResult.webSearchFailed ? { webSearchFailed: searchResult.webSearchFailed } : {}) };
         }, searchEngine, cacheOptions);
       }
       } else if (cleanId.startsWith('custom.') || cleanId.startsWith('stremthru.')) {
@@ -5563,6 +5565,16 @@ const catalogRoute = async function (req, res) {
       if (showsNotices(config)) {
         responseData = dynamicError('catalog', { title: 'Search unavailable', description: reason }, actualType === 'series' ? 'series' : 'movie');
       }
+    }
+
+    // The search answered without the web: its results stay, led by a notice saying why. A copy, since a response
+    // can be shared between requests waiting on the same search.
+    if ((responseData as any)?.webSearchFailed) {
+      const { noticeMeta, showsNotices } = require('./lib/errorNotice');
+      const { webSearchFailed, ...rest } = responseData as any;
+      responseData = showsNotices(config) && Array.isArray(rest.metas)
+        ? { ...rest, metas: [noticeMeta({ title: 'Web search unavailable', description: `${webSearchFailed} This search ran without the web.` }, actualType === 'series' ? 'series' : 'movie'), ...rest.metas] }
+        : rest;
     }
 
     // The source's count of the whole list is for Jellyfin reads only.

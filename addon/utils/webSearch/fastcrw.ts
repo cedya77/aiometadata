@@ -9,7 +9,7 @@ function refusal(status: number, said: string): Error {
       : status === 429 ? 'fastCRW is limiting requests, try again shortly'
         : status === 503 ? 'search is off or unreachable on that fastCRW server'
           : `fastCRW answered ${status}`;
-  return searchFailure(status, said ? `${what}: ${said}` : what);
+  return searchFailure(status, said ? `${what}: ${said}` : what, what);
 }
 
 export const fastcrw: WebSearchEngine = {

@@ -19,7 +19,7 @@ export function instanceSource(): WebSearchSource | null {
   const key = setting('WEB_SEARCH_API_KEY');
   // A hosted API reached with no key of the instance's offers nothing; an engine with no hosted API needs the URL.
   if (!url && !(engine.hostedUrl && key)) return null;
-  return { engine, base: url || engine.hostedUrl!, key };
+  return { engine, base: url || engine.hostedUrl!, key, own: false };
 }
 
 /** Where one configuration's search through an engine goes; its own key comes before one the instance supplies. */
@@ -28,8 +28,8 @@ export function webSearchSource(config: any, id: unknown): WebSearchSource | nul
   if (!engine) return null;
   const own = engine.hostedUrl ? String(config?.apiKeys?.[engine.id] || '').trim() : '';
   const instance = instanceSource();
-  if (instance?.engine === engine) return { ...instance, key: own || instance.key };
-  return own ? { engine, base: engine.hostedUrl!, key: own } : null;
+  if (instance?.engine === engine) return { ...instance, key: own || instance.key, own: Boolean(own) };
+  return own ? { engine, base: engine.hostedUrl!, key: own, own: true } : null;
 }
 
 /**
@@ -92,20 +92,57 @@ export function formatWebResults(results: WebResult[], maxChars = 6000): string 
   return lines.join('\n');
 }
 
-/** The search as prompt text, or empty when it fails, so a search without the web still answers. */
-export async function webContext(source: WebSearchSource, query: string, options: { limit?: number } = {}): Promise<string> {
+export interface WebContext {
+  /** The results as prompt text; empty when the search failed or found nothing. */
+  text: string;
+  /** Why the search failed, worded for the person using the feature; null when it ran. */
+  failure: string | null;
+}
+
+/**
+ * What the person using a feature is told when its web search failed. A refusal of their own key is theirs to fix, so
+ * the engine's reason is given; the instance's server is its admin's, and its address and log stay with them.
+ */
+function failureFor(source: WebSearchSource, error: any): string {
+  if (!source.own) return `${source.engine.name} on this instance is not answering.`;
+  if (error?.statusCode) return `${error.reason || `${source.engine.name} answered ${error.statusCode}`}.`;
+  return `${source.engine.name} could not be reached.`;
+}
+
+/** The search as prompt text, or empty with the reason when it fails, so a search without the web still answers. */
+export async function webContext(source: WebSearchSource, query: string, options: { limit?: number } = {}): Promise<WebContext> {
   try {
     const results = await searchWeb(source, query, options);
     logger.debug(`${source.engine.name} found ${results.length} result(s) for "${query.slice(0, 80)}"`);
-    return formatWebResults(results);
+    return { text: formatWebResults(results), failure: null };
   } catch (error: any) {
     // A connection that fails on every address comes back as an AggregateError with no message of its own.
     const code = [error?.code, error?.errors?.[0]?.code].find((value) => typeof value === 'string');
     const why = error?.statusCode ? error.message
       : `could not reach ${source.base} (${code || error?.message || error?.name || 'no answer'})`;
     logger.warn(`Web search through ${source.engine.name} failed, continuing without it: ${why}`);
-    return '';
+    return { text: '', failure: failureFor(source, error) };
   }
+}
+
+const FAILURE_KEY = (feature: string, userUUID: string) => `websearch:failure:${feature}:${userUUID}`;
+const FAILURE_HOURS = 24;
+
+/**
+ * Keeps the last web search failure a user's feature met, for the settings page to show, until a search through it
+ * works again or a day passes. Features whose results are shared between users search rarely, so the moment a search
+ * failed may be long before anyone looks.
+ */
+export async function noteWebSearch(feature: string, userUUID: string, failure: string | null): Promise<void> {
+  if (!userUUID) return;
+  const { writeGlobalCache } = require('../../lib/getCache');
+  await writeGlobalCache(FAILURE_KEY(feature, userUUID), { failure, at: Date.now() }, failure ? FAILURE_HOURS * 3600 : 60).catch(() => undefined);
+}
+
+export async function lastWebSearchFailure(feature: string, userUUID: string): Promise<{ failure: string; at: number } | null> {
+  const { readGlobalCache } = require('../../lib/getCache');
+  const held = await readGlobalCache(FAILURE_KEY(feature, userUUID)).catch(() => null);
+  return held?.failure ? { failure: String(held.failure), at: Number(held.at) || 0 } : null;
 }
 
 /** A user's key for an engine's hosted API, checked where this instance would send it. */

@@ -27,7 +27,7 @@ function replyBudget(picks: number, effort: string): number {
 
 /** Models search for a plain question and not for a JSON ranking prompt, so the
  *  search is asked separately and its answer passed in. Shared between users. */
-async function fetchRecent(profile: TasteProfile, kind: RecommendKind, chosen: any, config: any): Promise<string> {
+async function fetchRecent(profile: TasteProfile, kind: RecommendKind, chosen: any, config: any, userUUID: string): Promise<string> {
   const { cacheWrapGlobal }: any = require('../../lib/getCache');
   const now = new Date().getFullYear();
   const shape = kind === 'movie' ? 'films'
@@ -52,10 +52,12 @@ async function fetchRecent(profile: TasteProfile, kind: RecommendKind, chosen: a
         : kind === 'series' ? [`best new tv shows ${now}`]
           : kind === 'anime' ? [`new anime ${now}`]
             : [`best new movies ${now}`, `best new tv shows ${now}`];
-      const { webContext } = require('../webSearch');
-      const found = chosen.webSource
-        ? (await Promise.all(searches.map((search) => webContext(chosen.webSource, search, { limit: 10 })))).filter(Boolean).join('\n')
-        : '';
+      const { webContext, noteWebSearch } = require('../webSearch');
+      const web: Array<{ text: string; failure: string | null }> = chosen.webSource
+        ? await Promise.all(searches.map((search) => webContext(chosen.webSource, search, { limit: 10 })))
+        : [];
+      if (chosen.webSource) await noteWebSearch('recommendations', userUUID, web.find((one) => one.failure)?.failure ?? null);
+      const found = web.map((one) => one.text).filter(Boolean).join('\n');
       if (chosen.webSource && !found) return '';
       const result = await generateContent({
         apiKey: chosen.apiKey,
@@ -424,7 +426,7 @@ export async function recommend(
     // ranking prompt too, but the query it derives from twenty thousand
     // characters of JSON instructions is a poor one, and it is billed per
     // request: a plain question is a better search and is asked once a day.
-    const recent = searchMode ? await fetchRecent(profile, kind, chosen, config) : '';
+    const recent = searchMode ? await fetchRecent(profile, kind, chosen, config, userUUID) : '';
     const { generateContent } = require(clientPath);
 
     // Asking for extra covers the ones that will not resolve or are already watched.

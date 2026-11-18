@@ -23,8 +23,9 @@ export async function httpJson(url: string, options: { method: 'GET' | 'POST'; k
   return { status: statusCode, data, text };
 }
 
-export function searchFailure(status: number, message: string): Error {
-  return Object.assign(new Error(message), { statusCode: status });
+/** A refusal: `message` for the log, `reason` short enough to show the person whose key it was. */
+export function searchFailure(status: number, message: string, reason = message): Error {
+  return Object.assign(new Error(message), { statusCode: status, reason });
 }
 
 /** What a server said about a refusal, short enough for a log line. */

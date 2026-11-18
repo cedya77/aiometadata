@@ -1829,10 +1829,15 @@ async function cacheWrapSearch(userUUID: string, searchKey: string, method: () =
   cacheLogger.debug(`[Search] Key detail [sig:${searchSig}]`);
 
   const SEARCH_TTL = 12 * 60 * 60;
+  // A search that ran without its web search is kept as briefly as a temporary error, so the next one tries the web again.
+  const classify = options.resultClassifier || classifyResult;
+  const resultClassifier = (result: any, error: any, cacheKey: string | null) => (result?.webSearchFailed && !error
+    ? { type: 'WEB_SEARCH_FAILED', ttl: ERROR_TTL_STRATEGIES.TEMPORARY_ERROR }
+    : classify(result, error, cacheKey));
 
   const result = await cacheWrap(key, async () => {
     return normalizeReleaseAvailabilityInPayload(await method());
-  }, SEARCH_TTL, options);
+  }, SEARCH_TTL, { ...options, resultClassifier });
   normalizeReleaseAvailabilityInPayload(result);
   const projected = projectRatingsInPayload(result, config, false);
   await applyImdbRatingProjectionToList(projected?.metas);

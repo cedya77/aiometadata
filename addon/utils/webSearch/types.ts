@@ -13,6 +13,8 @@ export interface WebSearchSource {
   engine: WebSearchEngine;
   base: string;
   key: string;
+  /** The key is the configuration's own rather than the instance's. */
+  own: boolean;
 }
 
 /** A web search engine. A new one is a file beside the others and a line in engines.ts; the settings page lists it by itself. */
@@ -25,7 +27,7 @@ export interface WebSearchEngine {
   hostedUrl?: string;
   /** Where a user gets a key for the hosted API. */
   keyLink?: string;
-  /** The results for a query, at most `limit`. Throws with a `statusCode` when the engine refuses or fails. */
+  /** The results for a query, at most `limit`. Throws with a `statusCode` and a short `reason` when the engine refuses or fails. */
   search(source: WebSearchSource, query: string, limit: number): Promise<WebResult[]>;
   /** Whether a key is accepted, without spending anything. */
   checkKey?(base: string, key: string): Promise<boolean>;

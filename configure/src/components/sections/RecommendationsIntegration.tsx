@@ -74,6 +74,8 @@ interface Status {
   counts: { total: number; movies: number; series: number; anime: number; rated: number; meanRating?: number };
   profile: { summary: string; builtAt: string; builtFrom: number } | null;
   profiles?: Array<{ id: string; name: string; avatar?: string; linked: string[] }>;
+  /** The last web search for these rows that failed, while an engine here is chosen. */
+  webSearchFailure?: { failure: string; at: number } | null;
 }
 
 interface Viewer {
@@ -615,6 +617,13 @@ export function RecommendationsIntegration({ isOpen, onClose }: { isOpen: boolea
                         via={webVia}
                         onChange={via => patch({ web_search_via: via })}
                       />
+                    )}
+
+                    {webSearch && webVia && status?.webSearchFailure && (
+                      <Callout variant="warn" className="text-xs">
+                        The web search failed on {new Date(status.webSearchFailure.at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}: {status.webSearchFailure.failure} Rows
+                        built since then had no web results, so recent releases may be missing.
+                      </Callout>
                     )}
 
                     {usingOpenRouter && !customEndpoint && (

@@ -14,7 +14,7 @@ export const searxng: WebSearchEngine = {
     // SearXNG answers JSON only where its settings list it among search.formats.
     if (status === 403) throw searchFailure(403, 'SearXNG refused a JSON answer: add json to search.formats in its settings.yml');
     if (status === 429) throw searchFailure(429, 'SearXNG is limiting requests, try again shortly');
-    if (status !== 200 || !data) throw searchFailure(status, `SearXNG answered ${status}${saidBy(data, text) ? `: ${saidBy(data, text)}` : ''}`);
+    if (status !== 200 || !data) throw searchFailure(status, `SearXNG answered ${status}${saidBy(data, text) ? `: ${saidBy(data, text)}` : ''}`, `SearXNG answered ${status}`);
     const rows: any[] = Array.isArray(data.results) ? data.results : [];
     // No results because its engines refused is a failure, not an empty web.
     const silent: string[] = Array.isArray(data.unresponsive_engines) ? data.unresponsive_engines.map((entry: any) => String(Array.isArray(entry) ? entry[0] : entry)) : [];

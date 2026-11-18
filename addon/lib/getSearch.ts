@@ -1444,7 +1444,7 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
 }
 
 
-async function performAiSearch(query: string, language: string, config: any): Promise<{ metas: any[]; error?: string }> {
+async function performAiSearch(query: string, language: string, config: any): Promise<{ metas: any[]; error?: string; webSearchFailed?: string }> {
   const startTime = Date.now();
   const aiProvider = config.search?.ai_provider || 'gemini';
   const aiModel = aiProvider === 'openrouter'
@@ -1463,7 +1463,10 @@ async function performAiSearch(query: string, language: string, config: any): Pr
 
   try {
     let suggestions: any[];
-    const webResults = webSource ? await webSearch.webContext(webSource, `${query} movies and TV series`, { limit: 10 }) : '';
+    const web = webSource ? await webSearch.webContext(webSource, `${query} movies and TV series`, { limit: 10 }) : null;
+    const webResults = web?.text || '';
+    // A search that ran without the web still answers; the reason goes with it for the catalog to show.
+    const degraded = web?.failure ? { webSearchFailed: web.failure } : {};
 
     if (aiProvider === 'openrouter') {
       const openrouterKey = config.apiKeys?.openrouter;
@@ -1476,7 +1479,7 @@ async function performAiSearch(query: string, language: string, config: any): Pr
 
     if (!suggestions || suggestions.length === 0) {
       logger.info('AI search returned no suggestions.');
-      return { metas: [] };
+      return { metas: [], ...degraded };
     }
 
     logger.debug(`AI search returned ${suggestions.length} suggestions`);
@@ -1510,7 +1513,7 @@ async function performAiSearch(query: string, language: string, config: any): Pr
     const totalTime = Date.now() - startTime;
     logger.success(`AI search completed in ${totalTime}ms. Returning ${filteredResults.length} results.`);
 
-    return { metas: filteredResults };
+    return { metas: filteredResults, ...degraded };
 
   } catch (error: any) {
     const totalTime = Date.now() - startTime;
@@ -2496,7 +2499,7 @@ function getProviderFromSearchId(searchId: string): string {
   }
 }
 
-async function getSearch(id: string, type: string, language: string, extra: any, config: any): Promise<{ metas: any[]; error?: string }> {
+async function getSearch(id: string, type: string, language: string, extra: any, config: any): Promise<{ metas: any[]; error?: string; webSearchFailed?: string }> {
   const searchStartTime = Date.now();
 
   const queryText = extra?.search || extra?.genre_id || extra?.va_id || 'N/A';
@@ -2508,6 +2511,7 @@ async function getSearch(id: string, type: string, language: string, extra: any,
     }
 
     let metas: any[] = [];
+    let webSearchFailed: string | undefined;
     const page = extra.page ? parseInt(extra.page) : 1;
     switch (id) {
       case 'mal.genre_search':
@@ -2544,6 +2548,7 @@ async function getSearch(id: string, type: string, language: string, extra: any,
           const aiResult = await performAiSearch(query, language, config);
           if (aiResult.error) return { metas: [], error: aiResult.error };
           metas = aiResult.metas;
+          webSearchFailed = aiResult.webSearchFailed;
         }
         break;
 
@@ -2756,7 +2761,7 @@ async function getSearch(id: string, type: string, language: string, extra: any,
       logger.info(`Filtered out ${beforeFilterCount - afterFilterCount} malformed search results`);
     }
 
-    return { metas };
+    return { metas, ...(webSearchFailed ? { webSearchFailed } : {}) };
   } catch (error: any) {
     const searchDuration = Date.now() - searchStartTime;
     logger.error(`Search failed after ${searchDuration}ms for "${queryText}" (${id}):`, error);
