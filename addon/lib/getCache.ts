@@ -636,6 +636,7 @@ async function cacheWrapInternal(key: string, method: () => Promise<any>, ttl: n
     }
     return result;
   } catch (error: any) {
+    if (require('./searchSupersede').isSearchSuperseded(error)) throw error;
     cacheLogger.error(`Method failed for cache key ${versionedKey}:`, error);
       updateCacheHealth(versionedKey, 'error', false);
 
@@ -1835,9 +1836,10 @@ async function cacheWrapSearch(userUUID: string, searchKey: string, method: () =
     ? { type: 'WEB_SEARCH_FAILED', ttl: ERROR_TTL_STRATEGIES.TEMPORARY_ERROR }
     : classify(result, error, cacheKey));
 
-  const result = await cacheWrap(key, async () => {
+  const { joinSearchFlight } = require('./searchSupersede');
+  const result = await joinSearchFlight(withEpoch(key), () => cacheWrap(key, async () => {
     return normalizeReleaseAvailabilityInPayload(await method());
-  }, SEARCH_TTL, { ...options, resultClassifier });
+  }, SEARCH_TTL, { ...options, resultClassifier }));
   normalizeReleaseAvailabilityInPayload(result);
   const projected = projectRatingsInPayload(result, config, false);
   await applyImdbRatingProjectionToList(projected?.metas);
