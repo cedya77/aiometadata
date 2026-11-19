@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.2.0](https://github.com/cedya77/aiometadata/compare/v4.1.0...v4.2.0) (2026-11-19)
+
+
+### Features
+
+* **search:** stop searches a client has typed past ([32afb7a](https://github.com/cedya77/aiometadata/commit/32afb7abddc0e92429806d2e2026adb32659f168))
+* **search:** stop searches a client has typed past ([945cbe1](https://github.com/cedya77/aiometadata/commit/945cbe11410b6fb3020021605b691f87e83d1f47))
+
 ## [4.1.0](https://github.com/cedya77/aiometadata/compare/v4.0.0...v4.1.0) (2026-11-18)
 
 
