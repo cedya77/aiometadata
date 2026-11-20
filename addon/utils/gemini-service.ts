@@ -274,10 +274,71 @@ function parseAIResponse(rawText: string, type: string): Suggestion[] {
       logger.error("No JSON array found in response text");
     }
 
+    // One malformed entry (a missing colon, a stray token) makes the whole
+    // array unparseable, so keep every entry that parses on its own.
+    const { entries: salvaged, skipped } = salvageArrayEntries(cleanText);
+    if (salvaged.length > 0) {
+      logger.warn(`Recovered ${salvaged.length} entries from a malformed AI response (${skipped} skipped)`);
+      return validateAndFilterEntries(salvaged);
+    }
+
     logger.error("Failed to parse JSON response from AI. Error:", error.message);
     logger.error("Raw text:", cleanText.substring(0, 500));
     return [];
   }
+}
+
+/**
+ * Parses each top-level object inside the first JSON array of objects in
+ * `text` on its own and returns those that parse, plus how many were skipped.
+ * Tracks strings and escaped quotes so braces inside titles don't end an entry
+ * early. A raw newline ends a string (it is never legal inside one), so an
+ * unbalanced quote in a multi-line reply only costs its own entry.
+ */
+function salvageArrayEntries(text: string): { entries: any[]; skipped: number } {
+  const match = /\[\s*\{/.exec(text);
+  if (!match) return { entries: [], skipped: 0 };
+  const start = match.index;
+
+  const entries: any[] = [];
+  let skipped = 0;
+  let depth = 0;
+  let objectStart = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (ch === '\n' || ch === '\r') {
+        inString = false;
+        escaped = false;
+      } else if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === '{') {
+      if (depth === 0) objectStart = i;
+      depth++;
+    } else if (ch === '}' && depth > 0) {
+      depth--;
+      if (depth === 0 && objectStart !== -1) {
+        try {
+          const entry = JSON.parse(text.slice(objectStart, i + 1));
+          if (entry && typeof entry === 'object' && !Array.isArray(entry)) entries.push(entry);
+        } catch {
+          skipped++;
+        }
+        objectStart = -1;
+      }
+    } else if (ch === ']' && depth === 0) {
+      break;
+    }
+  }
+  return { entries, skipped };
 }
 
 function validateAndFilterEntries(parsed: any[]): Suggestion[] {
