@@ -9,7 +9,7 @@ import { getCatalogs, requiresGenre, viewIdFor, viewTypeFor, type CatalogRef } f
 import { viewerAccountOwner, viewerReadsExtensions } from './viewer';
 import { profileTags } from './profiles';
 import { walkRecords } from './walkRecords';
-import { findFolder, subFolders, type CollectionDraft, type FolderDraft, type SourceDraft } from '../collectionBuilder/types';
+import { findFolder, folderLayout, subFolders, type CollectionDraft, type FolderDraft, type SourceDraft } from '../collectionBuilder/types';
 import { FOLDER_MERGE_MODE, mergeModeOf, type MergeMode } from '../collectionBuilder/mergeModes';
 import { mergedDedupKey, shuffleMetas } from '../../utils/mergedCatalog';
 
@@ -149,10 +149,12 @@ function boxSetItem(serverId: string, catalogs: CatalogRef[], collection: Collec
   const backdrop = imageOf(folder.heroBackdropUrl);
   const logo = imageOf(folder.titleLogoUrl);
   const animated = animatedPosterOf(folder);
+  const video = imageOf(folder.heroVideoUrl);
   const sources = viewerReadsExtensions() ? sourceRows(catalogs, folder) : [];
   const extensions = {
     ...(animated ? { animatedPoster: animated } : {}),
-    ...(sources.length ? { sources } : {}),
+    ...(video ? { backgroundVideo: video } : {}),
+    ...(sources.length ? { sources, ...folderLayout(collection) } : {}),
   };
   if (cover || backdrop || logo) rememberImages(serverId, id, { primary: cover, backdrop, logo });
 

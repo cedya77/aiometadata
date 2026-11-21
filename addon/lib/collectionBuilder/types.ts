@@ -270,6 +270,14 @@ export function removeFolder(folders: FolderDraft[], id: string): FolderDraft[] 
     .map(folder => (folder.folders?.length ? { ...folder, folders: removeFolder(folder.folders, id) } : folder));
 }
 
+/** How a client lays out a folder's sources; following the layout sends none, so the client picks. */
+export function folderLayout(collection: CollectionDraft): { layout?: 'rows'; showAll?: false } {
+  return {
+    ...(collection.viewMode === 'ROWS' ? { layout: 'rows' as const } : {}),
+    ...(collection.showAllTab === false ? { showAll: false as const } : {}),
+  };
+}
+
 export function hasNuvioCollectionSettings(entry: CollectionDraft): boolean {
   return Boolean(
     entry.pinToTop ||

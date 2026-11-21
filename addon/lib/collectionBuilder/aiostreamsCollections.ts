@@ -4,7 +4,8 @@ import { animatedPosterOf, builderCollections, collectionById, folderById, image
 import { getCatalogs, type CatalogRef } from '../jellyfin/views';
 import { getCollectionImagePrefix } from '../posterCache/config';
 import { proxyCollectionImages } from './imageProxy';
-import { subFolders, type CollectionDraft, type FolderDraft } from './types';
+import { FOLDER_MERGE_MODE, mergeModeOf } from './mergeModes';
+import { folderLayout, subFolders, type CollectionDraft, type FolderDraft } from './types';
 
 // Builder collections served as AIOStreams collection metas:
 // https://docs.aiostreams.viren070.me/reference/addon-protocol/collections/
@@ -55,6 +56,7 @@ function namedFolders(folders: FolderDraft[]): FolderDraft[] {
 function folderMeta(catalogs: CatalogRef[], collection: CollectionDraft, folder: FolderDraft, full: boolean): any {
   const cover = imageOf(folder.coverImageUrl);
   const animated = animatedPosterOf(folder);
+  const video = imageOf(folder.heroVideoUrl);
   const shape = SHAPES[folder.shape] ?? 'poster';
   const meta: any = {
     id: `${COLLECTION_META_PREFIX}${collection.id}:${folder.id}`,
@@ -66,18 +68,32 @@ function folderMeta(catalogs: CatalogRef[], collection: CollectionDraft, folder:
     posterShape: shape,
     background: imageOf(folder.heroBackdropUrl) ?? imageOf(collection.backdropImageUrl),
     logo: imageOf(folder.titleLogoUrl),
+    ...(video ? { backgroundVideo: video } : {}),
     collection: {},
   };
   if (!full) return meta;
 
   const items = namedFolders(subFolders(folder)).map((child) => folderMeta(catalogs, collection, child, false));
   // AIOStreams matches a type exactly, so it goes out as the manifest spells it now.
-  const sources = visibleSources(catalogs, folder).map(({ source, catalog }) => ({
-    type: catalog.type,
-    catalogId: catalog.id,
-    ...(source.genre && source.genre !== 'None' ? { genre: source.genre } : {}),
-  }));
-  meta.collection = { ...(items.length ? { items } : {}), ...(sources.length ? { sources } : {}) };
+  // Without a name of its own, a source takes the catalog's name as AIOStreams lists it, renamed there or not.
+  const sources = visibleSources(catalogs, folder).map(({ source, catalog }) => {
+    const genre = source.genre && source.genre !== 'None' ? source.genre : null;
+    const name = source.name?.trim();
+    return {
+      type: catalog.type,
+      catalogId: catalog.id,
+      ...(genre ? { genre } : {}),
+      ...(name ? { name: genre ? `${name} · ${genre}` : name } : {}),
+    };
+  });
+  const merge = mergeModeOf(folder.mergeMode, FOLDER_MERGE_MODE);
+  meta.collection = {
+    ...(items.length ? { items } : {}),
+    ...(sources.length ? { sources } : {}),
+    ...folderLayout(collection),
+    ...(merge !== 'sequential' ? { merge } : {}),
+    ...(folder.randomizePerPage && sources.length > 1 ? { shuffle: true } : {}),
+  };
   return meta;
 }
 
