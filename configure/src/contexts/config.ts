@@ -50,6 +50,8 @@ export interface JellyfinUser {
   avatar?: string;
   /** Catalogs carrying any of these are in; none means every catalog. */
   tags: string[];
+  /** Catalogs and collections carrying any of these are left out, whatever else they carry. */
+  hiddenTags?: string[];
   /** Whether this user is the same person as the account, sharing its watch history and trackers. */
   trackers?: boolean;
   /** Absent follows the main user. */
@@ -495,6 +497,7 @@ export interface AppConfig {
   /** The main user's PIN: 4 to 12 digits as typed, or the hash the server saved it as. */
   jellyfinUserPin?: string;
   jellyfinUserTags?: string[];
+  jellyfinUserHiddenTags?: string[];
   jellyfinUserHandoffNames?: string[];
   jellyfinSkipSource?: SkipSource;
   jellyfinWatchlistServices?: string[];

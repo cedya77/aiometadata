@@ -18,6 +18,8 @@ export interface Profile {
   avatar: string | null;
   /** Profile tags this user is made of; none means every catalog. */
   tags: string[];
+  /** Catalogs and collections carrying any of these are kept from this user, whatever else they carry. */
+  hiddenTags: string[];
   handoffNames: string[];
   /** Whether this user is the same person as the account: its history and trackers. */
   sharesHistory: boolean;
@@ -95,6 +97,7 @@ export function listProfiles(config: any, userUUID: string): Profile[] {
     userId: profileUserId(userUUID, null),
     avatar: avatarOf(config?.jellyfinUserAvatar),
     tags: mainTags,
+    hiddenTags: knownTags(config, config?.jellyfinUserHiddenTags),
     ...tagRules(config, mainTags),
     handoffNames: namesOf(config?.jellyfinUserHandoffNames),
     sharesHistory: true,
@@ -114,6 +117,7 @@ export function listProfiles(config: any, userUUID: string): Profile[] {
       userId: profileUserId(userUUID, id),
       avatar: avatarOf(user.avatar),
       tags,
+      hiddenTags: knownTags(config, user.hiddenTags),
       ...tagRules(config, tags),
       handoffNames: namesOf(user.handoffNames),
       sharesHistory: user.trackers === true,
@@ -175,7 +179,7 @@ function heldWatchlistServices(held: any, watchlistServices: string[]): string[]
 /** The same catalogs and cap an install URL naming this user's tags would get. */
 export function scopeConfigToProfile(config: any, userUUID: string, id: string | null): any {
   const profile = profileById(config, userUUID, id);
-  if (!profile.id && !profile.tags.length) return config;
+  if (!profile.id && !profile.tags.length && !profile.hiddenTags.length) return config;
 
   const owner = profile.id ? withAccountOwner(config, profile.id) : config;
   const owns = owner !== config;
@@ -186,6 +190,7 @@ export function scopeConfigToProfile(config: any, userUUID: string, id: string |
         ...held,
         jellyfinProfileId: profile.id,
         jellyfinProfileTags: profile.tags,
+        jellyfinProfileHiddenTags: profile.hiddenTags,
         jellyfinProfileShares: profile.sharesHistory,
         ...(profile.trackerSource
           ? { jellyfinResumeSource: owns ? heldTrackerSource(held, profile.trackerSource) : profile.trackerSource }
@@ -196,7 +201,7 @@ export function scopeConfigToProfile(config: any, userUUID: string, id: string |
           : owns ? { jellyfinWatchlistServices: undefined } : {}),
         ...(profile.streamUrl ? { jellyfinStreamUrl: profile.streamUrl } : {}),
       }
-    : { ...config, jellyfinProfileTags: profile.tags };
+    : { ...config, jellyfinProfileTags: profile.tags, jellyfinProfileHiddenTags: profile.hiddenTags };
   if (profile.tags.length) {
     const { ageRating, allowUnrated } = resolveInstallFilters(config, { tags: profile.tags });
     if (ageRating) scoped.ageRating = ageRating;
@@ -208,6 +213,11 @@ export function scopeConfigToProfile(config: any, userUUID: string, id: string |
 /** The tags a scoped configuration lists catalogs for; none means all of them. */
 export function profileTags(config: any): string[] {
   return Array.isArray(config?.jellyfinProfileTags) ? config.jellyfinProfileTags : [];
+}
+
+/** The tags whose catalogs and collections a scoped configuration leaves out. */
+export function profileHiddenTags(config: any): string[] {
+  return Array.isArray(config?.jellyfinProfileHiddenTags) ? config.jellyfinProfileHiddenTags : [];
 }
 
 /** The account's state is under the empty key; a separate viewer has its own and no trackers. */

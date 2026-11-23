@@ -6,6 +6,7 @@ import { getCollectionImagePrefix } from '../posterCache/config';
 import { proxyCollectionImages } from './imageProxy';
 import { FOLDER_MERGE_MODE, mergeModeOf } from './mergeModes';
 import { folderLayout, subFolders, type CollectionDraft, type FolderDraft } from './types';
+import type { TagScope } from './tagScope';
 
 // Builder collections served as AIOStreams collection metas:
 // https://docs.aiostreams.viren070.me/reference/addon-protocol/collections/
@@ -27,13 +28,13 @@ export function isCollectionCatalogId(id: unknown): boolean {
 }
 
 /** Tag-scoped, with images through the image cache as the exports serve them. */
-function scoped(config: any, tags: string[]): any {
+function scoped(config: any, tags: TagScope): any {
   const prefix = config?.collectionImagesViaCache ? getCollectionImagePrefix() : '';
   const collections = prefix && Array.isArray(config.collections) ? proxyCollectionImages(config.collections, prefix) : config?.collections;
-  return { ...config, collections, jellyfinProfileTags: tags };
+  return { ...config, collections, jellyfinProfileTags: [...(tags.show ?? [])], jellyfinProfileHiddenTags: [...(tags.hide ?? [])] };
 }
 
-export function collectionCatalogs(config: any, tags: string[]): any[] {
+export function collectionCatalogs(config: any, tags: TagScope): any[] {
   if (!collectionsServed(config)) return [];
   return builderCollections(scoped(config, tags)).map((collection) => {
     const art = imageOf(collection.backdropImageUrl);
@@ -98,7 +99,7 @@ function folderMeta(catalogs: CatalogRef[], collection: CollectionDraft, folder:
 }
 
 /** A collection catalog's page: the collection's top-level folders, empty ones included. */
-export async function collectionCatalogMetas(userUUID: string, config: any, tags: string[], catalogId: string, skip: number): Promise<any[] | null> {
+export async function collectionCatalogMetas(userUUID: string, config: any, tags: TagScope, catalogId: string, skip: number): Promise<any[] | null> {
   if (!collectionsServed(config) || !isCollectionCatalogId(catalogId)) return null;
   const view = scoped(config, tags);
   const collection = collectionById(view, catalogId.slice(COLLECTION_CATALOG_PREFIX.length));
@@ -108,7 +109,7 @@ export async function collectionCatalogMetas(userUUID: string, config: any, tags
   return namedFolders(collection.folders || []).map((folder) => folderMeta(catalogs, collection, folder, false));
 }
 
-export async function collectionMeta(userUUID: string, config: any, tags: string[], id: string): Promise<any | null> {
+export async function collectionMeta(userUUID: string, config: any, tags: TagScope, id: string): Promise<any | null> {
   if (!collectionsServed(config) || !id.startsWith(COLLECTION_META_PREFIX)) return null;
   const [collectionId, folderId] = id.slice(COLLECTION_META_PREFIX.length).split(':');
   const view = scoped(config, tags);

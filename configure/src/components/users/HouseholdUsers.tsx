@@ -33,6 +33,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { hashFor, navigateToSettingsSection, parseRoute } from '@/lib/settingsRoute';
 import { moveRadio, radioTabIndex } from '@/lib/radioKeys';
 import { scrobblesStremio } from '@/lib/watchTracking';
+import { tagsAllow } from '@shared/tagScope';
+import { Segmented } from '@/components/settings/Segmented';
 
 const IMAGE_URL = /^https?:\/\//i;
 
@@ -210,7 +212,7 @@ function PersonSummary({ person, className }: { person: Person; className?: stri
   } else if (person.main) {
     parts.push('No trackers');
   }
-  if (user.tags.length) parts.push(`${person.catalogCount} catalog${person.catalogCount === 1 ? '' : 's'}`);
+  if (user.tags.length || user.hiddenTags?.length) parts.push(`${person.catalogCount} catalog${person.catalogCount === 1 ? '' : 's'}`);
   return (
     <span className={cn('flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-muted-foreground', className)}>
       {parts.map((part, index) => (
@@ -341,11 +343,49 @@ function WhoChoice({ selected, title, hint, disabled, onSelect }: { selected: bo
   );
 }
 
+type TagMode = 'all' | 'only' | 'except';
+
+const TAG_MODES: ReadonlyArray<readonly [TagMode, string]> = [['all', 'Everything'], ['only', 'Only these'], ['except', 'All except']];
+
+/** "A", "A or B", "A, B or C". */
+function orList(names: string[]): string {
+  return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}`;
+}
+
+/** What a person is shown, in words. */
+function tagSummary(mode: TagMode, shown: string[], hidden: string[]): string {
+  if (mode === 'all') return 'Sees every catalog and collection';
+  if (mode === 'only') {
+    if (!shown.length) return 'Pick the tags this person sees. Until then they see everything';
+    return `Sees only what's tagged ${orList(shown)}${hidden.length ? `, leaving out anything tagged ${orList(hidden)}` : ''}`;
+  }
+  if (!hidden.length) return 'Pick the tags to leave out. Until then they see everything';
+  return `Sees everything except what's tagged ${orList(hidden)}`;
+}
+
 function PersonDetail({ person, allTags, hasPmdb, mainSkipSource, showHandoff, jellyfin, stremioOn }: PersonDetailProps) {
   const { name, avatar, main, user, catalogCount, trackerOptions, watchlistOptions, watchedPoint, watchedNote, onChange, onRemove, onForget, accountsEditor } = person;
   const chosen = user.tags ?? [];
+  const hidden = user.hiddenTags ?? [];
   const toggleTag = (tag: string) =>
-    onChange({ tags: chosen.includes(tag) ? chosen.filter((t) => t !== tag) : [...chosen, tag] });
+    onChange(chosen.includes(tag)
+      ? { tags: chosen.filter((t) => t !== tag) }
+      : { tags: [...chosen, tag], hiddenTags: hidden.filter((t) => t !== tag) });
+  const toggleHidden = (tag: string) =>
+    onChange(hidden.includes(tag)
+      ? { hiddenTags: hidden.filter((t) => t !== tag) }
+      : { hiddenTags: [...hidden, tag], tags: chosen.filter((t) => t !== tag) });
+  const [tagMode, setTagMode] = useState<TagMode>(chosen.length ? 'only' : hidden.length ? 'except' : 'all');
+  const [leavingOut, setLeavingOut] = useState(chosen.length > 0 && hidden.length > 0);
+  // The tags picked stay picked across "Only these" and "All except"; what they mean flips.
+  const pickTagMode = (mode: TagMode) => {
+    if (mode === tagMode) return;
+    setTagMode(mode);
+    setLeavingOut(false);
+    if (mode === 'all') onChange({ tags: [], hiddenTags: [] });
+    else if (mode === 'only') onChange({ tags: tagMode === 'except' ? hidden : chosen, hiddenTags: [] });
+    else onChange({ tags: [], hiddenTags: tagMode === 'only' ? chosen : hidden });
+  };
   const caps = allTags
     .filter((t) => chosen.includes(t.name) && t.ageRating && t.ageRating !== 'None')
     .map((t) => t.ageRating as string);
@@ -501,24 +541,53 @@ function PersonDetail({ person, allTags, hasPmdb, mainSkipSource, showHandoff, j
 
         <Group anchor={`${key}.catalogs`} title="Catalogs" icon={<LayoutGrid className="h-3.5 w-3.5" />}>
           {allTags.length > 0 ? (
-            <SettingRow label="Catalogs" description="The catalog tags this person sees. None picked shows every catalog.">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {allTags.map((t) => (
-                  <TagChip
-                    key={t.name}
-                    name={t.name}
-                    color={t.color}
-                    suffix={t.ageRating && t.ageRating !== 'None' ? <span title={`Content rating ${t.ageRating} and lower`}>{t.ageRating}</span> : undefined}
-                    onClick={() => toggleTag(t.name)}
-                    pressed={chosen.includes(t.name)}
-                    dimmed={chosen.length > 0 && !chosen.includes(t.name)}
-                  />
-                ))}
-              </div>
+            <SettingRow label="Catalogs" description="Which catalogs and collections this person sees, by the tags on them.">
+              <Segmented
+                label={`Catalogs ${name} sees`}
+                value={tagMode}
+                options={TAG_MODES}
+                onChange={pickTagMode}
+              />
+              {tagMode !== 'all' ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {allTags.map((t) => {
+                    const on = tagMode === 'only' ? chosen.includes(t.name) : hidden.includes(t.name);
+                    return (
+                      <TagChip
+                        key={t.name}
+                        name={t.name}
+                        color={t.color}
+                        suffix={tagMode === 'only' && t.ageRating && t.ageRating !== 'None' ? <span title={`Content rating ${t.ageRating} and lower`}>{t.ageRating}</span> : undefined}
+                        onClick={() => (tagMode === 'only' ? toggleTag(t.name) : toggleHidden(t.name))}
+                        pressed={on}
+                        dimmed={!on}
+                        className={tagMode === 'except' && on ? 'line-through' : undefined}
+                      />
+                    );
+                  })}
+                </div>
+              ) : null}
+              {tagMode === 'only' && leavingOut ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">But leave out</span>
+                  {allTags.filter((t) => !chosen.includes(t.name)).map((t) => (
+                    <TagChip key={t.name} name={t.name} color={t.color} onClick={() => toggleHidden(t.name)} pressed={hidden.includes(t.name)} dimmed={!hidden.includes(t.name)} className={hidden.includes(t.name) ? 'line-through' : undefined} />
+                  ))}
+                </div>
+              ) : null}
               <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                {chosen.length === 0 ? 'Every catalog' : `${catalogCount} catalog${catalogCount === 1 ? '' : 's'}`}
+                <span>
+                  {tagSummary(tagMode, chosen, hidden)}
+                  {chosen.length || hidden.length ? ` (${catalogCount} catalog${catalogCount === 1 ? '' : 's'})` : ''}
+                </span>
                 {caps.length ? <span className="rounded-full border border-amber-500/40 px-1.5 text-[11px] text-amber-400">{caps.join(', ')} and lower</span> : null}
               </p>
+              {tagMode === 'only' && !leavingOut && chosen.length > 0 && allTags.length > chosen.length ? (
+                <Button variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => setLeavingOut(true)}>
+                  <Plus className="h-3 w-3" />
+                  Leave some out too
+                </Button>
+              ) : null}
             </SettingRow>
           ) : (
             <SettingRow
@@ -723,10 +792,8 @@ export function HouseholdUsers() {
   const stremioOn = scrobblesStremio(config);
   const mainServices = mainConnectedServices(config);
 
-  const catalogCountFor = (chosen: string[]) => {
-    const wanted = new Set(chosen.map((t) => t.toLowerCase()));
-    return (config.catalogs ?? []).filter((c) => c.enabled && (c.tags ?? []).some((t) => wanted.has(t.toLowerCase()))).length;
-  };
+  const catalogCountFor = (show: string[], hide: string[] = []) =>
+    (config.catalogs ?? []).filter((c) => c.enabled && tagsAllow({ show, hide }, c.tags)).length;
 
   const [watchedPoints, setWatchedPoints] = useState<{ serverDefault: number; byProfile: Record<string, number | null> } | null>(null);
   const [watchedFailed, setWatchedFailed] = useState(false);
@@ -863,6 +930,7 @@ export function HouseholdUsers() {
       id: '',
       name: mainName,
       tags: config.jellyfinUserTags ?? [],
+      hiddenTags: config.jellyfinUserHiddenTags ?? [],
       trackerSource: config.jellyfinResumeSource ?? 'auto',
       skipSource: config.jellyfinSkipSource ?? 'auto',
       watchlistServices: config.jellyfinWatchlistServices,
@@ -870,7 +938,7 @@ export function HouseholdUsers() {
       pin: config.jellyfinUserPin,
       streamUrl: config.jellyfinStreamUrl,
     },
-    catalogCount: catalogCountFor(config.jellyfinUserTags ?? []),
+    catalogCount: catalogCountFor(config.jellyfinUserTags ?? [], config.jellyfinUserHiddenTags ?? []),
     trackerOptions: resumeSourceOptions,
     watchlistOptions,
     watchedPoint: watchedPointFor('', mainName),
@@ -882,6 +950,7 @@ export function HouseholdUsers() {
       ...('name' in patch ? { jellyfinUserName: patch.name } : {}),
       ...('avatar' in patch ? { jellyfinUserAvatar: patch.avatar } : {}),
       ...('tags' in patch ? { jellyfinUserTags: patch.tags?.length ? patch.tags : undefined } : {}),
+      ...('hiddenTags' in patch ? { jellyfinUserHiddenTags: patch.hiddenTags?.length ? patch.hiddenTags : undefined } : {}),
       ...('trackerSource' in patch ? { jellyfinResumeSource: patch.trackerSource as typeof prev.jellyfinResumeSource } : {}),
       ...('skipSource' in patch ? { jellyfinSkipSource: patch.skipSource === 'auto' ? undefined : patch.skipSource } : {}),
       ...('watchlistServices' in patch ? { jellyfinWatchlistServices: patch.watchlistServices } : {}),
@@ -897,7 +966,7 @@ export function HouseholdUsers() {
       name: user.name,
       avatar: user.avatar,
       user,
-      catalogCount: catalogCountFor(user.tags),
+      catalogCount: catalogCountFor(user.tags, user.hiddenTags),
       trackerOptions: holder ? trackerOptionsFor(user) : resumeSourceOptions,
       watchlistOptions: holder ? watchlistOptionsFor(user) : watchlistOptions,
       watchedPoint: watchedPointFor(user.id, user.name),

@@ -51,18 +51,24 @@ export function TagManagerDialog({ open, onOpenChange }: TagManagerDialogProps) 
   const [openTag, setOpenTag] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
-  const profilesByTag = useMemo(() => {
-    const out = new Map<string, string[]>();
-    const add = (name: string, held: string[] | undefined) => {
+  const [profilesByTag, hiddenFromByTag] = useMemo(() => {
+    const shown = new Map<string, string[]>();
+    const hidden = new Map<string, string[]>();
+    const add = (into: Map<string, string[]>, name: string, held: string[] | undefined) => {
       for (const tag of held ?? []) {
         const key = tag.toLowerCase();
-        out.set(key, [...(out.get(key) ?? []), name]);
+        into.set(key, [...(into.get(key) ?? []), name]);
       }
     };
-    add(config.jellyfinUserName || config.addonName || 'You', config.jellyfinUserTags);
-    for (const user of config.jellyfinUsers ?? []) add(user.name, user.tags);
-    return out;
-  }, [config.jellyfinUserName, config.addonName, config.jellyfinUserTags, config.jellyfinUsers]);
+    const mainName = config.jellyfinUserName || config.addonName || 'You';
+    add(shown, mainName, config.jellyfinUserTags);
+    add(hidden, mainName, config.jellyfinUserHiddenTags);
+    for (const user of config.jellyfinUsers ?? []) {
+      add(shown, user.name, user.tags);
+      add(hidden, user.name, user.hiddenTags);
+    }
+    return [shown, hidden];
+  }, [config.jellyfinUserName, config.addonName, config.jellyfinUserTags, config.jellyfinUserHiddenTags, config.jellyfinUsers]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) setPendingDelete(null);
@@ -106,6 +112,7 @@ export function TagManagerDialog({ open, onOpenChange }: TagManagerDialogProps) 
               {tags.map((t) => {
                 const count = tagCounts[t.name] || 0;
                 const profiles = profilesByTag.get(t.name.toLowerCase()) ?? [];
+                const hiddenFrom = hiddenFromByTag.get(t.name.toLowerCase()) ?? [];
                 const chips = ruleChips(t);
                 const isOpen = openTag === t.name;
                 return (
@@ -122,7 +129,7 @@ export function TagManagerDialog({ open, onOpenChange }: TagManagerDialogProps) 
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[15px] font-semibold">{t.name}</span>
                         <span className="block truncate text-xs text-muted-foreground">
-                          {count} {count === 1 ? 'catalog' : 'catalogs'}{profiles.length ? ` · ${profiles.join(', ')}` : ''}
+                          {count} {count === 1 ? 'catalog' : 'catalogs'}{profiles.length ? ` · ${profiles.join(', ')}` : ''}{hiddenFrom.length ? ` · hidden from ${hiddenFrom.join(', ')}` : ''}
                         </span>
                       </span>
                       <span className="hidden flex-wrap justify-end gap-1.5 sm:flex">

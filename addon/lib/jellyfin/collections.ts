@@ -7,9 +7,10 @@ import { collectionFolder, EMPTY_USER_DATA } from './dto';
 import { catalogCannotServe, fetchWindow, includeTypesFilter, listFilterKey, type ExtraFilters, type StudioFilter, type Window, isLandscapeCatalog, knownCatalogLength, knownPageLength, learnListLength, metaToBaseItem, rememberImages, servedOrder, showLandscape, warmCatalogLengths } from './items';
 import { getCatalogs, requiresGenre, viewIdFor, viewTypeFor, type CatalogRef } from './views';
 import { viewerAccountOwner, viewerReadsExtensions } from './viewer';
-import { profileTags } from './profiles';
+import { profileHiddenTags, profileTags } from './profiles';
 import { walkRecords } from './walkRecords';
 import { findFolder, folderLayout, subFolders, type CollectionDraft, type FolderDraft, type SourceDraft } from '../collectionBuilder/types';
+import { tagsAllow } from '../collectionBuilder/tagScope';
 import { FOLDER_MERGE_MODE, mergeModeOf, type MergeMode } from '../collectionBuilder/mergeModes';
 import { mergedDedupKey, shuffleMetas } from '../../utils/mergedCatalog';
 
@@ -25,13 +26,9 @@ export function animatedPosterOf(folder: FolderDraft): string | undefined {
   return folder.focusGifEnabled !== false ? imageOf(folder.focusGifUrl) : undefined;
 }
 
-/** An entry with tags is for the users holding one of them; the unrestricted user sees every entry. */
+/** A collection is listed as a catalog would be, by the tags the user is shown and the ones hidden from them. */
 export function entryVisible(entry: any, config: any): boolean {
-  const wanted = Array.isArray(entry?.tags) ? entry.tags.filter(Boolean) : [];
-  if (!wanted.length) return true;
-  const held = new Set(profileTags(config).map((t) => t.toLowerCase()));
-  if (!held.size) return true;
-  return wanted.some((t: string) => held.has(String(t).toLowerCase()));
+  return tagsAllow({ show: profileTags(config), hide: profileHiddenTags(config) }, entry?.tags);
 }
 
 export function builderCollections(config: any): CollectionDraft[] {

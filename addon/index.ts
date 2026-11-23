@@ -465,6 +465,16 @@ function tagQueryOf(req) {
   return Array.isArray(req.viewerTags) && req.viewerTags.length > 0 ? req.viewerTags : req.query.tag;
 }
 
+// Hidden tags come only from a household user, never from the install URL.
+function hiddenTagsOf(req) {
+  return Array.isArray(req.viewerHiddenTags) ? req.viewerHiddenTags : [];
+}
+
+function setViewerTags(req, profile) {
+  req.viewerTags = profile.tags;
+  req.viewerHiddenTags = profile.hiddenTags;
+}
+
 function refuseUnknownViewer(res, area, userUUID, name, level = 'info') {
   const line = `[${area}] Unknown viewer "${String(name).slice(0, 64)}" for ${userUUID}`;
   if (level === 'debug') consola.debug(line);
@@ -540,6 +550,9 @@ const respond = function (req, res, data, opts?) {
       // follows the profiles that were actually built rather than the raw query.
       if (Array.isArray(req.manifestTags) && req.manifestTags.length > 0) {
         etagContent += ':tags:' + req.manifestTags.map((t) => t.toLowerCase()).join(',');
+      }
+      if (Array.isArray(req.manifestHiddenTags) && req.manifestHiddenTags.length > 0) {
+        etagContent += ':hidden:' + req.manifestHiddenTags.map((t) => t.toLowerCase()).join(',');
       }
 
       const etagHash = crypto.createHash('md5').update(etagContent).digest('hex');
@@ -4832,12 +4845,13 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
             res.setHeader('Access-Control-Allow-Headers', '*');
             return refuseUnknownViewer(res, 'Manifest', userUUID, req.query.viewer);
         }
-        if (profile) req.viewerTags = profile.tags;
+        if (profile) setViewerTags(req, profile);
         // Only which catalogs are listed follows the user's accounts; the rest is the stored config's.
         const viewerConfig = profile?.id ? scopeConfigToProfile(config, userUUID, profile.id) : undefined;
 
         const { tags, unknown: unknownTags } = resolveManifestTags(config, tagQueryOf(req));
         req.manifestTags = tags;
+        req.manifestHiddenTags = hiddenTagsOf(req);
         // The cap itself applies to catalog and search requests, not to the manifest.
         // It is resolved here anyway so an install URL can be checked before it is used.
         const installFilters = resolveInstallFilters(config, {
@@ -4855,7 +4869,7 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
         if (unknownTags.length > 0) {
             consola.warn(`[Manifest] User ${userUUID} asked for ${unknownTags.join(', ')}, which no catalog is tagged with`);
         }
-        const manifest = await getManifest(config, { tags, userUUID, ...(viewerConfig ? { viewerConfig } : {}) });
+        const manifest = await getManifest(config, { tags, hiddenTags: hiddenTagsOf(req), userUUID, ...(viewerConfig ? { viewerConfig } : {}) });
             if (!manifest) {
                 res.setHeader('Access-Control-Allow-Origin', '*');
                 res.setHeader('Access-Control-Allow-Headers', '*');
@@ -4949,8 +4963,7 @@ const catalogRoute = async function (req, res) {
     const { collectionCatalogMetas, isCollectionCatalogId } = require('./lib/collectionBuilder/aiostreamsCollections');
     if (isCollectionCatalogId(id)) {
       const skip = parseInt(new URLSearchParams(extra || '').get('skip') || '0', 10) || 0;
-      const tags = requestTags;
-      const metas = await collectionCatalogMetas(userUUID, config, tags, id, skip);
+      const metas = await collectionCatalogMetas(userUUID, config, { show: requestTags, hide: hiddenTagsOf(req) }, id, skip);
       if (!metas) return res.status(404).send({ error: "Collection not found" });
       req.userConfig = config;
       return respond(req, res, { metas: await withCatalogCriticRatings(metas, config, req) });
@@ -5638,7 +5651,7 @@ const viewerCatalogRoute = async function (req, res) {
   if (profile === undefined) return refuseUnknownViewer(res, 'Catalog', userUUID, named, 'debug');
   if (!profile) return catalogRoute(req, res);
 
-  req.viewerTags = profile.tags;
+  setViewerTags(req, profile);
   if (!profile.id) return catalogRoute(req, res);
 
   const { accountOwner, servesCatalog } = require('./lib/accounts');
@@ -5696,10 +5709,10 @@ const metaRoute = async function (req, res) {
       const { profileForViewer, scopeConfigToProfile } = require('./lib/jellyfin/profiles');
       const profile = profileForViewer(config, userUUID, req.query.viewer);
       if (profile === undefined) return refuseUnknownViewer(res, 'Meta', userUUID, req.query.viewer, 'debug');
-      if (profile) req.viewerTags = profile.tags;
+      if (profile) setViewerTags(req, profile);
       const viewerConfig = profile?.id ? withViewerAccounts(config, scopeConfigToProfile(config, userUUID, profile.id)) : config;
       const { tags } = resolveManifestTags(config, tagQueryOf(req));
-      const meta = await collectionMeta(userUUID, viewerConfig, tags, stremioId);
+      const meta = await collectionMeta(userUUID, viewerConfig, { show: tags, hide: hiddenTagsOf(req) }, stremioId);
       if (!meta) return res.status(404).send({ error: "Collection not found" });
       req.userConfig = config;
       return respond(req, res, { meta });

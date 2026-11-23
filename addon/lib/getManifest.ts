@@ -13,6 +13,7 @@ import catalogTypesJson from "../static/catalog-types.json";
 import { PLAYBACK_MANIFEST_EVENTS, WATCH_STATE_PUSH_EVENTS, WATCH_STATE_VERSION } from "./playbackHandler";
 import { watchStatePullTtl } from "./watchState";
 import { collectionCatalogs, collectionsServed, COLLECTION_CATALOG_PREFIX, COLLECTION_META_PREFIX } from "./collectionBuilder/aiostreamsCollections";
+import { tagsAllow, type TagScope } from "./collectionBuilder/tagScope";
 import { configCatalogFor, placeCollections } from "./collectionBuilder/homeOrder";
 import { similarCatalogs } from "./similarCatalog";
 import { holderCards, rowOwner, servesCatalog, withAccountOwner } from "./accounts";
@@ -922,7 +923,7 @@ async function lumiereGenreOptions(): Promise<Record<'movie' | 'series', string[
   }
 }
 
-async function getManifest(config: any, opts: { tags?: string[]; userUUID?: string; viewerConfig?: any } = {}): Promise<any> {
+async function getManifest(config: any, opts: { tags?: string[]; hiddenTags?: string[]; userUUID?: string; viewerConfig?: any } = {}): Promise<any> {
   const startTime = Date.now();
   logger.start('Starting manifest generation...');
 
@@ -935,12 +936,14 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
   // Already resolved to their stored casing by resolveManifestTags. A catalog carrying
   // any one of them is in, so several profiles install as a single addon.
   const tags = Array.isArray(opts.tags) ? opts.tags.filter(Boolean) : [];
-  const tagSet = new Set(tags.map((t: string) => t.toLowerCase()));
+  // A household user's hidden tags keep out whatever carries them, whatever else it carries.
+  const hiddenTags = Array.isArray(opts.hiddenTags) ? opts.hiddenTags.filter(Boolean) : [];
+  const tagScope: TagScope = { show: tags, hide: hiddenTags };
   const jikanEnabled = jikan.isJikanEnabled();
   // A named household user is listed what their own accounts serve; nothing else reads their config.
   const servedBy = opts.viewerConfig ?? config;
   const enabledCatalogs = userCatalogs.filter((c: any) =>
-    c.enabled && servesCatalog(servedBy, c) && (jikanEnabled || !jikan.isJikanCatalogId(c.id)) && (tagSet.size === 0 || rowOwner(c) || (Array.isArray(c.tags) && c.tags.some((t: any) => tagSet.has(String(t).toLowerCase()))))
+    c.enabled && servesCatalog(servedBy, c) && (jikanEnabled || !jikan.isJikanCatalogId(c.id)) && tagsAllow({ show: rowOwner(c) ? [] : tags, hide: hiddenTags }, c.tags)
   );
 
   // Absorbed merge sources must be built (even if disabled) so their genres feed the parent.
@@ -1662,9 +1665,8 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
     const searchTags: Record<string, string[]> = config.search?.tags && typeof config.search.tags === 'object' ? config.search.tags : {};
     const searchIsTagged = Object.values(searchTags).some((list) => Array.isArray(list) && list.length > 0);
     const searchCarriesTag = (searchId: string): boolean => {
-      if (tagSet.size === 0 || !searchIsTagged) return true;
-      const own = Array.isArray(searchTags[searchId]) ? searchTags[searchId] : [];
-      return own.some((t) => tagSet.has(String(t).toLowerCase()));
+      if (!searchIsTagged) return true;
+      return tagsAllow(tagScope, searchTags[searchId]);
     };
 
     searchCatalogConfigs
@@ -1742,7 +1744,7 @@ async function getManifest(config: any, opts: { tags?: string[]; userUUID?: stri
     config,
     catalogs,
     (catalog: any) => configCatalogFor(config, catalog),
-    collectionCatalogs(config, tags),
+    collectionCatalogs(config, tagScope),
     (catalog: any) => catalog.id.slice(COLLECTION_CATALOG_PREFIX.length)
   );
   catalogs.push(...similarCatalogs(config));
