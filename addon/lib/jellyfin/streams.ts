@@ -653,18 +653,21 @@ function buildMediaStreams(playable: PlayableStream): any[] {
 
 export function mediaSourceFor(
   playable: PlayableStream,
-  runtimeTicks: number | null
+  runtimeTicks: number | null,
+  { live = false }: { live?: boolean } = {}
 ): any {
-  fileOf.set(
-    playable.url,
-    {
-      subtitles: playable.subtitles,
-      hints: { videoHash: playable.videoHash, videoSize: playable.size, filename: playable.filename },
-    },
-    { ttl: subtitleTtlMs() }
-  );
-  rememberRelease(playable.id, playable.release);
-  return {
+  if (!live) {
+    fileOf.set(
+      playable.url,
+      {
+        subtitles: playable.subtitles,
+        hints: { videoHash: playable.videoHash, videoSize: playable.size, filename: playable.filename },
+      },
+      { ttl: subtitleTtlMs() }
+    );
+    rememberRelease(playable.id, playable.release);
+  }
+  const source = {
     Protocol: 'Http',
     Id: playable.id,
     Path: playable.url,
@@ -706,6 +709,7 @@ export function mediaSourceFor(
     DefaultSubtitleStreamIndex: null,
     HasSegments: false,
   };
+  return live ? { ...source, IsInfiniteStream: true, RunTimeTicks: undefined, Container: playable.container || 'ts' } : source;
 }
 
 export function runtimeTicksFrom(meta: any): number | null {

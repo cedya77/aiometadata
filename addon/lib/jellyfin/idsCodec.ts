@@ -11,7 +11,7 @@ const NONE16 = 0xffff;
 const MAX48 = 2 ** 48 - 1;
 
 export type PackableKind = 'movie' | 'series' | 'season' | 'episode';
-export type HashedKind = 'view' | 'genre' | 'person' | 'studio' | 'collection' | 'boxset' | 'marker' | 'playlist' | 'playlists';
+export type HashedKind = 'view' | 'genre' | 'person' | 'studio' | 'collection' | 'boxset' | 'marker' | 'playlist' | 'playlists' | 'channel' | 'livetv';
 export type JellyfinKind = PackableKind | HashedKind;
 
 export type Descriptor =
@@ -29,7 +29,15 @@ export type Descriptor =
   | { k: 'marker'; i: string }
   /** A user's playlist, and the folder that lists them. */
   | { k: 'playlist'; p: string }
-  | { k: 'playlists' };
+  | { k: 'playlists' }
+  | { k: 'channel'; t: string; i: string }
+  | { k: 'livetv' };
+
+export interface ProgramRef {
+  t: string;
+  i: string;
+  at: number;
+}
 
 const KIND_CODES: Record<PackableKind, number> = {
   movie: 1,
@@ -271,6 +279,10 @@ export function canonicalDescriptor(d: Descriptor): string {
       return `playlist|${d.p}`;
     case 'playlists':
       return 'playlists';
+    case 'channel':
+      return `channel|${d.t}|${d.i}`;
+    case 'livetv':
+      return 'livetv';
   }
 }
 
@@ -311,9 +323,28 @@ export function hashJellyfinId(d: Descriptor): string {
   if (held) return held;
   const hash = createHash('md5').update(canonical).digest();
   hash[0] = HASHED;
+  if (d.k === 'channel') hash.fill(0, 12);
   const id = hash.toString('hex');
   hashedIds.set(canonical, id);
   return id;
+}
+
+const PROGRAM = 0xc4;
+const PROGRAM_PREFIX = PROGRAM.toString(16);
+const HASHED_PREFIX = HASHED.toString(16);
+
+export function packProgramId(ref: ProgramRef): string | null {
+  if (!Number.isInteger(ref.at) || ref.at < 0 || ref.at > 0xffffffff) return null;
+  const channel = hashJellyfinId({ k: 'channel', t: ref.t, i: ref.i });
+  const at = Buffer.alloc(4);
+  at.writeUInt32BE(ref.at);
+  return `${PROGRAM_PREFIX}${channel.slice(2, 24)}${at.toString('hex')}`;
+}
+
+export function unpackProgramId(raw: string): { channel: string; at: number } | null {
+  const id = normaliseJellyfinId(raw);
+  if (!/^[0-9a-f]{32}$/.test(id) || !id.startsWith(PROGRAM_PREFIX)) return null;
+  return { channel: `${HASHED_PREFIX}${id.slice(2, 24)}00000000`, at: parseInt(id.slice(24), 16) };
 }
 
 export function isHashedJellyfinId(id: string): boolean {

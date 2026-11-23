@@ -6,12 +6,15 @@ import { envInt } from '../../utils/envNumber';
 import {
   CODEC_VERSION,
   Descriptor,
+  ProgramRef,
   canonicalMediaType,
   hashJellyfinId,
   isHashedJellyfinId,
   normaliseJellyfinId,
   packJellyfinId,
+  packProgramId,
   unpackJellyfinId,
+  unpackProgramId,
 } from './idsCodec';
 
 const database: any = require('../database');
@@ -97,6 +100,26 @@ export async function decodeJellyfinId(raw: string): Promise<Descriptor | null> 
   }
 
   return null;
+}
+
+export type ProgramDescriptor = { k: 'program' } & ProgramRef;
+
+export async function decodeProgramId(raw: string): Promise<ProgramDescriptor | null> {
+  const packed = unpackProgramId(raw);
+  if (!packed) return null;
+  const channel = await decodeJellyfinId(packed.channel);
+  if (!channel || channel.k !== 'channel') return null;
+  return { k: 'program', t: channel.t, i: channel.i, at: packed.at };
+}
+
+export async function decodeLiveId(raw: string): Promise<Descriptor | ProgramDescriptor | null> {
+  return unpackProgramId(raw) ? decodeProgramId(raw) : decodeJellyfinId(raw);
+}
+
+export function encodeProgramId(ref: ProgramRef): string | null {
+  const packed = packProgramId(ref);
+  if (packed) encodeJellyfinId({ k: 'channel', t: ref.t, i: ref.i });
+  return packed;
 }
 
 export async function flushPendingJellyfinIds(): Promise<void> {

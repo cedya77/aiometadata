@@ -233,6 +233,20 @@ A user held to an age rating cannot create or join a group, since the group's qu
 
 **The same release.** Each member gets its streams from its own stream addon, so two members can be offered different releases of a title. A release with a longer intro, an extended cut or a 25 fps file plays out of step with the others, however well the group is kept in time. So in a group, the release of the first member to open or play the title is listed first for the others when their addon offers it. **Match releases in SyncPlay groups** in the Jellyfin tab turns this off for a configuration. Nothing is hidden: a member can still pick another version, at the cost of drifting from the group.
 
+## Live TV
+
+Live TV shows the channels of the configuration's playback addon, the one under **Playback addon URL**, in Jellyfin's Live TV section. A profile with its own playback addon gets that addon's channels. Nothing has to be switched on: Live TV appears for a profile once its playback addon lists live catalogs. A catalog is live when its type is `tv`, or when it takes the `date` extra and the addon's manifest sets `behaviorHints.epgProvider`, as Stremio defines a guide. AIOStreams' IPTV sources follow these conventions; its [addon protocol page](https://github.com/Viren070/AIOStreams/blob/main/packages/docs/content/docs/reference/addon-protocol/live-tv.mdx) describes them for addon authors.
+
+- **Channels** are listed in the addon's order, one live catalog after another. Each carries the addon's `channelNumber`, or else its place in that list, and its logo. A channel from a catalog with a guide shows what is on now. Lists stop at 40 pages per catalog.
+- **Favourites.** Mark a channel as a favourite to filter by favourites or list them first. Users that share history share their channel favourites, as they share the watchlist. Channel favourites are not part of the watch history export.
+- **Nothing is recorded.** Watching a channel sends nothing to any tracker and adds nothing to Continue Watching, the played marks, the dashboard or the year review.
+- **Limits.** A user held to an age rating gets no Live TV, since channels carry no rating. Viewing hours apply to channels as to titles, and channels cannot be downloaded.
+- **Playback.** Streams are played directly from the addon, as titles are. A client that cannot play a channel's format, such as raw MPEG-TS in a browser, shows its own playback error.
+- **Not offered:** channel groups, recordings, timers, tuners, M3U playlists and XMLTV guides. The guide and programme pages are empty for now.
+- **AIOStreams' apps** show Live TV from this server too, with every channel in one list.
+
+`JELLYFIN_LIVETV_ENABLED` turns Live TV off for every configuration.
+
 ## AIOMetadata inside AIOStreams' Jellyfin server
 
 AIOStreams has a Jellyfin server of its own. In that setup the client signs in to AIOStreams, not to this addon, and AIOMetadata is one of the addons installed in it, supplying the catalogs and title pages. Nothing in this guide's sign-in, users or shelves sections applies then; AIOStreams builds those. What AIOMetadata still does is the tracking, through two resources it declares in its manifest once **It counts as watched** in the **Watch Tracking** tab is set to **When it's finished**, with **Jellyfin apps** on:
@@ -286,6 +300,7 @@ All of these are in the dashboard under **Server**, or as environment variables,
 | `JELLYFIN_QUICK_CONNECT_TTL` (env) | `600` | How long a Quick Connect code is valid. |
 | `JELLYFIN_CATALOG_MIN_PAGE` | `10` | A catalog page shorter than this is the last one, so short lists are not asked for pages they do not have. |
 | `JELLYFIN_SHELF_META_CONCURRENCY` | `4` | Titles the Continue Watching and Next Up shelves fetch metadata for at once. A cold anime title costs several requests, and MyAnimeList blocks a burst. |
+| `JELLYFIN_LIVETV_ENABLED` | `true` | Show each playback addon's live channels as Live TV. Off hides Live TV everywhere. |
 | `JELLYFIN_SYNCPLAY_ENABLED` | `true` | Offer SyncPlay to the apps that support it. Off hides it in those apps. |
 | `JELLYFIN_SYNCPLAY_SCOPE` | `configuration` | Who sees a SyncPlay group: the users of the configuration that started it, or with `instance` everyone on this instance. |
 | `JELLYFIN_SYNCPLAY_MAX_GROUPS` | `1000` | The most SyncPlay groups held at once; creating one past it is refused until another ends. |

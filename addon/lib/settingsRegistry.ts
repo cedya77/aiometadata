@@ -1580,6 +1580,15 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     default: true,
   },
   {
+    key: 'JELLYFIN_LIVETV_ENABLED',
+    envVar: 'JELLYFIN_LIVETV_ENABLED',
+    label: 'Jellyfin Live TV',
+    description: "Shows the live channels of each configuration's playback addon as Live TV in Jellyfin apps. Off hides Live TV everywhere.",
+    category: 'Features',
+    type: 'boolean',
+    default: true,
+  },
+  {
     key: 'JELLYFIN_SYNCPLAY_SCOPE',
     envVar: 'JELLYFIN_SYNCPLAY_SCOPE',
     label: 'Jellyfin SyncPlay Groups',
