@@ -2,13 +2,16 @@
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { normaliseJellyfinId } from '../idsCodec';
 import { liveTvReady, type GateDeps, type LiveTv } from './gate';
-import { airingAt, programmesFor } from './guide';
-import { channelItem, type ItemDeps } from './items';
+import { airingAt, caughtUp, filterProgrammes, guideRange, programmesFor, programmeTarget, type GuideItem } from './guide';
+import { channelItem, programItem, type ItemDeps } from './items';
 import { GONE, listChannels, placementFor, type ListedChannel } from './lineup';
+import { askOf, field, flag, integer, listOf, timeOf, type Ask } from './query';
 
-const DAY_MS = 86400000;
-const GUIDE_DAYS_AHEAD = 7;
+export { field, flag };
+
 const DEFAULT_LIMIT = 100;
+const PROGRAMME_CHANNELS = 100;
+const PROGRAMME_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_LIMIT = 500;
 
 export interface LiveTvDeps extends GateDeps, ItemDeps {
@@ -32,27 +35,6 @@ export interface Answer {
 }
 
 export const NOT_FOUND: Answer = { status: 404, body: { Message: 'Item not found' } };
-
-export function field(req: any, name: string): any {
-  const wanted = name.toLowerCase();
-  for (const source of [req?.query, req?.body]) {
-    if (!source || typeof source !== 'object') continue;
-    const key = Object.keys(source).find((k) => k.toLowerCase() === wanted);
-    if (key !== undefined) return source[key];
-  }
-  return undefined;
-}
-
-export function flag(value: unknown): boolean | undefined {
-  if (value === true || value === false) return value;
-  const text = String(value ?? '').trim().toLowerCase();
-  return text === 'true' ? true : text === 'false' ? false : undefined;
-}
-
-const integer = (value: unknown, fallback: number): number => {
-  const n = Math.floor(Number(value));
-  return Number.isFinite(n) ? n : fallback;
-};
 
 export const userOf = (req: any): string => req.jellyfin?.userUUID ?? req.params?.userUUID;
 export const channelKeyOf = (meta: { type: string; id: string }): string => `${meta.type}|${meta.id}`;
@@ -145,9 +127,58 @@ export async function channelById(deps: LiveTvDeps, req: any, live: LiveTv, conf
   return { status: 200, body: item };
 }
 
-export function guideInfo(now: number): { StartDate: string; EndDate: string } {
-  const today = Math.floor(now / DAY_MS) * DAY_MS;
-  return { StartDate: new Date(today).toISOString(), EndDate: new Date(today + GUIDE_DAYS_AHEAD * DAY_MS).toISOString() };
+export function guideInfo(manifest: any, now: number): { StartDate: string; EndDate: string } {
+  const range = guideRange(manifest, now);
+  return { StartDate: new Date(range.start).toISOString(), EndDate: new Date(range.end).toISOString() };
+}
+
+async function programmeChannels(deps: LiveTvDeps, live: LiveTv, ask: Ask): Promise<ListedChannel[]> {
+  const asked = listOf(ask('ChannelIds'));
+  if (!asked.length) return (await listChannels(deps.addon, live.base, live.catalogs, { startIndex: 0, limit: PROGRAMME_CHANNELS })).channels;
+  const descriptors = await Promise.all(asked.map((id) => deps.decodeLiveId(id)));
+  const placements = await Promise.all(
+    descriptors.map((d) => (d?.k === 'channel' ? placementFor(deps.addon, live.base, live.catalogs, { type: d.t, id: d.i }) : null))
+  );
+  const channels: ListedChannel[] = [];
+  for (const placement of placements) {
+    if (placement && placement !== GONE) channels.push({ meta: placement.meta, number: placement.number });
+  }
+  return channels;
+}
+
+export async function programmesAround(deps: LiveTvDeps, live: LiveTv, channels: ListedChannel[], ask: Ask, now: number): Promise<GuideItem[]> {
+  const range = guideRange(live.manifest, now);
+  const from = Math.max(range.start, timeOf(ask('MinStartDate')) ?? timeOf(ask('MinEndDate')) ?? now);
+  const to = Math.min(range.end, timeOf(ask('MaxStartDate')) ?? timeOf(ask('MaxEndDate')) ?? now + PROGRAMME_WINDOW_MS);
+  if (!channels.length || from >= to) return [];
+  const found = await programmesFor(deps.addon, live.base, live.catalogs, channels.map((c) => c.meta), from, to + 1);
+  const items: GuideItem[] = [];
+  for (const channel of channels) {
+    for (const programme of found.get(channelKeyOf(channel.meta)) ?? []) items.push({ channel, programme });
+  }
+  return items;
+}
+
+export function programItems(deps: LiveTvDeps, req: any, items: GuideItem[], now: number, images = false): any[] {
+  const serverId = deps.serverIdFor(userOf(req));
+  return items.map(({ channel, programme }) =>
+    programItem(deps, serverId, channel, programme, { images, catchup: caughtUp(channel.meta, programme.start, now) })
+  );
+}
+
+async function programmePage(deps: LiveTvDeps, req: any, live: LiveTv, ask: Ask): Promise<any> {
+  const now = deps.now();
+  const channels = await programmeChannels(deps, live, ask);
+  const { items, total } = filterProgrammes(await programmesAround(deps, live, channels, ask, now), ask, now);
+  return deps.itemList(programItems(deps, req, items, now), total, Math.max(0, integer(ask('StartIndex'), 0)));
+}
+
+export async function programmeById(deps: LiveTvDeps, req: any, live: LiveTv, descriptor: any): Promise<Answer> {
+  if (descriptor?.k !== 'program') return NOT_FOUND;
+  const target = await programmeTarget(deps.addon, live.base, live.catalogs, descriptor);
+  if (!target?.programme) return NOT_FOUND;
+  const [item] = programItems(deps, req, [{ channel: target.channel, programme: target.programme }], deps.now(), true);
+  return { status: 200, body: item };
 }
 
 type LiveHandler = (req: any, res: any, live: LiveTv, config: any) => Promise<void> | void;
@@ -178,8 +209,8 @@ export function registerLiveTv(router: any, deps: LiveTvDeps): void {
     });
   }));
 
-  router.get('/LiveTv/GuideInfo', gated(deps, (_req, res) => {
-    res.json(guideInfo(deps.now()));
+  router.get('/LiveTv/GuideInfo', gated(deps, (_req, res, live) => {
+    res.json(guideInfo(live.manifest, deps.now()));
   }));
 
   router.get('/LiveTv/Channels', gated(deps, async (req, res, live, config) => {
@@ -191,7 +222,22 @@ export function registerLiveTv(router: any, deps: LiveTvDeps): void {
     res.status(answer.status).json(answer.body);
   }));
 
-  router.post('/LiveTv/Programs', gated(deps, (_req, res) => {
-    res.json(deps.itemList([], 0, 0));
+  router.get('/LiveTv/Programs/Recommended', gated(deps, async (req, res, live) => {
+    const ask = askOf(req);
+    const byStart: Ask = (name) => (/^sort(by|order)$/i.test(name) ? undefined : ask(name));
+    res.json(await programmePage(deps, req, live, byStart));
+  }));
+
+  router.get('/LiveTv/Programs', gated(deps, async (req, res, live) => {
+    res.json(await programmePage(deps, req, live, askOf(req)));
+  }));
+
+  router.post('/LiveTv/Programs', gated(deps, async (req, res, live) => {
+    res.json(await programmePage(deps, req, live, askOf(req)));
+  }));
+
+  router.get('/LiveTv/Programs/:programId', gated(deps, async (req, res, live) => {
+    const answer = await programmeById(deps, req, live, await deps.decodeLiveId(req.params.programId));
+    res.status(answer.status).json(answer.body);
   }));
 }

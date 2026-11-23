@@ -238,12 +238,15 @@ A user held to an age rating cannot create or join a group, since the group's qu
 Live TV shows the channels of the configuration's playback addon, the one under **Playback addon URL**, in Jellyfin's Live TV section. A profile with its own playback addon gets that addon's channels. Nothing has to be switched on: Live TV appears for a profile once its playback addon lists live catalogs. A catalog is live when its type is `tv`, or when it takes the `date` extra and the addon's manifest sets `behaviorHints.epgProvider`, as Stremio defines a guide. AIOStreams' IPTV sources follow these conventions; its [addon protocol page](https://github.com/Viren070/AIOStreams/blob/main/packages/docs/content/docs/reference/addon-protocol/live-tv.mdx) describes them for addon authors.
 
 - **Channels** are listed in the addon's order, one live catalog after another. Each carries the addon's `channelNumber`, or else its place in that list, and its logo. A channel from a catalog with a guide shows what is on now. Lists stop at 40 pages per catalog.
+- **Guide.** A catalog with a guide fills the Guide, Programs and Recommended tabs, with each programme's title, description, times and genres; movie, news, kids and sports marks come from the genres. The guide runs to 7 days ahead, and back as many days as the manifest's `behaviorHints.catchupDays` declares, at most 14. An addon that leaves that out gets a guide that starts today.
+- **Catch-up.** A programme on a channel that declares `behaviorHints.catchupDays` plays from its start when it began within those days. Any other programme plays its channel live.
+- **Search** finds channels by every word of their name, across the first 5,000 channels and through the search of each catalog that offers one; an exact channel number comes first. Programme searches match titles airing in the next 24 hours.
 - **Favourites.** Mark a channel as a favourite to filter by favourites or list them first. Users that share history share their channel favourites, as they share the watchlist. Channel favourites are not part of the watch history export.
 - **Nothing is recorded.** Watching a channel sends nothing to any tracker and adds nothing to Continue Watching, the played marks, the dashboard or the year review.
 - **Limits.** A user held to an age rating gets no Live TV, since channels carry no rating. Viewing hours apply to channels as to titles, and channels cannot be downloaded.
 - **Playback.** Streams are played directly from the addon, as titles are. A client that cannot play a channel's format, such as raw MPEG-TS in a browser, shows its own playback error.
-- **Not offered:** channel groups, recordings, timers, tuners, M3U playlists and XMLTV guides. The guide and programme pages are empty for now.
-- **AIOStreams' apps** show Live TV from this server too, with every channel in one list.
+- **Not offered:** channel groups, recordings, timers, tuners, M3U playlists and XMLTV guides.
+- **AIOStreams' apps** show Live TV from this server too, with their guide when a catalog has one, catch-up marks on programmes that play from their start, and every channel in one list.
 
 `JELLYFIN_LIVETV_ENABLED` turns Live TV off for every configuration.
 

@@ -242,6 +242,11 @@ export async function listChannels(
   return { channels, total: list.finished ? list.entries.length : list.entries.length + 1 };
 }
 
+export async function listPlacements(addon: LineupAddon, base: string, catalogs: LiveCatalog[], limit: number): Promise<Placement[]> {
+  const list = await walk(addon, base, catalogs, (l) => l.entries.length >= limit);
+  return list.entries.slice(0, limit);
+}
+
 export async function placementFor(
   addon: LineupAddon,
   base: string,

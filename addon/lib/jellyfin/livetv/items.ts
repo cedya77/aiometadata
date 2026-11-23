@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import type { Descriptor, ProgramRef } from '../idsCodec';
-import type { Programme } from './guide';
+import { flagsOf, type Programme } from './guide';
 import type { ListedChannel } from './lineup';
 
 const TICKS_PER_MS = 10000;
@@ -9,7 +9,7 @@ const TICKS_PER_MS = 10000;
 export interface ItemDeps {
   encodeId(d: Descriptor): string;
   encodeProgramId(ref: ProgramRef): string | null;
-  rememberImages(scope: string, itemId: string, images: { primary?: string }): void;
+  rememberImages(scope: string, itemId: string, images: { primary?: string; backdrop?: string }): void;
   imageTag(url: string): string;
   placeholderMediaSource(id: string, name: string): any;
   collectionFolder(id: string, serverId: string, name: string, collectionType: string | null, childCount: number | null): any;
@@ -23,8 +23,9 @@ export function liveTvViewId(deps: Pick<ItemDeps, 'encodeId'>): string {
   return viewId;
 }
 
-export function liveTvView(deps: ItemDeps, serverId: string): any {
-  return { ...deps.collectionFolder(liveTvViewId(deps), serverId, 'Live TV', 'livetv', null), Type: 'UserView' };
+export function liveTvView(deps: ItemDeps, serverId: string, { guide = false }: { guide?: boolean } = {}): any {
+  const view = { ...deps.collectionFolder(liveTvViewId(deps), serverId, 'Live TV', 'livetv', null), Type: 'UserView' };
+  return guide ? { ...view, aiostreams: { guide: true } } : view;
 }
 
 export const channelIdOf = (deps: Pick<ItemDeps, 'encodeId'>, channel: ListedChannel): string =>
@@ -67,13 +68,20 @@ export function channelItem(
   return item;
 }
 
-export function programItem(deps: ItemDeps, serverId: string, channel: ListedChannel, programme: Programme): any {
+export function programItem(
+  deps: ItemDeps,
+  serverId: string,
+  channel: ListedChannel,
+  programme: Programme,
+  { images = false, catchup = false }: { images?: boolean; catchup?: boolean } = {}
+): any {
   const channelId = channelIdOf(deps, channel);
   const image = imageOf(channel);
+  const id = deps.encodeProgramId({ t: channel.meta.type, i: channel.meta.id, at: Math.floor(programme.start / 1000) });
   const item: any = {
     Name: programme.title,
     ServerId: serverId,
-    Id: deps.encodeProgramId({ t: channel.meta.type, i: channel.meta.id, at: Math.floor(programme.start / 1000) }),
+    Id: id,
     Type: 'Program',
     MediaType: 'Video',
     IsFolder: false,
@@ -89,5 +97,21 @@ export function programItem(deps: ItemDeps, serverId: string, channel: ListedCha
   if (programme.overview) item.Overview = programme.overview;
   if (channel.number) item.ChannelNumber = channel.number;
   if (image) item.ChannelPrimaryImageTag = deps.imageTag(image);
+  Object.assign(item, flagsOf(programme));
+  if (programme.genres) item.Genres = programme.genres;
+  if (programme.season !== undefined) item.ParentIndexNumber = programme.season;
+  if (programme.episode !== undefined) item.IndexNumber = programme.episode;
+  const people = [
+    ...(programme.cast ?? []).map((name) => ({ Name: name, Type: 'Actor' })),
+    ...(programme.directors ?? []).map((name) => ({ Name: name, Type: 'Director' })),
+  ];
+  if (people.length) item.People = people;
+  if (programme.imdbId) item.ProviderIds = { Imdb: programme.imdbId };
+  if (catchup) item.aiostreams = { catchup: true };
+  if (images && id && (programme.image || programme.background)) {
+    deps.rememberImages(serverId, id, { primary: programme.image, backdrop: programme.background });
+    if (programme.image) item.ImageTags = { Primary: deps.imageTag(programme.image) };
+    if (programme.background) item.BackdropImageTags = [deps.imageTag(programme.background)];
+  }
   return item;
 }
