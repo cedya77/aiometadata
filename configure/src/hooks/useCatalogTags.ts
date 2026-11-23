@@ -2,7 +2,7 @@
 // Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { useMemo, useCallback } from 'react';
 import { useConfig } from '@/contexts/ConfigContext';
-import { MAX_TAG_NAME_LENGTH, type CatalogConfig, type TagDef, type TagColorKey } from '@/contexts/config';
+import { MAX_TAG_NAME_LENGTH, type CatalogConfig, type JellyfinUser, type TagDef, type TagColorKey } from '@/contexts/config';
 import { nextTagColor } from '@/lib/tagColors';
 
 const catalogKey = (c: CatalogConfig) => `${c.id}-${c.type}`;
@@ -21,6 +21,27 @@ const mapSearchTags = (
   }
   return Object.keys(out).length ? out : undefined;
 };
+
+/** A person's shown and hidden tags with `fn` applied, keeping an emptied list unset as the editor does. */
+function mapPeopleTags<T extends { jellyfinUserTags?: string[]; jellyfinUserHiddenTags?: string[]; jellyfinUsers?: JellyfinUser[] }>(
+  prev: T,
+  fn: (list: string[]) => string[]
+): Pick<T, 'jellyfinUserTags' | 'jellyfinUserHiddenTags' | 'jellyfinUsers'> {
+  const main = (list: string[] | undefined) => {
+    if (!list?.length) return list;
+    const next = fn(list);
+    return next.length ? next : undefined;
+  };
+  return {
+    jellyfinUserTags: main(prev.jellyfinUserTags),
+    jellyfinUserHiddenTags: main(prev.jellyfinUserHiddenTags),
+    jellyfinUsers: prev.jellyfinUsers?.map((user) => ({
+      ...user,
+      tags: fn(user.tags ?? []),
+      ...(user.hiddenTags ? { hiddenTags: fn(user.hiddenTags) } : {}),
+    })),
+  };
+}
 
 type TagFilters = Partial<Pick<TagDef, 'ageRating' | 'allowUnratedContent'>>;
 
@@ -71,6 +92,7 @@ export function useCatalogTags() {
             : c
         ),
         search: { ...prev.search, tags: mapSearchTags(prev.search?.tags, list => list.map(t => (sameTag(t, oldName) ? clean : t))) },
+        ...mapPeopleTags(prev, list => list.map(t => (sameTag(t, oldName) ? clean : t))),
       };
     });
   }, [setConfig]);
@@ -104,6 +126,7 @@ export function useCatalogTags() {
         c.tags?.some(t => sameTag(t, name)) ? { ...c, tags: c.tags.filter(t => !sameTag(t, name)) } : c
       ),
       search: { ...prev.search, tags: mapSearchTags(prev.search?.tags, list => list.filter(t => !sameTag(t, name))) },
+      ...mapPeopleTags(prev, list => list.filter(t => !sameTag(t, name))),
     }));
   }, [setConfig]);
 
