@@ -4413,7 +4413,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     const live = await liveItem(req, liveTv, decoded);
     if (live) {
-      res.status(live.status).json(live.body);
+      if (live.status === 200) res.json(live.body);
+      else res.status(live.status).json(live.body);
       return;
     }
     const descriptor: Descriptor = decoded;
