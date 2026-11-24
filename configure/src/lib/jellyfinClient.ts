@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
+import { channelGroups } from './liveTvGroups';
+
 /**
  * Typed by hand on a TV remote as often as pasted, so the alphabet leaves out
  * the characters that are read wrong and the groups keep the place visible.
@@ -26,7 +28,7 @@ export function isManifestUrl(value: string): boolean {
 }
 
 export type ManifestCheck =
-  | { ok: true; name: string; version?: string; streams: boolean }
+  | { ok: true; name: string; version?: string; streams: boolean; groups: string[] }
   | { ok: false };
 
 const MANIFEST_TIMEOUT_MS = 6000;
@@ -49,6 +51,7 @@ export async function checkStreamManifest(url: string, signal?: AbortSignal): Pr
       name: typeof manifest.name === 'string' && manifest.name.trim() ? manifest.name.trim() : 'Addon',
       version: typeof manifest.version === 'string' ? manifest.version : undefined,
       streams,
+      groups: channelGroups(manifest),
     };
   } catch (error) {
     if (signal?.aborted) throw error;

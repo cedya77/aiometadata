@@ -8,6 +8,7 @@ export type UpcomingMode = 'user' | 'caught-up' | 'airing';
 export interface JellyfinServer {
   loaded: boolean;
   enabled: boolean;
+  liveTv: boolean;
   baseUrl: string;
   resolveOnOpen: ResolveOnOpenMode;
   upcomingMode: UpcomingMode;
@@ -36,6 +37,7 @@ export function useJellyfinServer(active = true): JellyfinServer {
   return {
     loaded: isSuccess,
     enabled: Boolean(data?.jellyfinEnabled),
+    liveTv: Boolean(data?.jellyfinLiveTv),
     baseUrl,
     resolveOnOpen: pick(data?.jellyfinResolveOnOpen, ['user', 'always', 'never'] as const, 'user'),
     upcomingMode: pick(data?.jellyfinUpcomingMode, ['user', 'caught-up', 'airing'] as const, 'user'),
