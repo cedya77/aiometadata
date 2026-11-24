@@ -64,5 +64,5 @@ export async function readPage(addon: Pick<AddonDeps, 'fetchJson'>, base: string
   const body = await addon.fetchJson(base, pagePath(catalog, query));
   if (!body) return null;
   const entries = query.date && Array.isArray(body.metasDetailed) ? body.metasDetailed : body.metas;
-  return Array.isArray(entries) ? entries.filter((e: any) => e && typeof e === 'object') : [];
+  return Array.isArray(entries) ? entries.filter((e: any) => e && typeof e === 'object') : null;
 }

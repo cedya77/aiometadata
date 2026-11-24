@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { liveTvFor, liveTvReady, type LiveTv } from './gate';
-import { filterProgrammes, programmeTarget, searchChannels } from './guide';
+import { filterProgrammes, programmeTarget, searchChannels, type GuideItem } from './guide';
 import { liveTvView } from './items';
 import { GONE, listChannels, placementFor } from './lineup';
-import type { Ask } from './query';
+import { askOf, listOf, type Ask } from './query';
 import {
   channelById,
   channelItems,
@@ -89,37 +89,49 @@ export async function liveFavourite(req: any, deps: LiveTvDeps, descriptor: any,
   return { status: 200, body: { ...deps.emptyUserData, IsFavorite: on, Key: id, ItemId: id } };
 }
 
-function typesOf(value: unknown): Set<string> {
-  const list = Array.isArray(value) ? value : String(value ?? '').split(',');
-  return new Set(list.map((v) => String(v).trim().toLowerCase()).filter(Boolean));
+const CHANNEL_TYPES = new Set(['tvchannel', 'livetvchannel']);
+const PROGRAMME_TYPES = new Set(['livetvprogram', 'tvprogram', 'program']);
+
+export interface LiveFound {
+  items: any[];
+  total: number;
+  /** The asked types that are not Live TV's, for the caller to search. */
+  rest: string[];
 }
 
 export async function liveSearch(
   req: any,
   deps: LiveTvDeps,
   { term, includeItemTypes, startIndex, limit }: { term: string; includeItemTypes: unknown; startIndex: number; limit: number }
-): Promise<Answer | undefined> {
-  const types = typesOf(includeItemTypes);
-  const channels = types.has('tvchannel');
-  const programmes = types.has('livetvprogram') || types.has('program');
+): Promise<LiveFound | undefined> {
+  const types = listOf(includeItemTypes);
+  const asks = (kinds: Set<string>) => types.some((type) => kinds.has(type.toLowerCase()));
+  const channels = asks(CHANNEL_TYPES);
+  const programmes = asks(PROGRAMME_TYPES);
   if (!channels && !programmes) return undefined;
   const config = await deps.loadConfig(req);
   const live = await liveTvReady(deps, config);
   if (!live) return undefined;
 
-  if (channels) {
-    const found = await searchChannels(deps.addon, live.base, live.catalogs, term, SEARCH_SCAN);
-    const page = found.slice(startIndex, startIndex + limit);
-    const items = await channelItems(deps, req, live, page, await favouriteKeys(deps, req, config), true);
-    return { status: 200, body: deps.itemList(items, found.length, startIndex) };
+  const now = deps.now();
+  const found = channels ? await searchChannels(deps.addon, live.base, live.catalogs, term, SEARCH_SCAN) : [];
+  let aired: GuideItem[] = [];
+  if (programmes) {
+    const own: Record<string, unknown> = { searchterm: term, startindex: undefined, limit: undefined };
+    const asked = askOf(req);
+    const ask: Ask = (name) => (name.toLowerCase() in own ? own[name.toLowerCase()] : asked(name));
+    const listed = (await listChannels(deps.addon, live.base, live.catalogs, { startIndex: 0, limit: PROGRAMME_CHANNELS })).channels;
+    aired = filterProgrammes(await programmesAround(deps, live, listed, () => undefined, now), ask, now).items;
   }
 
-  const now = deps.now();
-  const query: Record<string, unknown> = { searchterm: term, startindex: startIndex, limit };
-  const ask: Ask = (name) => query[name.toLowerCase()];
-  const listed = (await listChannels(deps.addon, live.base, live.catalogs, { startIndex: 0, limit: PROGRAMME_CHANNELS })).channels;
-  const { items, total } = filterProgrammes(await programmesAround(deps, live, listed, () => undefined, now), ask, now);
-  return { status: 200, body: deps.itemList(programItems(deps, req, items, now), total, startIndex) };
+  const page = found.slice(startIndex, startIndex + limit);
+  const after = Math.max(0, startIndex - found.length);
+  const items = [
+    ...(page.length ? await channelItems(deps, req, live, page, await favouriteKeys(deps, req, config), true) : []),
+    ...programItems(deps, req, aired.slice(after, after + limit - page.length), now),
+  ];
+  const rest = types.filter((type) => !CHANNEL_TYPES.has(type.toLowerCase()) && !PROGRAMME_TYPES.has(type.toLowerCase()));
+  return { items, total: found.length + aired.length, rest };
 }
 
 export function liveTvViewFor(req: any, deps: LiveTvDeps, config: any): any | null {

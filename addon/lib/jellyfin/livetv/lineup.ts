@@ -9,7 +9,11 @@ const PLACEMENT_TTL_MS = 60 * 60 * 1000;
 const FAILURE_MS = 30 * 1000;
 const MAX_PAGES = 40;
 const MAX_LINEUPS = 2000;
-const MAX_PLACEMENTS = 200000;
+const MAX_PLACEMENTS = 20000;
+const MAX_LIST = 50000;
+const MAX_HELD_CHANNELS = 400000;
+const IDLE_MS = 2 * 60 * 60 * 1000;
+const SWEEP_MS = 10 * 60 * 1000;
 
 export interface ChannelMeta {
   id: string;
@@ -44,6 +48,7 @@ interface Lineup {
   next: number;
   pages: number;
   done: boolean;
+  usedAt: number;
   failedAt?: number;
   refreshFailedAt?: number;
 }
@@ -52,7 +57,7 @@ interface Assembly {
   lineups: Lineup[];
   consumed: number;
   entries: Placement[];
-  seen: Set<string>;
+  byKey: Map<string, Placement>;
   finished: boolean;
   blocked: boolean;
 }
@@ -72,16 +77,47 @@ export function stateFor(addon: LineupAddon): State {
   let state = states.get(addon);
   if (!state) {
     const clock = clockOptions(addon.now);
-    state = {
+    const assemblies = new LRUCache<string, Assembly>({ max: 500 });
+    const created: State = {
       id: ++serial,
       now: addon.now,
-      lineups: new LRUCache<string, Lineup>({ max: MAX_LINEUPS, ttl: LINEUP_TTL_MS, ...clock }),
+      lineups: new LRUCache<string, Lineup>({
+        max: MAX_LINEUPS,
+        maxSize: MAX_HELD_CHANNELS,
+        sizeCalculation: (lineup) => lineup.channels.length + 1,
+        ttl: LINEUP_TTL_MS,
+        allowStale: true,
+        noDeleteOnStaleGet: true,
+        dispose: (lineup, _key, reason) => {
+          if (reason === 'evict' || reason === 'set') dropAssemblies(assemblies, lineup);
+        },
+        ...clock,
+      }),
       placements: new LRUCache<string, Placement | typeof GONE>({ max: MAX_PLACEMENTS, ttl: PLACEMENT_TTL_MS, ...clock }),
-      assemblies: new LRUCache<string, Assembly>({ max: 500 }),
+      assemblies,
     };
-    states.set(addon, state);
+    states.set(addon, created);
+    setInterval(() => purge(created), SWEEP_MS).unref();
+    state = created;
   }
   return state;
+}
+
+function dropAssemblies(assemblies: State['assemblies'], lineup: Lineup): void {
+  for (const [key, assembly] of [...assemblies.entries()]) if (assembly.lineups.includes(lineup)) assemblies.delete(key);
+}
+
+function purge(state: State): void {
+  for (const key of [...state.lineups.keys()]) {
+    const lineup = state.lineups.peek(key);
+    if (!lineup || state.now() - lineup.usedAt <= IDLE_MS) continue;
+    state.lineups.delete(key);
+    dropAssemblies(state.assemblies, lineup);
+  }
+}
+
+export function purgeLineups(addon: LineupAddon): void {
+  purge(stateFor(addon));
 }
 
 const text = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined);
@@ -106,12 +142,22 @@ const lineupKey = (base: string, catalog: LiveCatalog): string => `${hash(base)}
 const placementKey = (base: string, type: string, id: string): string => `${hash(base)}|${type}|${id}`;
 const channelKey = (meta: Pick<ChannelMeta, 'type' | 'id'>): string => `${meta.type}|${meta.id}`;
 
-function emptyLineup(): Lineup {
-  return { channels: [], skips: [], keys: new Set(), next: 0, pages: 0, done: false };
+function emptyLineup(state: State): Lineup {
+  return { channels: [], skips: [], keys: new Set(), next: 0, pages: 0, done: false, usedAt: state.now() };
 }
 
-function peekLineup(state: State, key: string): Lineup | undefined {
-  return state.lineups.peek(key, { allowStale: true });
+function heldLineup(state: State, key: string): Lineup | undefined {
+  const lineup = state.lineups.get(key);
+  if (lineup) lineup.usedAt = state.now();
+  return lineup;
+}
+
+// Setting the same value again does not measure it again, so a grown lineup is put back under its remaining lifetime.
+function remeasure(state: State, key: string, lineup: Lineup): void {
+  if (state.lineups.peek(key) !== lineup) return;
+  const ttl = Math.max(1, state.lineups.getRemainingTTL(key));
+  state.lineups.delete(key);
+  state.lineups.set(key, lineup, { ttl });
 }
 
 async function readInto(addon: LineupAddon, base: string, catalog: LiveCatalog, lineup: Lineup): Promise<boolean> {
@@ -121,6 +167,7 @@ async function readInto(addon: LineupAddon, base: string, catalog: LiveCatalog, 
   let added = 0;
   for (const entry of page) {
     const meta = channelMetaOf(entry, catalog);
+    if (lineup.channels.length >= MAX_LIST) break;
     if (!meta || lineup.keys.has(channelKey(meta))) continue;
     lineup.keys.add(channelKey(meta));
     lineup.channels.push(meta);
@@ -128,7 +175,7 @@ async function readInto(addon: LineupAddon, base: string, catalog: LiveCatalog, 
     added++;
   }
   lineup.next += page.length;
-  if (!catalog.skip || added === 0 || lineup.pages >= MAX_PAGES) lineup.done = true;
+  if (!catalog.skip || added === 0 || lineup.pages >= MAX_PAGES || lineup.channels.length >= MAX_LIST) lineup.done = true;
   return true;
 }
 
@@ -136,24 +183,25 @@ function refresh(state: State, addon: LineupAddon, base: string, catalog: LiveCa
   if (old.refreshFailedAt !== undefined && state.now() - old.refreshFailedAt < FAILURE_MS) return;
   const key = lineupKey(base, catalog);
   void shareInFlight(`livetv:${state.id}|${key}|refresh`, async () => {
-    const fresh = emptyLineup();
+    const fresh = emptyLineup(state);
     const limit = old.done ? MAX_PAGES : Math.max(1, old.pages);
     while (!fresh.done && fresh.pages < limit) {
-      if (!(await readInto(addon, base, catalog, fresh))) {
+      if (!(await readInto(addon, base, catalog, fresh)) || (!fresh.channels.length && old.channels.length)) {
         old.refreshFailedAt = state.now();
         return;
       }
     }
-    if (peekLineup(state, key) === old) state.lineups.set(key, fresh);
+    fresh.usedAt = old.usedAt;
+    if (state.lineups.peek(key) === old) state.lineups.set(key, fresh);
   });
 }
 
 function assemble(state: State, addon: LineupAddon, base: string, catalogs: LiveCatalog[]): Assembly {
   const memoKey = `${hash(base)}|${catalogs.map(channelKey).join(',')}`;
   let memo = state.assemblies.get(memoKey);
-  if (memo && memo.lineups.some((lineup, n) => peekLineup(state, lineupKey(base, catalogs[n])) !== lineup)) memo = undefined;
+  if (memo && memo.lineups.some((lineup, n) => heldLineup(state, lineupKey(base, catalogs[n])) !== lineup)) memo = undefined;
   if (!memo) {
-    memo = { lineups: [], consumed: 0, entries: [], seen: new Set(), finished: false, blocked: false };
+    memo = { lineups: [], consumed: 0, entries: [], byKey: new Map(), finished: false, blocked: false };
     state.assemblies.set(memoKey, memo);
   }
 
@@ -167,13 +215,17 @@ function assemble(state: State, addon: LineupAddon, base: string, catalogs: Live
       const lineup = memo.lineups[at];
       const catalog = catalogs[at];
       for (; memo.consumed < lineup.channels.length; memo.consumed++) {
+        if (memo.entries.length >= MAX_LIST) {
+          memo.finished = true;
+          memo.blocked = false;
+          return memo;
+        }
         const meta = lineup.channels[memo.consumed];
         const key = channelKey(meta);
-        if (memo.seen.has(key)) continue;
-        memo.seen.add(key);
+        if (memo.byKey.has(key)) continue;
         const placement: Placement = { meta, catalog, skip: lineup.skips[memo.consumed], number: meta.channelNumber ?? String(memo.entries.length + 1) };
         memo.entries.push(placement);
-        state.placements.set(placementKey(base, meta.type, meta.id), placement);
+        memo.byKey.set(key, placement);
       }
       if (!lineup.done) {
         memo.finished = false;
@@ -182,12 +234,12 @@ function assemble(state: State, addon: LineupAddon, base: string, catalogs: Live
       }
     }
     const next = memo.lineups.length;
-    if (next >= catalogs.length) {
+    if (next >= catalogs.length || memo.entries.length >= MAX_LIST) {
       memo.finished = true;
       memo.blocked = false;
       return memo;
     }
-    const lineup = peekLineup(state, lineupKey(base, catalogs[next]));
+    const lineup = heldLineup(state, lineupKey(base, catalogs[next]));
     if (!lineup) {
       memo.finished = false;
       memo.blocked = false;
@@ -203,9 +255,9 @@ type Outcome = 'read' | 'failed' | 'blocked' | 'done';
 async function readNextPage(state: State, addon: LineupAddon, base: string, catalogs: LiveCatalog[]): Promise<Outcome> {
   for (const catalog of catalogs) {
     const key = lineupKey(base, catalog);
-    let lineup = peekLineup(state, key);
+    let lineup = heldLineup(state, key);
     if (!lineup) {
-      lineup = emptyLineup();
+      lineup = emptyLineup(state);
       state.lineups.set(key, lineup);
     }
     if (lineup.done) continue;
@@ -215,6 +267,7 @@ async function readNextPage(state: State, addon: LineupAddon, base: string, cata
       return 'failed';
     }
     lineup.failedAt = undefined;
+    remeasure(state, key, lineup);
     return 'read';
   }
   return 'done';
@@ -222,9 +275,10 @@ async function readNextPage(state: State, addon: LineupAddon, base: string, cata
 
 async function walk(addon: LineupAddon, base: string, catalogs: LiveCatalog[], satisfied: (list: Assembly) => boolean): Promise<Assembly> {
   const state = stateFor(addon);
-  for (;;) {
+  // A lineup evicted while the walk goes on would otherwise be read again without end.
+  for (let reads = 0; ; reads++) {
     const list = assemble(state, addon, base, catalogs);
-    if (satisfied(list) || list.finished || list.blocked) return list;
+    if (satisfied(list) || list.finished || list.blocked || reads > MAX_PAGES * catalogs.length) return list;
     const outcome = await shareInFlight(`livetv:${state.id}|${hash(base)}|walk`, () => readNextPage(state, addon, base, catalogs));
     if (outcome !== 'read') return assemble(state, addon, base, catalogs);
   }
@@ -255,12 +309,10 @@ export async function placementFor(
 ): Promise<Placement | typeof GONE | null> {
   const state = stateFor(addon);
   const key = placementKey(base, type, id);
+  const listed = (await walk(addon, base, catalogs, (l) => l.byKey.has(`${type}|${id}`))).byKey.get(`${type}|${id}`);
+  if (listed) return listed;
   const held = state.placements.get(key);
   if (held) return held;
-
-  await walk(addon, base, catalogs, () => state.placements.has(key));
-  const placed = state.placements.get(key);
-  if (placed) return placed;
 
   const path = `/meta/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`;
   const body = await shareInFlight(`livetv:${state.id}|${hash(base)}|${path}`, () => addon.fetchJson(base, path));

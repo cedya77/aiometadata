@@ -8,8 +8,14 @@ const MANIFEST_TTL_MS = 10 * 60 * 1000;
 const FAILURE_MS = 30 * 1000;
 const READ_TIMEOUT_MS = 5000;
 const MAX_BASES = 500;
+const STORE_TIMEOUT_MS = 500;
 
 export type Manifest = Record<string, any>;
+
+export interface ManifestStore {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<unknown>;
+}
 
 export interface AddonReaderOptions {
   userAgent: () => string;
@@ -17,11 +23,15 @@ export interface AddonReaderOptions {
   readBody: (response: any) => Promise<string>;
   now?: () => number;
   log?: (line: string) => void;
+  /** Where the live part of each manifest outlasts the process. */
+  store?: ManifestStore;
 }
 
 export interface AddonDeps {
   manifest(base: string): Promise<Manifest | null>;
   peek(base: string): Manifest | undefined;
+  /** Holds what the store kept of the manifest, as a stale one, when none is held. Never reads the addon. */
+  recall(base: string): Promise<void>;
   fetchJson(base: string, path: string): Promise<any | null>;
   now(): number;
 }
@@ -53,6 +63,16 @@ export function shareInFlight<T>(key: string, fn: () => Promise<T>): Promise<T> 
 export function clockOptions(now?: () => number): { perf?: { now: () => number }; ttlResolution?: number } {
   return now ? { perf: { now }, ttlResolution: 0 } : {};
 }
+
+function livePart(manifest: Manifest): Manifest {
+  const hints = manifest.behaviorHints ?? {};
+  const catalogs = (Array.isArray(manifest.catalogs) ? manifest.catalogs : [])
+    .filter((c: any) => c?.type === 'tv' || (Array.isArray(c?.extra) && c.extra.some((e: any) => e?.name === 'date')))
+    .map((c: any) => ({ type: c.type, id: c.id, name: c.name, extra: c.extra }));
+  return { behaviorHints: { epgProvider: hints.epgProvider, catchupDays: hints.catchupDays }, catalogs };
+}
+
+const storeKey = (key: string): string => `jf:livetv:manifest:${key}`;
 
 export function createAddonReader(options: AddonReaderOptions): AddonDeps {
   const now = options.now ?? Date.now;
@@ -99,6 +119,7 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
         failures.set(key, true);
         throw new Error('manifest read failed');
       }
+      options.store?.set(storeKey(key), JSON.stringify(livePart(manifest))).catch(() => undefined);
       return manifest;
     },
   });
@@ -123,6 +144,25 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
       const key = hash(base);
       if (failures.has(key)) return Promise.resolve(held(key) ?? null);
       return read(base);
+    },
+    async recall(base: string) {
+      const key = hash(base);
+      if (!options.store || held(key) !== undefined) return;
+      let timer: NodeJS.Timeout | undefined;
+      const late = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), STORE_TIMEOUT_MS);
+      });
+      try {
+        const stored = await Promise.race([options.store.get(storeKey(key)), late]);
+        const manifest = stored ? JSON.parse(stored) : null;
+        if (manifest && held(key) === undefined) {
+          manifests.set(key, manifest, { start: manifests.perf.now() - MANIFEST_TTL_MS - 1 });
+        }
+      } catch (error: any) {
+        log(`Addon manifest recall for ${hostOf(base)} failed: ${error?.code || error?.name || 'failed'}`);
+      } finally {
+        clearTimeout(timer);
+      }
     },
     peek(base: string) {
       const key = hash(base);

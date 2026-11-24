@@ -2,17 +2,19 @@
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { normaliseJellyfinId } from '../idsCodec';
 import { liveTvReady, type GateDeps, type LiveTv } from './gate';
-import { airingAt, caughtUp, filterProgrammes, guideRange, programmesFor, programmeTarget, type GuideItem } from './guide';
+import { airingAt, caughtUp, filterProgrammes, guideRange, inBatches, programmesFor, programmeTarget, type GuideItem } from './guide';
 import { channelItem, programItem, type ItemDeps } from './items';
 import { GONE, listChannels, placementFor, type ListedChannel } from './lineup';
 import { askOf, field, flag, integer, listOf, timeOf, type Ask } from './query';
 
 export { field, flag };
 
-const DEFAULT_LIMIT = 100;
+const UNLIMITED = 5000;
 const PROGRAMME_CHANNELS = 100;
 const PROGRAMME_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_LIMIT = 500;
+const MAX_ASKED_CHANNELS = 1000;
+const PARALLEL_PLACEMENTS = 8;
 
 export interface LiveTvDeps extends GateDeps, ItemDeps {
   decodeLiveId(raw: string): Promise<any>;
@@ -50,7 +52,7 @@ export async function favouriteKeys(deps: LiveTvDeps, req: any, config: any): Pr
 
 export async function resolveFavourites(deps: LiveTvDeps, live: LiveTv, keys: Iterable<string>): Promise<ListedChannel[]> {
   const parts = [...keys].map(splitKey).filter((p): p is { type: string; id: string } => p !== null);
-  const placements = await Promise.all(parts.map((p) => placementFor(deps.addon, live.base, live.catalogs, p)));
+  const placements = await inBatches(parts.map((p) => () => placementFor(deps.addon, live.base, live.catalogs, p)), PARALLEL_PLACEMENTS);
   const listed: ListedChannel[] = [];
   placements.forEach((placement, n) => {
     if (placement === GONE) return;
@@ -90,7 +92,8 @@ async function listSkipping(deps: LiveTvDeps, live: LiveTv, skip: Set<string>, s
 
 export async function channelPage(deps: LiveTvDeps, req: any, live: LiveTv, config: any): Promise<any> {
   const startIndex = Math.max(0, integer(field(req, 'StartIndex'), 0));
-  const limit = Math.min(MAX_LIMIT, Math.max(1, integer(field(req, 'Limit'), DEFAULT_LIMIT)));
+  const asked = integer(field(req, 'Limit'), 0);
+  const limit = asked > 0 ? Math.min(MAX_LIMIT, asked) : UNLIMITED;
   if (String(field(req, 'Type') ?? '').trim().toLowerCase() === 'radio') return deps.itemList([], 0, startIndex);
 
   const isFavorite = flag(field(req, 'IsFavorite'));
@@ -133,11 +136,12 @@ export function guideInfo(manifest: any, now: number): { StartDate: string; EndD
 }
 
 async function programmeChannels(deps: LiveTvDeps, live: LiveTv, ask: Ask): Promise<ListedChannel[]> {
-  const asked = listOf(ask('ChannelIds'));
+  const asked = listOf(ask('ChannelIds')).slice(0, MAX_ASKED_CHANNELS);
   if (!asked.length) return (await listChannels(deps.addon, live.base, live.catalogs, { startIndex: 0, limit: PROGRAMME_CHANNELS })).channels;
   const descriptors = await Promise.all(asked.map((id) => deps.decodeLiveId(id)));
-  const placements = await Promise.all(
-    descriptors.map((d) => (d?.k === 'channel' ? placementFor(deps.addon, live.base, live.catalogs, { type: d.t, id: d.i }) : null))
+  const placements = await inBatches(
+    descriptors.filter((d) => d?.k === 'channel').map((d) => () => placementFor(deps.addon, live.base, live.catalogs, { type: d.t, id: d.i })),
+    PARALLEL_PLACEMENTS
   );
   const channels: ListedChannel[] = [];
   for (const placement of placements) {
@@ -148,9 +152,13 @@ async function programmeChannels(deps: LiveTvDeps, live: LiveTv, ask: Ask): Prom
 
 export async function programmesAround(deps: LiveTvDeps, live: LiveTv, channels: ListedChannel[], ask: Ask, now: number): Promise<GuideItem[]> {
   const range = guideRange(live.manifest, now);
-  const from = Math.max(range.start, timeOf(ask('MinStartDate')) ?? timeOf(ask('MinEndDate')) ?? now);
-  const to = Math.min(range.end, timeOf(ask('MaxStartDate')) ?? timeOf(ask('MaxEndDate')) ?? now + PROGRAMME_WINDOW_MS);
-  if (!channels.length || from >= to) return [];
+  const min = timeOf(ask('MinStartDate')) ?? timeOf(ask('MinEndDate'));
+  const max = timeOf(ask('MaxStartDate')) ?? timeOf(ask('MaxEndDate'));
+  const aired = flag(ask('HasAired')) === true;
+  const past = aired || (max !== null && max <= now);
+  const from = Math.max(range.start, min ?? (past ? range.start : now));
+  const to = Math.min(range.end, max ?? (aired ? now : Math.max(now, from) + PROGRAMME_WINDOW_MS));
+  if (!channels.length || from > to) return [];
   const found = await programmesFor(deps.addon, live.base, live.catalogs, channels.map((c) => c.meta), from, to + 1);
   const items: GuideItem[] = [];
   for (const channel of channels) {

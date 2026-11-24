@@ -32,6 +32,11 @@ function withCatalogs(base: string, manifest: Manifest | null | undefined): Live
   return catalogs.length ? { base, catalogs, manifest } : null;
 }
 
+export async function liveTvRecall(deps: GateDeps, config: any): Promise<void> {
+  const base = baseOf(deps, config);
+  if (base) await deps.addon.recall(base);
+}
+
 export function liveTvFor(deps: GateDeps, config: any): LiveTv | null {
   const base = baseOf(deps, config);
   return base ? withCatalogs(base, deps.addon.peek(base)) : null;

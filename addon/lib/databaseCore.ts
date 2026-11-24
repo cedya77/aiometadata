@@ -1985,8 +1985,8 @@ export class DatabaseCore {
 
   async listChannelFavourites(userUUID: string, profile: string): Promise<string[]> {
     const query = this.type === 'sqlite'
-      ? `SELECT meta_id FROM jellyfin_favourites WHERE user_uuid = ? AND profile = ? AND media_type = 'channel' ORDER BY updated_at ASC, meta_id ASC LIMIT 200`
-      : `SELECT meta_id FROM jellyfin_favourites WHERE user_uuid = $1 AND profile = $2 AND media_type = 'channel' ORDER BY updated_at ASC, meta_id ASC LIMIT 200`;
+      ? `SELECT meta_id FROM jellyfin_favourites WHERE user_uuid = ? AND profile = ? AND media_type = 'channel' ORDER BY updated_at ASC, meta_id ASC`
+      : `SELECT meta_id FROM jellyfin_favourites WHERE user_uuid = $1 AND profile = $2 AND media_type = 'channel' ORDER BY updated_at ASC, meta_id ASC`;
     const rows = await this.allQuery(query, [userUUID, profile]);
     return rows.map((row: any) => String(row.meta_id));
   }

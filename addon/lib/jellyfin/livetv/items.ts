@@ -96,7 +96,10 @@ export function programItem(
   };
   if (programme.overview) item.Overview = programme.overview;
   if (channel.number) item.ChannelNumber = channel.number;
-  if (image) item.ChannelPrimaryImageTag = deps.imageTag(image);
+  if (image) {
+    deps.rememberImages(serverId, channelId, { primary: image });
+    item.ChannelPrimaryImageTag = deps.imageTag(image);
+  }
   Object.assign(item, flagsOf(programme));
   if (programme.genres) item.Genres = programme.genres;
   if (programme.season !== undefined) item.ParentIndexNumber = programme.season;

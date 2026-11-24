@@ -13,7 +13,10 @@ const PARALLEL_READS = 8;
 const DAY_MS = 86400000;
 const GUIDE_DAYS_AHEAD = 7;
 const MAX_CATCHUP_DAYS = 14;
-const MAX_PROGRAMMES = 2000;
+const MAX_PROGRAMMES = 50000;
+const MAX_HELD_BYTES = 128 * 1024 * 1024;
+const IDLE_MS = 60 * 60 * 1000;
+const SWEEP_MS = 10 * 60 * 1000;
 const SEARCH_SCAN = 5000;
 
 export interface Programme {
@@ -38,7 +41,12 @@ export interface GuideItem {
 }
 
 type GuideAddon = Pick<AddonDeps, 'fetchJson' | 'now'>;
-type GuidePage = Map<string, Programme[]>;
+
+interface GuidePage {
+  programmes: Map<string, Programme[]>;
+  usedAt: number;
+}
+
 
 interface ReadContext {
   base: string;
@@ -48,6 +56,7 @@ interface ReadContext {
 }
 
 interface State {
+  now: () => number;
   reads: LRUCache<string, GuidePage, ReadContext>;
   failures: LRUCache<string, true>;
 }
@@ -106,6 +115,31 @@ export function airingAt(programmes: Programme[] | undefined, atMs: number): Pro
   return programmes?.find((p) => p.start <= atMs && atMs < p.end);
 }
 
+export function pageSize(programmes: Map<string, Programme[]>): number {
+  let size = 1;
+  for (const list of programmes.values()) {
+    for (const programme of list) {
+      size += 200;
+      for (const value of Object.values(programme)) {
+        if (typeof value === 'string') size += value.length;
+        else if (Array.isArray(value)) for (const part of value) size += part.length + 16;
+      }
+    }
+  }
+  return size;
+}
+
+function purge(state: State): void {
+  for (const key of [...state.reads.keys()]) {
+    const page = state.reads.peek(key);
+    if (page && state.now() - page.usedAt > IDLE_MS) state.reads.delete(key);
+  }
+}
+
+export function purgeGuide(addon: GuideAddon): void {
+  purge(stateFor(addon));
+}
+
 function stateFor(addon: GuideAddon): State {
   let state = states.get(addon);
   if (!state) {
@@ -113,6 +147,8 @@ function stateFor(addon: GuideAddon): State {
     const failures = new LRUCache<string, true>({ max: MAX_READS, ttl: FAILURE_MS, ...clock });
     const reads = new LRUCache<string, GuidePage, ReadContext>({
       max: MAX_READS,
+      maxSize: MAX_HELD_BYTES,
+      sizeCalculation: (page) => pageSize(page.programmes),
       ttl: READ_TTL_MS,
       allowStale: true,
       allowStaleOnFetchRejection: true,
@@ -124,16 +160,18 @@ function stateFor(addon: GuideAddon): State {
           failures.set(key, true);
           throw new Error('guide read failed');
         }
-        const page: GuidePage = new Map();
+        const programmes = new Map<string, Programme[]>();
         for (const entry of entries) {
           const meta = channelMetaOf(entry, context.catalog);
-          if (meta) page.set(`${meta.type}|${meta.id}`, programmesOf(entry));
+          if (meta) programmes.set(`${meta.type}|${meta.id}`, programmesOf(entry));
         }
-        return page;
+        return { programmes, usedAt: addon.now() };
       },
     });
-    state = { reads, failures };
-    states.set(addon, state);
+    const created: State = { now: addon.now, reads, failures };
+    states.set(addon, created);
+    setInterval(() => purge(created), SWEEP_MS).unref();
+    state = created;
   }
   return state;
 }
@@ -141,6 +179,7 @@ function stateFor(addon: GuideAddon): State {
 function readDay(state: State, context: ReadContext): Promise<GuidePage | null> {
   const key = `${hash(context.base)}|${context.catalog.type}|${context.catalog.id}|${context.skip}|${context.day}`;
   const held = state.reads.peek(key, { allowStale: true });
+  if (held) held.usedAt = state.now();
   if (state.failures.has(key)) return Promise.resolve(held ?? null);
   return state.reads.fetch(key, { context }).then(
     (page) => page ?? null,
@@ -148,7 +187,7 @@ function readDay(state: State, context: ReadContext): Promise<GuidePage | null> 
   );
 }
 
-async function inBatches<T>(tasks: Array<() => Promise<T>>, size: number): Promise<T[]> {
+export async function inBatches<T>(tasks: Array<() => Promise<T>>, size: number): Promise<T[]> {
   const results: T[] = new Array(tasks.length);
   let next = 0;
   const worker = async () => {
@@ -177,7 +216,7 @@ export async function programmesFor(
   toMs: number
 ): Promise<Map<string, Programme[]>> {
   const state = stateFor(addon);
-  const placements = await Promise.all(channels.map((channel) => placementFor(addon, base, catalogs, channel)));
+  const placements = await inBatches(channels.map((channel) => () => placementFor(addon, base, catalogs, channel)), PARALLEL_READS);
   const groups = new Map<string, { catalog: LiveCatalog; skip: number; keys: string[] }>();
   placements.forEach((placement) => {
     if (!placement || typeof placement !== 'object' || !placement.catalog?.guide) return;
@@ -202,7 +241,7 @@ export async function programmesFor(
   pages.forEach((page, n) => {
     if (!page) return;
     for (const key of work[n].group.keys) {
-      for (const programme of page.get(key) ?? []) {
+      for (const programme of page.programmes.get(key) ?? []) {
         if (programme.start >= toMs || programme.end <= fromMs) continue;
         let byStart = found.get(key);
         if (!byStart) {
