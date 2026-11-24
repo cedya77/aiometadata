@@ -5,6 +5,7 @@ import { flagsOf, type Programme } from './guide';
 import type { ListedChannel } from './lineup';
 
 const TICKS_PER_MS = 10000;
+const MAX_CAST = 20;
 
 export interface ItemDeps {
   encodeId(d: Descriptor): string;
@@ -30,6 +31,11 @@ export function liveTvView(deps: ItemDeps, serverId: string, { guide = false }: 
 
 export const channelIdOf = (deps: Pick<ItemDeps, 'encodeId'>, channel: ListedChannel): string =>
   deps.encodeId({ k: 'channel', t: channel.meta.type, i: channel.meta.id });
+
+/** The shape of a live item's primary image: a channel's is its logo, a programme's a still. */
+export function livePrimaryKind(descriptor: any): 'logo' | 'thumb' | undefined {
+  return descriptor?.k === 'channel' ? 'logo' : descriptor?.k === 'program' ? 'thumb' : undefined;
+}
 
 const imageOf = (channel: ListedChannel): string | undefined => channel.meta.logo ?? channel.meta.poster;
 
@@ -73,7 +79,7 @@ export function programItem(
   serverId: string,
   channel: ListedChannel,
   programme: Programme,
-  { images = false, catchup = false }: { images?: boolean; catchup?: boolean } = {}
+  { opened = false, catchup = false }: { opened?: boolean; catchup?: boolean } = {}
 ): any {
   const channelId = channelIdOf(deps, channel);
   const image = imageOf(channel);
@@ -104,14 +110,14 @@ export function programItem(
   if (programme.genres) item.Genres = programme.genres;
   if (programme.season !== undefined) item.ParentIndexNumber = programme.season;
   if (programme.episode !== undefined) item.IndexNumber = programme.episode;
-  const people = [
-    ...(programme.cast ?? []).map((name) => ({ Name: name, Type: 'Actor' })),
-    ...(programme.directors ?? []).map((name) => ({ Name: name, Type: 'Director' })),
-  ];
-  if (people.length) item.People = people;
+  if (opened) {
+    const person = (type: string) => (name: string) => ({ Id: deps.encodeId({ k: 'person', n: name }), Name: name, Type: type });
+    const people = [...(programme.cast ?? []).slice(0, MAX_CAST).map(person('Actor')), ...(programme.directors ?? []).map(person('Director'))];
+    if (people.length) item.People = people;
+  }
   if (programme.imdbId) item.ProviderIds = { Imdb: programme.imdbId };
   if (catchup) item.aiostreams = { catchup: true };
-  if (images && id && (programme.image || programme.background)) {
+  if (opened && id && (programme.image || programme.background)) {
     deps.rememberImages(serverId, id, { primary: programme.image, backdrop: programme.background });
     if (programme.image) item.ImageTags = { Primary: deps.imageTag(programme.image) };
     if (programme.background) item.BackdropImageTags = [deps.imageTag(programme.background)];

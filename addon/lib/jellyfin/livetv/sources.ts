@@ -32,9 +32,15 @@ export function asDefault(sources: any[], itemId: string, needsHeaders: (source:
   return first < 0 ? sources : sources.map((source, n) => (n === first ? { ...source, Id: itemId, ETag: itemId } : source));
 }
 
+/** The sources a client may mean by an id: the one listed under it, or else the one it names although listed as the default. */
+export function sourcesNamed(sources: any[], wantedId: string): any[] {
+  const listed = sources.filter((source) => source?.Id === wantedId);
+  return listed.length ? listed : sources.filter((source) => source?.aiostreams?.id === wantedId);
+}
+
 export function pickLive(sources: any[], itemId: string, wantedId: string | null): any | undefined {
   const real = sources.filter((source) => source?.Path && !isPlaceholder(source));
-  return wantedId && wantedId !== itemId ? real.find((source) => source.Id === wantedId) : real.find((source) => source.Id === itemId) ?? real[0];
+  return wantedId && wantedId !== itemId ? sourcesNamed(real, wantedId)[0] : real.find((source) => source.Id === itemId) ?? real[0];
 }
 
 export function pinScope(userUUID: string, profileId: string | null | undefined, base: string): string {
@@ -53,7 +59,8 @@ export function createLivePins(now?: () => number): LivePins {
   return {
     remember(scope, itemId, sources) {
       for (const source of sources) {
-        if (source?.Path && !isPlaceholder(source)) pins.set(`${scope}|${itemId}|${source.Id}`, source.Path);
+        if (!source?.Path || isPlaceholder(source)) continue;
+        for (const id of [source.aiostreams?.id, source.Id]) if (id) pins.set(`${scope}|${itemId}|${id}`, source.Path);
       }
     },
     recall: (scope, itemId, sourceId) => pins.get(`${scope}|${itemId}|${sourceId ?? itemId}`),

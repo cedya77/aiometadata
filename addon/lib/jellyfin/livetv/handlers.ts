@@ -3,7 +3,7 @@
 import { liveTvFor, liveTvReady, type LiveTv } from './gate';
 import { filterProgrammes, programmeTarget, searchChannels, type GuideItem } from './guide';
 import { liveTvView } from './items';
-import { GONE, listChannels, placementFor } from './lineup';
+import { GONE, guideChannels, placementFor } from './lineup';
 import { askOf, listOf, type Ask } from './query';
 import {
   channelById,
@@ -120,7 +120,7 @@ export async function liveSearch(
     const own: Record<string, unknown> = { searchterm: term, startindex: undefined, limit: undefined };
     const asked = askOf(req);
     const ask: Ask = (name) => (name.toLowerCase() in own ? own[name.toLowerCase()] : asked(name));
-    const listed = (await listChannels(deps.addon, live.base, live.catalogs, { startIndex: 0, limit: PROGRAMME_CHANNELS })).channels;
+    const listed = await guideChannels(deps.addon, live.base, live.catalogs, PROGRAMME_CHANNELS);
     aired = filterProgrammes(await programmesAround(deps, live, listed, () => undefined, now), ask, now).items;
   }
 

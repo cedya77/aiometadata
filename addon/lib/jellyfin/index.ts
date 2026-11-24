@@ -81,9 +81,9 @@ import { createAddonReader, hash as addonHash } from './addonReader';
 import { liveTvEnabled, liveTvFor, liveTvReady, liveTvRecall, type GateDeps } from './livetv/gate';
 import { registerLiveTv } from './livetv/routes';
 import { liveAllowed, liveFavourite, liveItem, livePlayback, liveSearch, liveTvViewFor, type HandlerDeps } from './livetv/handlers';
-import { liveTvViewId } from './livetv/items';
+import { livePrimaryKind, liveTvViewId } from './livetv/items';
 import { liveReportGuard } from './livetv/reports';
-import { asDefault, createLivePins, liveSourceIds, pickLive, pinScope } from './livetv/sources';
+import { asDefault, createLivePins, liveSourceIds, pickLive, pinScope, sourcesNamed } from './livetv/sources';
 import { GONE, placementFor } from './livetv/lineup';
 import { addonFetch, addonFetchMaxBytes, readCappedResponse } from '../../utils/outboundGuard';
 import { answerPlaylistListing, hasPlaylists, playlistAsItem, playlistConcurrency, playlistImages, playlistsFolder, registerPlaylistRoutes, type PlaylistRouteDeps } from './playlists';
@@ -2170,6 +2170,12 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       set: (userUUID: string, key: string, channel: string, on: boolean) => database.setChannelFavourite(userUUID, key, channel, on),
     },
     resolveSourcesFor,
+    seriesTitle: async (req: any, id: string) => {
+      const descriptor = await decodeJellyfinId(id);
+      if (descriptor?.k !== 'series') return null;
+      const meta = await fetchMeta(req.params.userUUID, 'series', descriptor.i).catch(() => null);
+      return meta?.name || null;
+    },
   };
 
   const outsideViewingHours = async (req: any): Promise<boolean> => {
@@ -2207,7 +2213,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const requested = await requestedSource(req.query.MediaSourceId ?? req.query.mediaSourceId ?? req.body?.MediaSourceId);
     let sources = withIds;
     if (requested && normaliseJellyfinId(requested) !== itemId) {
-      const picked = withIds.filter((s: any) => normaliseJellyfinId(s.Id) === normaliseJellyfinId(requested));
+      const picked = sourcesNamed(withIds, normaliseJellyfinId(requested));
       if (picked.length) sources = picked;
     }
     if (!sources.length) {
@@ -2987,14 +2993,15 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       res.status(404).end();
       return;
     }
-    const descriptor = await decodeJellyfinId(String(req.params.itemId));
+    const descriptor = await decodeLiveId(String(req.params.itemId));
     const collectionArt = descriptor?.k === 'collection' || descriptor?.k === 'boxset';
+    const liveKind = kind === 'primary' ? livePrimaryKind(descriptor) : undefined;
     const widePrimary = collectionArt || descriptor?.k === 'episode' || (Boolean(images?.thumb) && images?.primary === images?.thumb);
-    const maxWidth = requestedWidth(req, kind === 'primary' && widePrimary ? 'wide' : kind);
-    url = sourceSized(url, kind, maxWidth, clientListed(req, 'JELLYFIN_RASTER_LOGO_CLIENTS'));
+    const maxWidth = requestedWidth(req, liveKind ?? (kind === 'primary' && widePrimary ? 'wide' : kind));
+    url = sourceSized(url, liveKind ?? kind, maxWidth, clientListed(req, 'JELLYFIN_RASTER_LOGO_CLIENTS'));
 
     const relaying = relaysImages(req);
-    const cached = throughPosterCache(url, collectionArt ? 'collection' : descriptor?.k === 'episode' && kind === 'primary' ? 'thumb' : kind);
+    const cached = throughPosterCache(url, collectionArt ? 'collection' : liveKind ?? (descriptor?.k === 'episode' && kind === 'primary' ? 'thumb' : kind));
     if (cached) {
       const local = builtinPosterCachePath(cached);
       if (local) {
@@ -3017,7 +3024,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
     // An episode still is 16:9; shaping it to 2:3 blurs and enlarges it for
     // nothing. Only the sources that publish landscape posters are reshaped.
-    const poster = kind === 'primary' && !collectionArt && descriptor?.k !== 'episode';
+    const poster = kind === 'primary' && !collectionArt && !liveKind && descriptor?.k !== 'episode';
     if (poster && shapesPoster(url)) {
       await shapedPoster(req, res, url, maxWidth, relaying);
       return;

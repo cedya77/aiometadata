@@ -18,6 +18,8 @@ const MAX_HELD_BYTES = 128 * 1024 * 1024;
 const IDLE_MS = 60 * 60 * 1000;
 const SWEEP_MS = 10 * 60 * 1000;
 const SEARCH_SCAN = 5000;
+const MAX_REQUEST_READS = 400;
+const REQUEST_READ_MS = 15 * 1000;
 
 export interface Programme {
   id: string;
@@ -59,6 +61,11 @@ interface State {
   now: () => number;
   reads: LRUCache<string, GuidePage, ReadContext>;
   failures: LRUCache<string, true>;
+}
+
+interface ReadBudget {
+  left: number;
+  until: number;
 }
 
 const states = new WeakMap<object, State>();
@@ -176,11 +183,15 @@ function stateFor(addon: GuideAddon): State {
   return state;
 }
 
-function readDay(state: State, context: ReadContext): Promise<GuidePage | null> {
+function readDay(state: State, context: ReadContext, budget: ReadBudget): Promise<GuidePage | null> {
   const key = `${hash(context.base)}|${context.catalog.type}|${context.catalog.id}|${context.skip}|${context.day}`;
   const held = state.reads.peek(key, { allowStale: true });
   if (held) held.usedAt = state.now();
   if (state.failures.has(key)) return Promise.resolve(held ?? null);
+  if (!held || state.reads.getRemainingTTL(key) <= 0) {
+    if (budget.left <= 0 || state.now() >= budget.until) return Promise.resolve(held ?? null);
+    budget.left--;
+  }
   return state.reads.fetch(key, { context }).then(
     (page) => page ?? null,
     () => null
@@ -229,17 +240,21 @@ export async function programmesFor(
     group.keys.push(`${placement.meta.type}|${placement.meta.id}`);
   });
 
-  const days = daysOf(fromMs, toMs);
+  const now = state.now();
+  const away = (day: string) => Math.abs(Date.parse(day) + DAY_MS / 2 - now);
+  const days = daysOf(fromMs, toMs).sort((a, b) => away(a) - away(b));
   const work: Array<{ group: { catalog: LiveCatalog; skip: number; keys: string[] }; day: string }> = [];
-  for (const group of groups.values()) for (const day of days) work.push({ group, day });
+  for (const day of days) for (const group of groups.values()) work.push({ group, day });
+  const budget: ReadBudget = { left: MAX_REQUEST_READS, until: now + REQUEST_READ_MS };
   const pages = await inBatches(
-    work.map(({ group, day }) => () => readDay(state, { base, catalog: group.catalog, skip: group.skip, day })),
+    work.map(({ group, day }) => () => readDay(state, { base, catalog: group.catalog, skip: group.skip, day }, budget)),
     PARALLEL_READS
   );
 
   const found = new Map<string, Map<number, Programme>>();
+  let rows = 0;
   pages.forEach((page, n) => {
-    if (!page) return;
+    if (!page || rows >= MAX_PROGRAMMES) return;
     for (const key of work[n].group.keys) {
       for (const programme of page.programmes.get(key) ?? []) {
         if (programme.start >= toMs || programme.end <= fromMs) continue;
@@ -248,7 +263,9 @@ export async function programmesFor(
           byStart = new Map();
           found.set(key, byStart);
         }
-        if (!byStart.has(programme.start)) byStart.set(programme.start, programme);
+        if (byStart.has(programme.start)) continue;
+        byStart.set(programme.start, programme);
+        rows++;
       }
     }
   });
@@ -288,6 +305,8 @@ export function guideRange(manifest: any, now: number): { start: number; end: nu
   return { start: today - back * DAY_MS, end: today + GUIDE_DAYS_AHEAD * DAY_MS };
 }
 
+const collator = new Intl.Collator();
+
 const wordsOf = (value: unknown): string[] => String(value ?? '').toLowerCase().split(/\s+/).filter(Boolean);
 
 export function filterProgrammes(items: GuideItem[], ask: Ask, now: number): { items: GuideItem[]; total: number } {
@@ -326,8 +345,8 @@ export function filterProgrammes(items: GuideItem[], ask: Ask, now: number): { i
   const byName = sortBy.includes('sortname') || sortBy.includes('name');
   kept.sort((a, b) =>
     byName
-      ? a.programme.title.localeCompare(b.programme.title) || a.programme.start - b.programme.start
-      : a.programme.start - b.programme.start || a.programme.title.localeCompare(b.programme.title)
+      ? collator.compare(a.programme.title, b.programme.title) || a.programme.start - b.programme.start
+      : a.programme.start - b.programme.start || collator.compare(a.programme.title, b.programme.title)
   );
   if (String(listOf(ask('SortOrder'))[0] ?? '').toLowerCase() === 'descending') kept.reverse();
 
@@ -358,8 +377,12 @@ export async function programmeTarget(
   if (!placement || placement === GONE) return null;
   const channel: ListedChannel = { meta: placement.meta, number: placement.number };
   const startMs = at * 1000;
-  const found = await programmesFor(addon, base, catalogs, [{ type: t, id: i }], startMs, startMs + 1000);
-  const programme = (found.get(`${placement.meta.type}|${placement.meta.id}`) ?? []).find((p) => Math.floor(p.start / 1000) === at);
+  const startingIn = async (fromMs: number): Promise<Programme | undefined> => {
+    const found = await programmesFor(addon, base, catalogs, [{ type: t, id: i }], fromMs, fromMs + 1000);
+    return (found.get(`${placement.meta.type}|${placement.meta.id}`) ?? []).find((p) => Math.floor(p.start / 1000) === at);
+  };
+  // One still on at midnight is on the next day's page too.
+  const programme = (await startingIn(startMs)) ?? (await startingIn((Math.floor(startMs / DAY_MS) + 1) * DAY_MS));
   if (programme && caughtUp(placement.meta, programme.start, addon.now())) {
     return { channel, programme, live: false, streamId: programme.id, runtimeMs: programme.end - programme.start };
   }
@@ -372,9 +395,12 @@ export async function searchChannels(addon: GuideAddon, base: string, catalogs: 
   const scanned = await listPlacements(addon, base, catalogs, SEARCH_SCAN);
   const numbers = new Map(scanned.map((p) => [`${p.meta.type}|${p.meta.id}`, p.number]));
 
+  const answered = new Set<string>();
   const asked = await Promise.all(
     catalogs.filter((c) => c.search).map(async (catalog) => {
-      const entries = (await readPage(addon, base, catalog, { search: wanted })) ?? [];
+      const entries = await readPage(addon, base, catalog, { search: wanted });
+      if (!entries) return [];
+      answered.add(`${catalog.type}|${catalog.id}`);
       return entries
         .map((entry) => channelMetaOf(entry, catalog))
         .filter((meta): meta is ChannelMeta => meta !== null)
@@ -385,7 +411,7 @@ export async function searchChannels(addon: GuideAddon, base: string, catalogs: 
     .filter((p) => p.number !== undefined && p.number.toLowerCase() === wanted)
     .map((p) => ({ meta: p.meta, number: p.number }));
   const named = scanned
-    .filter((p) => !p.catalog?.search && terms.length > 0 && terms.every((word) => p.meta.name.toLowerCase().includes(word)))
+    .filter((p) => !answered.has(`${p.catalog?.type}|${p.catalog?.id}`) && terms.length > 0 && terms.every((word) => p.meta.name.toLowerCase().includes(word)))
     .map((p) => ({ meta: p.meta, number: p.number }));
 
   const seen = new Set<string>();

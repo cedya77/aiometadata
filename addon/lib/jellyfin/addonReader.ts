@@ -64,12 +64,29 @@ export function clockOptions(now?: () => number): { perf?: { now: () => number }
   return now ? { perf: { now }, ttlResolution: 0 } : {};
 }
 
+const isManifest = (body: any): body is Manifest => Array.isArray(body?.catalogs);
+
 function livePart(manifest: Manifest): Manifest {
   const hints = manifest.behaviorHints ?? {};
-  const catalogs = (Array.isArray(manifest.catalogs) ? manifest.catalogs : [])
-    .filter((c: any) => c?.type === 'tv' || (Array.isArray(c?.extra) && c.extra.some((e: any) => e?.name === 'date')))
-    .map((c: any) => ({ type: c.type, id: c.id, name: c.name, extra: c.extra }));
+  const catalogs = manifest.catalogs
+    .filter((c: any) => c?.type === 'tv' || extrasOf(c).some((e) => e.name === 'date'))
+    .map((c: any) => ({ type: c.type, id: c.id, name: c.name, extra: extrasOf(c) }));
   return { behaviorHints: { epgProvider: hints.epgProvider, catchupDays: hints.catchupDays }, catalogs };
+}
+
+/** The extras a catalog declares, as objects or the older way, as lists of names. */
+export function extrasOf(catalog: any): Array<{ name: string; isRequired?: boolean }> {
+  const extras = new Map<string, { name: string; isRequired?: boolean }>();
+  for (const extra of Array.isArray(catalog?.extra) ? catalog.extra : []) {
+    if (typeof extra?.name === 'string') extras.set(extra.name, { name: extra.name, isRequired: Boolean(extra.isRequired) });
+  }
+  for (const name of Array.isArray(catalog?.extraSupported) ? catalog.extraSupported : []) {
+    if (typeof name === 'string' && !extras.has(name)) extras.set(name, { name });
+  }
+  for (const name of Array.isArray(catalog?.extraRequired) ? catalog.extraRequired : []) {
+    if (typeof name === 'string') extras.set(name, { name, isRequired: true });
+  }
+  return [...extras.values()];
 }
 
 const storeKey = (key: string): string => `jf:livetv:manifest:${key}`;
@@ -115,26 +132,29 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
     ...clockOptions(options.now),
     fetchMethod: async (key, _stale, { context }) => {
       const manifest = await fetchJson(context, '/manifest.json');
-      if (!manifest) {
+      if (!isManifest(manifest)) {
         failures.set(key, true);
         throw new Error('manifest read failed');
       }
       options.store?.set(storeKey(key), JSON.stringify(livePart(manifest))).catch(() => undefined);
+      recalled.delete(key);
       return manifest;
     },
   });
+  // Apart from the manifests read: setting one there ends a read of it that is still running.
+  const recalled = new LRUCache<string, Manifest>({ max: MAX_BASES });
 
   function read(base: string): Promise<Manifest | null> {
     const key = hash(base);
     const failed = () => {
       failures.set(key, true);
-      return null;
+      return held(key) ?? null;
     };
     return manifests.fetch(key, { context: base }).then((manifest) => manifest ?? failed(), failed);
   }
 
   function held(key: string): Manifest | undefined {
-    return manifests.peek(key, { allowStale: true });
+    return manifests.peek(key, { allowStale: true }) ?? recalled.get(key);
   }
 
   return {
@@ -143,7 +163,9 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
     manifest(base: string) {
       const key = hash(base);
       if (failures.has(key)) return Promise.resolve(held(key) ?? null);
-      return read(base);
+      const kept = recalled.get(key);
+      const reading = read(base);
+      return kept ? Promise.resolve(kept) : reading;
     },
     async recall(base: string) {
       const key = hash(base);
@@ -155,9 +177,7 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
       try {
         const stored = await Promise.race([options.store.get(storeKey(key)), late]);
         const manifest = stored ? JSON.parse(stored) : null;
-        if (manifest && held(key) === undefined) {
-          manifests.set(key, manifest, { start: manifests.perf.now() - MANIFEST_TTL_MS - 1 });
-        }
+        if (isManifest(manifest) && held(key) === undefined) recalled.set(key, manifest);
       } catch (error: any) {
         log(`Addon manifest recall for ${hostOf(base)} failed: ${error?.code || error?.name || 'failed'}`);
       } finally {

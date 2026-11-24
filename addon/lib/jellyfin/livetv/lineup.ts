@@ -11,6 +11,8 @@ const MAX_PAGES = 40;
 const MAX_LINEUPS = 2000;
 const MAX_PLACEMENTS = 20000;
 const MAX_LIST = 50000;
+const MAX_FAILURES = 5000;
+const SLOW_MS = 4000;
 const MAX_HELD_CHANNELS = 400000;
 const IDLE_MS = 2 * 60 * 60 * 1000;
 const SWEEP_MS = 10 * 60 * 1000;
@@ -68,6 +70,8 @@ interface State {
   lineups: LRUCache<string, Lineup>;
   placements: LRUCache<string, Placement | typeof GONE>;
   assemblies: LRUCache<string, Assembly>;
+  /** Channel reads that failed lately, and addons whose channel reads time out. */
+  failures: LRUCache<string, true>;
 }
 
 const states = new WeakMap<object, State>();
@@ -95,6 +99,7 @@ export function stateFor(addon: LineupAddon): State {
       }),
       placements: new LRUCache<string, Placement | typeof GONE>({ max: MAX_PLACEMENTS, ttl: PLACEMENT_TTL_MS, ...clock }),
       assemblies,
+      failures: new LRUCache<string, true>({ max: MAX_FAILURES, ttl: FAILURE_MS, ...clock }),
     };
     states.set(addon, created);
     setInterval(() => purge(created), SWEEP_MS).unref();
@@ -301,6 +306,15 @@ export async function listPlacements(addon: LineupAddon, base: string, catalogs:
   return list.entries.slice(0, limit);
 }
 
+/** The first channels, in the full list's order, whose catalog has a guide. */
+export async function guideChannels(addon: LineupAddon, base: string, catalogs: LiveCatalog[], limit: number): Promise<ListedChannel[]> {
+  const last = catalogs.map((c) => c.guide).lastIndexOf(true);
+  if (last < 0) return [];
+  const guided = (list: Assembly) => list.entries.filter((p) => p.catalog?.guide);
+  const list = await walk(addon, base, catalogs, (l) => l.lineups[last]?.done === true || guided(l).length >= limit);
+  return guided(list).slice(0, limit).map(({ meta, number }) => ({ meta, number }));
+}
+
 export async function placementFor(
   addon: LineupAddon,
   base: string,
@@ -314,9 +328,16 @@ export async function placementFor(
   const held = state.placements.get(key);
   if (held) return held;
 
+  const slowKey = hash(base);
+  if (state.failures.has(key) || state.failures.has(slowKey)) return null;
   const path = `/meta/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`;
+  const began = state.now();
   const body = await shareInFlight(`livetv:${state.id}|${hash(base)}|${path}`, () => addon.fetchJson(base, path));
-  if (!body) return null;
+  if (!body) {
+    state.failures.set(key, true);
+    if (state.now() - began >= SLOW_MS) state.failures.set(slowKey, true);
+    return null;
+  }
   const meta = body.meta ? channelMetaOf({ ...body.meta, id, type }, { type }) : null;
   if (!meta) {
     state.placements.set(key, GONE);

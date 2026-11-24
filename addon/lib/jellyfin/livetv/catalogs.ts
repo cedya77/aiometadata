@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
-import type { AddonDeps, Manifest } from '../addonReader';
+import { extrasOf, type AddonDeps, type Manifest } from '../addonReader';
 
 export interface LiveCatalog {
   type: string;
@@ -15,10 +15,6 @@ export interface PageQuery {
   skip?: number;
   date?: string;
   search?: string;
-}
-
-function extrasOf(catalog: any): any[] {
-  return Array.isArray(catalog?.extra) ? catalog.extra.filter((e: any) => e && typeof e.name === 'string') : [];
 }
 
 export function liveCatalogs(manifest: Manifest | null | undefined): LiveCatalog[] {
@@ -63,6 +59,8 @@ export function pagePath(catalog: LiveCatalog, query: PageQuery): string {
 export async function readPage(addon: Pick<AddonDeps, 'fetchJson'>, base: string, catalog: LiveCatalog, query: PageQuery): Promise<any[] | null> {
   const body = await addon.fetchJson(base, pagePath(catalog, query));
   if (!body) return null;
-  const entries = query.date && Array.isArray(body.metasDetailed) ? body.metasDetailed : body.metas;
-  return Array.isArray(entries) ? entries.filter((e: any) => e && typeof e === 'object') : null;
+  const lists = query.date ? [body.metasDetailed, body.metas] : [body.metas];
+  const entries = lists.find(Array.isArray);
+  if (entries) return entries.filter((e: any) => e && typeof e === 'object');
+  return lists.includes(null) ? [] : null;
 }
