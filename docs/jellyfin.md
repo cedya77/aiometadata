@@ -235,7 +235,7 @@ A user held to an age rating cannot create or join a group, since the group's qu
 
 ## Live TV
 
-Live TV shows the channels of the configuration's playback addon, the one under **Playback addon URL**, in Jellyfin's Live TV section. A profile with its own playback addon gets that addon's channels. Nothing has to be switched on: Live TV appears for a profile once its playback addon lists live catalogs. A catalog is live when its type is `tv`, or when it takes the `date` extra and the addon's manifest sets `behaviorHints.epgProvider`, as Stremio defines a guide. AIOStreams' IPTV sources follow these conventions; its [addon protocol page](https://github.com/Viren070/AIOStreams/blob/main/packages/docs/content/docs/reference/addon-protocol/live-tv.mdx) describes them for addon authors.
+Live TV shows the channels of the configuration's playback addon, the one under **Playback addon URL**, in Jellyfin's Live TV section. A profile with its own playback addon gets that addon's channels. It is off until `JELLYFIN_LIVETV_ENABLED` is turned on for the instance. Nothing else has to be switched on: Live TV then appears for a profile once its playback addon lists live catalogs. A catalog is live when its type is `tv`, or when it takes the `date` extra and the addon's manifest sets `behaviorHints.epgProvider`, as Stremio defines a guide. AIOStreams' IPTV sources follow these conventions; its [addon protocol page](https://github.com/Viren070/AIOStreams/blob/main/packages/docs/content/docs/reference/addon-protocol/live-tv.mdx) describes them for addon authors.
 
 - **Channels** are listed in the addon's order, one live catalog after another. Each carries the addon's `channelNumber`, or else its place in that list, and its logo. A channel from a catalog with a guide shows what is on now. Lists stop at 100 pages per catalog; a channel past that is found by search or in its group, and keeps its number, favourite mark and playback, and its guide when the catalog takes the `ids` extra.
 - **Guide.** A catalog with a guide fills the Guide, Programs and Recommended tabs, with each programme's title, description, times and genres; movie, news, kids and sports marks come from the genres. The guide runs to 7 days ahead, and back as many days as the manifest's `behaviorHints.catchupDays` declares, at most 14. An addon that leaves that out gets a guide that starts today. A guide the addon is still loading is asked for again after a minute. Programs, Recommended and programme search cover the first 100 channels that have a guide. One request reads at most 400 guide pages, the days nearest today first. A show's page in Jellyfin Web lists its airings there over the next 24 hours.
@@ -248,7 +248,7 @@ Live TV shows the channels of the configuration's playback addon, the one under 
 - **Not offered:** recordings, timers, tuners, M3U playlists and XMLTV guides.
 - **AIOStreams' apps** show Live TV from this server too, with their guide when a catalog has one, catch-up marks on programmes that play from their start, and the channel groups: the options of each catalog's `genre` extra, shared by name across catalogs. A group lists up to 100 pages of its own, so it reaches channels the whole list does not. Other Jellyfin apps have no channel groups and show one list.
 
-`JELLYFIN_LIVETV_ENABLED` turns Live TV off for every configuration.
+`JELLYFIN_LIVETV_ENABLED` turns Live TV on or off for every configuration.
 
 ## AIOMetadata inside AIOStreams' Jellyfin server
 
@@ -303,7 +303,7 @@ All of these are in the dashboard under **Server**, or as environment variables,
 | `JELLYFIN_QUICK_CONNECT_TTL` (env) | `600` | How long a Quick Connect code is valid. |
 | `JELLYFIN_CATALOG_MIN_PAGE` | `10` | A catalog page shorter than this is the last one, so short lists are not asked for pages they do not have. |
 | `JELLYFIN_SHELF_META_CONCURRENCY` | `4` | Titles the Continue Watching and Next Up shelves fetch metadata for at once. A cold anime title costs several requests, and MyAnimeList blocks a burst. |
-| `JELLYFIN_LIVETV_ENABLED` | `true` | Show each playback addon's live channels as Live TV. Off hides Live TV everywhere. |
+| `JELLYFIN_LIVETV_ENABLED` | `false` | Show each playback addon's live channels as Live TV. Off hides Live TV everywhere. |
 | `JELLYFIN_SYNCPLAY_ENABLED` | `true` | Offer SyncPlay to the apps that support it. Off hides it in those apps. |
 | `JELLYFIN_SYNCPLAY_SCOPE` | `configuration` | Who sees a SyncPlay group: the users of the configuration that started it, or with `instance` everyone on this instance. |
 | `JELLYFIN_SYNCPLAY_MAX_GROUPS` | `1000` | The most SyncPlay groups held at once; creating one past it is refused until another ends. |
