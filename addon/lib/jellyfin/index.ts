@@ -1900,7 +1900,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         seen.add(playable.id);
         rememberIssued(playable.id, playable.url, playable.durationMs);
       }
-      const source = mediaSourceFor(playable, runtimeTicks, { live });
+      const source = mediaSourceFor(playable, runtimeTicks, { live, channel: !cache });
       if (playable.needsHeaders) headerSources.add(source);
       sources.push(source);
     }

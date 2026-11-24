@@ -7,6 +7,7 @@ import { channelMetaOf, GONE, listPlacements, placementFor, type ChannelMeta, ty
 import { flag, integer, listOf, timeOf, type Ask } from './query';
 
 const READ_TTL_MS = 30 * 60 * 1000;
+const EMPTY_TTL_MS = 60 * 1000;
 const FAILURE_MS = 30 * 1000;
 const MAX_READS = 5000;
 const PARALLEL_READS = 8;
@@ -47,6 +48,8 @@ type GuideAddon = Pick<AddonDeps, 'fetchJson' | 'now'>;
 interface GuidePage {
   programmes: Map<string, Programme[]>;
   usedAt: number;
+  /** How many times in a row it came back without a programme. */
+  empties: number;
 }
 
 
@@ -136,6 +139,8 @@ export function pageSize(programmes: Map<string, Programme[]>): number {
   return size;
 }
 
+const isEmpty = (programmes: Map<string, Programme[]>): boolean => [...programmes.values()].every((list) => !list.length);
+
 function purge(state: State): void {
   for (const key of [...state.reads.keys()]) {
     const page = state.reads.peek(key);
@@ -161,18 +166,22 @@ function stateFor(addon: GuideAddon): State {
       allowStaleOnFetchRejection: true,
       noDeleteOnFetchRejection: true,
       ...clock,
-      fetchMethod: async (key, _stale, { context }) => {
+      fetchMethod: async (key, stale, { options, context }) => {
         const entries = await readPage(addon, context.base, context.catalog, { skip: context.skip, date: context.day });
-        if (!entries) {
-          failures.set(key, true);
-          throw new Error('guide read failed');
-        }
         const programmes = new Map<string, Programme[]>();
-        for (const entry of entries) {
+        for (const entry of entries ?? []) {
           const meta = channelMetaOf(entry, context.catalog);
           if (meta) programmes.set(`${meta.type}|${meta.id}`, programmesOf(entry));
         }
-        return { programmes, usedAt: addon.now() };
+        // Empty is also how a guide still loading, or an error the addon hides, looks.
+        const empty = isEmpty(programmes);
+        if (!entries || (empty && stale && !isEmpty(stale.programmes))) {
+          failures.set(key, true);
+          throw new Error('guide read failed');
+        }
+        const empties = empty ? (stale?.empties ?? 0) + 1 : 0;
+        if (empty) options.ttl = Math.min(READ_TTL_MS, EMPTY_TTL_MS * 2 ** (empties - 1));
+        return { programmes, usedAt: addon.now(), empties };
       },
     });
     const created: State = { now: addon.now, reads, failures };
@@ -192,7 +201,7 @@ function readDay(state: State, context: ReadContext, budget: ReadBudget): Promis
     if (budget.left <= 0 || state.now() >= budget.until) return Promise.resolve(held ?? null);
     budget.left--;
   }
-  return state.reads.fetch(key, { context }).then(
+  return state.reads.fetch(key, { context, allowStale: !held || !isEmpty(held.programmes) }).then(
     (page) => page ?? null,
     () => null
   );

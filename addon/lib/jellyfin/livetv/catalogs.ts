@@ -2,6 +2,9 @@
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { extrasOf, type AddonDeps, type Manifest } from '../addonReader';
 
+// An addon may wait some seconds for a guide it is still loading before it answers.
+const GUIDE_TIMEOUT_MS = 10 * 1000;
+
 export interface LiveCatalog {
   type: string;
   id: string;
@@ -56,11 +59,17 @@ export function pagePath(catalog: LiveCatalog, query: PageQuery): string {
   return extras.length ? `${head}/${extras.join('&')}.json` : `${head}.json`;
 }
 
+/** AIOStreams answers a failure with 200 and an entry that names the error. */
+export const isAddonError = (entry: any): boolean => String(entry?.id ?? '').startsWith('aiostreamserror.');
+
 export async function readPage(addon: Pick<AddonDeps, 'fetchJson'>, base: string, catalog: LiveCatalog, query: PageQuery): Promise<any[] | null> {
-  const body = await addon.fetchJson(base, pagePath(catalog, query));
+  const body = await addon.fetchJson(base, pagePath(catalog, query), query.date ? GUIDE_TIMEOUT_MS : undefined);
   if (!body) return null;
   const lists = query.date ? [body.metasDetailed, body.metas] : [body.metas];
   const entries = lists.find(Array.isArray);
-  if (entries) return entries.filter((e: any) => e && typeof e === 'object');
+  if (entries) {
+    const kept = entries.filter((e: any) => e && typeof e === 'object' && !isAddonError(e));
+    return kept.length || !entries.some(isAddonError) ? kept : null;
+  }
   return lists.includes(null) ? [] : null;
 }

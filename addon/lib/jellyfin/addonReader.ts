@@ -32,7 +32,7 @@ export interface AddonDeps {
   peek(base: string): Manifest | undefined;
   /** Holds what the store kept of the manifest, as a stale one, when none is held. Never reads the addon. */
   recall(base: string): Promise<void>;
-  fetchJson(base: string, path: string): Promise<any | null>;
+  fetchJson(base: string, path: string, timeoutMs?: number): Promise<any | null>;
   now(): number;
 }
 
@@ -95,11 +95,11 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
   const now = options.now ?? Date.now;
   const log = options.log ?? ((line: string) => logger.debug(line));
 
-  async function fetchJson(base: string, path: string): Promise<any | null> {
+  async function fetchJson(base: string, path: string, timeoutMs = READ_TIMEOUT_MS): Promise<any | null> {
     const host = hostOf(base);
     const where = `${host} ${path.split('/').slice(0, 3).join('/')}`;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), READ_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     timer.unref?.();
     try {
       const response = await options.fetch(`${base}${path}`, {

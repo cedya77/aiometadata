@@ -2,12 +2,13 @@
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
 import { clockOptions, hash, shareInFlight, type AddonDeps } from '../addonReader';
-import { readPage, type LiveCatalog } from './catalogs';
+import { isAddonError, readPage, type LiveCatalog } from './catalogs';
 
 const LINEUP_TTL_MS = 60 * 60 * 1000;
 const PLACEMENT_TTL_MS = 60 * 60 * 1000;
 const FAILURE_MS = 30 * 1000;
-const MAX_PAGES = 40;
+const EMPTY_TTL_MS = 60 * 1000;
+const MAX_PAGES = 100;
 const MAX_LINEUPS = 2000;
 const MAX_PLACEMENTS = 20000;
 const MAX_LIST = 50000;
@@ -151,16 +152,23 @@ function emptyLineup(state: State): Lineup {
   return { channels: [], skips: [], keys: new Set(), next: 0, pages: 0, done: false, usedAt: state.now() };
 }
 
+const isEmpty = (lineup: Lineup): boolean => lineup.done && !lineup.channels.length;
+
 function heldLineup(state: State, key: string): Lineup | undefined {
   const lineup = state.lineups.get(key);
-  if (lineup) lineup.usedAt = state.now();
+  if (!lineup) return undefined;
+  if (isEmpty(lineup) && state.lineups.getRemainingTTL(key) <= 0) {
+    state.lineups.delete(key);
+    return undefined;
+  }
+  lineup.usedAt = state.now();
   return lineup;
 }
 
 // Setting the same value again does not measure it again, so a grown lineup is put back under its remaining lifetime.
 function remeasure(state: State, key: string, lineup: Lineup): void {
   if (state.lineups.peek(key) !== lineup) return;
-  const ttl = Math.max(1, state.lineups.getRemainingTTL(key));
+  const ttl = isEmpty(lineup) ? EMPTY_TTL_MS : Math.max(1, state.lineups.getRemainingTTL(key));
   state.lineups.delete(key);
   state.lineups.set(key, lineup, { ttl });
 }
@@ -333,7 +341,7 @@ export async function placementFor(
   const path = `/meta/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`;
   const began = state.now();
   const body = await shareInFlight(`livetv:${state.id}|${hash(base)}|${path}`, () => addon.fetchJson(base, path));
-  if (!body) {
+  if (!body || isAddonError(body.meta)) {
     state.failures.set(key, true);
     if (state.now() - began >= SLOW_MS) state.failures.set(slowKey, true);
     return null;
