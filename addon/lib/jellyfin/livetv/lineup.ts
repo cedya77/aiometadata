@@ -2,7 +2,7 @@
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
 import { chunksOf, clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
-import { IDS_PER_READ, isAddonError, pagePath, readPage, type LiveCatalog } from './catalogs';
+import { catalogKey, IDS_PER_READ, isAddonError, pagePath, readPage, type LiveCatalog } from './catalogs';
 
 const LINEUP_TTL_MS = 60 * 60 * 1000;
 const PLACEMENT_TTL_MS = 60 * 60 * 1000;
@@ -149,7 +149,8 @@ export function channelMetaOf(entry: any, catalog: Pick<LiveCatalog, 'type'>): C
   return meta;
 }
 
-const lineupKey = (base: string, catalog: LiveCatalog): string => `${hash(base)}|${catalog.type}|${catalog.id}`;
+const lineupKey = (base: string, catalog: LiveCatalog): string => `${hash(base)}|${catalogKey(catalog)}`;
+const assemblyKey = (base: string, catalogs: LiveCatalog[]): string => `${hash(base)}|${catalogs.map(catalogKey).join(',')}`;
 const placementKey = (base: string, type: string, id: string): string => `${hash(base)}|${type}|${id}`;
 const channelKey = (meta: Pick<ChannelMeta, 'type' | 'id'>): string => `${meta.type}|${meta.id}`;
 
@@ -215,7 +216,7 @@ function refresh(state: State, addon: LineupAddon, base: string, catalog: LiveCa
 }
 
 function assemble(state: State, addon: LineupAddon, base: string, catalogs: LiveCatalog[]): Assembly {
-  const memoKey = `${hash(base)}|${catalogs.map(channelKey).join(',')}`;
+  const memoKey = assemblyKey(base, catalogs);
   let memo = state.assemblies.get(memoKey);
   if (memo && memo.lineups.some((lineup, n) => heldLineup(state, lineupKey(base, catalogs[n])) !== lineup)) memo = undefined;
   if (!memo) {
@@ -241,7 +242,7 @@ function assemble(state: State, addon: LineupAddon, base: string, catalogs: Live
         const meta = lineup.channels[memo.consumed];
         const key = channelKey(meta);
         if (memo.byKey.has(key)) continue;
-        const placement: Placement = { meta, catalog, skip: lineup.skips[memo.consumed], number: meta.channelNumber ?? String(memo.entries.length + 1) };
+        const placement: Placement = { meta, catalog, skip: lineup.skips[memo.consumed], number: meta.channelNumber ?? (catalog.genre === undefined ? String(memo.entries.length + 1) : undefined) };
         memo.entries.push(placement);
         memo.byKey.set(key, placement);
       }
@@ -297,7 +298,7 @@ async function walk(addon: LineupAddon, base: string, catalogs: LiveCatalog[], s
   for (let reads = 0; ; reads++) {
     const list = assemble(state, addon, base, catalogs);
     if (satisfied(list) || list.finished || list.blocked || reads > MAX_PAGES * catalogs.length) return list;
-    const outcome = await shareInFlight(`livetv:${state.id}|${hash(base)}|walk`, () => readNextPage(state, addon, base, catalogs));
+    const outcome = await shareInFlight(`livetv:${state.id}|${assemblyKey(base, catalogs)}|walk`, () => readNextPage(state, addon, base, catalogs));
     if (outcome !== 'read') return assemble(state, addon, base, catalogs);
   }
 }
@@ -311,6 +312,35 @@ export async function listChannels(
   const end = startIndex + limit;
   const list = await walk(addon, base, catalogs, (l) => l.entries.length >= end);
   const channels = list.entries.slice(startIndex, end).map(({ meta, number }) => ({ meta, number }));
+  return { channels, total: list.finished ? list.entries.length : list.entries.length + 1 };
+}
+
+export function groupCatalogs(catalogs: LiveCatalog[], genre: string): LiveCatalog[] {
+  return catalogs.filter((c) => c.groups.includes(genre)).map((c) => ({ ...c, genre }));
+}
+
+/** A group's channels, which keep the numbers of the whole list. */
+export async function listGroup(
+  addon: LineupAddon,
+  base: string,
+  catalogs: LiveCatalog[],
+  genre: string,
+  { startIndex, limit }: { startIndex: number; limit: number }
+): Promise<{ channels: ListedChannel[]; total: number }> {
+  const end = startIndex + limit;
+  const list = await walk(addon, base, groupCatalogs(catalogs, genre), (l) => l.entries.length >= end);
+  const state = stateFor(addon);
+  const whole = assemble(state, addon, base, catalogs).byKey;
+  const channels = list.entries.slice(startIndex, end).map((entry) => {
+    const listed = whole.get(channelKey(entry.meta));
+    const number = entry.number ?? listed?.number;
+    if (!listed) {
+      const { genre: _, ...catalog } = entry.catalog!;
+      if (catalog.ids) rememberFound(addon, base, entry.meta, catalog);
+      else state.placements.set(placementKey(base, entry.meta.type, entry.meta.id), { ...entry, number });
+    }
+    return { meta: entry.meta, number };
+  });
   return { channels, total: list.finished ? list.entries.length : list.entries.length + 1 };
 }
 
@@ -422,7 +452,7 @@ export async function placementsFor(
   const allById = catalogs.every((c) => c.ids);
   const toWalk = left.filter((c) => {
     const placement = located(c);
-    return placement ? !guideOnly && placement.number === undefined : !allById;
+    return placement ? !guideOnly && placement.number === undefined && placement.skip === undefined : !allById;
   });
   if (toWalk.length) {
     list = await walk(addon, base, catalogs, (l) => toWalk.every((c) => l.byKey.has(channelKey(c))));

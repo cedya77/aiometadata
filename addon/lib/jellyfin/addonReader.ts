@@ -93,11 +93,19 @@ function livePart(manifest: Manifest): Manifest {
   return { behaviorHints: { epgProvider: hints.epgProvider, catchupDays: hints.catchupDays }, catalogs };
 }
 
+interface Extra {
+  name: string;
+  isRequired?: boolean;
+  options?: unknown[];
+}
+
 /** The extras a catalog declares, as objects or the older way, as lists of names. */
-export function extrasOf(catalog: any): Array<{ name: string; isRequired?: boolean }> {
-  const extras = new Map<string, { name: string; isRequired?: boolean }>();
+export function extrasOf(catalog: any): Extra[] {
+  const extras = new Map<string, Extra>();
   for (const extra of Array.isArray(catalog?.extra) ? catalog.extra : []) {
-    if (typeof extra?.name === 'string') extras.set(extra.name, { name: extra.name, isRequired: Boolean(extra.isRequired) });
+    if (typeof extra?.name !== 'string') continue;
+    extras.set(extra.name, { name: extra.name, isRequired: Boolean(extra.isRequired) });
+    if (extra.name === 'genre' && Array.isArray(extra.options)) extras.get('genre')!.options = extra.options;
   }
   for (const name of Array.isArray(catalog?.extraSupported) ? catalog.extraSupported : []) {
     if (typeof name === 'string' && !extras.has(name)) extras.set(name, { name });

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import type { Descriptor, ProgramRef } from '../idsCodec';
+import type { LiveCatalog } from './catalogs';
 import { flagsOf, type Programme } from './guide';
 import type { ListedChannel } from './lineup';
 
@@ -24,9 +25,22 @@ export function liveTvViewId(deps: Pick<ItemDeps, 'encodeId'>): string {
   return viewId;
 }
 
-export function liveTvView(deps: ItemDeps, serverId: string, { guide = false }: { guide?: boolean } = {}): any {
+export function liveTvView(deps: ItemDeps, serverId: string, { guide = false, groups = false }: { guide?: boolean; groups?: boolean } = {}): any {
   const view = { ...deps.collectionFolder(liveTvViewId(deps), serverId, 'Live TV', 'livetv', null), Type: 'UserView' };
-  return guide ? { ...view, aiostreams: { guide: true } } : view;
+  return guide || groups ? { ...view, aiostreams: { ...(guide && { guide }), ...(groups && { groups }) } } : view;
+}
+
+export function groupItem(deps: ItemDeps, serverId: string, catalog: Pick<LiveCatalog, 'type' | 'id'>, name: string): any {
+  return {
+    Name: name,
+    Id: deps.encodeId({ k: 'genre', t: catalog.type, c: catalog.id, g: name }),
+    ServerId: serverId,
+    Type: 'Genre',
+    IsFolder: false,
+    ImageTags: {},
+    BackdropImageTags: [],
+    ImageBlurHashes: {},
+  };
 }
 
 export const channelIdOf = (deps: Pick<ItemDeps, 'encodeId'>, channel: ListedChannel): string =>

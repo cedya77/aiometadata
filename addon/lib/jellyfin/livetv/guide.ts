@@ -2,7 +2,7 @@
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
 import { chunksOf, clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
-import { IDS_PER_READ, pagePath, readPage, utcDay, type LiveCatalog } from './catalogs';
+import { catalogKey, IDS_PER_READ, pagePath, readPage, utcDay, type LiveCatalog } from './catalogs';
 import { channelMetaOf, GONE, listPlacements, placementFor, placementsFor, rememberFound, type ChannelMeta, type ListedChannel, type Placement } from './lineup';
 import { flag, integer, listOf, timeOf, type Ask } from './query';
 
@@ -216,7 +216,7 @@ function spend(state: State, budget: ReadBudget): boolean {
 }
 
 function readDay(state: State, context: ReadContext, budget: ReadBudget): Promise<GuidePage | null> {
-  const key = `${hash(context.base)}|${context.catalog.type}|${context.catalog.id}|${context.skip}|${context.day}`;
+  const key = `${hash(context.base)}|${catalogKey(context.catalog)}|${context.skip}|${context.day}`;
   const held = state.reads.peek(key, { allowStale: true });
   if (held) held.usedAt = state.now();
   if (state.failures.has(key)) return Promise.resolve(held ?? null);
@@ -243,7 +243,7 @@ async function readChannels(
   channels: ChannelMeta[],
   budget: ReadBudget
 ): Promise<GuidePage> {
-  const scope = `${hash(base)}|${catalog.type}|${catalog.id}|${day}`;
+  const scope = `${hash(base)}|${catalogKey(catalog)}|${day}`;
   const nameOf = (c: ChannelMeta) => `${c.type}|${c.id}`;
   const keyOf = (c: ChannelMeta) => `${scope}|${nameOf(c)}`;
   const heldOf = (c: ChannelMeta) => state.singles.peek(keyOf(c), { allowStale: true });
@@ -315,7 +315,7 @@ export async function programmesFor(
   const groups = new Map<string, Group>();
   placements.forEach((placement) => {
     if (!placement || placement === GONE || !placement.catalog?.guide) return;
-    const groupKey = `${placement.catalog.type}|${placement.catalog.id}|${placement.skip ?? 'ids'}`;
+    const groupKey = `${catalogKey(placement.catalog)}|${placement.skip ?? 'ids'}`;
     let group = groups.get(groupKey);
     if (!group) {
       group = { catalog: placement.catalog, skip: placement.skip, channels: [] };

@@ -2,9 +2,9 @@
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { liveTvFor, liveTvReady, type LiveTv } from './gate';
 import { filterProgrammes, programmeTarget, searchChannels, type GuideItem } from './guide';
-import { liveTvView } from './items';
+import { groupItem, liveTvView } from './items';
 import { GONE, guideChannels, placementFor } from './lineup';
-import { askOf, listOf, type Ask } from './query';
+import { askOf, field, integer, listOf, type Ask } from './query';
 import {
   channelById,
   channelItems,
@@ -35,7 +35,7 @@ export interface HandlerDeps extends LiveTvDeps {
 
 const LIVE_KINDS = new Set(['livetv', 'channel', 'program']);
 const isLive = (descriptor: any): boolean => LIVE_KINDS.has(descriptor?.k);
-const hasGuide = (live: LiveTv): boolean => live.catalogs.some((c) => c.guide);
+const viewMarks = (live: LiveTv) => ({ guide: live.catalogs.some((c) => c.guide), groups: live.catalogs.some((c) => c.groups.length > 0) });
 
 export async function liveAllowed(req: any, deps: LiveTvDeps): Promise<LiveTv | null> {
   return liveTvReady(deps, await deps.loadConfig(req));
@@ -46,7 +46,7 @@ export async function liveItem(req: any, deps: LiveTvDeps, descriptor: any): Pro
   const config = await deps.loadConfig(req);
   const live = await liveTvReady(deps, config);
   if (!live) return NOT_FOUND;
-  if (descriptor.k === 'livetv') return { status: 200, body: liveTvView(deps, deps.serverIdFor(userOf(req)), { guide: hasGuide(live) }) };
+  if (descriptor.k === 'livetv') return { status: 200, body: liveTvView(deps, deps.serverIdFor(userOf(req)), viewMarks(live)) };
   if (descriptor.k === 'channel') return channelById(deps, req, live, config, descriptor);
   return programmeById(deps, req, live, descriptor);
 }
@@ -136,5 +136,22 @@ export async function liveSearch(
 
 export function liveTvViewFor(req: any, deps: LiveTvDeps, config: any): any | null {
   const live = liveTvFor(deps, config);
-  return live ? liveTvView(deps, deps.serverIdFor(userOf(req)), { guide: hasGuide(live) }) : null;
+  return live ? liveTvView(deps, deps.serverIdFor(userOf(req)), viewMarks(live)) : null;
+}
+
+/** The channel groups, when the request asks for the genres of Live TV or of channels. */
+export async function liveGroups(req: any, deps: LiveTvDeps): Promise<any | undefined> {
+  const parentId = field(req, 'ParentId');
+  const ofView = parentId ? (await deps.decodeLiveId(String(parentId)))?.k === 'livetv' : false;
+  if (!ofView && (parentId || !listOf(field(req, 'IncludeItemTypes')).some((type) => CHANNEL_TYPES.has(type.toLowerCase())))) return undefined;
+  const live = await liveAllowed(req, deps);
+  if (!live) return undefined;
+
+  const groups = new Map<string, LiveTv['catalogs'][number]>();
+  for (const catalog of live.catalogs) for (const name of catalog.groups) if (!groups.has(name)) groups.set(name, catalog);
+  const startIndex = Math.max(0, integer(field(req, 'StartIndex'), 0));
+  const limit = integer(field(req, 'Limit'), 0);
+  const serverId = deps.serverIdFor(userOf(req));
+  const page = [...groups].slice(startIndex, limit > 0 ? startIndex + limit : undefined);
+  return deps.itemList(page.map(([name, catalog]) => groupItem(deps, serverId, catalog, name)), groups.size, startIndex);
 }

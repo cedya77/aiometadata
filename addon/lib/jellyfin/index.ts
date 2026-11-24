@@ -80,7 +80,7 @@ import { registerStubs } from './stubs';
 import { createAddonReader, hash as addonHash } from './addonReader';
 import { liveTvEnabled, liveTvFor, liveTvReady, liveTvRecall, type GateDeps } from './livetv/gate';
 import { registerLiveTv } from './livetv/routes';
-import { liveAllowed, liveFavourite, liveItem, livePlayback, liveSearch, liveTvViewFor, type HandlerDeps } from './livetv/handlers';
+import { liveAllowed, liveFavourite, liveGroups, liveItem, livePlayback, liveSearch, liveTvViewFor, type HandlerDeps } from './livetv/handlers';
 import { livePrimaryKind, liveTvViewId } from './livetv/items';
 import { liveReportGuard } from './livetv/reports';
 import { asDefault, createLivePins, liveSourceIds, pickLive, pinScope, sourcesNamed } from './livetv/sources';
@@ -2694,6 +2694,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   });
 
   router.get('/Genres', async (req: any, res: any) => {
+    const groups = await liveGroups(req, liveTv);
+    if (groups) {
+      res.json(groups);
+      return;
+    }
     const parentId = req.query.ParentId ?? req.query.parentId;
     const { catalog, genres } = await genreOptionsFor(req, parentId);
     if (!catalog) {

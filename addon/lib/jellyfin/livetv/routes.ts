@@ -4,7 +4,7 @@ import { normaliseJellyfinId } from '../idsCodec';
 import { liveTvReady, type GateDeps, type LiveTv } from './gate';
 import { airingAt, caughtUp, filterProgrammes, guideRange, programmesFor, programmeTarget, type GuideItem } from './guide';
 import { channelItem, programItem, type ItemDeps } from './items';
-import { GONE, guideChannels, isListed, listChannels, placementFor, placementsFor, type ListedChannel } from './lineup';
+import { GONE, guideChannels, isListed, listChannels, listGroup, placementFor, placementsFor, type ListedChannel } from './lineup';
 import { askOf, field, flag, integer, listOf, timeOf, type Ask } from './query';
 
 export { field, flag };
@@ -13,6 +13,7 @@ const UNLIMITED = 5000;
 const PROGRAMME_CHANNELS = 100;
 const PROGRAMME_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_LIMIT = 500;
+const MAX_GROUP = 10000;
 const MAX_ASKED_CHANNELS = 1000;
 
 export interface LiveTvDeps extends GateDeps, ItemDeps {
@@ -91,6 +92,19 @@ async function listSkipping(deps: LiveTvDeps, live: LiveTv, skip: Set<string>, s
   return { channels: kept.slice(start, start + count), total: full.total - skipped, skipped };
 }
 
+const isGroup = (live: LiveTv, name: string): boolean => live.catalogs.some((c) => c.groups.includes(name));
+
+/** The group asked for: by the id of its genre item, or by its name. */
+async function groupOf(deps: LiveTvDeps, live: LiveTv, ask: Ask, named = true): Promise<string | undefined> {
+  const asked = named ? ask('Genres') : undefined;
+  if (typeof asked === 'string' && isGroup(live, asked)) return asked;
+  const name = listOf(asked, '|')[0];
+  if (name) return name;
+  const id = listOf(ask('GenreIds'), /[|,]/)[0];
+  const descriptor = id ? await deps.decodeLiveId(id) : null;
+  return descriptor?.k === 'genre' ? descriptor.g : undefined;
+}
+
 export async function channelPage(deps: LiveTvDeps, req: any, live: LiveTv, config: any): Promise<any> {
   const startIndex = Math.max(0, integer(field(req, 'StartIndex'), 0));
   const asked = integer(field(req, 'Limit'), 0);
@@ -102,9 +116,20 @@ export async function channelPage(deps: LiveTvDeps, req: any, live: LiveTv, conf
   const withProgram = flag(field(req, 'AddCurrentProgram')) !== false;
   const keys = await favouriteKeys(deps, req, config);
 
+  const group = await groupOf(deps, live, askOf(req));
+  const isFavourite = (c: ListedChannel) => keys.has(channelKeyOf(c.meta));
+
   let channels: ListedChannel[];
   let total: number;
-  if (isFavorite === true) {
+  if (group !== undefined && isFavorite !== undefined) {
+    const whole = await listGroup(deps.addon, live.base, live.catalogs, group, { startIndex: 0, limit: MAX_GROUP });
+    const kept = whole.channels.filter((c) => isFavourite(c) === isFavorite);
+    channels = kept.slice(startIndex, startIndex + limit);
+    total = kept.length;
+  } else if (group !== undefined) {
+    ({ channels, total } = await listGroup(deps.addon, live.base, live.catalogs, group, { startIndex, limit }));
+    if (sorting) channels = [...channels.filter(isFavourite), ...channels.filter((c) => !isFavourite(c))];
+  } else if (isFavorite === true) {
     const favourites = await resolveFavourites(deps, live, keys);
     channels = favourites.slice(startIndex, startIndex + limit);
     total = favourites.length;
@@ -139,7 +164,11 @@ export function guideInfo(manifest: any, now: number): { StartDate: string; EndD
 
 async function programmeChannels(deps: LiveTvDeps, live: LiveTv, ask: Ask): Promise<ListedChannel[]> {
   const asked = listOf(ask('ChannelIds')).slice(0, MAX_ASKED_CHANNELS);
-  if (!asked.length) return guideChannels(deps.addon, live.base, live.catalogs, PROGRAMME_CHANNELS);
+  if (!asked.length) {
+    const group = await groupOf(deps, live, ask, false);
+    if (group === undefined || !isGroup(live, group)) return guideChannels(deps.addon, live.base, live.catalogs, PROGRAMME_CHANNELS);
+    return (await listGroup(deps.addon, live.base, live.catalogs, group, { startIndex: 0, limit: PROGRAMME_CHANNELS })).channels;
+  }
   const descriptors = await Promise.all(asked.map((id) => deps.decodeLiveId(id)));
   const refs = descriptors.filter((d) => d?.k === 'channel').map((d) => ({ type: d.t, id: d.i }));
   const placements = await placementsFor(deps.addon, live.base, live.catalogs, refs);

@@ -13,6 +13,9 @@ export interface LiveCatalog {
   skip: boolean;
   search: boolean;
   ids: boolean;
+  groups: string[];
+  /** The group it is narrowed to. */
+  genre?: string;
 }
 
 export interface PageQuery {
@@ -24,6 +27,10 @@ export interface PageQuery {
 
 /** How many channels are asked for by their ids in one read. */
 export const IDS_PER_READ = 50;
+
+const groupsOf = (options: unknown[] = []): string[] => options.filter((o): o is string => typeof o === 'string' && o.length > 0);
+
+export const catalogKey = ({ type, id, genre }: LiveCatalog): string => `${type}|${id}${genre === undefined ? '' : `|${genre}`}`;
 
 export function liveCatalogs(manifest: Manifest | null | undefined): LiveCatalog[] {
   const epg = manifest?.behaviorHints?.epgProvider === true;
@@ -47,6 +54,7 @@ export function liveCatalogs(manifest: Manifest | null | undefined): LiveCatalog
       skip: names.has('skip'),
       search: names.has('search'),
       ids: names.has('ids'),
+      groups: groupsOf(extras.find((e) => e.name === 'genre')?.options),
     });
   }
   return live;
@@ -59,6 +67,7 @@ export function utcDay(ms: number): string {
 export function pagePath(catalog: LiveCatalog, query: PageQuery): string {
   const extras: string[] = [];
   if (query.date) extras.push(`date=${encodeURIComponent(query.date)}`);
+  if (catalog.genre !== undefined) extras.push(`genre=${encodeURIComponent(catalog.genre)}`);
   if (catalog.skip && query.skip && query.skip > 0) extras.push(`skip=${encodeURIComponent(String(query.skip))}`);
   if (query.ids) extras.push(`ids=${query.ids.map(encodeURIComponent).join(',')}`);
   if (query.search) extras.push(`search=${encodeURIComponent(query.search)}`);
