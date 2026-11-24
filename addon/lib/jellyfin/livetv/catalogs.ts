@@ -12,13 +12,18 @@ export interface LiveCatalog {
   guide: boolean;
   skip: boolean;
   search: boolean;
+  ids: boolean;
 }
 
 export interface PageQuery {
   skip?: number;
   date?: string;
   search?: string;
+  ids?: string[];
 }
+
+/** How many channels are asked for by their ids in one read. */
+export const IDS_PER_READ = 50;
 
 export function liveCatalogs(manifest: Manifest | null | undefined): LiveCatalog[] {
   const epg = manifest?.behaviorHints?.epgProvider === true;
@@ -41,6 +46,7 @@ export function liveCatalogs(manifest: Manifest | null | undefined): LiveCatalog
       guide,
       skip: names.has('skip'),
       search: names.has('search'),
+      ids: names.has('ids'),
     });
   }
   return live;
@@ -54,6 +60,7 @@ export function pagePath(catalog: LiveCatalog, query: PageQuery): string {
   const extras: string[] = [];
   if (query.date) extras.push(`date=${encodeURIComponent(query.date)}`);
   if (catalog.skip && query.skip && query.skip > 0) extras.push(`skip=${encodeURIComponent(String(query.skip))}`);
+  if (query.ids) extras.push(`ids=${query.ids.map(encodeURIComponent).join(',')}`);
   if (query.search) extras.push(`search=${encodeURIComponent(query.search)}`);
   const head = `/catalog/${encodeURIComponent(catalog.type)}/${encodeURIComponent(catalog.id)}`;
   return extras.length ? `${head}/${extras.join('&')}.json` : `${head}.json`;

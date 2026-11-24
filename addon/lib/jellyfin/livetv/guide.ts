@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
-import { clockOptions, hash, type AddonDeps } from '../addonReader';
-import { readPage, utcDay, type LiveCatalog } from './catalogs';
-import { channelMetaOf, GONE, listPlacements, placementFor, type ChannelMeta, type ListedChannel } from './lineup';
+import { chunksOf, clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
+import { IDS_PER_READ, pagePath, readPage, utcDay, type LiveCatalog } from './catalogs';
+import { channelMetaOf, GONE, listPlacements, placementFor, placementsFor, rememberFound, type ChannelMeta, type ListedChannel, type Placement } from './lineup';
 import { flag, integer, listOf, timeOf, type Ask } from './query';
 
 const READ_TTL_MS = 30 * 60 * 1000;
@@ -16,9 +16,12 @@ const GUIDE_DAYS_AHEAD = 7;
 const MAX_CATCHUP_DAYS = 14;
 const MAX_PROGRAMMES = 50000;
 const MAX_HELD_BYTES = 128 * 1024 * 1024;
+const MAX_SINGLES = 20000;
+const MAX_SINGLES_BYTES = 32 * 1024 * 1024;
 const IDLE_MS = 60 * 60 * 1000;
 const SWEEP_MS = 10 * 60 * 1000;
 const SEARCH_SCAN = 5000;
+const SEARCH_WAIT_MS = 4000;
 const MAX_REQUEST_READS = 400;
 const REQUEST_READ_MS = 15 * 1000;
 
@@ -52,7 +55,6 @@ interface GuidePage {
   empties: number;
 }
 
-
 interface ReadContext {
   base: string;
   catalog: LiveCatalog;
@@ -61,8 +63,11 @@ interface ReadContext {
 }
 
 interface State {
+  id: number;
   now: () => number;
   reads: LRUCache<string, GuidePage, ReadContext>;
+  /** One channel's day, for the channels read by their ids. */
+  singles: LRUCache<string, GuidePage>;
   failures: LRUCache<string, true>;
 }
 
@@ -72,6 +77,7 @@ interface ReadBudget {
 }
 
 const states = new WeakMap<object, State>();
+let serial = 0;
 
 const text = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined);
 
@@ -141,10 +147,15 @@ export function pageSize(programmes: Map<string, Programme[]>): number {
 
 const isEmpty = (programmes: Map<string, Programme[]>): boolean => [...programmes.values()].every((list) => !list.length);
 
+// Empty is also how a guide still loading, or an error the addon hides, looks.
+const ttlOf = (empties: number): number => (empties ? Math.min(READ_TTL_MS, EMPTY_TTL_MS * 2 ** (empties - 1)) : READ_TTL_MS);
+
 function purge(state: State): void {
-  for (const key of [...state.reads.keys()]) {
-    const page = state.reads.peek(key);
-    if (page && state.now() - page.usedAt > IDLE_MS) state.reads.delete(key);
+  for (const held of [state.reads, state.singles] as Array<LRUCache<string, GuidePage, any>>) {
+    for (const key of [...held.keys()]) {
+      const page = held.peek(key);
+      if (page && state.now() - page.usedAt > IDLE_MS) held.delete(key);
+    }
   }
 }
 
@@ -173,23 +184,35 @@ function stateFor(addon: GuideAddon): State {
           const meta = channelMetaOf(entry, context.catalog);
           if (meta) programmes.set(`${meta.type}|${meta.id}`, programmesOf(entry));
         }
-        // Empty is also how a guide still loading, or an error the addon hides, looks.
         const empty = isEmpty(programmes);
         if (!entries || (empty && stale && !isEmpty(stale.programmes))) {
           failures.set(key, true);
           throw new Error('guide read failed');
         }
         const empties = empty ? (stale?.empties ?? 0) + 1 : 0;
-        if (empty) options.ttl = Math.min(READ_TTL_MS, EMPTY_TTL_MS * 2 ** (empties - 1));
+        if (empty) options.ttl = ttlOf(empties);
         return { programmes, usedAt: addon.now(), empties };
       },
     });
-    const created: State = { now: addon.now, reads, failures };
+    const singles = new LRUCache<string, GuidePage>({
+      max: MAX_SINGLES,
+      maxSize: MAX_SINGLES_BYTES,
+      sizeCalculation: (page) => pageSize(page.programmes),
+      ttl: READ_TTL_MS,
+      ...clock,
+    });
+    const created: State = { id: ++serial, now: addon.now, reads, singles, failures };
     states.set(addon, created);
     setInterval(() => purge(created), SWEEP_MS).unref();
     state = created;
   }
   return state;
+}
+
+function spend(state: State, budget: ReadBudget): boolean {
+  if (budget.left <= 0 || state.now() >= budget.until) return false;
+  budget.left--;
+  return true;
 }
 
 function readDay(state: State, context: ReadContext, budget: ReadBudget): Promise<GuidePage | null> {
@@ -198,8 +221,7 @@ function readDay(state: State, context: ReadContext, budget: ReadBudget): Promis
   if (held) held.usedAt = state.now();
   if (state.failures.has(key)) return Promise.resolve(held ?? null);
   if (!held || state.reads.getRemainingTTL(key) <= 0) {
-    if (budget.left <= 0 || state.now() >= budget.until) return Promise.resolve(held ?? null);
-    budget.left--;
+    if (!spend(state, budget)) return Promise.resolve(held ?? null);
   }
   return state.reads.fetch(key, { context, allowStale: !held || !isEmpty(held.programmes) }).then(
     (page) => page ?? null,
@@ -207,17 +229,65 @@ function readDay(state: State, context: ReadContext, budget: ReadBudget): Promis
   );
 }
 
-export async function inBatches<T>(tasks: Array<() => Promise<T>>, size: number): Promise<T[]> {
-  const results: T[] = new Array(tasks.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < tasks.length) {
-      const at = next++;
-      results[at] = await tasks[at]();
-    }
+interface IdContext {
+  base: string;
+  catalog: LiveCatalog;
+  day: string;
+}
+
+/** The programmes of channels read by their ids, kept channel by channel. */
+async function readChannels(
+  state: State,
+  addon: GuideAddon,
+  { base, catalog, day }: IdContext,
+  channels: ChannelMeta[],
+  budget: ReadBudget
+): Promise<GuidePage> {
+  const scope = `${hash(base)}|${catalog.type}|${catalog.id}|${day}`;
+  const nameOf = (c: ChannelMeta) => `${c.type}|${c.id}`;
+  const keyOf = (c: ChannelMeta) => `${scope}|${nameOf(c)}`;
+  const heldOf = (c: ChannelMeta) => state.singles.peek(keyOf(c), { allowStale: true });
+
+  const load = (wanted: ChannelMeta[]): Promise<void> => {
+    const ids = [...new Set(wanted.map((c) => c.id))].sort();
+    return shareInFlight(`guide:${state.id}|${scope}|${pagePath(catalog, { ids })}`, async () => {
+      const entries = await readPage(addon, base, catalog, { ids, date: day });
+      const read = new Map<string, Programme[]>();
+      for (const entry of entries ?? []) {
+        const meta = channelMetaOf(entry, catalog);
+        if (meta) read.set(nameOf(meta), programmesOf(entry));
+      }
+      for (const channel of wanted) {
+        const stale = heldOf(channel);
+        const list = read.get(nameOf(channel)) ?? [];
+        if (!entries || (!list.length && stale && !isEmpty(stale.programmes))) {
+          state.failures.set(keyOf(channel), true);
+          continue;
+        }
+        const empties = list.length ? 0 : (stale?.empties ?? 0) + 1;
+        state.singles.set(keyOf(channel), { programmes: new Map([[nameOf(channel), list]]), usedAt: addon.now(), empties }, { ttl: ttlOf(empties) });
+      }
+    });
   };
-  await Promise.all(Array.from({ length: Math.min(size, tasks.length) }, worker));
-  return results;
+
+  const due = channels.filter((c) => !state.failures.has(keyOf(c)) && state.singles.getRemainingTTL(keyOf(c)) <= 0);
+  const serveStale = (c: ChannelMeta) => {
+    const held = heldOf(c);
+    return held !== undefined && !isEmpty(held.programmes);
+  };
+  const first = due.filter((c) => !serveStale(c));
+  const later = due.filter(serveStale);
+  if (first.length && spend(state, budget)) await load(first);
+  if (later.length && spend(state, budget)) void load(later);
+
+  const programmes = new Map<string, Programme[]>();
+  for (const channel of channels) {
+    const held = heldOf(channel);
+    if (!held) continue;
+    held.usedAt = state.now();
+    for (const [name, list] of held.programmes) programmes.set(name, list);
+  }
+  return { programmes, usedAt: state.now(), empties: 0 };
 }
 
 export function daysOf(fromMs: number, toMs: number): string[] {
@@ -236,27 +306,37 @@ export async function programmesFor(
   toMs: number
 ): Promise<Map<string, Programme[]>> {
   const state = stateFor(addon);
-  const placements = await inBatches(channels.map((channel) => () => placementFor(addon, base, catalogs, channel)), PARALLEL_READS);
-  const groups = new Map<string, { catalog: LiveCatalog; skip: number; keys: string[] }>();
+  const placements = await placementsFor(addon, base, catalogs, channels, { guideOnly: true });
+  interface Group {
+    catalog: LiveCatalog;
+    skip?: number;
+    channels: ChannelMeta[];
+  }
+  const groups = new Map<string, Group>();
   placements.forEach((placement) => {
-    if (!placement || typeof placement !== 'object' || !placement.catalog?.guide) return;
-    const groupKey = `${placement.catalog.type}|${placement.catalog.id}|${placement.skip ?? 0}`;
+    if (!placement || placement === GONE || !placement.catalog?.guide) return;
+    const groupKey = `${placement.catalog.type}|${placement.catalog.id}|${placement.skip ?? 'ids'}`;
     let group = groups.get(groupKey);
     if (!group) {
-      group = { catalog: placement.catalog, skip: placement.skip ?? 0, keys: [] };
+      group = { catalog: placement.catalog, skip: placement.skip, channels: [] };
       groups.set(groupKey, group);
     }
-    group.keys.push(`${placement.meta.type}|${placement.meta.id}`);
+    group.channels.push(placement.meta);
   });
 
   const now = state.now();
   const away = (day: string) => Math.abs(Date.parse(day) + DAY_MS / 2 - now);
   const days = daysOf(fromMs, toMs).sort((a, b) => away(a) - away(b));
-  const work: Array<{ group: { catalog: LiveCatalog; skip: number; keys: string[] }; day: string }> = [];
-  for (const day of days) for (const group of groups.values()) work.push({ group, day });
+  const batches = [...groups.values()].flatMap((group) =>
+    group.skip === undefined ? chunksOf(group.channels, IDS_PER_READ).map((part) => ({ ...group, channels: part })) : [group]
+  );
+  const work: Array<{ group: Group; day: string }> = [];
+  for (const day of days) for (const group of batches) work.push({ group, day });
   const budget: ReadBudget = { left: MAX_REQUEST_READS, until: now + REQUEST_READ_MS };
   const pages = await inBatches(
-    work.map(({ group, day }) => () => readDay(state, { base, catalog: group.catalog, skip: group.skip, day }, budget)),
+    work.map(({ group: { catalog, skip, channels: asked }, day }) => () =>
+      skip === undefined ? readChannels(state, addon, { base, catalog, day }, asked, budget) : readDay(state, { base, catalog, skip, day }, budget)
+    ),
     PARALLEL_READS
   );
 
@@ -264,7 +344,8 @@ export async function programmesFor(
   let rows = 0;
   pages.forEach((page, n) => {
     if (!page || rows >= MAX_PROGRAMMES) return;
-    for (const key of work[n].group.keys) {
+    for (const meta of work[n].group.channels) {
+      const key = `${meta.type}|${meta.id}`;
       for (const programme of page.programmes.get(key) ?? []) {
         if (programme.start >= toMs || programme.end <= fromMs) continue;
         let byStart = found.get(key);
@@ -401,35 +482,47 @@ export async function programmeTarget(
 export async function searchChannels(addon: GuideAddon, base: string, catalogs: LiveCatalog[], term: string, limit: number): Promise<ListedChannel[]> {
   const wanted = String(term ?? '').trim().toLowerCase();
   const terms = wordsOf(wanted);
-  const scanned = await listPlacements(addon, base, catalogs, SEARCH_SCAN);
-  const numbers = new Map(scanned.map((p) => [`${p.meta.type}|${p.meta.id}`, p.number]));
+  const until = addon.now() + SEARCH_WAIT_MS;
 
   const answered = new Set<string>();
-  const asked = await Promise.all(
-    catalogs.filter((c) => c.search).map(async (catalog) => {
-      const entries = await readPage(addon, base, catalog, { search: wanted });
-      if (!entries) return [];
-      answered.add(`${catalog.type}|${catalog.id}`);
-      return entries
-        .map((entry) => channelMetaOf(entry, catalog))
-        .filter((meta): meta is ChannelMeta => meta !== null)
-        .map((meta) => ({ meta, number: numbers.get(`${meta.type}|${meta.id}`) ?? meta.channelNumber }));
-    })
+  const hits = (
+    await Promise.all(
+      catalogs.filter((c) => c.search).map(async (catalog) => {
+        const entries = await readPage(addon, base, catalog, { search: wanted });
+        if (!entries) return [];
+        answered.add(`${catalog.type}|${catalog.id}`);
+        const metas = entries.map((entry) => channelMetaOf(entry, catalog)).filter((meta): meta is ChannelMeta => meta !== null);
+        for (const meta of metas) rememberFound(addon, base, meta, catalog);
+        return metas;
+      })
+    )
+  ).flat();
+
+  // A catalog without a search is read in full. Otherwise the list only adds to what the searches answered.
+  const unsearchable = catalogs.some((c) => !c.search);
+  const answeredAll = catalogs.every((c) => answered.has(`${c.type}|${c.id}`)) && hits.every((meta) => meta.channelNumber !== undefined);
+  const isNumber = (number: string | undefined) => number?.toLowerCase() === wanted;
+  const settled = (entries: Placement[]) =>
+    !/^\d\S*$/.test(wanted) || hits.some((meta) => isNumber(meta.channelNumber)) || entries.some((p) => isNumber(p.number));
+  const scanned = await listPlacements(addon, base, catalogs, SEARCH_SCAN, (entries) =>
+    !unsearchable && (addon.now() >= until || (answeredAll && settled(entries)))
   );
+  const numbers = new Map(scanned.map((p) => [`${p.meta.type}|${p.meta.id}`, p.number]));
+  const asked = hits.map((meta) => ({ meta, number: numbers.get(`${meta.type}|${meta.id}`) ?? meta.channelNumber }));
   const exactNumber = scanned
-    .filter((p) => p.number !== undefined && p.number.toLowerCase() === wanted)
+    .filter((p) => isNumber(p.number))
     .map((p) => ({ meta: p.meta, number: p.number }));
   const named = scanned
     .filter((p) => !answered.has(`${p.catalog?.type}|${p.catalog?.id}`) && terms.length > 0 && terms.every((word) => p.meta.name.toLowerCase().includes(word)))
     .map((p) => ({ meta: p.meta, number: p.number }));
 
   const seen = new Set<string>();
-  const all = [...exactNumber, ...asked.flat(), ...named].filter((c) => {
+  const all = [...exactNumber, ...asked, ...named].filter((c) => {
     const key = `${c.meta.type}|${c.meta.id}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
-  const exact = all.filter((c) => c.number !== undefined && c.number.toLowerCase() === wanted);
+  const exact = all.filter((c) => isNumber(c.number));
   return [...exact, ...all.filter((c) => !exact.includes(c))].slice(0, limit);
 }

@@ -60,6 +60,25 @@ export function shareInFlight<T>(key: string, fn: () => Promise<T>): Promise<T> 
   return started;
 }
 
+export async function inBatches<T>(tasks: Array<() => Promise<T>>, size: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < tasks.length) {
+      const at = next++;
+      results[at] = await tasks[at]();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(size, tasks.length) }, worker));
+  return results;
+}
+
+export function chunksOf<T>(list: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let at = 0; at < list.length; at += size) chunks.push(list.slice(at, at + size));
+  return chunks;
+}
+
 export function clockOptions(now?: () => number): { perf?: { now: () => number }; ttlResolution?: number } {
   return now ? { perf: { now }, ttlResolution: 0 } : {};
 }
