@@ -82,13 +82,14 @@ async function titleCard(config: any, row: any, kind: Kind): Promise<any> {
 }
 
 export async function titleCards(config: any, userUUID: string, rows: any[]): Promise<any[]> {
-  const { isAnimeTitle } = require('./jellyfin/canonicalIds');
+  const { animeOpenId, isAnimeTitle } = require('./jellyfin/canonicalIds');
   const scoped = { ...config, userUUID };
   const full = hasAgeRatingCap(config);
   return mapWithConcurrency(rows, envInt('TITLE_CARD_CONCURRENCY', 8, 1), async (row: any) => {
     const kind: Kind = row.type === 'movie' ? 'movie' : 'series';
     if (full || isAnimeTitle(String(row.id), kind)) {
-      return (await previewMeta(config, userUUID, kind, String(row.id)).catch(() => null)) ?? row;
+      const id = await animeOpenId(String(row.id), kind, config, { imdb: row._imdbId }).catch(() => String(row.id));
+      return (await previewMeta(config, userUUID, kind, id).catch(() => null)) ?? row;
     }
     return titleCard(scoped, row, kind).catch(() => row);
   });

@@ -56,6 +56,19 @@ export function isAnimeId(id: string): boolean {
   return ANIME_ID_TYPES.includes(String(id).split(':')[0]);
 }
 
+/**
+ * The id to open an anime title by. With anime on IMDb ids, an anime id builds its card on the
+ * anime path and keeps it under the IMDb id it resolves to. Without the detection override that
+ * IMDb id opens on the movie or series path, so the anime card would replace that one; the title
+ * opens by its IMDb id instead, as anime catalogs hand it out. Any other title keeps its id.
+ */
+export async function animeOpenId(id: string, kind: Kind, config: any, known: { imdb?: string } = {}): Promise<string> {
+  if (!isAnimeId(id) || !config?.mal?.useImdbIdForCatalogAndSearch || config?.providers?.forceAnimeForDetectedImdb) return id;
+  const { imdb } = await resolve(id, kind, config, ['imdb']);
+  const fallback = /^tt\d+$/.test(String(known.imdb || '')) ? known.imdb : undefined;
+  return imdb || fallback || id;
+}
+
 export function isAnimeTitle(id: string, kind: 'movie' | 'series'): boolean {
   const { parseStremioId } = require('./ids');
   const base = String(parseStremioId(id)?.base ?? id);
