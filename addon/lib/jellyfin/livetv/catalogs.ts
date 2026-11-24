@@ -96,6 +96,22 @@ export function pagePath(catalog: LiveCatalog, query: PageQuery): string {
 /** AIOStreams answers a failure with 200 and an entry that names the error. */
 export const isAddonError = (entry: any): boolean => String(entry?.id ?? '').startsWith('aiostreamserror.');
 
+const AIOSTREAMS_CATALOG = /\.(xtream|m3u)$/;
+const AIOSTREAMS_CHANNEL = /^(xtream|m3u)\.[0-9a-f]{8}:/;
+const AIOSTREAMS_PAGE = 100;
+
+/**
+ * Whether a page is the last, as the sources built into AIOStreams page: by 100.
+ * A round count may be a whole page of another size. Other addons' pages may be
+ * short anywhere, so only an empty one ends theirs.
+ */
+export function endsList(catalog: LiveCatalog, page: any[]): boolean {
+  return AIOSTREAMS_CATALOG.test(catalog.id)
+    && page.length < AIOSTREAMS_PAGE
+    && page.length % 10 !== 0
+    && page.every((entry) => AIOSTREAMS_CHANNEL.test(String(entry.id)));
+}
+
 export async function readPage(addon: Pick<AddonDeps, 'fetchJson'>, base: string, catalog: LiveCatalog, query: PageQuery): Promise<any[] | null> {
   const body = await addon.fetchJson(base, pagePath(catalog, query), query.date ? GUIDE_TIMEOUT_MS : undefined);
   if (!body) return null;

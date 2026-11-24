@@ -2,7 +2,7 @@
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
 import { chunksOf, clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
-import { catalogKey, IDS_PER_READ, isAddonError, narrowedTo, pagePath, readPage, wholeCatalogs, type LiveCatalog } from './catalogs';
+import { catalogKey, endsList, IDS_PER_READ, isAddonError, narrowedTo, pagePath, readPage, wholeCatalogs, type LiveCatalog } from './catalogs';
 
 const LINEUP_TTL_MS = 60 * 60 * 1000;
 const PLACEMENT_TTL_MS = 60 * 60 * 1000;
@@ -209,7 +209,7 @@ async function readInto(addon: LineupAddon, base: string, catalog: LiveCatalog, 
     added++;
   }
   lineup.next += page.length;
-  if (!catalog.skip || added === 0 || lineup.pages >= MAX_PAGES || lineup.channels.length >= MAX_LIST) lineup.done = true;
+  if (!catalog.skip || added === 0 || endsList(catalog, page) || lineup.pages >= MAX_PAGES || lineup.channels.length >= MAX_LIST) lineup.done = true;
   return true;
 }
 
