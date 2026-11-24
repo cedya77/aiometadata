@@ -58,6 +58,7 @@ const ART_SCOPE_SKIPPED = new Set([
   'jellyfinUserName',
   'jellyfinUserAvatar',
   'jellyfinUserPin',
+  'jellyfinUserLiveTv',
   'jellyfinAppPassword',
   'playbackReporting',
   'jellyfinScrobbling',

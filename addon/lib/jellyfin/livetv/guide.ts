@@ -2,8 +2,8 @@
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
 import { chunksOf, clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
-import { catalogKey, IDS_PER_READ, pagePath, readPage, utcDay, type LiveCatalog } from './catalogs';
-import { channelMetaOf, GONE, listPlacements, placementFor, placementsFor, rememberFound, type ChannelMeta, type ListedChannel, type Placement } from './lineup';
+import { catalogKey, IDS_PER_READ, narrowedTo, pagePath, readPage, utcDay, wholeCatalogs, type LiveCatalog } from './catalogs';
+import { admitted, channelMetaOf, GONE, listPlacements, placementFor, placementsFor, rememberFound, type ChannelMeta, type ListedChannel, type Placement } from './lineup';
 import { flag, integer, listOf, timeOf, type Ask } from './query';
 
 const READ_TTL_MS = 30 * 60 * 1000;
@@ -483,11 +483,12 @@ export async function searchChannels(addon: GuideAddon, base: string, catalogs: 
   const wanted = String(term ?? '').trim().toLowerCase();
   const terms = wordsOf(wanted);
   const until = addon.now() + SEARCH_WAIT_MS;
+  const narrowed = narrowedTo(catalogs) !== undefined;
 
   const answered = new Set<string>();
-  const hits = (
+  const found = (
     await Promise.all(
-      catalogs.filter((c) => c.search).map(async (catalog) => {
+      wholeCatalogs(catalogs).filter((c) => c.search).map(async (catalog) => {
         const entries = await readPage(addon, base, catalog, { search: wanted });
         if (!entries) return [];
         answered.add(`${catalog.type}|${catalog.id}`);
@@ -498,9 +499,12 @@ export async function searchChannels(addon: GuideAddon, base: string, catalogs: 
     )
   ).flat();
 
+  const hits = admitted(addon, base, catalogs, found);
+
   // A catalog without a search is read in full. Otherwise the list only adds to what the searches answered.
+  // A search of the whole addon may be full of other groups' channels, so groups are matched by name as well.
   const unsearchable = catalogs.some((c) => !c.search);
-  const answeredAll = catalogs.every((c) => answered.has(`${c.type}|${c.id}`)) && hits.every((meta) => meta.channelNumber !== undefined);
+  const answeredAll = !narrowed && catalogs.every((c) => answered.has(`${c.type}|${c.id}`)) && hits.every((meta) => meta.channelNumber !== undefined);
   const isNumber = (number: string | undefined) => number?.toLowerCase() === wanted;
   const settled = (entries: Placement[]) =>
     !/^\d\S*$/.test(wanted) || hits.some((meta) => isNumber(meta.channelNumber)) || entries.some((p) => isNumber(p.number));
@@ -513,7 +517,7 @@ export async function searchChannels(addon: GuideAddon, base: string, catalogs: 
     .filter((p) => isNumber(p.number))
     .map((p) => ({ meta: p.meta, number: p.number }));
   const named = scanned
-    .filter((p) => !answered.has(`${p.catalog?.type}|${p.catalog?.id}`) && terms.length > 0 && terms.every((word) => p.meta.name.toLowerCase().includes(word)))
+    .filter((p) => (narrowed || !answered.has(`${p.catalog?.type}|${p.catalog?.id}`)) && terms.length > 0 && terms.every((word) => p.meta.name.toLowerCase().includes(word)))
     .map((p) => ({ meta: p.meta, number: p.number }));
 
   const seen = new Set<string>();

@@ -2887,7 +2887,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     if (descriptor.k === 'channel') {
       if (!req.jellyfin?.authenticated) return undefined;
       const live = await liveTvReady(liveTvGate, await loadConfig(req));
-      const placement = live ? await placementFor(liveTvGate.addon, live.base, live.catalogs, { type: descriptor.t, id: descriptor.i }) : null;
+      const placement = live ? await placementFor(liveTvGate.addon, live.base, live.reach, { type: descriptor.t, id: descriptor.i }) : null;
       if (!placement || placement === GONE) return undefined;
       const primary = placement.meta.logo ?? placement.meta.poster;
       return primary ? { primary } : undefined;

@@ -2,6 +2,8 @@
 // Copyright (C) 2021-2026 cedya77 and AIOMetadata contributors, see NOTICE
 // Core type definitions for the AIOMetadata backend
 
+import type { LiveTvPick } from '../lib/jellyfin/livetv/pick';
+
 export interface UserConfig {
   language?: string;
   /** Install URL of a stream addon the Jellyfin server delegates playback to. */
@@ -32,11 +34,13 @@ export interface UserConfig {
   /** The main user's PIN: 4 to 12 digits as typed, or the hash the server saved it as. */
   jellyfinUserPin?: string;
   jellyfinUserTags?: string[];
+  /** The Live TV groups picked for the main user. */
+  jellyfinUserLiveTv?: LiveTvPick;
   jellyfinUserHiddenTags?: string[];
   jellyfinUserHandoffNames?: string[];
   jellyfinSkipSource?: 'auto' | 'off' | 'publicmetadb' | 'aniskip' | 'introdb' | Array<'publicmetadb' | 'aniskip' | 'introdb'>;
   jellyfinWatchlistServices?: string[];
-  jellyfinUsers?: Array<{ id: string; name: string; avatar?: string; tags: string[]; hiddenTags?: string[]; trackers?: boolean; trackerSource?: string; skipSource?: string | string[]; watchlistServices?: string[]; handoffNames?: string[]; accounts?: any; streamUrl?: string; pin?: string }>;
+  jellyfinUsers?: Array<{ id: string; name: string; avatar?: string; tags: string[]; hiddenTags?: string[]; trackers?: boolean; trackerSource?: string; skipSource?: string | string[]; watchlistServices?: string[]; handoffNames?: string[]; accounts?: any; streamUrl?: string; pin?: string; liveTv?: LiveTvPick }>;
   /** Serve the collection layout's images through this instance's image cache. */
   collectionImagesViaCache?: boolean;
   providers?: {

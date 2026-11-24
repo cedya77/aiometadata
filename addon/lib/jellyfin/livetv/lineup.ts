@@ -2,7 +2,7 @@
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
 import { chunksOf, clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
-import { catalogKey, IDS_PER_READ, isAddonError, pagePath, readPage, type LiveCatalog } from './catalogs';
+import { catalogKey, IDS_PER_READ, isAddonError, narrowedTo, pagePath, readPage, wholeCatalogs, type LiveCatalog } from './catalogs';
 
 const LINEUP_TTL_MS = 60 * 60 * 1000;
 const PLACEMENT_TTL_MS = 60 * 60 * 1000;
@@ -19,6 +19,7 @@ const IDLE_MS = 2 * 60 * 60 * 1000;
 const SWEEP_MS = 10 * 60 * 1000;
 const PARALLEL_META_READS = 8;
 const PARALLEL_ID_READS = 4;
+const MAX_GROUPS_KEPT = 50;
 
 export interface ChannelMeta {
   id: string;
@@ -28,6 +29,8 @@ export interface ChannelMeta {
   poster?: string;
   channelNumber?: string;
   catchupDays?: number;
+  /** The groups the addon says it is in. */
+  groups?: string[];
 }
 
 export interface Placement {
@@ -131,6 +134,16 @@ export function purgeLineups(addon: LineupAddon): void {
   purge(stateFor(addon));
 }
 
+// The same few names come with every channel.
+const groupNames = new LRUCache<string, string>({ max: 20000 });
+
+function groupName(name: string): string {
+  const held = groupNames.get(name);
+  if (held !== undefined) return held;
+  groupNames.set(name, name);
+  return name;
+}
+
 const text = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined);
 
 export function channelMetaOf(entry: any, catalog: Pick<LiveCatalog, 'type'>): ChannelMeta | null {
@@ -146,6 +159,8 @@ export function channelMetaOf(entry: any, catalog: Pick<LiveCatalog, 'type'>): C
   }
   const catchup = Number(entry.behaviorHints?.catchupDays);
   if (Number.isFinite(catchup) && catchup > 0) meta.catchupDays = catchup;
+  const groups = (Array.isArray(entry.genres) ? entry.genres : []).filter((g: unknown): g is string => typeof g === 'string' && g.length > 0);
+  if (groups.length) meta.groups = groups.slice(0, MAX_GROUPS_KEPT).map(groupName);
   return meta;
 }
 
@@ -311,8 +326,17 @@ export async function listChannels(
 ): Promise<{ channels: ListedChannel[]; total: number }> {
   const end = startIndex + limit;
   const list = await walk(addon, base, catalogs, (l) => l.entries.length >= end);
-  const channels = list.entries.slice(startIndex, end).map(({ meta, number }) => ({ meta, number }));
-  return { channels, total: list.finished ? list.entries.length : list.entries.length + 1 };
+  const page = list.entries.slice(startIndex, end);
+  for (const entry of page) rememberListed(addon, base, entry, entry.number);
+  return { channels: page.map(({ meta, number }) => ({ meta, number })), total: list.finished ? list.entries.length : list.entries.length + 1 };
+}
+
+/** Keeps where a group's channel is, for what opens it without the group. */
+function rememberListed(addon: LineupAddon, base: string, entry: Placement, number: string | undefined): void {
+  if (entry.catalog?.genre === undefined) return;
+  const [catalog] = wholeCatalogs([entry.catalog]);
+  if (catalog.ids) rememberFound(addon, base, entry.meta, catalog);
+  else stateFor(addon).placements.set(placementKey(base, entry.meta.type, entry.meta.id), { ...entry, number });
 }
 
 export function groupCatalogs(catalogs: LiveCatalog[], genre: string): LiveCatalog[] {
@@ -334,11 +358,7 @@ export async function listGroup(
   const channels = list.entries.slice(startIndex, end).map((entry) => {
     const listed = whole.get(channelKey(entry.meta));
     const number = entry.number ?? listed?.number;
-    if (!listed) {
-      const { genre: _, ...catalog } = entry.catalog!;
-      if (catalog.ids) rememberFound(addon, base, entry.meta, catalog);
-      else state.placements.set(placementKey(base, entry.meta.type, entry.meta.id), { ...entry, number });
-    }
+    if (!listed) rememberListed(addon, base, entry, number);
     return { meta: entry.meta, number };
   });
   return { channels, total: list.finished ? list.entries.length : list.entries.length + 1 };
@@ -377,6 +397,23 @@ export async function guideChannels(addon: LineupAddon, base: string, catalogs: 
 }
 
 type ChannelRef = Pick<ChannelMeta, 'type' | 'id'>;
+
+/** Whether narrowed catalogs hold a channel: listed from one of their groups, or in one by its own account. */
+function admitter(state: State, base: string, catalogs: LiveCatalog[]): (meta: ChannelMeta, from?: LiveCatalog) => boolean {
+  const names = narrowedTo(catalogs);
+  if (!names) return () => true;
+  const lineups = catalogs.map((c) => state.lineups.peek(lineupKey(base, c), { allowStale: true }));
+  return (meta, from) =>
+    (meta.groups ?? []).some((g) => names.has(g)) ||
+    (from?.genre !== undefined && names.has(from.genre)) ||
+    lineups.some((l) => l?.keys.has(channelKey(meta)));
+}
+
+/** Those of the channels found that these catalogs hold. */
+export function admitted(addon: LineupAddon, base: string, catalogs: LiveCatalog[], metas: ChannelMeta[]): ChannelMeta[] {
+  const admits = admitter(stateFor(addon), base, catalogs);
+  return metas.filter((meta) => admits(meta));
+}
 
 async function findByIds(state: State, addon: LineupAddon, base: string, catalogs: LiveCatalog[], channels: ChannelRef[]): Promise<void> {
   const keyOf = (c: ChannelRef) => placementKey(base, c.type, c.id);
@@ -428,7 +465,8 @@ async function readMeta(state: State, addon: LineupAddon, base: string, { type, 
  * Where each channel is listed or found: in the list as read so far, by its id
  * in the catalogs that take ids, further down the list where one does not, and
  * by its meta. `guideOnly` leaves out what only the channel's own name or
- * number needs.
+ * number needs. Catalogs narrowed to groups answer GONE for any other channel,
+ * also one found for someone else.
  */
 export async function placementsFor(
   addon: LineupAddon,
@@ -448,7 +486,7 @@ export async function placementsFor(
   const unlisted = () => [...new Map(channels.filter((c) => !list.byKey.has(channelKey(c))).map((c) => [channelKey(c), c])).values()];
 
   let left = unlisted();
-  if (left.length) await findByIds(state, addon, base, catalogs, left.filter((c) => !located(c)));
+  if (left.length) await findByIds(state, addon, base, wholeCatalogs(catalogs), left.filter((c) => !located(c)));
   const allById = catalogs.every((c) => c.ids);
   const toWalk = left.filter((c) => {
     const placement = located(c);
@@ -463,7 +501,13 @@ export async function placementsFor(
     const readable = left.filter((c) => held(c) === undefined && (channels.length === 1 || !state.failures.has(`ids|${keyOf(c)}`)));
     await inBatches(readable.map((c) => () => readMeta(state, addon, base, c)), PARALLEL_META_READS);
   }
-  return channels.map((c) => list.byKey.get(channelKey(c)) ?? held(c) ?? null);
+  const admits = admitter(state, base, catalogs);
+  return channels.map((c) => {
+    const listed = list.byKey.get(channelKey(c));
+    if (listed) return listed;
+    const found = held(c);
+    return found && found !== GONE && !admits(found.meta, found.catalog) ? GONE : found ?? null;
+  });
 }
 
 export async function placementFor(

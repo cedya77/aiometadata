@@ -30,6 +30,24 @@ export const IDS_PER_READ = 50;
 
 const groupsOf = (options: unknown[] = []): string[] => options.filter((o): o is string => typeof o === 'string' && o.length > 0);
 
+/** Each picked group as a catalog of its own, in the addon's order. It answers for that group alone. */
+export function pickedCatalogs(catalogs: LiveCatalog[], picked: Set<string>): LiveCatalog[] {
+  return catalogs.flatMap((c) => c.groups.filter((name) => picked.has(name)).map((name) => ({ ...c, groups: [name], genre: name })));
+}
+
+/** The addon's own catalogs behind these, each once. */
+export function wholeCatalogs(catalogs: LiveCatalog[]): LiveCatalog[] {
+  const whole = new Map<string, LiveCatalog>();
+  for (const { genre: _, ...catalog } of catalogs) if (!whole.has(catalogKey(catalog))) whole.set(catalogKey(catalog), catalog);
+  return [...whole.values()];
+}
+
+/** The groups these catalogs are narrowed to, or undefined when they are the addon's own. */
+export function narrowedTo(catalogs: LiveCatalog[]): Set<string> | undefined {
+  const names = catalogs.flatMap((c) => (c.genre === undefined ? [] : [c.genre]));
+  return names.length ? new Set(names) : undefined;
+}
+
 export const catalogKey = ({ type, id, genre }: LiveCatalog): string => `${type}|${id}${genre === undefined ? '' : `|${genre}`}`;
 
 export function liveCatalogs(manifest: Manifest | null | undefined): LiveCatalog[] {

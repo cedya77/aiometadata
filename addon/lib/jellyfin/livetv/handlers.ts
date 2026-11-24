@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
+import { narrowedTo } from './catalogs';
 import { liveTvFor, liveTvReady, type LiveTv } from './gate';
 import { filterProgrammes, programmeTarget, searchChannels, type GuideItem } from './guide';
 import { groupItem, liveTvView } from './items';
@@ -35,7 +36,7 @@ export interface HandlerDeps extends LiveTvDeps {
 
 const LIVE_KINDS = new Set(['livetv', 'channel', 'program']);
 const isLive = (descriptor: any): boolean => LIVE_KINDS.has(descriptor?.k);
-const viewMarks = (live: LiveTv) => ({ guide: live.catalogs.some((c) => c.guide), groups: live.catalogs.some((c) => c.groups.length > 0) });
+const viewMarks = (live: LiveTv) => ({ guide: live.catalogs.some((c) => c.guide), groups: live.reach.some((c) => c.groups.length > 0) });
 
 export async function liveAllowed(req: any, deps: LiveTvDeps): Promise<LiveTv | null> {
   return liveTvReady(deps, await deps.loadConfig(req));
@@ -63,7 +64,7 @@ export async function livePlayback(
   const allowHeaders = req.body?.EnableRequiredHttpHeaders === true;
 
   if (descriptor.k === 'program') {
-    const target = await programmeTarget(deps.addon, live.base, live.catalogs, descriptor);
+    const target = await programmeTarget(deps.addon, live.base, live.reach, descriptor);
     if (!target) return NOT_FOUND;
     const { meta } = target.channel;
     if (!target.live && target.runtimeMs) {
@@ -74,7 +75,7 @@ export async function livePlayback(
     return { sources: await deps.resolveSourcesFor(req, meta.type, meta.id, null, { live: true, refresh, allowHeaders }), runtimeTicks: null };
   }
 
-  const placement = await placementFor(deps.addon, live.base, live.catalogs, { type: descriptor.t, id: descriptor.i });
+  const placement = await placementFor(deps.addon, live.base, live.reach, { type: descriptor.t, id: descriptor.i });
   if (!placement || placement === GONE) return NOT_FOUND;
   const sources = await deps.resolveSourcesFor(req, placement.meta.type, placement.meta.id, null, { live: true, refresh, allowHeaders });
   return { sources, runtimeTicks: null };
@@ -83,7 +84,12 @@ export async function livePlayback(
 export async function liveFavourite(req: any, deps: LiveTvDeps, descriptor: any, on: boolean): Promise<Answer | undefined> {
   if (!isLive(descriptor)) return undefined;
   const config = await deps.loadConfig(req);
-  if (!(await liveTvReady(deps, config)) || descriptor.k !== 'channel') return NOT_FOUND;
+  const live = await liveTvReady(deps, config);
+  if (!live || descriptor.k !== 'channel') return NOT_FOUND;
+  if (narrowedTo(live.reach)) {
+    const placement = await placementFor(deps.addon, live.base, live.reach, { type: descriptor.t, id: descriptor.i });
+    if (!placement || placement === GONE) return NOT_FOUND;
+  }
   await deps.favourites.set(userOf(req), deps.profileKey(config), channelKeyOf({ type: descriptor.t, id: descriptor.i }), on);
   const id = deps.encodeId({ k: 'channel', t: descriptor.t, i: descriptor.i });
   return { status: 200, body: { ...deps.emptyUserData, IsFavorite: on, Key: id, ItemId: id } };
@@ -114,7 +120,7 @@ export async function liveSearch(
   if (!live) return undefined;
 
   const now = deps.now();
-  const found = channels ? await searchChannels(deps.addon, live.base, live.catalogs, term, SEARCH_SCAN) : [];
+  const found = channels ? await searchChannels(deps.addon, live.base, live.reach, term, SEARCH_SCAN) : [];
   let aired: GuideItem[] = [];
   if (programmes) {
     const own: Record<string, unknown> = { searchterm: term, startindex: undefined, limit: undefined };
@@ -148,7 +154,7 @@ export async function liveGroups(req: any, deps: LiveTvDeps): Promise<any | unde
   if (!live) return undefined;
 
   const groups = new Map<string, LiveTv['catalogs'][number]>();
-  for (const catalog of live.catalogs) for (const name of catalog.groups) if (!groups.has(name)) groups.set(name, catalog);
+  for (const catalog of live.reach) for (const name of catalog.groups) if (!groups.has(name)) groups.set(name, catalog);
   const startIndex = Math.max(0, integer(field(req, 'StartIndex'), 0));
   const limit = integer(field(req, 'Limit'), 0);
   const serverId = deps.serverIdFor(userOf(req));

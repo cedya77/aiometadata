@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { normaliseJellyfinId } from '../idsCodec';
+import { narrowedTo } from './catalogs';
 import { liveTvReady, type GateDeps, type LiveTv } from './gate';
 import { airingAt, caughtUp, filterProgrammes, guideRange, programmesFor, programmeTarget, type GuideItem } from './guide';
 import { channelItem, programItem, type ItemDeps } from './items';
@@ -54,10 +55,11 @@ export async function favouriteKeys(deps: LiveTvDeps, req: any, config: any): Pr
 
 async function resolveFavourites(deps: LiveTvDeps, live: LiveTv, keys: Iterable<string>): Promise<ListedChannel[]> {
   const parts = [...keys].map(splitKey).filter((p): p is { type: string; id: string } => p !== null);
-  const placements = await placementsFor(deps.addon, live.base, live.catalogs, parts);
+  const placements = await placementsFor(deps.addon, live.base, live.reach, parts);
+  const narrowed = narrowedTo(live.reach) !== undefined;
   const channels: ListedChannel[] = [];
   placements.forEach((placement, n) => {
-    if (placement === GONE) return;
+    if (placement === GONE || (!placement && narrowed)) return;
     if (!placement) channels.push({ meta: { ...parts[n], name: parts[n].id } });
     else channels.push({ meta: placement.meta, number: placement.number });
   });
@@ -75,7 +77,7 @@ export async function channelItems(
   const serverId = deps.serverIdFor(userOf(req));
   const now = deps.now();
   const airing = withProgram && channels.length
-    ? await programmesFor(deps.addon, live.base, live.catalogs, channels.map((c) => c.meta), now, now + 1)
+    ? await programmesFor(deps.addon, live.base, live.reach, channels.map((c) => c.meta), now, now + 1)
     : new Map();
   return channels.map((channel) =>
     channelItem(deps, serverId, channel, {
@@ -92,7 +94,7 @@ async function listSkipping(deps: LiveTvDeps, live: LiveTv, skip: Set<string>, s
   return { channels: kept.slice(start, start + count), total: full.total - skipped, skipped };
 }
 
-const isGroup = (live: LiveTv, name: string): boolean => live.catalogs.some((c) => c.groups.includes(name));
+const isGroup = (live: LiveTv, name: string): boolean => live.reach.some((c) => c.groups.includes(name));
 
 /** The group asked for: by the id of its genre item, or by its name. */
 async function groupOf(deps: LiveTvDeps, live: LiveTv, ask: Ask, named = true): Promise<string | undefined> {
@@ -122,12 +124,12 @@ export async function channelPage(deps: LiveTvDeps, req: any, live: LiveTv, conf
   let channels: ListedChannel[];
   let total: number;
   if (group !== undefined && isFavorite !== undefined) {
-    const whole = await listGroup(deps.addon, live.base, live.catalogs, group, { startIndex: 0, limit: MAX_GROUP });
+    const whole = await listGroup(deps.addon, live.base, live.reach, group, { startIndex: 0, limit: MAX_GROUP });
     const kept = whole.channels.filter((c) => isFavourite(c) === isFavorite);
     channels = kept.slice(startIndex, startIndex + limit);
     total = kept.length;
   } else if (group !== undefined) {
-    ({ channels, total } = await listGroup(deps.addon, live.base, live.catalogs, group, { startIndex, limit }));
+    ({ channels, total } = await listGroup(deps.addon, live.base, live.reach, group, { startIndex, limit }));
     if (sorting) channels = [...channels.filter(isFavourite), ...channels.filter((c) => !isFavourite(c))];
   } else if (isFavorite === true) {
     const favourites = await resolveFavourites(deps, live, keys);
@@ -150,7 +152,7 @@ export async function channelPage(deps: LiveTvDeps, req: any, live: LiveTv, conf
 
 export async function channelById(deps: LiveTvDeps, req: any, live: LiveTv, config: any, descriptor: any): Promise<Answer> {
   if (descriptor?.k !== 'channel') return NOT_FOUND;
-  const placement = await placementFor(deps.addon, live.base, live.catalogs, { type: descriptor.t, id: descriptor.i });
+  const placement = await placementFor(deps.addon, live.base, live.reach, { type: descriptor.t, id: descriptor.i });
   if (!placement || placement === GONE) return NOT_FOUND;
   const keys = await favouriteKeys(deps, req, config);
   const [item] = await channelItems(deps, req, live, [{ meta: placement.meta, number: placement.number }], keys, true);
@@ -167,11 +169,11 @@ async function programmeChannels(deps: LiveTvDeps, live: LiveTv, ask: Ask): Prom
   if (!asked.length) {
     const group = await groupOf(deps, live, ask, false);
     if (group === undefined || !isGroup(live, group)) return guideChannels(deps.addon, live.base, live.catalogs, PROGRAMME_CHANNELS);
-    return (await listGroup(deps.addon, live.base, live.catalogs, group, { startIndex: 0, limit: PROGRAMME_CHANNELS })).channels;
+    return (await listGroup(deps.addon, live.base, live.reach, group, { startIndex: 0, limit: PROGRAMME_CHANNELS })).channels;
   }
   const descriptors = await Promise.all(asked.map((id) => deps.decodeLiveId(id)));
   const refs = descriptors.filter((d) => d?.k === 'channel').map((d) => ({ type: d.t, id: d.i }));
-  const placements = await placementsFor(deps.addon, live.base, live.catalogs, refs);
+  const placements = await placementsFor(deps.addon, live.base, live.reach, refs);
   const channels: ListedChannel[] = [];
   for (const placement of placements) {
     if (placement && placement !== GONE) channels.push({ meta: placement.meta, number: placement.number });
@@ -188,7 +190,7 @@ export async function programmesAround(deps: LiveTvDeps, live: LiveTv, channels:
   const from = Math.max(range.start, min ?? (past ? range.start : now));
   const to = Math.min(range.end, max ?? (aired ? now : Math.max(now, from) + PROGRAMME_WINDOW_MS));
   if (!channels.length || from > to) return [];
-  const found = await programmesFor(deps.addon, live.base, live.catalogs, channels.map((c) => c.meta), from, to + 1);
+  const found = await programmesFor(deps.addon, live.base, live.reach, channels.map((c) => c.meta), from, to + 1);
   const items: GuideItem[] = [];
   for (const channel of channels) {
     for (const programme of found.get(channelKeyOf(channel.meta)) ?? []) items.push({ channel, programme });
@@ -220,7 +222,7 @@ async function programmePage(deps: LiveTvDeps, req: any, live: LiveTv, ask: Ask)
 
 export async function programmeById(deps: LiveTvDeps, req: any, live: LiveTv, descriptor: any): Promise<Answer> {
   if (descriptor?.k !== 'program') return NOT_FOUND;
-  const target = await programmeTarget(deps.addon, live.base, live.catalogs, descriptor);
+  const target = await programmeTarget(deps.addon, live.base, live.reach, descriptor);
   if (!target?.programme) return NOT_FOUND;
   const [item] = programItems(deps, req, [{ channel: target.channel, programme: target.programme }], deps.now(), true);
   return { status: 200, body: item };

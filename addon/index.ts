@@ -664,6 +664,7 @@ const respond = function (req, res, data, opts?) {
       simklTrendingPageSizeOptions: resolvedOptions,
       anilistRequiresAuth: require('./utils/anilistAccess').anilistRequiresAuth(),
       jellyfinEnabled: String(getSetting('JELLYFIN_API_ENABLED') || '').trim().toLowerCase() === 'true',
+      jellyfinLiveTv: require('./lib/jellyfin/livetv/gate').liveTvEnabled(),
       jellyfinResolveOnOpen: String(getSetting('JELLYFIN_RESOLVE_ON_OPEN') || 'user'),
       jellyfinUpcomingMode: String(getSetting('JELLYFIN_UPCOMING_MODE') || 'user'),
       jellyfinBaseUrl: require('./lib/installUrl').baseUrlFrom(process.env.HOST_NAME, req.get('host')),
