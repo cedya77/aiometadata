@@ -27,6 +27,9 @@ const PARALLEL_META_READS = 8;
 const PARALLEL_ID_READS = 4;
 const MAX_GROUPS_KEPT = 50;
 const DETAILS_FIRST = 4;
+// What one request reads of the details of many channels.
+const MAX_DETAIL_READS = 100;
+const DETAILS_MS = 10 * 1000;
 const PARALLEL_PAGES = 4;
 const WALK_MS = 20 * 1000;
 const LOOKUP_MS = 10 * 1000;
@@ -653,7 +656,8 @@ export function scheduleOf(addon: LineupAddon, base: string, { type, id }: Chann
 /**
  * Where each channel is listed or found: in the list as read so far, by its id
  * in the catalogs that take ids, by its details when few are asked for, and in
- * the lists of the catalogs without ids. A list is never read for a number.
+ * the lists of the catalogs without ids. When many are asked for, the details of
+ * some the lists left out are read last. A list is never read for a number.
  * `guideOnly` reads no details, and only lists that lead to a guide. Catalogs
  * narrowed to groups answer GONE for any other channel, also one found for
  * someone else.
@@ -694,7 +698,14 @@ export async function placementsFor(
   if (lists.length && toFind.length) {
     walked = await walk(addon, base, lists, (w) => toFind.every((c) => w.byKey.has(channelKey(c))));
   }
-  if (!guideOnly && !first) await read(left.filter((c) => !walked?.byKey.has(channelKey(c)) && readable(c)));
+  if (!guideOnly && !first) {
+    const until = state.now() + DETAILS_MS;
+    const missing = left.filter((c) => !walked?.byKey.has(channelKey(c)) && readable(c) && !state.failures.has(keyOf(c)));
+    const tasks = missing.slice(0, MAX_DETAIL_READS).map((c) => async () => {
+      if (state.now() < until && !addon.paused?.(base)) await readMeta(state, addon, base, c);
+    });
+    await inBatches(tasks, PARALLEL_META_READS);
+  }
 
   const listed = whole();
   admits = admitter(state, base, catalogs);
