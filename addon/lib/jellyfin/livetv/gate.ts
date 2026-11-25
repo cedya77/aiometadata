@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
-import type { AddonDeps, Manifest } from '../addonReader';
+import { inTime, type AddonDeps, type Manifest } from '../addonReader';
 import { liveCatalogs, pickedCatalogs, type LiveCatalog } from './catalogs';
+
+// How long a sign-in or the libraries wait for a manifest never read before.
+const FIRST_READ_MS = 3000;
 
 export interface GateDeps {
   enabled(): boolean;
@@ -53,9 +56,12 @@ function withCatalogs({ base, rated, picked }: Access, manifest: Manifest | null
   return { base, catalogs, reach: picked.only ? catalogs : all, manifest };
 }
 
+/** Has a manifest held for `liveTvFor`: the stored one, or else the addon's own when it answers soon. */
 export async function liveTvRecall(deps: GateDeps, config: any): Promise<void> {
   const access = accessOf(deps, config);
-  if (access) await deps.addon.recall(access.base);
+  if (!access) return;
+  await deps.addon.recall(access.base);
+  if (!deps.addon.peek(access.base)) await inTime(deps.addon.manifest(access.base), FIRST_READ_MS);
 }
 
 export function liveTvFor(deps: GateDeps, config: any): LiveTv | null {
