@@ -38,8 +38,15 @@ export interface AddonDeps {
 
 const logger = consola.withTag('JellyfinLiveTv');
 
+const hashes = new LRUCache<string, string>({ max: 1000 });
+
 export function hash(base: string): string {
-  return createHash('sha256').update(base).digest('hex');
+  let held = hashes.get(base);
+  if (held === undefined) {
+    held = createHash('sha256').update(base).digest('hex');
+    hashes.set(base, held);
+  }
+  return held;
 }
 
 export function hostOf(base: string): string {
@@ -71,12 +78,6 @@ export async function inBatches<T>(tasks: Array<() => Promise<T>>, size: number)
   };
   await Promise.all(Array.from({ length: Math.min(size, tasks.length) }, worker));
   return results;
-}
-
-export function chunksOf<T>(list: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let at = 0; at < list.length; at += size) chunks.push(list.slice(at, at + size));
-  return chunks;
 }
 
 export function clockOptions(now?: () => number): { perf?: { now: () => number }; ttlResolution?: number } {

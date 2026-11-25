@@ -25,8 +25,26 @@ export interface PageQuery {
   ids?: string[];
 }
 
-/** How many channels are asked for by their ids in one read. */
-export const IDS_PER_READ = 50;
+const IDS_PER_READ = 100;
+const IDS_LENGTH = 4000;
+
+/** The channels of each read by ids, as many as one path holds. */
+export function idChunks<T extends { id: string }>(channels: T[]): T[][] {
+  const chunks: T[][] = [];
+  let length = 0;
+  for (const channel of channels) {
+    const own = encodeURIComponent(channel.id).length + 1;
+    const last = chunks[chunks.length - 1];
+    if (last && last.length < IDS_PER_READ && length + own <= IDS_LENGTH) {
+      last.push(channel);
+      length += own;
+    } else {
+      chunks.push([channel]);
+      length = own;
+    }
+  }
+  return chunks;
+}
 
 const groupsOf = (options: unknown[] = []): string[] => options.filter((o): o is string => typeof o === 'string' && o.length > 0);
 

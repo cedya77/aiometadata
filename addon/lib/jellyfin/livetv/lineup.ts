@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
-import { chunksOf, clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
-import { catalogKey, endsList, IDS_PER_READ, isAddonError, narrowedTo, pagePath, readPage, wholeCatalogs, type LiveCatalog } from './catalogs';
+import { clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
+import { catalogKey, endsList, idChunks, isAddonError, narrowedTo, pagePath, readPage, wholeCatalogs, type LiveCatalog } from './catalogs';
 import { pageSize, programmesOf, type Programme } from './programmes';
 
 const LINEUP_TTL_MS = 60 * 60 * 1000;
@@ -394,9 +394,10 @@ export async function listPlacements(
   return list.entries.slice(0, limit);
 }
 
-/** Whether a channel is among those listed so far. */
-export function isListed(addon: LineupAddon, base: string, catalogs: LiveCatalog[], meta: Pick<ChannelMeta, 'type' | 'id'>): boolean {
-  return assemble(stateFor(addon), addon, base, catalogs).byKey.has(channelKey(meta));
+/** Those of the channels that are not among the ones listed so far. */
+export function unlisted<T extends { meta: Pick<ChannelMeta, 'type' | 'id'> }>(addon: LineupAddon, base: string, catalogs: LiveCatalog[], channels: T[]): T[] {
+  const { byKey } = assemble(stateFor(addon), addon, base, catalogs);
+  return channels.filter(({ meta }) => !byKey.has(channelKey(meta)));
 }
 
 /** Keeps where a channel was found, for one the list does not reach. */
@@ -452,7 +453,7 @@ async function findByIds(state: State, addon: LineupAddon, base: string, catalog
         found.add(keyOf(meta));
       }
     };
-    await inBatches(chunksOf(left, IDS_PER_READ).map((chunk) => () => read(chunk)), PARALLEL_ID_READS);
+    await inBatches(idChunks(left).map((chunk) => () => read(chunk)), PARALLEL_ID_READS);
     left = left.filter((c) => !found.has(keyOf(c)));
   }
   for (const c of left) {
@@ -505,14 +506,18 @@ export async function placementsFor(
   const keyOf = (c: ChannelRef) => placementKey(base, c.type, c.id);
   const held = (c: ChannelRef) => state.placements.get(keyOf(c));
   const whole = () => assemble(state, addon, base, catalogs).byKey;
-  const admits = (p: Placement) => admitter(state, base, catalogs)(p.meta, p.catalog);
+  let admits = admitter(state, base, catalogs);
   const found = (c: ChannelRef): Placement | undefined => {
     const placement = held(c);
-    return placement && placement !== GONE && admits(placement) ? placement : undefined;
+    return placement && placement !== GONE && admits(placement.meta, placement.catalog) ? placement : undefined;
   };
-  const unlisted = whole();
-  const left = [...new Map(channels.filter((c) => !unlisted.has(channelKey(c))).map((c) => [channelKey(c), c])).values()];
-  if (left.length) await findByIds(state, addon, base, wholeCatalogs(catalogs), left.filter((c) => !found(c)?.catalog));
+  const already = whole();
+  const left = [...new Map(channels.filter((c) => !already.has(channelKey(c))).map((c) => [channelKey(c), c])).values()];
+  const unplaced = left.filter((c) => {
+    const placement = held(c);
+    return placement !== GONE && !placement?.catalog;
+  });
+  if (unplaced.length) await findByIds(state, addon, base, wholeCatalogs(catalogs), unplaced);
 
   const read = (list: ChannelRef[]) => inBatches(list.map((c) => () => readMeta(state, addon, base, c)), PARALLEL_META_READS);
   const first = !guideOnly && left.length <= DETAILS_FIRST;
@@ -529,6 +534,7 @@ export async function placementsFor(
   if (!guideOnly && !first) await read(left.filter((c) => !walked?.byKey.has(channelKey(c)) && readable(c)));
 
   const listed = whole();
+  admits = admitter(state, base, catalogs);
   return channels.map((c) => {
     const inWhole = listed.get(channelKey(c));
     if (inWhole) return inWhole;
@@ -536,7 +542,7 @@ export async function placementsFor(
     // Its place in some of the lists is not its place in all of them.
     if (inLists) return lists.length === catalogs.length ? inLists : { ...inLists, number: inLists.meta.channelNumber };
     const placement = held(c);
-    return placement && placement !== GONE && !admits(placement) ? GONE : placement ?? null;
+    return placement && placement !== GONE && !admits(placement.meta, placement.catalog) ? GONE : placement ?? null;
   });
 }
 

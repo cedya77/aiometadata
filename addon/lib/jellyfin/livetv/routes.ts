@@ -5,7 +5,7 @@ import { narrowedTo } from './catalogs';
 import { liveTvReady, type GateDeps, type LiveTv } from './gate';
 import { airingAt, caughtUp, filterProgrammes, guideRange, programmesFor, programmeTarget, type GuideItem } from './guide';
 import { channelItem, programItem, type ItemDeps } from './items';
-import { GONE, guideChannels, isListed, listChannels, listGroup, placementFor, placementsFor, type ListedChannel } from './lineup';
+import { GONE, guideChannels, listChannels, listGroup, placementFor, placementsFor, unlisted, type ListedChannel } from './lineup';
 import { askOf, field, flag, integer, listOf, timeOf, type Ask } from './query';
 
 export { field, flag };
@@ -141,9 +141,9 @@ export async function channelPage(deps: LiveTvDeps, req: any, live: LiveTv, conf
     const favourites = await resolveFavourites(deps, live, keys);
     const head = favourites.slice(startIndex, startIndex + limit);
     const rest = await listSkipping(deps, live, keys, Math.max(0, startIndex - favourites.length), limit - head.length);
-    const unlisted = favourites.filter((c) => !isListed(deps.addon, live.base, live.catalogs, c.meta)).length;
+    const apart = unlisted(deps.addon, live.base, live.catalogs, favourites).length;
     channels = [...head, ...rest.channels];
-    total = rest.total + rest.skipped + unlisted;
+    total = rest.total + rest.skipped + apart;
   } else {
     ({ channels, total } = await listChannels(deps.addon, live.base, live.catalogs, { startIndex, limit }));
   }

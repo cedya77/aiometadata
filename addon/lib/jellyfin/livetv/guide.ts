@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
-import { chunksOf, clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
-import { catalogKey, IDS_PER_READ, narrowedTo, pagePath, readPage, utcDay, wholeCatalogs, type LiveCatalog } from './catalogs';
+import { clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
+import { catalogKey, idChunks, narrowedTo, pagePath, readPage, utcDay, wholeCatalogs, type LiveCatalog } from './catalogs';
 import { admitted, channelMetaOf, GONE, listPlacements, placementFor, placementsFor, rememberFound, scheduleOf, type ChannelMeta, type ListedChannel, type Placement } from './lineup';
 import { pageSize, programmesOf, type Programme } from './programmes';
 import { flag, integer, listOf, timeOf, type Ask } from './query';
@@ -25,6 +25,7 @@ const IDLE_MS = 60 * 60 * 1000;
 const SWEEP_MS = 10 * 60 * 1000;
 const SEARCH_SCAN = 5000;
 const SEARCH_WAIT_MS = 4000;
+const FEW_OF_A_PAGE = 25;
 const MAX_REQUEST_READS = 400;
 const REQUEST_READ_MS = 15 * 1000;
 
@@ -136,8 +137,10 @@ function spend(state: State, budget: ReadBudget): boolean {
   return true;
 }
 
+const dayKey = ({ base, catalog, skip, day }: ReadContext): string => `${hash(base)}|${catalogKey(catalog)}|${skip}|${day}`;
+
 function readDay(state: State, context: ReadContext, budget: ReadBudget): Promise<GuidePage | null> {
-  const key = `${hash(context.base)}|${catalogKey(context.catalog)}|${context.skip}|${context.day}`;
+  const key = dayKey(context);
   const held = state.reads.peek(key, { allowStale: true });
   if (held) held.usedAt = state.now();
   if (state.failures.has(key)) return Promise.resolve(held ?? null);
@@ -156,6 +159,9 @@ interface IdContext {
   day: string;
 }
 
+const singleKey = ({ base, catalog, day }: IdContext, { type, id }: ChannelMeta): string =>
+  `${hash(base)}|${catalogKey(catalog)}|${day}|${type}|${id}`;
+
 /** The programmes of channels read by their ids, kept channel by channel. */
 async function readChannels(
   state: State,
@@ -166,7 +172,7 @@ async function readChannels(
 ): Promise<GuidePage> {
   const scope = `${hash(base)}|${catalogKey(catalog)}|${day}`;
   const nameOf = (c: ChannelMeta) => `${c.type}|${c.id}`;
-  const keyOf = (c: ChannelMeta) => `${scope}|${nameOf(c)}`;
+  const keyOf = (c: ChannelMeta) => singleKey({ base, catalog, day }, c);
   const heldOf = (c: ChannelMeta) => state.singles.peek(keyOf(c), { allowStale: true });
 
   const load = (wanted: ChannelMeta[]): Promise<void> => {
@@ -178,14 +184,16 @@ async function readChannels(
         const meta = channelMetaOf(entry, catalog);
         if (meta) read.set(nameOf(meta), programmesOf(entry));
       }
+      // A channel without programmes beside ones that have them has none, rather than a guide still loading.
+      const loaded = [...read.values()].some((list) => list.length > 0);
       for (const channel of wanted) {
         const stale = heldOf(channel);
         const list = read.get(nameOf(channel)) ?? [];
-        if (!entries || (!list.length && stale && !isEmpty(stale.programmes))) {
+        if (!entries || (!list.length && !loaded && stale && !isEmpty(stale.programmes))) {
           state.failures.set(keyOf(channel), true);
           continue;
         }
-        const empties = list.length ? 0 : (stale?.empties ?? 0) + 1;
+        const empties = list.length || loaded ? 0 : (stale?.empties ?? 0) + 1;
         state.singles.set(keyOf(channel), { programmes: new Map([[nameOf(channel), list]]), usedAt: addon.now(), empties }, { ttl: ttlOf(empties) });
       }
     });
@@ -211,6 +219,36 @@ async function readChannels(
   return { programmes, usedAt: state.now(), empties: 0 };
 }
 
+interface PageGroup {
+  catalog: LiveCatalog;
+  skip: number;
+  channels: ChannelMeta[];
+}
+
+/**
+ * The pages to read by their channels' ids instead: those asked for few of their
+ * channels and not held, where that takes fewer reads, or whose channels are held.
+ */
+function readByIds(state: State, base: string, pages: PageGroup[], day: string): Set<PageGroup> {
+  const byIds = new Set<PageGroup>();
+  const few = new Map<string, PageGroup[]>();
+  for (const page of pages) {
+    const { catalog, skip, channels } = page;
+    if (!catalog.ids || channels.length >= FEW_OF_A_PAGE || state.reads.peek(dayKey({ base, catalog, skip, day }), { allowStale: true })) continue;
+    const [whole] = wholeCatalogs([catalog]);
+    if (channels.every((c) => state.singles.has(singleKey({ base, catalog: whole, day }, c)))) {
+      byIds.add(page);
+      continue;
+    }
+    const key = catalogKey(whole);
+    few.set(key, [...(few.get(key) ?? []), page]);
+  }
+  for (const group of few.values()) {
+    if (group.length - idChunks(group.flatMap((page) => page.channels)).length >= 2) for (const page of group) byIds.add(page);
+  }
+  return byIds;
+}
+
 export function daysOf(fromMs: number, toMs: number): string[] {
   const days: string[] = [];
   const last = Math.max(fromMs, toMs - 1);
@@ -228,44 +266,53 @@ export async function programmesFor(
 ): Promise<Map<string, Programme[]>> {
   const state = stateFor(addon);
   const placements = await placementsFor(addon, base, catalogs, channels, { guideOnly: true });
-  interface Group {
-    catalog: LiveCatalog;
-    skip?: number;
-    channels: ChannelMeta[];
-  }
-  const groups = new Map<string, Group>();
+  const paged = new Map<string, PageGroup>();
+  const single = new Map<string, { catalog: LiveCatalog; channels: ChannelMeta[] }>();
+  const addTo = (map: typeof single, catalog: LiveCatalog, metas: ChannelMeta[]) => {
+    const key = catalogKey(catalog);
+    const group = map.get(key) ?? { catalog, channels: [] };
+    group.channels.push(...metas);
+    map.set(key, group);
+  };
   placements.forEach((placement) => {
     if (!placement || placement === GONE || !placement.catalog?.guide) return;
-    const groupKey = `${catalogKey(placement.catalog)}|${placement.skip ?? 'ids'}`;
-    let group = groups.get(groupKey);
-    if (!group) {
-      group = { catalog: placement.catalog, skip: placement.skip, channels: [] };
-      groups.set(groupKey, group);
+    const { catalog, skip, meta } = placement;
+    if (skip === undefined) {
+      addTo(single, catalog, [meta]);
+      return;
     }
-    group.channels.push(placement.meta);
+    const key = `${catalogKey(catalog)}|${skip}`;
+    const group = paged.get(key) ?? { catalog, skip, channels: [] };
+    group.channels.push(meta);
+    paged.set(key, group);
   });
 
   const now = state.now();
   const away = (day: string) => Math.abs(Date.parse(day) + DAY_MS / 2 - now);
   const days = daysOf(fromMs, toMs).sort((a, b) => away(a) - away(b));
-  const batches = [...groups.values()].flatMap((group) =>
-    group.skip === undefined ? chunksOf(group.channels, IDS_PER_READ).map((part) => ({ ...group, channels: part })) : [group]
-  );
-  const work: Array<{ group: Group; day: string }> = [];
-  for (const day of days) for (const group of batches) work.push({ group, day });
   const budget: ReadBudget = { left: MAX_REQUEST_READS, until: now + REQUEST_READ_MS };
-  const pages = await inBatches(
-    work.map(({ group: { catalog, skip, channels: asked }, day }) => () =>
-      skip === undefined ? readChannels(state, addon, { base, catalog, day }, asked, budget) : readDay(state, { base, catalog, skip, day }, budget)
-    ),
-    PARALLEL_READS
-  );
+  const work: Array<{ channels: ChannelMeta[]; read: () => Promise<GuidePage | null> }> = [];
+  for (const day of days) {
+    const pages = [...paged.values()];
+    const byIds = readByIds(state, base, pages, day);
+    const ids: typeof single = new Map();
+    for (const { catalog, channels: metas } of single.values()) addTo(ids, catalog, metas);
+    for (const page of pages) {
+      const { catalog, skip } = page;
+      if (byIds.has(page)) addTo(ids, wholeCatalogs([catalog])[0], page.channels);
+      else work.push({ channels: page.channels, read: () => readDay(state, { base, catalog, skip, day }, budget) });
+    }
+    for (const { catalog, channels: metas } of ids.values()) {
+      for (const part of idChunks(metas)) work.push({ channels: part, read: () => readChannels(state, addon, { base, catalog, day }, part, budget) });
+    }
+  }
+  const pages = await inBatches(work.map(({ read }) => read), PARALLEL_READS);
 
   const found = new Map<string, Map<number, Programme>>();
   let rows = 0;
   pages.forEach((page, n) => {
     if (!page || rows >= MAX_PROGRAMMES) return;
-    for (const meta of work[n].group.channels) {
+    for (const meta of work[n].channels) {
       const key = `${meta.type}|${meta.id}`;
       for (const programme of page.programmes.get(key) ?? []) {
         if (programme.start >= toMs || programme.end <= fromMs) continue;

@@ -52,6 +52,13 @@ export async function liveItem(req: any, deps: LiveTvDeps, descriptor: any): Pro
   return programmeById(deps, req, live, descriptor);
 }
 
+/** Only for those held to groups does it matter which one a channel is in. */
+async function reaches(deps: LiveTvDeps, live: LiveTv, { t, i }: { t: string; i: string }): Promise<boolean> {
+  if (!narrowedTo(live.reach)) return true;
+  const placement = await placementFor(deps.addon, live.base, live.reach, { type: t, id: i });
+  return placement !== null && placement !== GONE;
+}
+
 export async function livePlayback(
   req: any,
   deps: HandlerDeps,
@@ -75,9 +82,8 @@ export async function livePlayback(
     return { sources: await deps.resolveSourcesFor(req, meta.type, meta.id, null, { live: true, refresh, allowHeaders }), runtimeTicks: null };
   }
 
-  const placement = await placementFor(deps.addon, live.base, live.reach, { type: descriptor.t, id: descriptor.i });
-  if (!placement || placement === GONE) return NOT_FOUND;
-  const sources = await deps.resolveSourcesFor(req, placement.meta.type, placement.meta.id, null, { live: true, refresh, allowHeaders });
+  if (!(await reaches(deps, live, descriptor))) return NOT_FOUND;
+  const sources = await deps.resolveSourcesFor(req, descriptor.t, descriptor.i, null, { live: true, refresh, allowHeaders });
   return { sources, runtimeTicks: null };
 }
 
@@ -86,10 +92,7 @@ export async function liveFavourite(req: any, deps: LiveTvDeps, descriptor: any,
   const config = await deps.loadConfig(req);
   const live = await liveTvReady(deps, config);
   if (!live || descriptor.k !== 'channel') return NOT_FOUND;
-  if (narrowedTo(live.reach)) {
-    const placement = await placementFor(deps.addon, live.base, live.reach, { type: descriptor.t, id: descriptor.i });
-    if (!placement || placement === GONE) return NOT_FOUND;
-  }
+  if (!(await reaches(deps, live, descriptor))) return NOT_FOUND;
   await deps.favourites.set(userOf(req), deps.profileKey(config), channelKeyOf({ type: descriptor.t, id: descriptor.i }), on);
   const id = deps.encodeId({ k: 'channel', t: descriptor.t, i: descriptor.i });
   return { status: 200, body: { ...deps.emptyUserData, IsFavorite: on, Key: id, ItemId: id } };
