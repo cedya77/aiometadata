@@ -140,6 +140,8 @@ function stateFor(addon: GuideAddon): State {
       maxSize: MAX_SINGLES_BYTES,
       sizeCalculation: (single, key) => bytesOf(key) + listSize(single.programmes),
       ttl: guideTtlMs(),
+      allowStale: true,
+      noDeleteOnStaleGet: true,
       ...clock,
     });
     const searches = new LRUCache<string, ChannelMeta[]>({
@@ -240,7 +242,7 @@ async function readChannels(
 
   const programmes = new Map<string, Programme[]>();
   for (const channel of channels) {
-    const held = heldOf(channel);
+    const held = state.singles.get(keyOf(channel));
     if (!held) continue;
     held.usedAt = state.now();
     if (held.programmes.length) programmes.set(nameOf(channel), held.programmes);
