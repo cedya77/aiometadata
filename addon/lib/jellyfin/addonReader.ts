@@ -14,7 +14,9 @@ const MAX_OPTIONS = 5000;
 const MAX_OPTION = 200;
 const MAX_MANIFEST = 256 * 1024;
 const STORE_TIMEOUT_MS = 500;
-const PAUSE_MS = 5000;
+// Servers behind one address may count apart, so the first pause is short. Both outlast a limit over 5 s.
+const PAUSE_MS = 1000;
+const NEXT_PAUSE_MS = 4000;
 const SPREAD_MS = 300;
 
 export type Manifest = Record<string, any>;
@@ -42,6 +44,8 @@ export interface AddonDeps {
   recall(base: string): Promise<void>;
   /** Until `until` a catalog the addon refuses, as over its limit, is asked for again once the pause after that is over. */
   fetchJson(base: string, path: string, timeoutMs?: number, until?: number): Promise<any | null>;
+  /** Whether the addon is in such a pause, so that what came back empty is no failure. */
+  paused?(base: string): boolean;
   now(): number;
 }
 
@@ -196,21 +200,26 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
   }
 
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); }));
-  const closedUntil = new LRUCache<string, number>({ max: MAX_BASES });
+  const pauses = new LRUCache<string, { until: number; again: boolean }>({ max: MAX_BASES });
+  const pauseLeft = (key: string): number => (pauses.get(key)?.until ?? 0) - now();
 
   async function fetchJson(base: string, path: string, timeoutMs = READ_TIMEOUT_MS, until?: number): Promise<any | null> {
     if (!path.startsWith('/catalog/')) return (await ask(base, path, timeoutMs)).body;
     const key = hash(base);
     for (;;) {
-      const wait = (closedUntil.get(key) ?? 0) - now();
+      const wait = pauseLeft(key);
       if (wait > 0) {
         if (until === undefined || now() + wait > until) return null;
         await sleep(wait + Math.random() * SPREAD_MS);
         continue;
       }
       const { body, refused } = await ask(base, path, timeoutMs);
-      if (!refused) return body;
-      closedUntil.set(key, now() + PAUSE_MS);
+      const pause = pauses.get(key);
+      if (!refused) {
+        if (pause && pauseLeft(key) <= 0) pause.again = false;
+        return body;
+      }
+      if (pauseLeft(key) <= 0) pauses.set(key, { until: now() + (pause?.again ? NEXT_PAUSE_MS : PAUSE_MS), again: true });
     }
   }
 
@@ -255,6 +264,7 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
   return {
     now,
     fetchJson,
+    paused: (base: string) => pauseLeft(hash(base)) > 0,
     manifest(base: string) {
       const key = hash(base);
       if (failures.has(key)) return Promise.resolve(held(key) ?? null);

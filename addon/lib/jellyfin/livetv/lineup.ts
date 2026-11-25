@@ -9,6 +9,7 @@ import { listSize, programmesOf, type Programme } from './programmes';
 const LINEUP_TTL_MS = 60 * 60 * 1000;
 const PLACEMENT_TTL_MS = 60 * 60 * 1000;
 const FAILURE_MS = 30 * 1000;
+const PAUSE_MS = 1000;
 const EMPTY_TTL_MS = 60 * 1000;
 const MAX_PAGES = 100;
 const MAX_LINEUPS = 20000;
@@ -61,7 +62,7 @@ export interface ListedChannel {
 
 export const GONE: unique symbol = Symbol('GONE');
 
-type LineupAddon = Pick<AddonDeps, 'fetchJson' | 'now'>;
+type LineupAddon = Pick<AddonDeps, 'fetchJson' | 'now' | 'paused'>;
 
 interface Lineup {
   /** The addon it is of. */
@@ -464,7 +465,7 @@ async function readOn(state: State, addon: LineupAddon, base: string, catalogs: 
     lineup.reading ??= readInto(addon, base, catalog, lineup, { ahead: pagesAhead(catalog, lineup, missing), until })
       .finally(() => { lineup.reading = undefined; });
     if (!(await lineup.reading)) {
-      lineup.failedAt = state.now();
+      if (!addon.paused?.(base)) lineup.failedAt = state.now();
       return 'failed';
     }
     lineup.failedAt = undefined;
@@ -619,7 +620,7 @@ async function findByIds(state: State, addon: LineupAddon, base: string, catalog
     left = left.filter((c) => !found.has(keyOf(c)));
   }
   for (const c of left) {
-    if (failed.has(keyOf(c))) state.failures.set(`ids|${keyOf(c)}`, true);
+    if (failed.has(keyOf(c))) state.failures.set(`ids|${keyOf(c)}`, true, { ttl: addon.paused?.(base) ? PAUSE_MS : FAILURE_MS });
     else state.unknown.set(keyOf(c), true);
   }
 }

@@ -43,7 +43,7 @@ export interface GuideItem {
   programme: Programme;
 }
 
-type GuideAddon = Pick<AddonDeps, 'fetchJson' | 'now'>;
+type GuideAddon = Pick<AddonDeps, 'fetchJson' | 'now' | 'paused'>;
 
 interface GuidePage {
   programmes: Map<string, Programme[]>;
@@ -128,7 +128,7 @@ function stateFor(addon: GuideAddon): State {
         }
         const empty = isEmpty(programmes);
         if (!entries || (empty && stale && !isEmpty(stale.programmes))) {
-          failures.set(key, true);
+          if (!addon.paused?.(context.base)) failures.set(key, true);
           throw new Error('guide read failed');
         }
         const empties = empty ? (stale?.empties ?? 0) + 1 : 0;
@@ -192,7 +192,7 @@ const singleKey = ({ base, catalog, day }: IdContext, { type, id }: ChannelMeta)
 const nameOf = ({ type, id }: ChannelMeta): string => `${type}|${id}`;
 
 /** Keeps the programmes of the channels that were asked for, from what was read of them. */
-function keepSingles(state: State, context: IdContext, wanted: ChannelMeta[], entries: any[] | null): void {
+function keepSingles(state: State, addon: GuideAddon, context: IdContext, wanted: ChannelMeta[], entries: any[] | null): void {
   const read = new Map<string, Programme[]>();
   for (const entry of entries ?? []) {
     const meta = channelMetaOf(entry, context.catalog);
@@ -205,7 +205,7 @@ function keepSingles(state: State, context: IdContext, wanted: ChannelMeta[], en
     const stale = state.singles.peek(key, { allowStale: true });
     const list = read.get(nameOf(channel)) ?? [];
     if (!entries || (!list.length && !loaded && stale?.programmes.length)) {
-      state.failures.set(key, true);
+      if (!addon.paused?.(context.base)) state.failures.set(key, true);
       continue;
     }
     const empties = list.length || loaded ? 0 : (stale?.empties ?? 0) + 1;
@@ -228,7 +228,7 @@ async function readChannels(
   const load = (wanted: ChannelMeta[]): Promise<void> => {
     const ids = [...new Set(wanted.map((c) => c.id))].sort();
     return shareInFlight(`guide:${state.id}|${hash(base)}|${pagePath(catalog, { ids, date: day })}`, async () => {
-      keepSingles(state, context, wanted, await readPage(addon, base, catalog, { ids, date: day }, budget.until));
+      keepSingles(state, addon, context, wanted, await readPage(addon, base, catalog, { ids, date: day }, budget.until));
     });
   };
 
@@ -498,7 +498,7 @@ async function searchIn(state: State, addon: GuideAddon, base: string, catalog: 
       const entries = await readPage(addon, base, catalog, { search: wanted, date: day }, until);
       if (!entries) return null;
       const metas = metasOf(entries);
-      if (day) keepSingles(state, { base, catalog, day }, metas, entries);
+      if (day) keepSingles(state, addon, { base, catalog, day }, metas, entries);
       if (wanted.length <= MAX_TERM) state.searches.set(key, metas);
       return metas;
     };
