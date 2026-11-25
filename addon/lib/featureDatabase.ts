@@ -965,6 +965,28 @@ export class FeatureDatabase extends DatabaseCore {
       : 'DELETE FROM tracker_matches WHERE user_uuid = $1';
     await this.runQuery(query, [userUUID]);
   }
+
+  async listChannelFavourites(userUUID: string, profile: string): Promise<string[]> {
+    const query = this.type === 'sqlite'
+      ? `SELECT meta_id FROM jellyfin_favourites WHERE user_uuid = ? AND profile = ? AND media_type = 'channel' ORDER BY updated_at ASC, meta_id ASC`
+      : `SELECT meta_id FROM jellyfin_favourites WHERE user_uuid = $1 AND profile = $2 AND media_type = 'channel' ORDER BY updated_at ASC, meta_id ASC`;
+    const rows = await this.allQuery(query, [userUUID, profile]);
+    return rows.map((row: any) => String(row.meta_id));
+  }
+
+  async setChannelFavourite(userUUID: string, profile: string, key: string, on: boolean): Promise<void> {
+    if (on) {
+      const query = this.type === 'sqlite'
+        ? `INSERT INTO jellyfin_favourites (user_uuid, profile, meta_id, media_type, meta_type, updated_at) VALUES (?, ?, ?, 'channel', NULL, ?) ON CONFLICT (user_uuid, profile, meta_id) DO NOTHING`
+        : `INSERT INTO jellyfin_favourites (user_uuid, profile, meta_id, media_type, meta_type, updated_at) VALUES ($1, $2, $3, 'channel', NULL, $4) ON CONFLICT (user_uuid, profile, meta_id) DO NOTHING`;
+      await this.runQuery(query, [userUUID, profile, key, Date.now()]);
+      return;
+    }
+    const query = this.type === 'sqlite'
+      ? `DELETE FROM jellyfin_favourites WHERE user_uuid = ? AND profile = ? AND meta_id = ? AND media_type = 'channel'`
+      : `DELETE FROM jellyfin_favourites WHERE user_uuid = $1 AND profile = $2 AND meta_id = $3 AND media_type = 'channel'`;
+    await this.runQuery(query, [userUUID, profile, key]);
+  }
 }
 
 const FEATURE_SQLITE_TABLES = [
