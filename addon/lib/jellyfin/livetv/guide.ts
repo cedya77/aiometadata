@@ -510,9 +510,12 @@ async function searchIn(state: State, addon: GuideAddon, base: string, catalog: 
       if (wanted.length <= MAX_TERM) state.searches.set(key, metas);
       return metas;
     };
-    if (!catalog.guide || !isAioStreams(catalog)) return read();
+    const slow = `search|${hash(base)}|${catalogKey(catalog)}`;
+    if (!catalog.guide || !isAioStreams(catalog) || state.failures.has(slow)) return read();
     const dated = await inTime(read(utcDay(addon.now())), DATED_WAIT_MS);
-    return dated === undefined ? read() : dated;
+    if (dated !== undefined) return dated;
+    state.failures.set(slow, true);
+    return read();
   });
 }
 
