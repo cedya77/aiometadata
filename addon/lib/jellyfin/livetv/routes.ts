@@ -6,12 +6,12 @@ import { liveTvReady, type GateDeps, type LiveTv } from './gate';
 import { airingAt, caughtUp, filterProgrammes, guideRange, programmesFor, programmeTarget, type GuideItem } from './guide';
 import { channelItem, programItem, type ItemDeps } from './items';
 import { GONE, guideChannels, listChannels, listGroup, placementFor, placementsFor, unlisted, type ListedChannel } from './lineup';
+import { unnamedChannels } from './limits';
 import { askOf, field, flag, integer, listOf, timeOf, type Ask } from './query';
 
 export { field, flag };
 
 const UNLIMITED = 5000;
-const PROGRAMME_CHANNELS = 100;
 const PROGRAMME_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_LIMIT = 500;
 const MAX_GROUP = 10000;
@@ -169,8 +169,8 @@ async function programmeChannels(deps: LiveTvDeps, live: LiveTv, ask: Ask): Prom
   const asked = listOf(ask('ChannelIds')).slice(0, MAX_ASKED_CHANNELS);
   if (!asked.length) {
     const group = await groupOf(deps, live, ask, false);
-    if (group === undefined || !isGroup(live, group)) return guideChannels(deps.addon, live.base, live.catalogs, PROGRAMME_CHANNELS);
-    return (await listGroup(deps.addon, live.base, live.reach, group, { startIndex: 0, limit: PROGRAMME_CHANNELS })).channels;
+    if (group === undefined || !isGroup(live, group)) return guideChannels(deps.addon, live.base, live.catalogs, unnamedChannels());
+    return (await listGroup(deps.addon, live.base, live.reach, group, { startIndex: 0, limit: unnamedChannels() })).channels;
   }
   const descriptors = await Promise.all(asked.map((id) => deps.decodeLiveId(id)));
   const refs = descriptors.filter((d) => d?.k === 'channel').map((d) => ({ type: d.t, id: d.i }));

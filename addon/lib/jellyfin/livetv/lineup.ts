@@ -4,18 +4,16 @@ import { LRUCache } from 'lru-cache';
 import { clockOptions, hash, inBatches, inTime, isAddonError, shareInFlight, type AddonDeps } from '../addonReader';
 import { AIOSTREAMS_PAGE, catalogKey, endsList, idChunks, isAioStreams, narrowedTo, pagePath, readPage, wholeCatalogs, type LiveCatalog } from './catalogs';
 import { bytesOf, clipped, groupNameOf, idOf, MAX_NAME, shortOf, text, urlOf } from './bounds';
+import { lineupBytes, lineupTtlMs, listWaitMs, maxPages } from './limits';
 import { listSize, programmesOf, type Programme } from './programmes';
 
-const LINEUP_TTL_MS = 60 * 60 * 1000;
 const PLACEMENT_TTL_MS = 60 * 60 * 1000;
 const FAILURE_MS = 30 * 1000;
 const PAUSE_MS = 1000;
 const EMPTY_TTL_MS = 60 * 1000;
-const MAX_PAGES = 100;
 const MAX_LINEUPS = 20000;
-const MAX_HELD_BYTES = 256 * 1024 * 1024;
 // What one addon may hold of it, so that no other addon's lists give way to one.
-const MAX_ADDON_BYTES = MAX_HELD_BYTES / 4;
+const addonBytes = (): number => lineupBytes() / 4;
 const MAX_ASSEMBLED = 500000;
 const MAX_PLACEMENTS = 20000;
 const MAX_LIST = 50000;
@@ -31,7 +29,6 @@ const DETAILS_FIRST = 4;
 const MAX_DETAIL_READS = 100;
 const DETAILS_MS = 10 * 1000;
 const PARALLEL_PAGES = 4;
-const WALK_MS = 20 * 1000;
 const LOOKUP_MS = 10 * 1000;
 const SMALL_PAGES = 3;
 const FULL_REFRESH_MS = 6 * 60 * 60 * 1000;
@@ -133,9 +130,9 @@ export function stateFor(addon: LineupAddon): State {
       now: addon.now,
       lineups: new LRUCache<string, Lineup>({
         max: MAX_LINEUPS,
-        maxSize: MAX_HELD_BYTES,
+        maxSize: lineupBytes(),
         sizeCalculation: heldBytes,
-        ttl: LINEUP_TTL_MS,
+        ttl: lineupTtlMs(),
         allowStale: true,
         noDeleteOnStaleGet: true,
         dispose: (lineup, _key, reason) => {
@@ -176,7 +173,7 @@ function count(shares: State['shares'], lineup: Lineup, bytes: number): void {
 }
 
 /** Puts a lineup where it belongs, counted as it is now. An addon's other lineups give way to it, the longest unused first. */
-function hold(state: State, key: string, lineup: Lineup, ttl: number = LINEUP_TTL_MS): void {
+function hold(state: State, key: string, lineup: Lineup, ttl: number = lineupTtlMs()): void {
   const held = state.lineups.peek(key);
   if (held && held !== lineup) dropAssemblies(state.assemblies, held);
   state.lineups.delete(key);
@@ -184,9 +181,9 @@ function hold(state: State, key: string, lineup: Lineup, ttl: number = LINEUP_TT
   if (state.lineups.peek(key) !== lineup) return;
   count(state.shares, lineup, heldBytes(lineup));
   const share = () => state.shares.get(lineup.scope) ?? 0;
-  if (share() <= MAX_ADDON_BYTES) return;
+  if (share() <= addonBytes()) return;
   for (const other of [...state.lineups.rkeys()]) {
-    if (share() <= MAX_ADDON_BYTES) return;
+    if (share() <= addonBytes()) return;
     const own = other === key ? undefined : state.lineups.peek(other);
     if (own?.scope !== lineup.scope) continue;
     state.lineups.delete(other);
@@ -278,7 +275,7 @@ function addPage(catalog: LiveCatalog, lineup: Lineup, page: any[]): void {
   let added = 0;
   for (const entry of page) {
     const meta = channelMetaOf(entry, catalog);
-    if (lineup.channels.length >= MAX_LIST || lineup.bytes >= MAX_ADDON_BYTES) break;
+    if (lineup.channels.length >= MAX_LIST || lineup.bytes >= addonBytes()) break;
     if (!meta || lineup.keys.has(channelKey(meta))) continue;
     lineup.keys.add(channelKey(meta));
     lineup.channels.push(meta);
@@ -288,7 +285,7 @@ function addPage(catalog: LiveCatalog, lineup: Lineup, page: any[]): void {
   }
   lineup.tail = lineup.next;
   lineup.next += page.length;
-  if (!catalog.skip || added === 0 || endsList(catalog, page) || lineup.pages >= MAX_PAGES || lineup.channels.length >= MAX_LIST || lineup.bytes >= MAX_ADDON_BYTES) lineup.done = true;
+  if (!catalog.skip || added === 0 || endsList(catalog, page) || lineup.pages >= maxPages() || lineup.channels.length >= MAX_LIST || lineup.bytes >= addonBytes()) lineup.done = true;
 }
 
 async function readInto(addon: LineupAddon, base: string, catalog: LiveCatalog, lineup: Lineup, { ahead = 1, until }: { ahead?: number; until?: number } = {}): Promise<boolean> {
@@ -332,9 +329,9 @@ async function refresh(state: State, addon: LineupAddon, base: string, catalog: 
       return;
     }
   }
-  if (old.fresh && state.now() - old.fresh.readAt > LINEUP_TTL_MS) old.fresh = undefined;
+  if (old.fresh && state.now() - old.fresh.readAt > lineupTtlMs()) old.fresh = undefined;
   const fresh = (old.fresh ??= emptyLineup(state, base));
-  const limit = old.done ? MAX_PAGES : Math.max(1, old.pages);
+  const limit = old.done ? maxPages() : Math.max(1, old.pages);
   while (!fresh.done && fresh.pages < limit) {
     if (!(await readInto(addon, base, catalog, fresh))) return failed();
     if (!fresh.channels.length && old.channels.length) {
@@ -438,7 +435,7 @@ interface WalkOptions {
 function pagesAhead(catalog: LiveCatalog, lineup: Lineup, missing: number): number {
   if (!isAioStreams(catalog) || catalog.genre !== undefined || !catalog.skip) return 1;
   if (lineup.pages < PARALLEL_PAGES || lineup.next !== lineup.pages * AIOSTREAMS_PAGE) return 1;
-  return Math.max(1, Math.min(PARALLEL_PAGES, Math.ceil(missing / AIOSTREAMS_PAGE), MAX_PAGES - lineup.pages));
+  return Math.max(1, Math.min(PARALLEL_PAGES, Math.ceil(missing / AIOSTREAMS_PAGE), maxPages() - lineup.pages));
 }
 
 async function readOn(state: State, addon: LineupAddon, base: string, catalogs: LiveCatalog[], list: Assembly, want: number, until: number): Promise<Outcome> {
@@ -483,7 +480,7 @@ async function walk(
   base: string,
   catalogs: LiveCatalog[],
   satisfied: (list: Assembly) => boolean,
-  { want = 0, waitMs = WALK_MS }: WalkOptions = {}
+  { want = 0, waitMs = listWaitMs() }: WalkOptions = {}
 ): Promise<Assembly> {
   const state = stateFor(addon);
   const until = addon.now() + waitMs;
@@ -495,7 +492,7 @@ async function walk(
     if (last && gone && !isEmpty(gone)) return last;
     last = list;
     if (!reads) refreshDue(state, addon, base, catalogs, list.lineups);
-    if (satisfied(list) || list.finished || list.blocked || reads > MAX_PAGES * catalogs.length || addon.now() >= until) return list;
+    if (satisfied(list) || list.finished || list.blocked || reads > maxPages() * catalogs.length || addon.now() >= until) return list;
     if ((await readOn(state, addon, base, catalogs, list, want, until)) !== 'read') return assemble(state, base, catalogs);
   }
 }

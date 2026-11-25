@@ -5,12 +5,12 @@ import { clockOptions, hash, inBatches, inTime, shareInFlight, type AddonDeps } 
 import { AIOSTREAMS_PAGE, catalogKey, idChunks, isAioStreams, narrowedTo, pagePath, readPage, utcDay, wholeCatalogs, type LiveCatalog } from './catalogs';
 import { admitted, channelMetaOf, GONE, listPlacements, placementFor, placementsFor, rememberFound, scheduleOf, sizeOf, type ChannelMeta, type ListedChannel, type Placement } from './lineup';
 import { bytesOf } from './bounds';
+import { guideBytes, guideTtlMs } from './limits';
 import { listSize, pageSize, programmesOf, type Programme } from './programmes';
 import { flag, integer, listOf, timeOf, type Ask } from './query';
 
 export { airingAt, pageSize, programmesOf, type Programme } from './programmes';
 
-const READ_TTL_MS = 30 * 60 * 1000;
 const EMPTY_TTL_MS = 60 * 1000;
 const FAILURE_MS = 30 * 1000;
 const MAX_READS = 5000;
@@ -19,7 +19,6 @@ const DAY_MS = 86400000;
 const GUIDE_DAYS_AHEAD = 7;
 const MAX_CATCHUP_DAYS = 14;
 const MAX_PROGRAMMES = 50000;
-const MAX_HELD_BYTES = 128 * 1024 * 1024;
 const MAX_SINGLES = 20000;
 const MAX_SINGLES_BYTES = 32 * 1024 * 1024;
 const IDLE_MS = 60 * 60 * 1000;
@@ -89,7 +88,7 @@ let serial = 0;
 const isEmpty = (programmes: Map<string, Programme[]>): boolean => programmes.size === 0;
 
 // Empty is also how a guide still loading, or an error the addon hides, looks.
-const ttlOf = (empties: number): number => (empties ? Math.min(READ_TTL_MS, EMPTY_TTL_MS * 2 ** (empties - 1)) : READ_TTL_MS);
+const ttlOf = (empties: number): number => (empties ? Math.min(guideTtlMs(), EMPTY_TTL_MS * 2 ** (empties - 1)) : guideTtlMs());
 
 function purge(state: State): void {
   for (const held of [state.reads, state.singles] as Array<LRUCache<string, { usedAt: number }, any>>) {
@@ -111,9 +110,9 @@ function stateFor(addon: GuideAddon): State {
     const failures = new LRUCache<string, true>({ max: MAX_READS, ttl: FAILURE_MS, ...clock });
     const reads = new LRUCache<string, GuidePage, ReadContext>({
       max: MAX_READS,
-      maxSize: MAX_HELD_BYTES,
+      maxSize: guideBytes(),
       sizeCalculation: (page) => pageSize(page.programmes),
-      ttl: READ_TTL_MS,
+      ttl: guideTtlMs(),
       allowStale: true,
       allowStaleOnFetchRejection: true,
       noDeleteOnFetchRejection: true,
@@ -132,7 +131,7 @@ function stateFor(addon: GuideAddon): State {
           throw new Error('guide read failed');
         }
         const empties = empty ? (stale?.empties ?? 0) + 1 : 0;
-        if (empty) options.ttl = ttlOf(empties);
+        options.ttl = ttlOf(empties);
         return { programmes, usedAt: addon.now(), empties };
       },
     });
@@ -140,7 +139,7 @@ function stateFor(addon: GuideAddon): State {
       max: MAX_SINGLES,
       maxSize: MAX_SINGLES_BYTES,
       sizeCalculation: (single, key) => bytesOf(key) + listSize(single.programmes),
-      ttl: READ_TTL_MS,
+      ttl: guideTtlMs(),
       ...clock,
     });
     const searches = new LRUCache<string, ChannelMeta[]>({

@@ -5,6 +5,7 @@ import { liveTvFor, liveTvReady, type LiveTv } from './gate';
 import { filterProgrammes, programmeTarget, searchChannels, type GuideItem } from './guide';
 import { groupItem, liveTvView } from './items';
 import { GONE, guideChannels, placementFor } from './lineup';
+import { unnamedChannels } from './limits';
 import { askOf, field, integer, listOf, type Ask } from './query';
 import {
   channelById,
@@ -21,7 +22,6 @@ import {
 } from './routes';
 
 const SEARCH_SCAN = 5000;
-const PROGRAMME_CHANNELS = 100;
 const TICKS_PER_MS = 10000;
 
 export interface HandlerDeps extends LiveTvDeps {
@@ -130,7 +130,7 @@ export async function liveSearch(
     const own: Record<string, unknown> = { searchterm: term, startindex: undefined, limit: undefined };
     const asked = askOf(req);
     const ask: Ask = (name) => (name.toLowerCase() in own ? own[name.toLowerCase()] : asked(name));
-    const listed = await guideChannels(deps.addon, live.base, live.catalogs, PROGRAMME_CHANNELS);
+    const listed = await guideChannels(deps.addon, live.base, live.catalogs, unnamedChannels());
     aired = filterProgrammes(await programmesAround(deps, live, listed, () => undefined, now), ask, now).items;
   }
 

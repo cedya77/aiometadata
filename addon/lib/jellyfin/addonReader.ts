@@ -3,12 +3,11 @@
 import consola from 'consola';
 import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
+import { manifestBytes, manifestTtlMs } from './livetv/limits';
 
-const MANIFEST_TTL_MS = 10 * 60 * 1000;
 const FAILURE_MS = 30 * 1000;
 const READ_TIMEOUT_MS = 5000;
 const MAX_BASES = 5000;
-const MAX_MANIFEST_BYTES = 64 * 1024 * 1024;
 const MAX_CATALOGS = 50;
 const MAX_OPTIONS = 5000;
 const MAX_OPTION = 200;
@@ -226,27 +225,28 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
   const failures = new LRUCache<string, true>({ max: MAX_BASES, ttl: FAILURE_MS, ...clockOptions(options.now) });
   const manifests = new LRUCache<string, Manifest, string>({
     max: MAX_BASES,
-    maxSize: MAX_MANIFEST_BYTES,
+    maxSize: manifestBytes(),
     sizeCalculation: manifestSize,
-    ttl: MANIFEST_TTL_MS,
+    ttl: manifestTtlMs(),
     allowStale: true,
     allowStaleOnFetchRejection: true,
     noDeleteOnFetchRejection: true,
     ...clockOptions(options.now),
-    fetchMethod: async (key, _stale, { context }) => {
+    fetchMethod: async (key, _stale, { context, options: entry }) => {
       const manifest = await fetchJson(context, '/manifest.json');
       if (!isManifest(manifest)) {
         failures.set(key, true);
         throw new Error('manifest read failed');
       }
       const part = livePart(manifest);
+      entry.ttl = manifestTtlMs();
       options.store?.set(storeKey(key), JSON.stringify(part)).catch(() => undefined);
       recalled.delete(key);
       return part;
     },
   });
   // Apart from the manifests read: setting one there ends a read of it that is still running.
-  const recalled = new LRUCache<string, Manifest>({ max: MAX_BASES, maxSize: MAX_MANIFEST_BYTES, sizeCalculation: manifestSize });
+  const recalled = new LRUCache<string, Manifest>({ max: MAX_BASES, maxSize: manifestBytes(), sizeCalculation: manifestSize });
 
   function read(base: string): Promise<Manifest | null> {
     const key = hash(base);
