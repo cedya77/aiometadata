@@ -314,6 +314,7 @@ All of these are in the dashboard under **Server**, or as environment variables,
 | `JELLYFIN_LIVETV_GUIDE_MB` | `128` | Memory for the guide pages held. Takes effect after a restart. |
 | `JELLYFIN_LIVETV_GUIDE_TTL` | `1800` | How long a guide page is kept before it is read again. |
 | `JELLYFIN_LIVETV_GUIDE_CHANNELS` | `100` | Channels with a guide that Programs, Recommended and programme search cover when an app names none. |
+| `JELLYFIN_LIVETV_IMAGE_CACHE_MAX` | `20000` | Channels' and programmes' artwork URLs held in memory, apart from the titles' artwork. Takes effect after a restart. |
 | `JELLYFIN_SYNCPLAY_ENABLED` | `true` | Offer SyncPlay to the apps that support it. Off hides it in those apps. |
 | `JELLYFIN_SYNCPLAY_SCOPE` | `configuration` | Who sees a SyncPlay group: the users of the configuration that started it, or with `instance` everyone on this instance. |
 | `JELLYFIN_SYNCPLAY_MAX_GROUPS` | `1000` | The most SyncPlay groups held at once; creating one past it is refused until another ends. |

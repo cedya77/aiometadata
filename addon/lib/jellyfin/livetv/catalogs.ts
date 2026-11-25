@@ -69,11 +69,23 @@ export function narrowedTo(catalogs: LiveCatalog[]): Set<string> | undefined {
 
 export const catalogKey = ({ type, id, genre }: LiveCatalog): string => `${type}|${id}${genre === undefined ? '' : `|${genre}`}`;
 
+const catalogsOf = new WeakMap<Manifest, LiveCatalog[]>();
+
 export function liveCatalogs(manifest: Manifest | null | undefined): LiveCatalog[] {
-  const epg = manifest?.behaviorHints?.epgProvider === true;
+  if (!manifest) return [];
+  let live = catalogsOf.get(manifest);
+  if (!live) {
+    live = readCatalogs(manifest);
+    catalogsOf.set(manifest, live);
+  }
+  return live;
+}
+
+function readCatalogs(manifest: Manifest): LiveCatalog[] {
+  const epg = manifest.behaviorHints?.epgProvider === true;
   const seen = new Set<string>();
   const live: LiveCatalog[] = [];
-  for (const catalog of Array.isArray(manifest?.catalogs) ? manifest!.catalogs : []) {
+  for (const catalog of Array.isArray(manifest.catalogs) ? manifest.catalogs : []) {
     if (typeof catalog?.type !== 'string' || typeof catalog?.id !== 'string') continue;
     const extras = extrasOf(catalog);
     if (extras.some((e) => e.isRequired)) continue;

@@ -1124,8 +1124,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       res.json(itemList([], 0, 0));
       return;
     }
-    const libraries = await userViews(req, userUUID, serverIdFor(userUUID), config);
-    if (withLiveTv) await liveTvRecall(liveTvGate, config);
+    const [libraries] = await Promise.all([
+      userViews(req, userUUID, serverIdFor(userUUID), config),
+      withLiveTv ? liveTvRecall(liveTvGate, config) : undefined,
+    ]);
     const liveView = withLiveTv ? liveTvViewFor(req, liveTv, config) : null;
     const views = liveView ? [...libraries, liveView] : libraries;
     res.json(itemList(views, views.length, 0));
@@ -2162,7 +2164,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     serverName: SERVER_NAME,
     now: Date.now,
     loadConfig,
-    profileFor: async (req: any) => sessionProfile(req, await database.getUserConfig(req.params.userUUID)),
+    profileFor: async (req: any) => sessionProfile(req, await loadConfig(req)),
     serverIdFor,
     profileKey,
     favourites: {

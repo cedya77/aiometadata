@@ -10,7 +10,7 @@ const MAX_CAST = 20;
 
 export interface ItemDeps {
   encodeId(d: Descriptor): string;
-  encodeProgramId(ref: ProgramRef): string | null;
+  encodeProgramId(ref: ProgramRef, channelId?: string): string | null;
   rememberImages(scope: string, itemId: string, images: { primary?: string; backdrop?: string }): void;
   imageTag(url: string): string;
   placeholderMediaSource(id: string, name: string): any;
@@ -53,19 +53,27 @@ export function livePrimaryKind(descriptor: any): 'logo' | 'thumb' | undefined {
 
 const imageOf = (channel: ListedChannel): string | undefined => channel.meta.logo ?? channel.meta.poster;
 
+export interface ChannelParts {
+  id: string;
+  imageTag?: string;
+}
+
+export function channelParts(deps: ItemDeps, serverId: string, channel: ListedChannel): ChannelParts {
+  const id = channelIdOf(deps, channel);
+  const image = imageOf(channel);
+  if (!image) return { id };
+  deps.rememberImages(serverId, id, { primary: image });
+  return { id, imageTag: deps.imageTag(image) };
+}
+
 export function channelItem(
   deps: ItemDeps,
   serverId: string,
   channel: ListedChannel,
   { airing, favourite }: { airing?: Programme; favourite: boolean }
 ): any {
-  const id = channelIdOf(deps, channel);
-  const image = imageOf(channel);
-  const imageTags: Record<string, string> = {};
-  if (image) {
-    deps.rememberImages(serverId, id, { primary: image });
-    imageTags.Primary = deps.imageTag(image);
-  }
+  const parts = channelParts(deps, serverId, channel);
+  const { id, imageTag } = parts;
   const item: any = {
     Name: channel.meta.name,
     ServerId: serverId,
@@ -75,7 +83,7 @@ export function channelItem(
     MediaType: 'Video',
     IsFolder: false,
     LocationType: 'Remote',
-    ImageTags: imageTags,
+    ImageTags: imageTag ? { Primary: imageTag } : {},
     BackdropImageTags: [],
     UserData: { ...deps.emptyUserData, IsFavorite: favourite, Key: id, ItemId: id },
     MediaSources: [{ ...deps.placeholderMediaSource(id, 'Live'), IsInfiniteStream: true, Container: undefined }],
@@ -84,7 +92,7 @@ export function channelItem(
     item.ChannelNumber = channel.number;
     item.Number = channel.number;
   }
-  if (airing) item.CurrentProgram = programItem(deps, serverId, channel, airing);
+  if (airing) item.CurrentProgram = programItem(deps, serverId, channel, airing, { parts });
   return item;
 }
 
@@ -93,11 +101,9 @@ export function programItem(
   serverId: string,
   channel: ListedChannel,
   programme: Programme,
-  { opened = false, catchup = false }: { opened?: boolean; catchup?: boolean } = {}
+  { opened = false, catchup = false, parts = channelParts(deps, serverId, channel) }: { opened?: boolean; catchup?: boolean; parts?: ChannelParts } = {}
 ): any {
-  const channelId = channelIdOf(deps, channel);
-  const image = imageOf(channel);
-  const id = deps.encodeProgramId({ t: channel.meta.type, i: channel.meta.id, at: Math.floor(programme.start / 1000) });
+  const id = deps.encodeProgramId({ t: channel.meta.type, i: channel.meta.id, at: Math.floor(programme.start / 1000) }, parts.id);
   const item: any = {
     Name: programme.title,
     ServerId: serverId,
@@ -106,7 +112,7 @@ export function programItem(
     MediaType: 'Video',
     IsFolder: false,
     LocationType: 'Remote',
-    ChannelId: channelId,
+    ChannelId: parts.id,
     ChannelName: channel.meta.name,
     StartDate: new Date(programme.start).toISOString(),
     EndDate: new Date(programme.end).toISOString(),
@@ -116,10 +122,7 @@ export function programItem(
   };
   if (programme.overview) item.Overview = programme.overview;
   if (channel.number) item.ChannelNumber = channel.number;
-  if (image) {
-    deps.rememberImages(serverId, channelId, { primary: image });
-    item.ChannelPrimaryImageTag = deps.imageTag(image);
-  }
+  if (parts.imageTag) item.ChannelPrimaryImageTag = parts.imageTag;
   Object.assign(item, flagsOf(programme));
   if (programme.genres) item.Genres = programme.genres;
   if (programme.season !== undefined) item.ParentIndexNumber = programme.season;

@@ -17,7 +17,7 @@ const addonBytes = (): number => lineupBytes() / 4;
 const MAX_ASSEMBLED = 500000;
 const MAX_PLACEMENTS = 20000;
 const MAX_LIST = 50000;
-const MAX_FAILURES = 5000;
+const MAX_FAILURES = 20000;
 const SLOW_MS = 4000;
 const IDLE_MS = 2 * 60 * 60 * 1000;
 const SWEEP_MS = 10 * 60 * 1000;
@@ -107,7 +107,7 @@ interface State {
   assemblies: LRUCache<string, Assembly>;
   /** Channel reads that failed lately, and addons whose channel reads time out. */
   failures: LRUCache<string, true>;
-  /** Channels the reads by id answered without. */
+  /** Channels a catalog's reads by id answered without. */
   unknown: LRUCache<string, true>;
   /** The programmes that came with a channel's details. */
   schedules: LRUCache<string, Programme[]>;
@@ -549,10 +549,10 @@ export async function listPlacements(
   base: string,
   catalogs: LiveCatalog[],
   limit: number,
-  enough: (entries: Placement[]) => boolean = () => false,
+  enough?: (entries: Placement[]) => boolean,
   waitMs?: number
 ): Promise<Placement[]> {
-  const list = await walk(addon, base, catalogs, (l) => l.entries.length >= limit || enough(l.entries), { waitMs });
+  const list = await walk(addon, base, catalogs, (l) => l.entries.length >= limit || enough?.(l.entries) === true, { want: enough ? 0 : limit, waitMs });
   return list.entries.slice(0, limit);
 }
 
@@ -574,7 +574,9 @@ export async function guideChannels(addon: LineupAddon, base: string, catalogs: 
   if (last < 0) return [];
   const guided = (list: Assembly) => list.entries.filter((p) => p.catalog?.guide);
   const list = await walk(addon, base, catalogs, (l) => l.lineups[last]?.done === true || guided(l).length >= limit, { want: limit });
-  return guided(list).slice(0, limit).map(({ meta, number }) => ({ meta, number }));
+  const page = guided(list).slice(0, limit);
+  for (const entry of page) rememberListed(addon, base, entry, entry.number);
+  return page.map(({ meta, number }) => ({ meta, number }));
 }
 
 type ChannelRef = Pick<ChannelMeta, 'type' | 'id'>;
@@ -584,10 +586,11 @@ function admitter(state: State, base: string, catalogs: LiveCatalog[]): (meta: C
   const names = narrowedTo(catalogs);
   if (!names) return () => true;
   const lineups = catalogs.map((c) => state.lineups.peek(lineupKey(base, c), { allowStale: true }));
-  return (meta, from) =>
-    (meta.groups ?? []).some((g) => names.has(g)) ||
-    (from?.genre !== undefined && names.has(from.genre)) ||
-    lineups.some((l) => l?.keys.has(channelKey(meta)));
+  return (meta, from) => {
+    if ((meta.groups ?? []).some((g) => names.has(g)) || (from?.genre !== undefined && names.has(from.genre))) return true;
+    const key = channelKey(meta);
+    return lineups.some((l) => l?.keys.has(key));
+  };
 }
 
 /** Those of the channels found that these catalogs hold. */
@@ -600,29 +603,36 @@ async function findByIds(state: State, addon: LineupAddon, base: string, catalog
   const keyOf = (c: ChannelRef) => placementKey(base, c.type, c.id);
   const failed = new Set<string>();
   const until = addon.now() + LOOKUP_MS;
-  let left = channels.filter((c) => !state.unknown.has(keyOf(c)) && !state.failures.has(`ids|${keyOf(c)}`));
+  const failureTtl = () => (addon.paused?.(base) ? PAUSE_MS : FAILURE_MS);
+  let left = channels;
   for (const catalog of catalogs) {
     if (!catalog.ids || !left.length) continue;
+    const here = (c: ChannelRef) => `${catalogKey(catalog)}|${keyOf(c)}`;
+    const due = left.filter((c) => !state.unknown.has(here(c)) && !state.failures.has(`ids|${here(c)}`));
     const found = new Set<string>();
     const read = async (chunk: ChannelRef[]) => {
       const ids = [...new Set(chunk.map((c) => c.id))].sort();
       const entries = await shareInFlight(`livetv:${state.id}|${hash(base)}|${pagePath(catalog, { ids })}`, () => readPage(addon, base, catalog, { ids }, until));
-      if (!entries) for (const c of chunk) failed.add(keyOf(c));
+      if (!entries) {
+        for (const c of chunk) {
+          failed.add(keyOf(c));
+          state.failures.set(`ids|${here(c)}`, true, { ttl: failureTtl() });
+        }
+        return;
+      }
       const wanted = new Set(chunk.map(keyOf));
-      for (const entry of entries ?? []) {
+      for (const entry of entries) {
         const meta = channelMetaOf(entry, catalog);
         if (!meta || !wanted.has(keyOf(meta))) continue;
         rememberFound(addon, base, meta, catalog);
         found.add(keyOf(meta));
       }
+      for (const c of chunk) if (!found.has(keyOf(c))) state.unknown.set(here(c), true);
     };
-    await inBatches(idChunks(left).map((chunk) => () => read(chunk)), PARALLEL_ID_READS);
+    await inBatches(idChunks(due).map((chunk) => () => read(chunk)), PARALLEL_ID_READS);
     left = left.filter((c) => !found.has(keyOf(c)));
   }
-  for (const c of left) {
-    if (failed.has(keyOf(c))) state.failures.set(`ids|${keyOf(c)}`, true, { ttl: addon.paused?.(base) ? PAUSE_MS : FAILURE_MS });
-    else state.unknown.set(keyOf(c), true);
-  }
+  for (const c of left) if (failed.has(keyOf(c))) state.failures.set(`ids|${keyOf(c)}`, true, { ttl: failureTtl() });
 }
 
 async function readMeta(state: State, addon: LineupAddon, base: string, { type, id }: ChannelRef): Promise<void> {
@@ -638,10 +648,10 @@ async function readMeta(state: State, addon: LineupAddon, base: string, { type, 
     return;
   }
   const meta = body.meta ? channelMetaOf({ ...body.meta, id, type }, { type }) : null;
-  // Found this way it has no guide, so it is looked up by its id again soon.
-  const ttl = state.failures.has(`ids|${key}`) ? FAILURE_MS : PLACEMENT_TTL_MS;
-  state.placements.set(key, meta ? { meta, number: meta.channelNumber } : GONE, { ttl });
   const programmes = meta ? programmesOf(body.meta) : [];
+  // Found this way it has no guide, so it is looked up by its id again soon.
+  const ttl = state.failures.has(`ids|${key}`) ? FAILURE_MS : programmes.length ? SCHEDULE_TTL_MS : PLACEMENT_TTL_MS;
+  state.placements.set(key, meta ? { meta, number: meta.channelNumber } : GONE, { ttl });
   if (programmes.length) state.schedules.set(key, programmes);
 }
 

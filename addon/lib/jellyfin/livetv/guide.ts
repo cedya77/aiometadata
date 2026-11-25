@@ -140,6 +140,8 @@ function stateFor(addon: GuideAddon): State {
       maxSize: MAX_SINGLES_BYTES,
       sizeCalculation: (single, key) => bytesOf(key) + listSize(single.programmes),
       ttl: guideTtlMs(),
+      allowStale: true,
+      noDeleteOnStaleGet: true,
       ...clock,
     });
     const searches = new LRUCache<string, ChannelMeta[]>({
@@ -240,7 +242,7 @@ async function readChannels(
 
   const programmes = new Map<string, Programme[]>();
   for (const channel of channels) {
-    const held = heldOf(channel);
+    const held = state.singles.get(keyOf(channel));
     if (!held) continue;
     held.usedAt = state.now();
     if (held.programmes.length) programmes.set(nameOf(channel), held.programmes);
@@ -468,12 +470,17 @@ export async function programmeTarget(
   addon: GuideAddon,
   base: string,
   catalogs: LiveCatalog[],
-  { t, i, at }: { t: string; i: string; at: number }
+  { t, i, at }: { t: string; i: string; at: number },
+  { playing = false }: { playing?: boolean } = {}
 ): Promise<ProgrammeTarget | null> {
   const placement = await placementFor(addon, base, catalogs, { type: t, id: i });
   if (!placement || placement === GONE) return null;
   const channel: ListedChannel = { meta: placement.meta, number: placement.number };
   const startMs = at * 1000;
+  // An id holds its start to the second.
+  if (playing && ![startMs, startMs + 999].some((start) => caughtUp(placement.meta, start, addon.now()))) {
+    return { channel, live: true, streamId: placement.meta.id };
+  }
   const startingIn = async (fromMs: number): Promise<Programme | undefined> => {
     const found = await programmesFor(addon, base, catalogs, [{ type: t, id: i }], fromMs, fromMs + 1000);
     return (found.get(`${placement.meta.type}|${placement.meta.id}`) ?? []).find((p) => Math.floor(p.start / 1000) === at);
@@ -503,9 +510,12 @@ async function searchIn(state: State, addon: GuideAddon, base: string, catalog: 
       if (wanted.length <= MAX_TERM) state.searches.set(key, metas);
       return metas;
     };
-    if (!catalog.guide || !isAioStreams(catalog)) return read();
+    const slow = `search|${hash(base)}|${catalogKey(catalog)}`;
+    if (!catalog.guide || !isAioStreams(catalog) || state.failures.has(slow)) return read();
     const dated = await inTime(read(utcDay(addon.now())), DATED_WAIT_MS);
-    return dated === undefined ? read() : dated;
+    if (dated !== undefined) return dated;
+    state.failures.set(slow, true);
+    return read();
   });
 }
 

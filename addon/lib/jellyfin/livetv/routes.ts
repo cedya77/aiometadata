@@ -4,7 +4,7 @@ import { normaliseJellyfinId } from '../idsCodec';
 import { narrowedTo } from './catalogs';
 import { liveTvReady, type GateDeps, type LiveTv } from './gate';
 import { airingAt, caughtUp, filterProgrammes, guideRange, programmesFor, programmeTarget, type GuideItem } from './guide';
-import { channelItem, programItem, type ItemDeps } from './items';
+import { channelItem, channelParts, programItem, type ChannelParts, type ItemDeps } from './items';
 import { GONE, guideChannels, listChannels, listGroup, placementFor, placementsFor, unlisted, type ListedChannel } from './lineup';
 import { unnamedChannels } from './limits';
 import { askOf, field, flag, integer, listOf, timeOf, type Ask } from './query';
@@ -124,7 +124,10 @@ export async function channelPage(deps: LiveTvDeps, req: any, live: LiveTv, conf
 
   let channels: ListedChannel[];
   let total: number;
-  if (group !== undefined && isFavorite !== undefined) {
+  if (group !== undefined && isFavorite === true && !keys.size) {
+    channels = [];
+    total = 0;
+  } else if (group !== undefined && isFavorite !== undefined) {
     const whole = await listGroup(deps.addon, live.base, live.reach, group, { startIndex: 0, limit: MAX_GROUP });
     const kept = whole.channels.filter((c) => isFavourite(c) === isFavorite);
     channels = kept.slice(startIndex, startIndex + limit);
@@ -188,8 +191,9 @@ export async function programmesAround(deps: LiveTvDeps, live: LiveTv, channels:
   const max = timeOf(ask('MaxStartDate')) ?? timeOf(ask('MaxEndDate'));
   const aired = flag(ask('HasAired')) === true;
   const past = aired || (max !== null && max <= now);
-  const from = Math.max(range.start, min ?? (past ? range.start : now));
-  const to = Math.min(range.end, max ?? (aired ? now : Math.max(now, from) + PROGRAMME_WINDOW_MS));
+  const airing = flag(ask('IsAiring')) === true;
+  const from = airing ? now : Math.max(range.start, min ?? (past ? range.start : now));
+  const to = airing ? now : Math.min(range.end, max ?? (aired ? now : Math.max(now, from) + PROGRAMME_WINDOW_MS));
   if (!channels.length || from > to) return [];
   const found = await programmesFor(deps.addon, live.base, live.reach, channels.map((c) => c.meta), from, to + 1);
   const items: GuideItem[] = [];
@@ -201,9 +205,12 @@ export async function programmesAround(deps: LiveTvDeps, live: LiveTv, channels:
 
 export function programItems(deps: LiveTvDeps, req: any, items: GuideItem[], now: number, opened = false): any[] {
   const serverId = deps.serverIdFor(userOf(req));
-  return items.map(({ channel, programme }) =>
-    programItem(deps, serverId, channel, programme, { opened, catchup: caughtUp(channel.meta, programme.start, now) })
-  );
+  const known = new Map<ListedChannel, ChannelParts>();
+  return items.map(({ channel, programme }) => {
+    let parts = known.get(channel);
+    if (!parts) known.set(channel, (parts = channelParts(deps, serverId, channel)));
+    return programItem(deps, serverId, channel, programme, { opened, catchup: caughtUp(channel.meta, programme.start, now), parts });
+  });
 }
 
 const sameTitle = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
