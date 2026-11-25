@@ -3,8 +3,9 @@
 import { LRUCache } from 'lru-cache';
 import { clockOptions, hash, inBatches, inTime, shareInFlight, type AddonDeps } from '../addonReader';
 import { AIOSTREAMS_PAGE, catalogKey, idChunks, isAioStreams, narrowedTo, pagePath, readPage, utcDay, wholeCatalogs, type LiveCatalog } from './catalogs';
-import { admitted, channelMetaOf, GONE, listPlacements, placementFor, placementsFor, rememberFound, scheduleOf, type ChannelMeta, type ListedChannel, type Placement } from './lineup';
-import { pageSize, programmesOf, type Programme } from './programmes';
+import { admitted, channelMetaOf, GONE, listPlacements, placementFor, placementsFor, rememberFound, scheduleOf, sizeOf, type ChannelMeta, type ListedChannel, type Placement } from './lineup';
+import { bytesOf } from './bounds';
+import { listSize, pageSize, programmesOf, type Programme } from './programmes';
 import { flag, integer, listOf, timeOf, type Ask } from './query';
 
 export { airingAt, pageSize, programmesOf, type Programme } from './programmes';
@@ -30,6 +31,7 @@ const SEARCH_READ_MS = 8000;
 const DATED_WAIT_MS = 2500;
 const SEARCH_TTL_MS = 2 * 60 * 1000;
 const MAX_SEARCHES = 500;
+const MAX_SEARCH_BYTES = 16 * 1024 * 1024;
 const MAX_SEARCHED = 1000;
 const MAX_TERM = 100;
 const FEW_OF_A_PAGE = 25;
@@ -50,6 +52,13 @@ interface GuidePage {
   empties: number;
 }
 
+/** One channel's day. */
+interface Single {
+  programmes: Programme[];
+  usedAt: number;
+  empties: number;
+}
+
 interface ReadContext {
   base: string;
   catalog: LiveCatalog;
@@ -62,8 +71,8 @@ interface State {
   id: number;
   now: () => number;
   reads: LRUCache<string, GuidePage, ReadContext>;
-  /** One channel's day, for the channels read by their ids. */
-  singles: LRUCache<string, GuidePage>;
+  /** The channels read by their ids. */
+  singles: LRUCache<string, Single>;
   failures: LRUCache<string, true>;
   /** What each catalog answered to a search. */
   searches: LRUCache<string, ChannelMeta[]>;
@@ -77,13 +86,13 @@ interface ReadBudget {
 const states = new WeakMap<object, State>();
 let serial = 0;
 
-const isEmpty = (programmes: Map<string, Programme[]>): boolean => [...programmes.values()].every((list) => !list.length);
+const isEmpty = (programmes: Map<string, Programme[]>): boolean => programmes.size === 0;
 
 // Empty is also how a guide still loading, or an error the addon hides, looks.
 const ttlOf = (empties: number): number => (empties ? Math.min(READ_TTL_MS, EMPTY_TTL_MS * 2 ** (empties - 1)) : READ_TTL_MS);
 
 function purge(state: State): void {
-  for (const held of [state.reads, state.singles] as Array<LRUCache<string, GuidePage, any>>) {
+  for (const held of [state.reads, state.singles] as Array<LRUCache<string, { usedAt: number }, any>>) {
     for (const key of [...held.keys()]) {
       const page = held.peek(key);
       if (page && state.now() - page.usedAt > IDLE_MS) held.delete(key);
@@ -114,7 +123,8 @@ function stateFor(addon: GuideAddon): State {
         const programmes = new Map<string, Programme[]>();
         for (const entry of entries ?? []) {
           const meta = channelMetaOf(entry, context.catalog);
-          if (meta) programmes.set(`${meta.type}|${meta.id}`, programmesOf(entry));
+          const list = meta ? programmesOf(entry) : [];
+          if (meta && list.length) programmes.set(`${meta.type}|${meta.id}`, list);
         }
         const empty = isEmpty(programmes);
         if (!entries || (empty && stale && !isEmpty(stale.programmes))) {
@@ -126,14 +136,20 @@ function stateFor(addon: GuideAddon): State {
         return { programmes, usedAt: addon.now(), empties };
       },
     });
-    const singles = new LRUCache<string, GuidePage>({
+    const singles = new LRUCache<string, Single>({
       max: MAX_SINGLES,
       maxSize: MAX_SINGLES_BYTES,
-      sizeCalculation: (page) => pageSize(page.programmes),
+      sizeCalculation: (single, key) => bytesOf(key) + listSize(single.programmes),
       ttl: READ_TTL_MS,
       ...clock,
     });
-    const searches = new LRUCache<string, ChannelMeta[]>({ max: MAX_SEARCHES, ttl: SEARCH_TTL_MS, ...clock });
+    const searches = new LRUCache<string, ChannelMeta[]>({
+      max: MAX_SEARCHES,
+      maxSize: MAX_SEARCH_BYTES,
+      sizeCalculation: (metas) => metas.reduce((size, meta) => size + sizeOf(meta), 200),
+      ttl: SEARCH_TTL_MS,
+      ...clock,
+    });
     const created: State = { id: ++serial, now: addon.now, reads, singles, failures, searches };
     states.set(addon, created);
     setInterval(() => purge(created), SWEEP_MS).unref();
@@ -188,12 +204,12 @@ function keepSingles(state: State, context: IdContext, wanted: ChannelMeta[], en
     const key = singleKey(context, channel);
     const stale = state.singles.peek(key, { allowStale: true });
     const list = read.get(nameOf(channel)) ?? [];
-    if (!entries || (!list.length && !loaded && stale && !isEmpty(stale.programmes))) {
+    if (!entries || (!list.length && !loaded && stale?.programmes.length)) {
       state.failures.set(key, true);
       continue;
     }
     const empties = list.length || loaded ? 0 : (stale?.empties ?? 0) + 1;
-    state.singles.set(key, { programmes: new Map([[nameOf(channel), list]]), usedAt: state.now(), empties }, { ttl: ttlOf(empties) });
+    state.singles.set(key, { programmes: list, usedAt: state.now(), empties }, { ttl: ttlOf(empties) });
   }
 }
 
@@ -217,10 +233,7 @@ async function readChannels(
   };
 
   const due = channels.filter((c) => !state.failures.has(keyOf(c)) && state.singles.getRemainingTTL(keyOf(c)) <= 0);
-  const serveStale = (c: ChannelMeta) => {
-    const held = heldOf(c);
-    return held !== undefined && !isEmpty(held.programmes);
-  };
+  const serveStale = (c: ChannelMeta) => Boolean(heldOf(c)?.programmes.length);
   const first = due.filter((c) => !serveStale(c));
   const later = due.filter(serveStale);
   if (first.length && spend(state, budget)) await load(first);
@@ -231,7 +244,7 @@ async function readChannels(
     const held = heldOf(channel);
     if (!held) continue;
     held.usedAt = state.now();
-    for (const [name, list] of held.programmes) programmes.set(name, list);
+    if (held.programmes.length) programmes.set(nameOf(channel), held.programmes);
   }
   return { programmes, usedAt: state.now(), empties: 0 };
 }

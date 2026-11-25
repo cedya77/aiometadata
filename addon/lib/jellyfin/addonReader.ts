@@ -7,7 +7,12 @@ import { LRUCache } from 'lru-cache';
 const MANIFEST_TTL_MS = 10 * 60 * 1000;
 const FAILURE_MS = 30 * 1000;
 const READ_TIMEOUT_MS = 5000;
-const MAX_BASES = 500;
+const MAX_BASES = 5000;
+const MAX_MANIFEST_BYTES = 64 * 1024 * 1024;
+const MAX_CATALOGS = 50;
+const MAX_OPTIONS = 5000;
+const MAX_OPTION = 200;
+const MAX_MANIFEST = 256 * 1024;
 const STORE_TIMEOUT_MS = 500;
 const PAUSE_MS = 5000;
 const SPREAD_MS = 300;
@@ -111,13 +116,28 @@ const isRefused = (body: any): boolean =>
 
 const isManifest = (body: any): body is Manifest => Array.isArray(body?.catalogs);
 
+const kept = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= MAX_OPTION;
+
+/** What Live TV reads of a manifest, and no more of it than is kept. */
 function livePart(manifest: Manifest): Manifest {
   const hints = manifest.behaviorHints ?? {};
-  const catalogs = manifest.catalogs
-    .filter((c: any) => c?.type === 'tv' || extrasOf(c).some((e) => e.name === 'date'))
-    .map((c: any) => ({ type: c.type, id: c.id, name: c.name, extra: extrasOf(c) }));
-  return { behaviorHints: { epgProvider: hints.epgProvider, catchupDays: hints.catchupDays }, catalogs };
+  let room = MAX_MANIFEST;
+  const fits = (value: string) => (room -= value.length + 4) >= 0;
+  const catalogs: any[] = [];
+  for (const c of manifest.catalogs) {
+    if (catalogs.length >= MAX_CATALOGS) break;
+    if (!kept(c?.type) || !kept(c?.id)) continue;
+    const extra = extrasOf(c).filter((e) => kept(e.name)).slice(0, MAX_CATALOGS);
+    if (c.type !== 'tv' && !extra.some((e) => e.name === 'date')) continue;
+    if (![c.type, c.id, ...extra.map((e) => e.name)].every(fits)) break;
+    for (const e of extra) if (e.options) e.options = e.options.slice(0, MAX_OPTIONS).filter((o): o is string => kept(o) && fits(o));
+    catalogs.push({ type: c.type, id: c.id, name: kept(c.name) ? c.name : c.id, extra });
+  }
+  const days = Number(hints.catchupDays);
+  return { behaviorHints: { epgProvider: hints.epgProvider === true, ...(Number.isFinite(days) && { catchupDays: days }) }, catalogs };
 }
+
+const manifestSize = (manifest: Manifest): number => 2 * JSON.stringify(manifest).length;
 
 interface Extra {
   name: string;
@@ -197,6 +217,8 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
   const failures = new LRUCache<string, true>({ max: MAX_BASES, ttl: FAILURE_MS, ...clockOptions(options.now) });
   const manifests = new LRUCache<string, Manifest, string>({
     max: MAX_BASES,
+    maxSize: MAX_MANIFEST_BYTES,
+    sizeCalculation: manifestSize,
     ttl: MANIFEST_TTL_MS,
     allowStale: true,
     allowStaleOnFetchRejection: true,
@@ -208,13 +230,14 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
         failures.set(key, true);
         throw new Error('manifest read failed');
       }
-      options.store?.set(storeKey(key), JSON.stringify(livePart(manifest))).catch(() => undefined);
+      const part = livePart(manifest);
+      options.store?.set(storeKey(key), JSON.stringify(part)).catch(() => undefined);
       recalled.delete(key);
-      return manifest;
+      return part;
     },
   });
   // Apart from the manifests read: setting one there ends a read of it that is still running.
-  const recalled = new LRUCache<string, Manifest>({ max: MAX_BASES });
+  const recalled = new LRUCache<string, Manifest>({ max: MAX_BASES, maxSize: MAX_MANIFEST_BYTES, sizeCalculation: manifestSize });
 
   function read(base: string): Promise<Manifest | null> {
     const key = hash(base);
@@ -245,7 +268,7 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
       try {
         const stored = await inTime(options.store.get(storeKey(key)), STORE_TIMEOUT_MS);
         const manifest = stored ? JSON.parse(stored) : null;
-        if (isManifest(manifest) && held(key) === undefined) recalled.set(key, manifest);
+        if (isManifest(manifest) && held(key) === undefined) recalled.set(key, livePart(manifest));
       } catch (error: any) {
         log(`Addon manifest recall for ${hostOf(base)} failed: ${error?.code || error?.name || 'failed'}`);
       }

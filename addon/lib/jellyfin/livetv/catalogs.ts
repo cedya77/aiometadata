@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { extrasOf, isAddonError, type AddonDeps, type Manifest } from '../addonReader';
+import { groupNameOf } from './bounds';
 
 // An addon may wait some seconds for a guide it is still loading before it answers.
 const GUIDE_TIMEOUT_MS = 10 * 1000;
@@ -46,7 +47,7 @@ export function idChunks<T extends { id: string }>(channels: T[]): T[][] {
   return chunks;
 }
 
-const groupsOf = (options: unknown[] = []): string[] => options.filter((o): o is string => typeof o === 'string' && o.length > 0);
+const groupsOf = (options: unknown[] = []): string[] => options.filter((o): o is string => groupNameOf(o) !== undefined);
 
 /** Each picked group as a catalog of its own, in the addon's order. It answers for that group alone. */
 export function pickedCatalogs(catalogs: LiveCatalog[], picked: Set<string>): LiveCatalog[] {

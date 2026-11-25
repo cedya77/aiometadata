@@ -3,19 +3,23 @@
 import { LRUCache } from 'lru-cache';
 import { clockOptions, hash, inBatches, isAddonError, shareInFlight, type AddonDeps } from '../addonReader';
 import { AIOSTREAMS_PAGE, catalogKey, endsList, idChunks, isAioStreams, narrowedTo, pagePath, readPage, wholeCatalogs, type LiveCatalog } from './catalogs';
-import { pageSize, programmesOf, type Programme } from './programmes';
+import { bytesOf, clipped, groupNameOf, idOf, MAX_NAME, shortOf, text, urlOf } from './bounds';
+import { listSize, programmesOf, type Programme } from './programmes';
 
 const LINEUP_TTL_MS = 60 * 60 * 1000;
 const PLACEMENT_TTL_MS = 60 * 60 * 1000;
 const FAILURE_MS = 30 * 1000;
 const EMPTY_TTL_MS = 60 * 1000;
 const MAX_PAGES = 100;
-const MAX_LINEUPS = 2000;
+const MAX_LINEUPS = 20000;
+const MAX_HELD_BYTES = 256 * 1024 * 1024;
+// What one addon may hold of it, so that no other addon's lists give way to one.
+const MAX_ADDON_BYTES = MAX_HELD_BYTES / 4;
+const MAX_ASSEMBLED = 500000;
 const MAX_PLACEMENTS = 20000;
 const MAX_LIST = 50000;
 const MAX_FAILURES = 5000;
 const SLOW_MS = 4000;
-const MAX_HELD_CHANNELS = 400000;
 const IDLE_MS = 2 * 60 * 60 * 1000;
 const SWEEP_MS = 10 * 60 * 1000;
 const PARALLEL_META_READS = 8;
@@ -60,7 +64,12 @@ export const GONE: unique symbol = Symbol('GONE');
 type LineupAddon = Pick<AddonDeps, 'fetchJson' | 'now'>;
 
 interface Lineup {
+  /** The addon it is of. */
+  scope: string;
   channels: ChannelMeta[];
+  bytes: number;
+  /** How many of its bytes are counted in its addon's share. */
+  counted: number;
   skips: number[];
   keys: Set<string>;
   next: number;
@@ -91,6 +100,8 @@ interface State {
   id: number;
   now: () => number;
   lineups: LRUCache<string, Lineup>;
+  /** The bytes each addon's lineups hold. */
+  shares: Map<string, number>;
   placements: LRUCache<string, Placement | typeof GONE>;
   assemblies: LRUCache<string, Assembly>;
   /** Channel reads that failed lately, and addons whose channel reads time out. */
@@ -111,22 +122,25 @@ export function stateFor(addon: LineupAddon): State {
   let state = states.get(addon);
   if (!state) {
     const clock = clockOptions(addon.now);
-    const assemblies = new LRUCache<string, Assembly>({ max: 500 });
+    const assemblies = new LRUCache<string, Assembly>({ max: 500, maxSize: MAX_ASSEMBLED, sizeCalculation: (assembly) => assembly.entries.length + 1 });
+    const shares = new Map<string, number>();
     const created: State = {
       id: ++serial,
       now: addon.now,
       lineups: new LRUCache<string, Lineup>({
         max: MAX_LINEUPS,
-        maxSize: MAX_HELD_CHANNELS,
-        sizeCalculation: (lineup) => lineup.channels.length + 1,
+        maxSize: MAX_HELD_BYTES,
+        sizeCalculation: heldBytes,
         ttl: LINEUP_TTL_MS,
         allowStale: true,
         noDeleteOnStaleGet: true,
         dispose: (lineup, _key, reason) => {
+          count(shares, lineup, 0);
           if (reason === 'evict' || reason === 'set') dropAssemblies(assemblies, lineup);
         },
         ...clock,
       }),
+      shares,
       placements: new LRUCache<string, Placement | typeof GONE>({ max: MAX_PLACEMENTS, ttl: PLACEMENT_TTL_MS, ...clock }),
       assemblies,
       failures: new LRUCache<string, true>({ max: MAX_FAILURES, ttl: FAILURE_MS, ...clock }),
@@ -134,7 +148,7 @@ export function stateFor(addon: LineupAddon): State {
       schedules: new LRUCache<string, Programme[]>({
         max: MAX_SCHEDULES,
         maxSize: MAX_SCHEDULE_BYTES,
-        sizeCalculation: (list) => pageSize(new Map([['', list]])),
+        sizeCalculation: listSize,
         ttl: SCHEDULE_TTL_MS,
         ...clock,
       }),
@@ -146,6 +160,34 @@ export function stateFor(addon: LineupAddon): State {
     state = created;
   }
   return state;
+}
+
+const heldBytes = (lineup: Lineup): number => 1 + lineup.bytes + (lineup.fresh?.bytes ?? 0);
+
+function count(shares: State['shares'], lineup: Lineup, bytes: number): void {
+  const share = (shares.get(lineup.scope) ?? 0) + bytes - lineup.counted;
+  lineup.counted = bytes;
+  if (share > 0) shares.set(lineup.scope, share);
+  else shares.delete(lineup.scope);
+}
+
+/** Puts a lineup where it belongs, counted as it is now. An addon's other lineups give way to it, the longest unused first. */
+function hold(state: State, key: string, lineup: Lineup, ttl: number = LINEUP_TTL_MS): void {
+  const held = state.lineups.peek(key);
+  if (held && held !== lineup) dropAssemblies(state.assemblies, held);
+  state.lineups.delete(key);
+  state.lineups.set(key, lineup, { ttl });
+  if (state.lineups.peek(key) !== lineup) return;
+  count(state.shares, lineup, heldBytes(lineup));
+  const share = () => state.shares.get(lineup.scope) ?? 0;
+  if (share() <= MAX_ADDON_BYTES) return;
+  for (const other of [...state.lineups.rkeys()]) {
+    if (share() <= MAX_ADDON_BYTES) return;
+    const own = other === key ? undefined : state.lineups.peek(other);
+    if (own?.scope !== lineup.scope) continue;
+    state.lineups.delete(other);
+    dropAssemblies(state.assemblies, own);
+  }
 }
 
 function dropAssemblies(assemblies: State['assemblies'], lineup: Lineup): void {
@@ -166,7 +208,7 @@ export function purgeLineups(addon: LineupAddon): void {
 }
 
 // The same few names come with every channel.
-const groupNames = new LRUCache<string, string>({ max: 20000 });
+const groupNames = new LRUCache<string, string>({ max: 20000, maxSize: 4 * 1024 * 1024, sizeCalculation: (name) => bytesOf(name) });
 
 function groupName(name: string): string {
   const held = groupNames.get(name);
@@ -175,24 +217,28 @@ function groupName(name: string): string {
   return name;
 }
 
-const text = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined);
-
 export function channelMetaOf(entry: any, catalog: Pick<LiveCatalog, 'type'>): ChannelMeta | null {
-  const id = text(entry?.id);
+  const id = idOf(entry?.id);
   if (!id) return null;
-  const meta: ChannelMeta = { id, type: text(entry.type) ?? catalog.type, name: text(entry.name) ?? id };
-  const logo = text(entry.logo);
-  const poster = text(entry.poster);
+  const meta: ChannelMeta = { id, type: shortOf(entry.type) ?? catalog.type, name: clipped(entry.name, MAX_NAME) ?? id };
+  const logo = urlOf(entry.logo);
+  const poster = logo ? undefined : urlOf(entry.poster);
   if (logo) meta.logo = logo;
   if (poster) meta.poster = poster;
-  if (entry.channelNumber !== undefined && entry.channelNumber !== null && String(entry.channelNumber).trim() !== '') {
-    meta.channelNumber = String(entry.channelNumber).trim();
-  }
+  const number = shortOf(typeof entry.channelNumber === 'number' ? String(entry.channelNumber) : text(entry.channelNumber)?.trim());
+  if (number) meta.channelNumber = number;
   const catchup = Number(entry.behaviorHints?.catchupDays);
   if (Number.isFinite(catchup) && catchup > 0) meta.catchupDays = catchup;
-  const groups = (Array.isArray(entry.genres) ? entry.genres : []).filter((g: unknown): g is string => typeof g === 'string' && g.length > 0);
+  const groups = (Array.isArray(entry.genres) ? entry.genres : []).filter((g: unknown): g is string => groupNameOf(g) !== undefined);
   if (groups.length) meta.groups = groups.slice(0, MAX_GROUPS_KEPT).map(groupName);
   return meta;
+}
+
+/** About what a channel takes in memory, also as a part of lists. */
+export function sizeOf(meta: ChannelMeta): number {
+  let size = 300 + 2 * bytesOf(meta.id) + (meta.groups?.length ?? 0) * 8;
+  for (const value of [meta.name, meta.logo, meta.poster, meta.channelNumber]) if (value) size += bytesOf(value);
+  return size;
 }
 
 const lineupKey = (base: string, catalog: LiveCatalog): string => `${hash(base)}|${catalogKey(catalog)}`;
@@ -200,8 +246,8 @@ const assemblyKey = (base: string, catalogs: LiveCatalog[]): string => `${hash(b
 const placementKey = (base: string, type: string, id: string): string => `${hash(base)}|${type}|${id}`;
 const channelKey = (meta: Pick<ChannelMeta, 'type' | 'id'>): string => `${meta.type}|${meta.id}`;
 
-function emptyLineup(state: State): Lineup {
-  return { channels: [], skips: [], keys: new Set(), next: 0, pages: 0, tail: 0, done: false, readAt: state.now(), usedAt: state.now() };
+function emptyLineup(state: State, base: string): Lineup {
+  return { scope: hash(base), channels: [], bytes: 0, counted: 0, skips: [], keys: new Set(), next: 0, pages: 0, tail: 0, done: false, readAt: state.now(), usedAt: state.now() };
 }
 
 const isEmpty = (lineup: Lineup): boolean => lineup.done && !lineup.channels.length;
@@ -217,12 +263,10 @@ function heldLineup(state: State, key: string): Lineup | undefined {
   return lineup;
 }
 
-// Setting the same value again does not measure it again, so a grown lineup is put back under its remaining lifetime.
 function remeasure(state: State, key: string, lineup: Lineup): void {
   if (state.lineups.peek(key) !== lineup) return;
   const ttl = isEmpty(lineup) ? EMPTY_TTL_MS : Math.max(1, state.lineups.getRemainingTTL(key));
-  state.lineups.delete(key);
-  state.lineups.set(key, lineup, { ttl });
+  hold(state, key, lineup, ttl);
 }
 
 function addPage(catalog: LiveCatalog, lineup: Lineup, page: any[]): void {
@@ -230,16 +274,17 @@ function addPage(catalog: LiveCatalog, lineup: Lineup, page: any[]): void {
   let added = 0;
   for (const entry of page) {
     const meta = channelMetaOf(entry, catalog);
-    if (lineup.channels.length >= MAX_LIST) break;
+    if (lineup.channels.length >= MAX_LIST || lineup.bytes >= MAX_ADDON_BYTES) break;
     if (!meta || lineup.keys.has(channelKey(meta))) continue;
     lineup.keys.add(channelKey(meta));
     lineup.channels.push(meta);
+    lineup.bytes += sizeOf(meta);
     lineup.skips.push(lineup.next);
     added++;
   }
   lineup.tail = lineup.next;
   lineup.next += page.length;
-  if (!catalog.skip || added === 0 || endsList(catalog, page) || lineup.pages >= MAX_PAGES || lineup.channels.length >= MAX_LIST) lineup.done = true;
+  if (!catalog.skip || added === 0 || endsList(catalog, page) || lineup.pages >= MAX_PAGES || lineup.channels.length >= MAX_LIST || lineup.bytes >= MAX_ADDON_BYTES) lineup.done = true;
 }
 
 async function readInto(addon: LineupAddon, base: string, catalog: LiveCatalog, lineup: Lineup, { ahead = 1, until }: { ahead?: number; until?: number } = {}): Promise<boolean> {
@@ -272,20 +317,19 @@ async function refresh(state: State, addon: LineupAddon, base: string, catalog: 
   const key = lineupKey(base, catalog);
   const failed = () => {
     old.refreshFailedAt = state.now();
+    remeasure(state, key, old);
   };
   if (state.lineups.peek(key) !== old) return;
   if (!old.fresh && old.pages > SMALL_PAGES && state.now() - old.readAt < FULL_REFRESH_MS) {
     const same = await unchanged(addon, base, catalog, old);
     if (same === undefined) return failed();
     if (same) {
-      if (state.lineups.peek(key) !== old) return;
-      state.lineups.delete(key);
-      state.lineups.set(key, old);
+      if (state.lineups.peek(key) === old) hold(state, key, old);
       return;
     }
   }
   if (old.fresh && state.now() - old.fresh.readAt > LINEUP_TTL_MS) old.fresh = undefined;
-  const fresh = (old.fresh ??= emptyLineup(state));
+  const fresh = (old.fresh ??= emptyLineup(state, base));
   const limit = old.done ? MAX_PAGES : Math.max(1, old.pages);
   while (!fresh.done && fresh.pages < limit) {
     if (!(await readInto(addon, base, catalog, fresh))) return failed();
@@ -295,7 +339,7 @@ async function refresh(state: State, addon: LineupAddon, base: string, catalog: 
     }
   }
   fresh.usedAt = old.usedAt;
-  if (state.lineups.peek(key) === old) state.lineups.set(key, fresh);
+  if (state.lineups.peek(key) === old) hold(state, key, fresh);
 }
 
 /** Refreshes the lineups past their time, one after another for each addon. */
@@ -318,7 +362,7 @@ function refreshDue(state: State, addon: LineupAddon, base: string, catalogs: Li
   });
 }
 
-function assemble(state: State, addon: LineupAddon, base: string, catalogs: LiveCatalog[]): Assembly {
+function assemble(state: State, base: string, catalogs: LiveCatalog[]): Assembly {
   const memoKey = assemblyKey(base, catalogs);
   let memo = state.assemblies.get(memoKey);
   if (memo && memo.lineups.some((lineup, n) => heldLineup(state, lineupKey(base, catalogs[n])) !== lineup)) memo = undefined;
@@ -326,7 +370,17 @@ function assemble(state: State, addon: LineupAddon, base: string, catalogs: Live
     memo = { lineups: [], consumed: 0, entries: [], byKey: new Map(), finished: false, blocked: false };
     state.assemblies.set(memoKey, memo);
   }
+  const before = memo.entries.length;
+  extend(state, base, catalogs, memo);
+  if (memo.entries.length !== before) {
+    state.assemblies.delete(memoKey);
+    state.assemblies.set(memoKey, memo);
+  }
+  return memo;
+}
 
+/** Adds what its lineups have come to hold. */
+function extend(state: State, base: string, catalogs: LiveCatalog[], memo: Assembly): void {
   for (;;) {
     const at = memo.lineups.length - 1;
     if (at >= 0) {
@@ -336,7 +390,7 @@ function assemble(state: State, addon: LineupAddon, base: string, catalogs: Live
         if (memo.entries.length >= MAX_LIST) {
           memo.finished = true;
           memo.blocked = false;
-          return memo;
+          return;
         }
         const meta = lineup.channels[memo.consumed];
         const key = channelKey(meta);
@@ -348,20 +402,20 @@ function assemble(state: State, addon: LineupAddon, base: string, catalogs: Live
       if (!lineup.done) {
         memo.finished = false;
         memo.blocked = lineup.failedAt !== undefined && state.now() - lineup.failedAt < FAILURE_MS;
-        return memo;
+        return;
       }
     }
     const next = memo.lineups.length;
     if (next >= catalogs.length || memo.entries.length >= MAX_LIST) {
       memo.finished = true;
       memo.blocked = false;
-      return memo;
+      return;
     }
     const lineup = heldLineup(state, lineupKey(base, catalogs[next]));
     if (!lineup) {
       memo.finished = false;
       memo.blocked = false;
-      return memo;
+      return;
     }
     memo.lineups.push(lineup);
     memo.consumed = 0;
@@ -400,8 +454,8 @@ async function readOn(state: State, addon: LineupAddon, base: string, catalogs: 
       if (due.length >= PARALLEL_PAGES || missing <= due.length * AIOSTREAMS_PAGE || catalog.genre === undefined || !isAioStreams(catalog)) break;
     } else if (lineup?.done) continue;
     if (!lineup) {
-      lineup = emptyLineup(state);
-      state.lineups.set(key, lineup);
+      lineup = emptyLineup(state, base);
+      hold(state, key, lineup);
     }
     if (blocked(lineup)) return 'blocked';
     due.push({ catalog, key, lineup });
@@ -429,12 +483,16 @@ async function walk(
 ): Promise<Assembly> {
   const state = stateFor(addon);
   const until = addon.now() + waitMs;
-  // A lineup evicted while the walk goes on would otherwise be read again without end.
+  let last: Assembly | undefined;
   for (let reads = 0; ; reads++) {
-    const list = assemble(state, addon, base, catalogs);
+    const list = assemble(state, base, catalogs);
+    // A lineup that gave way to later ones of the same walk would be read again without end.
+    const gone = last?.lineups[list.lineups.length];
+    if (last && gone && !isEmpty(gone)) return last;
+    last = list;
     if (!reads) refreshDue(state, addon, base, catalogs, list.lineups);
     if (satisfied(list) || list.finished || list.blocked || reads > MAX_PAGES * catalogs.length || addon.now() >= until) return list;
-    if ((await readOn(state, addon, base, catalogs, list, want, until)) !== 'read') return assemble(state, addon, base, catalogs);
+    if ((await readOn(state, addon, base, catalogs, list, want, until)) !== 'read') return assemble(state, base, catalogs);
   }
 }
 
@@ -474,7 +532,7 @@ export async function listGroup(
   const end = startIndex + limit;
   const list = await walk(addon, base, groupCatalogs(catalogs, genre), (l) => l.entries.length >= end, { want: end });
   const state = stateFor(addon);
-  const whole = assemble(state, addon, base, catalogs).byKey;
+  const whole = assemble(state, base, catalogs).byKey;
   const channels = list.entries.slice(startIndex, end).map((entry) => {
     const listed = whole.get(channelKey(entry.meta));
     const number = entry.number ?? listed?.number;
@@ -499,7 +557,7 @@ export async function listPlacements(
 
 /** Those of the channels that are not among the ones listed so far. */
 export function unlisted<T extends { meta: Pick<ChannelMeta, 'type' | 'id'> }>(addon: LineupAddon, base: string, catalogs: LiveCatalog[], channels: T[]): T[] {
-  const { byKey } = assemble(stateFor(addon), addon, base, catalogs);
+  const { byKey } = assemble(stateFor(addon), base, catalogs);
   return channels.filter(({ meta }) => !byKey.has(channelKey(meta)));
 }
 
@@ -609,7 +667,7 @@ export async function placementsFor(
   const state = stateFor(addon);
   const keyOf = (c: ChannelRef) => placementKey(base, c.type, c.id);
   const held = (c: ChannelRef) => state.placements.get(keyOf(c));
-  const whole = () => assemble(state, addon, base, catalogs).byKey;
+  const whole = () => assemble(state, base, catalogs).byKey;
   let admits = admitter(state, base, catalogs);
   const found = (c: ChannelRef): Placement | undefined => {
     const placement = held(c);

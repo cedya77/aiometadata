@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
+import { bytesOf, clipped, idOf, MAX_NAME, MAX_TEXT, shortOf, urlOf } from './bounds';
 import { timeOf } from './query';
+
+const MAX_LISTED = 30;
 
 export interface Programme {
   id: string;
@@ -18,10 +21,8 @@ export interface Programme {
   imdbId?: string;
 }
 
-const text = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined);
-
 const strings = (value: unknown): string[] =>
-  Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v.length > 0) : [];
+  Array.isArray(value) ? value.slice(0, MAX_LISTED).map((v) => clipped(v, MAX_NAME)).filter((v): v is string => v !== undefined) : [];
 
 function wholeNumber(value: unknown): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
@@ -32,15 +33,15 @@ function wholeNumber(value: unknown): number | undefined {
 export function programmesOf(entry: any): Programme[] {
   const parsed: Programme[] = [];
   for (const video of Array.isArray(entry?.videos) ? entry.videos : []) {
-    const id = text(video?.id);
+    const id = idOf(video?.id);
     const start = timeOf(video?.startTime);
     const end = timeOf(video?.endTime);
     if (!id || start === null || end === null || end <= start) continue;
-    const programme: Programme = { id, title: text(video.title) ?? text(video.name) ?? '', start, end };
-    const overview = text(video.description) ?? text(video.overview);
+    const programme: Programme = { id, title: clipped(video.title, MAX_NAME) ?? clipped(video.name, MAX_NAME) ?? '', start, end };
+    const overview = clipped(video.description, MAX_TEXT) ?? clipped(video.overview, MAX_TEXT);
     if (overview) programme.overview = overview;
-    const image = text(video.thumbnail);
-    const background = text(video.background);
+    const image = urlOf(video.thumbnail);
+    const background = urlOf(video.background);
     if (image) programme.image = image;
     if (background) programme.background = background;
     for (const key of ['genres', 'cast', 'directors'] as const) {
@@ -51,7 +52,7 @@ export function programmesOf(entry: any): Programme[] {
     const episode = wholeNumber(video.episode);
     if (season !== undefined) programme.season = season;
     if (episode !== undefined) programme.episode = episode;
-    const imdbId = text(video.imdbId);
+    const imdbId = shortOf(video.imdbId);
     if (imdbId) programme.imdbId = imdbId;
     parsed.push(programme);
   }
@@ -70,16 +71,20 @@ export function airingAt(programmes: Programme[] | undefined, atMs: number): Pro
   return programmes?.find((p) => p.start <= atMs && atMs < p.end);
 }
 
-export function pageSize(programmes: Map<string, Programme[]>): number {
-  let size = 1;
-  for (const list of programmes.values()) {
-    for (const programme of list) {
-      size += 200;
-      for (const value of Object.values(programme)) {
-        if (typeof value === 'string') size += value.length;
-        else if (Array.isArray(value)) for (const part of value) size += part.length + 16;
-      }
+export function listSize(programmes: Programme[]): number {
+  let size = 200;
+  for (const programme of programmes) {
+    size += 200;
+    for (const value of Object.values(programme)) {
+      if (typeof value === 'string') size += bytesOf(value);
+      else if (Array.isArray(value)) for (const part of value) size += bytesOf(part);
     }
   }
+  return size;
+}
+
+export function pageSize(programmes: Map<string, Programme[]>): number {
+  let size = 200;
+  for (const [key, list] of programmes) size += bytesOf(key) + listSize(list);
   return size;
 }
