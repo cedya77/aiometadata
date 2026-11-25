@@ -12,7 +12,7 @@ import {
   isHashedJellyfinId,
   normaliseJellyfinId,
   packJellyfinId,
-  packProgramId,
+  programIdOf,
   unpackJellyfinId,
   unpackProgramId,
 } from './idsCodec';
@@ -116,10 +116,8 @@ export async function decodeLiveId(raw: string): Promise<Descriptor | ProgramDes
   return unpackProgramId(raw) ? decodeProgramId(raw) : decodeJellyfinId(raw);
 }
 
-export function encodeProgramId(ref: ProgramRef): string | null {
-  const packed = packProgramId(ref);
-  if (packed) encodeJellyfinId({ k: 'channel', t: ref.t, i: ref.i });
-  return packed;
+export function encodeProgramId(ref: ProgramRef, channelId = encodeJellyfinId({ k: 'channel', t: ref.t, i: ref.i })): string | null {
+  return programIdOf(channelId, ref.at);
 }
 
 export async function flushPendingJellyfinIds(): Promise<void> {

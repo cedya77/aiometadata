@@ -337,12 +337,13 @@ const PROGRAM = 0xc4;
 const PROGRAM_PREFIX = PROGRAM.toString(16);
 const HASHED_PREFIX = HASHED.toString(16);
 
+export function programIdOf(channelId: string, at: number): string | null {
+  if (!Number.isInteger(at) || at < 0 || at > 0xffffffff) return null;
+  return `${PROGRAM_PREFIX}${channelId.slice(2, CHANNEL_DIGITS)}${at.toString(16).padStart(8, '0')}`;
+}
+
 export function packProgramId(ref: ProgramRef): string | null {
-  if (!Number.isInteger(ref.at) || ref.at < 0 || ref.at > 0xffffffff) return null;
-  const channel = hashJellyfinId({ k: 'channel', t: ref.t, i: ref.i });
-  const at = Buffer.alloc(4);
-  at.writeUInt32BE(ref.at);
-  return `${PROGRAM_PREFIX}${channel.slice(2, CHANNEL_DIGITS)}${at.toString('hex')}`;
+  return programIdOf(hashJellyfinId({ k: 'channel', t: ref.t, i: ref.i }), ref.at);
 }
 
 export function unpackProgramId(raw: string): { channel: string; at: number } | null {

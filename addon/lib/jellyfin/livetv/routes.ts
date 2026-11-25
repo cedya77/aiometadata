@@ -4,7 +4,7 @@ import { normaliseJellyfinId } from '../idsCodec';
 import { narrowedTo } from './catalogs';
 import { liveTvReady, type GateDeps, type LiveTv } from './gate';
 import { airingAt, caughtUp, filterProgrammes, guideRange, programmesFor, programmeTarget, type GuideItem } from './guide';
-import { channelItem, programItem, type ItemDeps } from './items';
+import { channelItem, channelParts, programItem, type ChannelParts, type ItemDeps } from './items';
 import { GONE, guideChannels, listChannels, listGroup, placementFor, placementsFor, unlisted, type ListedChannel } from './lineup';
 import { unnamedChannels } from './limits';
 import { askOf, field, flag, integer, listOf, timeOf, type Ask } from './query';
@@ -202,9 +202,12 @@ export async function programmesAround(deps: LiveTvDeps, live: LiveTv, channels:
 
 export function programItems(deps: LiveTvDeps, req: any, items: GuideItem[], now: number, opened = false): any[] {
   const serverId = deps.serverIdFor(userOf(req));
-  return items.map(({ channel, programme }) =>
-    programItem(deps, serverId, channel, programme, { opened, catchup: caughtUp(channel.meta, programme.start, now) })
-  );
+  const known = new Map<ListedChannel, ChannelParts>();
+  return items.map(({ channel, programme }) => {
+    let parts = known.get(channel);
+    if (!parts) known.set(channel, (parts = channelParts(deps, serverId, channel)));
+    return programItem(deps, serverId, channel, programme, { opened, catchup: caughtUp(channel.meta, programme.start, now), parts });
+  });
 }
 
 const sameTitle = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
