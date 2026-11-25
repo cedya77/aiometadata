@@ -20,11 +20,31 @@ export function channelGroups(manifest: any): string[] {
   return [...groups];
 }
 
-const baseOf = (url: string): string =>
-  url.trim().replace(/^stremio:\/\//i, 'https://').replace(/\/+$/, '').replace(/\/manifest\.json$/i, '').replace(/\/stream$/i, '');
+/** The addon a URL is of, as the server tells one: with or without its scheme and what follows its base. */
+function baseOf(url: string): string | null {
+  let base = url.trim();
+  if (!base) return null;
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(base);
+  if (!scheme) base = `https://${base}`;
+  else if (!/^https?$/i.test(scheme[1])) return null;
+  base = base.replace(/\/+$/, '').replace(/\/manifest\.json$/i, '').replace(/\/stream$/i, '');
+  try {
+    new URL(base);
+    return base;
+  } catch {
+    return null;
+  }
+}
+
+/** Where the manifest of the addon a URL is of can be read. */
+export function manifestUrlOf(url: string): string | null {
+  const base = baseOf(url);
+  return base === null ? null : `${base}/manifest.json`;
+}
 
 export function sameAddon(a: string, b: string): boolean {
-  return baseOf(a) !== '' && baseOf(a) === baseOf(b);
+  const [one, other] = [a, b].map((url) => baseOf(url.trim().replace(/^stremio:\/\//i, 'https://')));
+  return one !== null && one === other;
 }
 
 export function withGroups(pick: LiveTvPick | undefined, addon: string, groups: string[]): LiveTvPick | undefined {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,10 +16,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import type { LiveTvPick } from '@/contexts/config';
-import { checkStreamManifest, isManifestUrl } from '@/lib/jellyfinClient';
-import { MAX_PICKED, onlyPicked, sameAddon, withGroups, withOnly } from '@/lib/liveTvGroups';
+import { checkStreamManifest } from '@/lib/jellyfinClient';
+import { manifestUrlOf, MAX_PICKED, onlyPicked, sameAddon, withGroups, withOnly } from '@/lib/liveTvGroups';
 import { cn } from '@/lib/utils';
 
+const CHECK_DELAY_MS = 600;
 const CHECK_STALE_MS = 5 * 60_000;
 
 export function LiveTvGroups({ id, name, main, addonUrl, rated, value, onChange, row }: {
@@ -35,11 +36,18 @@ export function LiveTvGroups({ id, name, main, addonUrl, rated, value, onChange,
   row: (label: string, description: string, body: ReactNode) => ReactNode;
 }) {
   const url = addonUrl.trim();
-  const readable = isManifestUrl(url);
+  const manifestUrl = manifestUrlOf(url);
+  const readable = manifestUrl !== null;
+  const [settled, setSettled] = useState(manifestUrl);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(manifestUrl), CHECK_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [manifestUrl]);
+
   const manifest = useQuery({
-    queryKey: ['stream-manifest', url],
-    queryFn: ({ signal }) => checkStreamManifest(url, signal),
-    enabled: readable,
+    queryKey: ['stream-manifest', manifestUrl ?? ''],
+    queryFn: ({ signal }) => checkStreamManifest(manifestUrl ?? '', signal),
+    enabled: readable && settled === manifestUrl,
     staleTime: CHECK_STALE_MS,
     retry: false,
   });
