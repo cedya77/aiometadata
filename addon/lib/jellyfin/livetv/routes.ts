@@ -124,7 +124,10 @@ export async function channelPage(deps: LiveTvDeps, req: any, live: LiveTv, conf
 
   let channels: ListedChannel[];
   let total: number;
-  if (group !== undefined && isFavorite !== undefined) {
+  if (group !== undefined && isFavorite === true && !keys.size) {
+    channels = [];
+    total = 0;
+  } else if (group !== undefined && isFavorite !== undefined) {
     const whole = await listGroup(deps.addon, live.base, live.reach, group, { startIndex: 0, limit: MAX_GROUP });
     const kept = whole.channels.filter((c) => isFavourite(c) === isFavorite);
     channels = kept.slice(startIndex, startIndex + limit);
