@@ -5,6 +5,7 @@ import { allowsUnrated, hasAgeRatingCap, passesAgeRating, resolveInstallFilters 
 import { normaliseJellyfinId } from './idsCodec';
 import { isPinHash } from './pins';
 import { ACCOUNT_SERVICES, ACCOUNT_SERVICE_LIST, AccountService, accountOwner, credentialOf, trackerConfig, withAccountOwner } from '../accounts';
+import { liveTvPickOf, type LiveTvPick } from './livetv/pick';
 import { viewingWindowOf, type ViewingWindow } from './viewingHours';
 import { withTagExclusions } from '../../utils/tagExclusions';
 
@@ -33,6 +34,8 @@ export interface Profile {
   pin?: string;
   viewingHours?: ViewingWindow[];
   downloads?: boolean;
+  /** The Live TV groups picked for this user. */
+  liveTv?: LiveTvPick;
 }
 
 export function defaultUserName(config: any, userUUID: string): string {
@@ -102,6 +105,7 @@ export function listProfiles(config: any, userUUID: string): Profile[] {
     handoffNames: namesOf(config?.jellyfinUserHandoffNames),
     sharesHistory: true,
     pin: isPinHash(config?.jellyfinUserPin) ? config.jellyfinUserPin : undefined,
+    liveTv: liveTvPickOf(config?.jellyfinUserLiveTv),
   }];
   const seen = new Set<string>();
 
@@ -126,6 +130,7 @@ export function listProfiles(config: any, userUUID: string): Profile[] {
       watchlistServices: Array.isArray(user.watchlistServices) ? user.watchlistServices.map(String) : undefined,
       streamUrl: typeof user.streamUrl === 'string' && user.streamUrl.trim() ? user.streamUrl.trim() : undefined,
       pin: isPinHash(user.pin) ? user.pin : undefined,
+      liveTv: liveTvPickOf(user.liveTv),
     });
   }
 
@@ -179,7 +184,9 @@ function heldWatchlistServices(held: any, watchlistServices: string[]): string[]
 /** The same catalogs and cap an install URL naming this user's tags would get. */
 export function scopeConfigToProfile(config: any, userUUID: string, id: string | null): any {
   const profile = profileById(config, userUUID, id);
-  if (!profile.id && !profile.tags.length && !profile.hiddenTags.length) return config;
+  if (!profile.id && !profile.tags.length && !profile.hiddenTags.length) {
+    return profile.liveTv || config?.jellyfinLiveTv ? { ...config, jellyfinLiveTv: profile.liveTv } : config;
+  }
 
   const owner = profile.id ? withAccountOwner(config, profile.id) : config;
   const owns = owner !== config;
@@ -202,6 +209,7 @@ export function scopeConfigToProfile(config: any, userUUID: string, id: string |
         ...(profile.streamUrl ? { jellyfinStreamUrl: profile.streamUrl } : {}),
       }
     : { ...config, jellyfinProfileTags: profile.tags, jellyfinProfileHiddenTags: profile.hiddenTags };
+  scoped.jellyfinLiveTv = profile.liveTv;
   if (profile.tags.length) {
     const { ageRating, allowUnrated } = resolveInstallFilters(config, { tags: profile.tags });
     if (ageRating) scoped.ageRating = ageRating;

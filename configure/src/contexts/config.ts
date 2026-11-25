@@ -42,6 +42,14 @@ export type SkipProvider = 'publicmetadb' | 'aniskip' | 'introdb';
 /** Providers in the order they are asked; a list leaves out the ones switched off. */
 export type SkipSource = 'auto' | 'off' | SkipProvider | SkipProvider[];
 
+/** The Live TV groups picked for a user, from one playback addon. */
+export interface LiveTvPick {
+  addon: string;
+  groups: string[];
+  /** Whether nothing else can be reached, and whether the user had a rating when that was chosen. */
+  only?: { on: boolean; rated: boolean };
+}
+
 /** A user on the Jellyfin sign-in screen, made of the profile tags it picks. */
 export interface JellyfinUser {
   id: string;
@@ -60,6 +68,7 @@ export interface JellyfinUser {
   watchlistServices?: string[];
   /** Overrides the configuration's stream addon for this user. */
   streamUrl?: string;
+  liveTv?: LiveTvPick;
   /** Accounts this card holds for itself, when it isn't `trackers`. */
   accounts?: JellyfinUserAccounts;
   /** Extra names AIOStreams handoff events may address this user by. */
@@ -496,6 +505,7 @@ export interface AppConfig {
   jellyfinUserAvatar?: string;
   /** The main user's PIN: 4 to 12 digits as typed, or the hash the server saved it as. */
   jellyfinUserPin?: string;
+  jellyfinUserLiveTv?: LiveTvPick;
   jellyfinUserTags?: string[];
   jellyfinUserHiddenTags?: string[];
   jellyfinUserHandoffNames?: string[];

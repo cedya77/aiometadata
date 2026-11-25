@@ -64,6 +64,7 @@ whole folder):
 - `configure/src/lib/dashboardApp.ts`
 - `configure/src/lib/dashboardRoute.ts`
 - `configure/src/lib/jellyfinClient.ts`
+- `configure/src/lib/liveTvGroups.ts`
 - `configure/src/lib/nuvioAccount.ts`
 - `configure/src/lib/ownPage.ts`
 - `configure/src/lib/phoneSheet.ts`

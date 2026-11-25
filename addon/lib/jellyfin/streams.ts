@@ -104,6 +104,21 @@ function containerOf(stream: any): string | null {
   return ext && ext !== 'json' ? ext : null;
 }
 
+const LIVE_CONTAINER = /\.(m3u8|mpd|m2ts|mts|ts|mp4|m4v|mkv|webm|flv|mov|avi)$/i;
+
+// A channel's stream often has a label for a filename, and its binge group names no file at all.
+function channelContainerOf(playable: PlayableStream): string | null {
+  for (const name of [playable.url.split(/[?#]/)[0], playable.filename ?? '']) {
+    const match = LIVE_CONTAINER.exec(name);
+    if (match) return match[1].toLowerCase();
+  }
+  return null;
+}
+
+function protocolOf(url: string): string {
+  return /^rtsp:/i.test(url) ? 'Rtsp' : /^rtmps?:/i.test(url) ? 'Rtmp' : 'Http';
+}
+
 // A client fetches the media URL itself, so a stream needing headers is offered
 // only to one that says its player sends a source's RequiredHttpHeaders.
 function needsHeaders(stream: any): boolean {
@@ -653,24 +668,27 @@ function buildMediaStreams(playable: PlayableStream): any[] {
 
 export function mediaSourceFor(
   playable: PlayableStream,
-  runtimeTicks: number | null
+  runtimeTicks: number | null,
+  { live = false, channel = live }: { live?: boolean; channel?: boolean } = {}
 ): any {
-  fileOf.set(
-    playable.url,
-    {
-      subtitles: playable.subtitles,
-      hints: { videoHash: playable.videoHash, videoSize: playable.size, filename: playable.filename },
-    },
-    { ttl: subtitleTtlMs() }
-  );
-  rememberRelease(playable.id, playable.release);
-  return {
-    Protocol: 'Http',
+  if (!live) {
+    fileOf.set(
+      playable.url,
+      {
+        subtitles: playable.subtitles,
+        hints: { videoHash: playable.videoHash, videoSize: playable.size, filename: playable.filename },
+      },
+      { ttl: subtitleTtlMs() }
+    );
+    rememberRelease(playable.id, playable.release);
+  }
+  const source = {
+    Protocol: protocolOf(playable.url),
     Id: playable.id,
     Path: playable.url,
     DirectStreamUrl: playable.url,
     Type: 'Default',
-    Container: playable.container,
+    Container: channel ? channelContainerOf(playable) : playable.container,
     Size: playable.size,
     Name: playable.name,
     IsRemote: true,
@@ -706,6 +724,8 @@ export function mediaSourceFor(
     DefaultSubtitleStreamIndex: null,
     HasSegments: false,
   };
+  if (!live) return source;
+  return { ...source, IsInfiniteStream: true, RunTimeTicks: undefined, Container: source.Container ?? (source.Protocol === 'Http' ? 'ts' : undefined) };
 }
 
 export function runtimeTicksFrom(meta: any): number | null {

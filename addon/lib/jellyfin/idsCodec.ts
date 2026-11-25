@@ -7,11 +7,15 @@ import { envInt } from '../../utils/envNumber';
 const PACKED = 0xa1;
 const HASHED = 0xb2;
 const CODEC_VERSION = 1;
+// What a channel id keeps of its hash. A programme id holds its start in the rest.
+const CHANNEL_BYTES = 12;
+const CHANNEL_DIGITS = CHANNEL_BYTES * 2;
+const CHANNEL_TAIL = '0'.repeat(32 - CHANNEL_DIGITS);
 const NONE16 = 0xffff;
 const MAX48 = 2 ** 48 - 1;
 
 export type PackableKind = 'movie' | 'series' | 'season' | 'episode';
-export type HashedKind = 'view' | 'genre' | 'person' | 'studio' | 'collection' | 'boxset' | 'marker' | 'playlist' | 'playlists';
+export type HashedKind = 'view' | 'genre' | 'person' | 'studio' | 'collection' | 'boxset' | 'marker' | 'playlist' | 'playlists' | 'channel' | 'livetv';
 export type JellyfinKind = PackableKind | HashedKind;
 
 export type Descriptor =
@@ -29,7 +33,15 @@ export type Descriptor =
   | { k: 'marker'; i: string }
   /** A user's playlist, and the folder that lists them. */
   | { k: 'playlist'; p: string }
-  | { k: 'playlists' };
+  | { k: 'playlists' }
+  | { k: 'channel'; t: string; i: string }
+  | { k: 'livetv' };
+
+export interface ProgramRef {
+  t: string;
+  i: string;
+  at: number;
+}
 
 const KIND_CODES: Record<PackableKind, number> = {
   movie: 1,
@@ -271,6 +283,10 @@ export function canonicalDescriptor(d: Descriptor): string {
       return `playlist|${d.p}`;
     case 'playlists':
       return 'playlists';
+    case 'channel':
+      return `channel|${d.t}|${d.i}`;
+    case 'livetv':
+      return 'livetv';
   }
 }
 
@@ -311,9 +327,36 @@ export function hashJellyfinId(d: Descriptor): string {
   if (held) return held;
   const hash = createHash('md5').update(canonical).digest();
   hash[0] = HASHED;
+  if (d.k === 'channel') hash.fill(0, CHANNEL_BYTES);
   const id = hash.toString('hex');
   hashedIds.set(canonical, id);
   return id;
+}
+
+const PROGRAM = 0xc4;
+const PROGRAM_PREFIX = PROGRAM.toString(16);
+const HASHED_PREFIX = HASHED.toString(16);
+
+export function packProgramId(ref: ProgramRef): string | null {
+  if (!Number.isInteger(ref.at) || ref.at < 0 || ref.at > 0xffffffff) return null;
+  const channel = hashJellyfinId({ k: 'channel', t: ref.t, i: ref.i });
+  const at = Buffer.alloc(4);
+  at.writeUInt32BE(ref.at);
+  return `${PROGRAM_PREFIX}${channel.slice(2, CHANNEL_DIGITS)}${at.toString('hex')}`;
+}
+
+export function unpackProgramId(raw: string): { channel: string; at: number } | null {
+  const id = normaliseJellyfinId(raw);
+  if (!/^[0-9a-f]{32}$/.test(id) || !id.startsWith(PROGRAM_PREFIX)) return null;
+  return { channel: `${HASHED_PREFIX}${id.slice(2, CHANNEL_DIGITS)}${CHANNEL_TAIL}`, at: parseInt(id.slice(CHANNEL_DIGITS), 16) };
+}
+
+/** Whether an id is of a channel or a programme. */
+export function isLiveJellyfinId(raw: unknown): boolean {
+  if (typeof raw !== 'string') return false;
+  const id = normaliseJellyfinId(raw);
+  if (!/^[0-9a-f]{32}$/.test(id)) return false;
+  return id.startsWith(PROGRAM_PREFIX) || (id.startsWith(HASHED_PREFIX) && id.endsWith(CHANNEL_TAIL));
 }
 
 export function isHashedJellyfinId(id: string): boolean {

@@ -24,6 +24,7 @@ import { MAX_TAG_NAME_LENGTH, type CardService, type CatalogConfig, type Jellyfi
 import { UserAccounts } from '@/components/jellyfin/UserAccounts';
 import { SkipSourcePicker } from '@/components/jellyfin/SkipSourcePicker';
 import { StreamAddonField } from '@/components/jellyfin/StreamAddonField';
+import { LiveTvGroups } from '@/components/jellyfin/LiveTvGroups';
 import { Face } from '@/components/users/Face';
 import { JellyfinGlyph } from '@/components/settings/JellyfinGlyph';
 import { CARD_SERVICES, connectedServices, handoffNameClash, isHolder, mainConnectedServices, mainPersonName, newPersonId, personNameTaken, pinInvalid, showsAlsoKnownAs, trackerOptionsFor, watchlistOptionsFor } from '@/lib/cardAccounts';
@@ -171,6 +172,8 @@ interface Person {
   catalogCount: number;
   trackerOptions: Array<{ value: string; label: string; animeOnly?: boolean }>;
   watchlistOptions: WatchlistOption[];
+  /** The stream addon this person plays from. */
+  addonUrl: string;
   watchedPoint?: WatchedPoint;
   /** Why the watched point can't be set yet, while it can't. */
   watchedNote?: string;
@@ -192,6 +195,10 @@ interface PersonDetailProps {
   showHandoff?: boolean;
   /** Shows the Jellyfin-only settings, on an instance that runs the Jellyfin server. */
   jellyfin?: boolean;
+  /** Live TV is on for the instance. */
+  liveTv: boolean;
+  /** The configuration's own content rating, which holds for everyone. */
+  configRated: boolean;
   /** Stremio SDK scrobbling is on, so each person has an install link in Configuration. */
   stremioOn: boolean;
 }
@@ -363,8 +370,8 @@ function tagSummary(mode: TagMode, shown: string[], hidden: string[]): string {
   return `Sees everything except what's tagged ${orList(hidden)}`;
 }
 
-function PersonDetail({ person, allTags, hasPmdb, mainSkipSource, showHandoff, jellyfin, stremioOn }: PersonDetailProps) {
-  const { name, avatar, main, user, catalogCount, trackerOptions, watchlistOptions, watchedPoint, watchedNote, onChange, onRemove, onForget, accountsEditor } = person;
+function PersonDetail({ person, allTags, hasPmdb, mainSkipSource, showHandoff, jellyfin, liveTv, configRated, stremioOn }: PersonDetailProps) {
+  const { name, avatar, main, user, addonUrl, catalogCount, trackerOptions, watchlistOptions, watchedPoint, watchedNote, onChange, onRemove, onForget, accountsEditor } = person;
   const chosen = user.tags ?? [];
   const hidden = user.hiddenTags ?? [];
   const toggleTag = (tag: string) =>
@@ -631,6 +638,18 @@ function PersonDetail({ person, allTags, hasPmdb, mainSkipSource, showHandoff, j
                 </SettingRow>
               </>
             )}
+            {liveTv ? (
+              <LiveTvGroups
+                id={`live-tv-${user.id || 'main'}`}
+                name={name}
+                main={main}
+                addonUrl={addonUrl}
+                rated={configRated || caps.length > 0}
+                value={user.liveTv}
+                onChange={(next) => onChange({ liveTv: next })}
+                row={(label, description, control, body) => <SettingRow label={label} description={description} control={control}>{body}</SettingRow>}
+              />
+            ) : null}
           </Group>
         ) : null}
       </div>
@@ -937,7 +956,9 @@ export function HouseholdUsers() {
       handoffNames: config.jellyfinUserHandoffNames,
       pin: config.jellyfinUserPin,
       streamUrl: config.jellyfinStreamUrl,
+      liveTv: config.jellyfinUserLiveTv,
     },
+    addonUrl: config.jellyfinStreamUrl ?? '',
     catalogCount: catalogCountFor(config.jellyfinUserTags ?? [], config.jellyfinUserHiddenTags ?? []),
     trackerOptions: resumeSourceOptions,
     watchlistOptions,
@@ -957,6 +978,7 @@ export function HouseholdUsers() {
       ...('handoffNames' in patch ? { jellyfinUserHandoffNames: patch.handoffNames } : {}),
       ...('pin' in patch ? { jellyfinUserPin: patch.pin } : {}),
       ...('streamUrl' in patch ? { jellyfinStreamUrl: patch.streamUrl } : {}),
+      ...('liveTv' in patch ? { jellyfinUserLiveTv: patch.liveTv } : {}),
     })),
   };
   const people: Person[] = [mainPerson, ...users.map((user): Person => {
@@ -966,6 +988,7 @@ export function HouseholdUsers() {
       name: user.name,
       avatar: user.avatar,
       user,
+      addonUrl: user.streamUrl?.trim() || config.jellyfinStreamUrl || '',
       catalogCount: catalogCountFor(user.tags, user.hiddenTags),
       trackerOptions: holder ? trackerOptionsFor(user) : resumeSourceOptions,
       watchlistOptions: holder ? watchlistOptionsFor(user) : watchlistOptions,
@@ -1075,6 +1098,8 @@ export function HouseholdUsers() {
           mainSkipSource={config.jellyfinSkipSource ?? 'auto'}
           showHandoff={showHandoff}
           jellyfin={jellyfin.enabled}
+          liveTv={jellyfin.liveTv}
+          configRated={Boolean(config.ageRating?.trim()) && config.ageRating.trim().toLowerCase() !== 'none'}
           stremioOn={stremioOn}
         />
       </div>
