@@ -296,7 +296,9 @@ export async function programmesFor(
   { waitMs }: { waitMs?: number } = {}
 ): Promise<Map<string, Programme[]>> {
   const state = stateFor(addon);
-  const placements = await placementsFor(addon, base, catalogs, channels, { guideOnly: true });
+  const until = waitMs === undefined ? undefined : state.now() + waitMs;
+  // Half the wait at most, so that a channel not found leaves the others time for their guide.
+  const placements = await placementsFor(addon, base, catalogs, channels, { guideOnly: true, waitMs: waitMs === undefined ? undefined : waitMs / 2 });
   const paged = new Map<string, PageGroup>();
   const single = new Map<string, { catalog: LiveCatalog; channels: ChannelMeta[] }>();
   const addTo = (map: typeof single, catalog: LiveCatalog, metas: ChannelMeta[]) => {
@@ -339,7 +341,7 @@ export async function programmesFor(
   }
   const pages: Array<GuidePage | null> = [];
   const reading = inBatches(work.map(({ read }, n) => async () => { pages[n] = await read(); }), PARALLEL_READS);
-  await (waitMs === undefined ? reading : inTime(reading, waitMs));
+  await (until === undefined ? reading : inTime(reading, Math.max(0, until - state.now())));
 
   const found = new Map<string, Map<number, Programme>>();
   let rows = 0;

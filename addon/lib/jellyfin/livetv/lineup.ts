@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
-import { clockOptions, hash, inBatches, isAddonError, shareInFlight, type AddonDeps } from '../addonReader';
+import { clockOptions, hash, inBatches, inTime, isAddonError, shareInFlight, type AddonDeps } from '../addonReader';
 import { AIOSTREAMS_PAGE, catalogKey, endsList, idChunks, isAioStreams, narrowedTo, pagePath, readPage, wholeCatalogs, type LiveCatalog } from './catalogs';
 import { bytesOf, clipped, groupNameOf, idOf, MAX_NAME, shortOf, text, urlOf } from './bounds';
 import { listSize, programmesOf, type Programme } from './programmes';
@@ -660,16 +660,19 @@ export function scheduleOf(addon: LineupAddon, base: string, { type, id }: Chann
  * some the lists left out are read last. A list is never read for a number.
  * `guideOnly` reads no details, and only lists that lead to a guide. Catalogs
  * narrowed to groups answer GONE for any other channel, also one found for
- * someone else.
+ * someone else. With `waitMs` the reads by id and of the lists are waited for no
+ * longer than that together, and go on for the next time when they are not done.
  */
 export async function placementsFor(
   addon: LineupAddon,
   base: string,
   catalogs: LiveCatalog[],
   channels: ChannelRef[],
-  { guideOnly = false }: { guideOnly?: boolean } = {}
+  { guideOnly = false, waitMs }: { guideOnly?: boolean; waitMs?: number } = {}
 ): Promise<Array<Placement | typeof GONE | null>> {
   const state = stateFor(addon);
+  const until = waitMs === undefined ? undefined : state.now() + waitMs;
+  const inWait = <T>(answer: Promise<T>): Promise<T | undefined> => (until === undefined ? answer : inTime(answer, Math.max(0, until - state.now())));
   const keyOf = (c: ChannelRef) => placementKey(base, c.type, c.id);
   const held = (c: ChannelRef) => state.placements.get(keyOf(c));
   const whole = () => assemble(state, base, catalogs).byKey;
@@ -684,7 +687,7 @@ export async function placementsFor(
     const placement = held(c);
     return placement !== GONE && !placement?.catalog;
   });
-  if (unplaced.length) await findByIds(state, addon, base, wholeCatalogs(catalogs), unplaced);
+  if (unplaced.length) await inWait(findByIds(state, addon, base, wholeCatalogs(catalogs), unplaced));
 
   const read = (list: ChannelRef[]) => inBatches(list.map((c) => () => readMeta(state, addon, base, c)), PARALLEL_META_READS);
   const first = !guideOnly && left.length <= DETAILS_FIRST;
@@ -696,13 +699,15 @@ export async function placementsFor(
   const toFind = left.filter((c) => (guideOnly ? !found(c)?.catalog && !state.schedules.has(keyOf(c)) : !found(c)));
   let walked: Assembly | undefined;
   if (lists.length && toFind.length) {
-    walked = await walk(addon, base, lists, (w) => toFind.every((c) => w.byKey.has(channelKey(c))));
+    // It ends between pages when the wait is over: others share the reads, which keep their own time.
+    const over = () => until !== undefined && state.now() >= until;
+    walked = (await inWait(walk(addon, base, lists, (w) => over() || toFind.every((c) => w.byKey.has(channelKey(c)))))) ?? assemble(state, base, lists);
   }
   if (!guideOnly && !first) {
-    const until = state.now() + DETAILS_MS;
+    const detailsUntil = state.now() + DETAILS_MS;
     const missing = left.filter((c) => !walked?.byKey.has(channelKey(c)) && readable(c) && !state.failures.has(keyOf(c)));
     const tasks = missing.slice(0, MAX_DETAIL_READS).map((c) => async () => {
-      if (state.now() < until && !addon.paused?.(base)) await readMeta(state, addon, base, c);
+      if (state.now() < detailsUntil && !addon.paused?.(base)) await readMeta(state, addon, base, c);
     });
     await inBatches(tasks, PARALLEL_META_READS);
   }
