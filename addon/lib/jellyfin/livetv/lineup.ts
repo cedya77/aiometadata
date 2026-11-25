@@ -63,6 +63,8 @@ interface Lineup {
   done: boolean;
   usedAt: number;
   failedAt?: number;
+  /** The read of its next page, shared by every list that holds it. */
+  reading?: Promise<boolean>;
   refreshFailedAt?: number;
 }
 
@@ -310,12 +312,14 @@ async function readNextPage(state: State, addon: LineupAddon, base: string, cata
     }
     if (lineup.done) continue;
     if (lineup.failedAt !== undefined && state.now() - lineup.failedAt < FAILURE_MS) return 'blocked';
-    if (!(await readInto(addon, base, catalog, lineup))) {
-      lineup.failedAt = state.now();
+    const next = lineup;
+    next.reading ??= readInto(addon, base, catalog, next).finally(() => { next.reading = undefined; });
+    if (!(await next.reading)) {
+      next.failedAt = state.now();
       return 'failed';
     }
-    lineup.failedAt = undefined;
-    remeasure(state, key, lineup);
+    next.failedAt = undefined;
+    remeasure(state, key, next);
     return 'read';
   }
   return 'done';
