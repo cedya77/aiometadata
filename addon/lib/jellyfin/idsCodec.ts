@@ -342,10 +342,6 @@ export function programIdOf(channelId: string, at: number): string | null {
   return `${PROGRAM_PREFIX}${channelId.slice(2, CHANNEL_DIGITS)}${at.toString(16).padStart(8, '0')}`;
 }
 
-export function packProgramId(ref: ProgramRef): string | null {
-  return programIdOf(hashJellyfinId({ k: 'channel', t: ref.t, i: ref.i }), ref.at);
-}
-
 export function unpackProgramId(raw: string): { channel: string; at: number } | null {
   const id = normaliseJellyfinId(raw);
   if (!/^[0-9a-f]{32}$/.test(id) || !id.startsWith(PROGRAM_PREFIX)) return null;

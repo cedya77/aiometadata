@@ -38,7 +38,7 @@ const imageCache = new LRUCache<string, ItemImages>({
 
 // Apart, so that a long channel list leaves the titles' art in place.
 const liveImageCache = new LRUCache<string, ItemImages>({
-  max: envInt('JELLYFIN_IMAGE_CACHE_MAX', 20000, 1),
+  max: envInt('JELLYFIN_LIVETV_IMAGE_CACHE_MAX', 20000, 1),
   ttl: envInt('JELLYFIN_IMAGE_MEMO_TTL', 6 * 60 * 60, 60) * 1000,
 });
 

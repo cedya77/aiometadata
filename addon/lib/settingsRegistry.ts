@@ -1682,6 +1682,17 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'JELLYFIN_LIVETV_IMAGE_CACHE_MAX',
+    envVar: 'JELLYFIN_LIVETV_IMAGE_CACHE_MAX',
+    label: 'Jellyfin Live TV Artwork Entry Cache Size',
+    description: "How many channels' and programmes' artwork URLs are held in memory before the oldest are dropped. Held apart from the titles' artwork, so a long channel list leaves that in place.",
+    category: 'Features',
+    type: 'number',
+    default: 20000,
+    min: 1,
+    requiresRestart: true,
+  },
+  {
     key: 'JELLYFIN_SYNCPLAY_SCOPE',
     envVar: 'JELLYFIN_SYNCPLAY_SCOPE',
     label: 'Jellyfin SyncPlay Groups',
