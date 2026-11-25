@@ -9,6 +9,8 @@ const FAILURE_MS = 30 * 1000;
 const READ_TIMEOUT_MS = 5000;
 const MAX_BASES = 500;
 const STORE_TIMEOUT_MS = 500;
+const PAUSE_MS = 5000;
+const SPREAD_MS = 300;
 
 export type Manifest = Record<string, any>;
 
@@ -22,6 +24,7 @@ export interface AddonReaderOptions {
   fetch: (url: string, init: Record<string, any>) => Promise<any>;
   readBody: (response: any) => Promise<string>;
   now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
   log?: (line: string) => void;
   /** Where the live part of each manifest outlasts the process. */
   store?: ManifestStore;
@@ -32,7 +35,8 @@ export interface AddonDeps {
   peek(base: string): Manifest | undefined;
   /** Holds what the store kept of the manifest, as a stale one, when none is held. Never reads the addon. */
   recall(base: string): Promise<void>;
-  fetchJson(base: string, path: string, timeoutMs?: number): Promise<any | null>;
+  /** Until `until` a catalog the addon refuses, as over its limit, is asked for again once the pause after that is over. */
+  fetchJson(base: string, path: string, timeoutMs?: number, until?: number): Promise<any | null>;
   now(): number;
 }
 
@@ -80,9 +84,30 @@ export async function inBatches<T>(tasks: Array<() => Promise<T>>, size: number)
   return results;
 }
 
+/** What is answered within `ms`, or undefined while it goes on. */
+export async function inTime<T>(answer: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), ms);
+  });
+  try {
+    return await Promise.race([answer, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function clockOptions(now?: () => number): { perf?: { now: () => number }; ttlResolution?: number } {
   return now ? { perf: { now }, ttlResolution: 0 } : {};
 }
+
+/** AIOStreams answers a failure with 200 and an entry that names the error. */
+export const isAddonError = (entry: any): boolean => String(entry?.id ?? '').startsWith('aiostreamserror.');
+
+const isRefusal = (entry: any): boolean => isAddonError(entry) && /rate(%20|\W)?limit/i.test(`${entry.id} ${entry.name}`);
+
+const isRefused = (body: any): boolean =>
+  [body?.metas, body?.metasDetailed].some((list) => Array.isArray(list) && list.some(isRefusal));
 
 const isManifest = (body: any): body is Manifest => Array.isArray(body?.catalogs);
 
@@ -123,7 +148,7 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
   const now = options.now ?? Date.now;
   const log = options.log ?? ((line: string) => logger.debug(line));
 
-  async function fetchJson(base: string, path: string, timeoutMs = READ_TIMEOUT_MS): Promise<any | null> {
+  async function ask(base: string, path: string, timeoutMs: number): Promise<{ body: any | null; refused: boolean }> {
     const host = hostOf(base);
     const where = `${host} ${path.split('/').slice(0, 3).join('/')}`;
     const controller = new AbortController();
@@ -137,16 +162,35 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
       if (!response?.ok) {
         await response?.body?.cancel?.().catch(() => undefined);
         log(`Addon read ${where} returned ${response?.status}`);
-        return null;
+        return { body: null, refused: response?.status === 429 };
       }
       const body = JSON.parse(await options.readBody(response));
-      return body && typeof body === 'object' ? body : null;
+      return body && typeof body === 'object' ? { body, refused: isRefused(body) } : { body: null, refused: false };
     } catch (error: any) {
       const reason = error?.name === 'AbortError' ? 'timed out' : String(error?.code || error?.name || 'failed');
       log(`Addon read ${where} failed: ${reason}`);
-      return null;
+      return { body: null, refused: false };
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); }));
+  const closedUntil = new LRUCache<string, number>({ max: MAX_BASES });
+
+  async function fetchJson(base: string, path: string, timeoutMs = READ_TIMEOUT_MS, until?: number): Promise<any | null> {
+    if (!path.startsWith('/catalog/')) return (await ask(base, path, timeoutMs)).body;
+    const key = hash(base);
+    for (;;) {
+      const wait = (closedUntil.get(key) ?? 0) - now();
+      if (wait > 0) {
+        if (until === undefined || now() + wait > until) return null;
+        await sleep(wait + Math.random() * SPREAD_MS);
+        continue;
+      }
+      const { body, refused } = await ask(base, path, timeoutMs);
+      if (!refused) return body;
+      closedUntil.set(key, now() + PAUSE_MS);
     }
   }
 
@@ -198,18 +242,12 @@ export function createAddonReader(options: AddonReaderOptions): AddonDeps {
     async recall(base: string) {
       const key = hash(base);
       if (!options.store || held(key) !== undefined) return;
-      let timer: NodeJS.Timeout | undefined;
-      const late = new Promise<null>((resolve) => {
-        timer = setTimeout(() => resolve(null), STORE_TIMEOUT_MS);
-      });
       try {
-        const stored = await Promise.race([options.store.get(storeKey(key)), late]);
+        const stored = await inTime(options.store.get(storeKey(key)), STORE_TIMEOUT_MS);
         const manifest = stored ? JSON.parse(stored) : null;
         if (isManifest(manifest) && held(key) === undefined) recalled.set(key, manifest);
       } catch (error: any) {
         log(`Addon manifest recall for ${hostOf(base)} failed: ${error?.code || error?.name || 'failed'}`);
-      } finally {
-        clearTimeout(timer);
       }
     },
     peek(base: string) {

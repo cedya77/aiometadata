@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
-import { clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
-import { catalogKey, endsList, idChunks, isAddonError, narrowedTo, pagePath, readPage, wholeCatalogs, type LiveCatalog } from './catalogs';
+import { clockOptions, hash, inBatches, isAddonError, shareInFlight, type AddonDeps } from '../addonReader';
+import { AIOSTREAMS_PAGE, catalogKey, endsList, idChunks, isAioStreams, narrowedTo, pagePath, readPage, wholeCatalogs, type LiveCatalog } from './catalogs';
 import { pageSize, programmesOf, type Programme } from './programmes';
 
 const LINEUP_TTL_MS = 60 * 60 * 1000;
@@ -22,6 +22,11 @@ const PARALLEL_META_READS = 8;
 const PARALLEL_ID_READS = 4;
 const MAX_GROUPS_KEPT = 50;
 const DETAILS_FIRST = 4;
+const PARALLEL_PAGES = 4;
+const WALK_MS = 20 * 1000;
+const LOOKUP_MS = 10 * 1000;
+const SMALL_PAGES = 3;
+const FULL_REFRESH_MS = 6 * 60 * 60 * 1000;
 const SCHEDULE_TTL_MS = 30 * 60 * 1000;
 const MAX_SCHEDULES = 5000;
 const MAX_SCHEDULE_BYTES = 16 * 1024 * 1024;
@@ -60,12 +65,17 @@ interface Lineup {
   keys: Set<string>;
   next: number;
   pages: number;
+  /** Where its last page began, also an empty one. */
+  tail: number;
   done: boolean;
+  readAt: number;
   usedAt: number;
   failedAt?: number;
   /** The read of its next page, shared by every list that holds it. */
   reading?: Promise<boolean>;
   refreshFailedAt?: number;
+  /** What a refresh has read of it so far. */
+  fresh?: Lineup;
 }
 
 interface Assembly {
@@ -89,6 +99,9 @@ interface State {
   unknown: LRUCache<string, true>;
   /** The programmes that came with a channel's details. */
   schedules: LRUCache<string, Programme[]>;
+  /** The lineups being refreshed or waiting for it, and each addon's last in line. */
+  refreshing: Set<string>;
+  turns: Map<string, Promise<void>>;
 }
 
 const states = new WeakMap<object, State>();
@@ -125,6 +138,8 @@ export function stateFor(addon: LineupAddon): State {
         ttl: SCHEDULE_TTL_MS,
         ...clock,
       }),
+      refreshing: new Set(),
+      turns: new Map(),
     };
     states.set(addon, created);
     setInterval(() => purge(created), SWEEP_MS).unref();
@@ -186,7 +201,7 @@ const placementKey = (base: string, type: string, id: string): string => `${hash
 const channelKey = (meta: Pick<ChannelMeta, 'type' | 'id'>): string => `${meta.type}|${meta.id}`;
 
 function emptyLineup(state: State): Lineup {
-  return { channels: [], skips: [], keys: new Set(), next: 0, pages: 0, done: false, usedAt: state.now() };
+  return { channels: [], skips: [], keys: new Set(), next: 0, pages: 0, tail: 0, done: false, readAt: state.now(), usedAt: state.now() };
 }
 
 const isEmpty = (lineup: Lineup): boolean => lineup.done && !lineup.channels.length;
@@ -210,9 +225,7 @@ function remeasure(state: State, key: string, lineup: Lineup): void {
   state.lineups.set(key, lineup, { ttl });
 }
 
-async function readInto(addon: LineupAddon, base: string, catalog: LiveCatalog, lineup: Lineup): Promise<boolean> {
-  const page = await readPage(addon, base, catalog, { skip: lineup.next });
-  if (!page) return false;
+function addPage(catalog: LiveCatalog, lineup: Lineup, page: any[]): void {
   lineup.pages++;
   let added = 0;
   for (const entry of page) {
@@ -224,25 +237,84 @@ async function readInto(addon: LineupAddon, base: string, catalog: LiveCatalog, 
     lineup.skips.push(lineup.next);
     added++;
   }
+  lineup.tail = lineup.next;
   lineup.next += page.length;
   if (!catalog.skip || added === 0 || endsList(catalog, page) || lineup.pages >= MAX_PAGES || lineup.channels.length >= MAX_LIST) lineup.done = true;
+}
+
+async function readInto(addon: LineupAddon, base: string, catalog: LiveCatalog, lineup: Lineup, { ahead = 1, until }: { ahead?: number; until?: number } = {}): Promise<boolean> {
+  const skips = Array.from({ length: ahead }, (_, n) => lineup.next + n * AIOSTREAMS_PAGE);
+  const pages = await Promise.all(skips.map((skip) => readPage(addon, base, catalog, { skip }, until)));
+  let read = false;
+  for (const page of pages) {
+    if (!page || lineup.done) break;
+    addPage(catalog, lineup, page);
+    read = true;
+    if (page.length !== AIOSTREAMS_PAGE) break;
+  }
+  return read;
+}
+
+/** Whether the first and last pages are as they were, or undefined when one fails. */
+async function unchanged(addon: LineupAddon, base: string, catalog: LiveCatalog, old: Lineup): Promise<boolean | undefined> {
+  const mark = (meta: ChannelMeta) => `${channelKey(meta)}|${meta.name}|${meta.channelNumber}`;
+  for (const skip of new Set([0, old.skips[old.skips.length - 1], old.tail])) {
+    const page = await readPage(addon, base, catalog, { skip });
+    if (!page) return undefined;
+    const is = page.map((entry) => channelMetaOf(entry, catalog)).filter((meta): meta is ChannelMeta => meta !== null);
+    const was = old.channels.filter((_, n) => old.skips[n] === skip);
+    if (is.map(mark).join('\n') !== was.map(mark).join('\n')) return false;
+  }
   return true;
 }
 
-function refresh(state: State, addon: LineupAddon, base: string, catalog: LiveCatalog, old: Lineup): void {
-  if (old.refreshFailedAt !== undefined && state.now() - old.refreshFailedAt < FAILURE_MS) return;
+async function refresh(state: State, addon: LineupAddon, base: string, catalog: LiveCatalog, old: Lineup): Promise<void> {
   const key = lineupKey(base, catalog);
-  void shareInFlight(`livetv:${state.id}|${key}|refresh`, async () => {
-    const fresh = emptyLineup(state);
-    const limit = old.done ? MAX_PAGES : Math.max(1, old.pages);
-    while (!fresh.done && fresh.pages < limit) {
-      if (!(await readInto(addon, base, catalog, fresh)) || (!fresh.channels.length && old.channels.length)) {
-        old.refreshFailedAt = state.now();
-        return;
-      }
+  const failed = () => {
+    old.refreshFailedAt = state.now();
+  };
+  if (state.lineups.peek(key) !== old) return;
+  if (!old.fresh && old.pages > SMALL_PAGES && state.now() - old.readAt < FULL_REFRESH_MS) {
+    const same = await unchanged(addon, base, catalog, old);
+    if (same === undefined) return failed();
+    if (same) {
+      if (state.lineups.peek(key) !== old) return;
+      state.lineups.delete(key);
+      state.lineups.set(key, old);
+      return;
     }
-    fresh.usedAt = old.usedAt;
-    if (state.lineups.peek(key) === old) state.lineups.set(key, fresh);
+  }
+  if (old.fresh && state.now() - old.fresh.readAt > LINEUP_TTL_MS) old.fresh = undefined;
+  const fresh = (old.fresh ??= emptyLineup(state));
+  const limit = old.done ? MAX_PAGES : Math.max(1, old.pages);
+  while (!fresh.done && fresh.pages < limit) {
+    if (!(await readInto(addon, base, catalog, fresh))) return failed();
+    if (!fresh.channels.length && old.channels.length) {
+      old.fresh = undefined;
+      return failed();
+    }
+  }
+  fresh.usedAt = old.usedAt;
+  if (state.lineups.peek(key) === old) state.lineups.set(key, fresh);
+}
+
+/** Refreshes the lineups past their time, one after another for each addon. */
+function refreshDue(state: State, addon: LineupAddon, base: string, catalogs: LiveCatalog[], lineups: Lineup[]): void {
+  lineups.forEach((lineup, n) => {
+    const catalog = catalogs[n];
+    const key = lineupKey(base, catalog);
+    if (state.lineups.getRemainingTTL(key) > 0 || state.refreshing.has(key)) return;
+    if (lineup.refreshFailedAt !== undefined && state.now() - lineup.refreshFailedAt < FAILURE_MS) return;
+    state.refreshing.add(key);
+    const scope = hash(base);
+    const turn: Promise<void> = (state.turns.get(scope) ?? Promise.resolve())
+      .then(() => refresh(state, addon, base, catalog, lineup))
+      .catch(() => undefined)
+      .finally(() => {
+        state.refreshing.delete(key);
+        if (state.turns.get(scope) === turn) state.turns.delete(scope);
+      });
+    state.turns.set(scope, turn);
   });
 }
 
@@ -254,10 +326,6 @@ function assemble(state: State, addon: LineupAddon, base: string, catalogs: Live
     memo = { lineups: [], consumed: 0, entries: [], byKey: new Map(), finished: false, blocked: false };
     state.assemblies.set(memoKey, memo);
   }
-
-  memo.lineups.forEach((lineup, n) => {
-    if (state.lineups.getRemainingTTL(lineupKey(base, catalogs[n])) <= 0) refresh(state, addon, base, catalogs[n], lineup);
-  });
 
   for (;;) {
     const at = memo.lineups.length - 1;
@@ -302,37 +370,71 @@ function assemble(state: State, addon: LineupAddon, base: string, catalogs: Live
 
 type Outcome = 'read' | 'failed' | 'blocked' | 'done';
 
-async function readNextPage(state: State, addon: LineupAddon, base: string, catalogs: LiveCatalog[]): Promise<Outcome> {
-  for (const catalog of catalogs) {
+interface WalkOptions {
+  /** How many channels are asked for, to read that far ahead. */
+  want?: number;
+  waitMs?: number;
+}
+
+/** How many pages of a list that has proven long can be read at once. */
+function pagesAhead(catalog: LiveCatalog, lineup: Lineup, missing: number): number {
+  if (!isAioStreams(catalog) || catalog.genre !== undefined || !catalog.skip) return 1;
+  if (lineup.pages < PARALLEL_PAGES || lineup.next !== lineup.pages * AIOSTREAMS_PAGE) return 1;
+  return Math.max(1, Math.min(PARALLEL_PAGES, Math.ceil(missing / AIOSTREAMS_PAGE), MAX_PAGES - lineup.pages));
+}
+
+async function readOn(state: State, addon: LineupAddon, base: string, catalogs: LiveCatalog[], list: Assembly, want: number, until: number): Promise<Outcome> {
+  const blocked = (lineup: Lineup) => lineup.failedAt !== undefined && state.now() - lineup.failedAt < FAILURE_MS;
+  const due: Array<{ catalog: LiveCatalog; key: string; lineup: Lineup }> = [];
+  let missing = want - list.entries.length;
+  for (let at = Math.max(0, list.lineups.length - 1); at < catalogs.length; at++) {
+    const catalog = catalogs[at];
     const key = lineupKey(base, catalog);
     let lineup = heldLineup(state, key);
+    if (due.length) {
+      // Further groups of AIOStreams begin beside the first, where the page of each leaves some to read.
+      if (lineup) {
+        missing -= lineup.channels.length;
+        continue;
+      }
+      if (due.length >= PARALLEL_PAGES || missing <= due.length * AIOSTREAMS_PAGE || catalog.genre === undefined || !isAioStreams(catalog)) break;
+    } else if (lineup?.done) continue;
     if (!lineup) {
       lineup = emptyLineup(state);
       state.lineups.set(key, lineup);
     }
-    if (lineup.done) continue;
-    if (lineup.failedAt !== undefined && state.now() - lineup.failedAt < FAILURE_MS) return 'blocked';
-    const next = lineup;
-    next.reading ??= readInto(addon, base, catalog, next).finally(() => { next.reading = undefined; });
-    if (!(await next.reading)) {
-      next.failedAt = state.now();
+    if (blocked(lineup)) return 'blocked';
+    due.push({ catalog, key, lineup });
+  }
+  const outcomes = await Promise.all(due.map(async ({ catalog, key, lineup }): Promise<Outcome> => {
+    lineup.reading ??= readInto(addon, base, catalog, lineup, { ahead: pagesAhead(catalog, lineup, missing), until })
+      .finally(() => { lineup.reading = undefined; });
+    if (!(await lineup.reading)) {
+      lineup.failedAt = state.now();
       return 'failed';
     }
-    next.failedAt = undefined;
-    remeasure(state, key, next);
+    lineup.failedAt = undefined;
+    remeasure(state, key, lineup);
     return 'read';
-  }
-  return 'done';
+  }));
+  return outcomes[0] ?? 'done';
 }
 
-async function walk(addon: LineupAddon, base: string, catalogs: LiveCatalog[], satisfied: (list: Assembly) => boolean): Promise<Assembly> {
+async function walk(
+  addon: LineupAddon,
+  base: string,
+  catalogs: LiveCatalog[],
+  satisfied: (list: Assembly) => boolean,
+  { want = 0, waitMs = WALK_MS }: WalkOptions = {}
+): Promise<Assembly> {
   const state = stateFor(addon);
+  const until = addon.now() + waitMs;
   // A lineup evicted while the walk goes on would otherwise be read again without end.
   for (let reads = 0; ; reads++) {
     const list = assemble(state, addon, base, catalogs);
-    if (satisfied(list) || list.finished || list.blocked || reads > MAX_PAGES * catalogs.length) return list;
-    const outcome = await shareInFlight(`livetv:${state.id}|${assemblyKey(base, catalogs)}|walk`, () => readNextPage(state, addon, base, catalogs));
-    if (outcome !== 'read') return assemble(state, addon, base, catalogs);
+    if (!reads) refreshDue(state, addon, base, catalogs, list.lineups);
+    if (satisfied(list) || list.finished || list.blocked || reads > MAX_PAGES * catalogs.length || addon.now() >= until) return list;
+    if ((await readOn(state, addon, base, catalogs, list, want, until)) !== 'read') return assemble(state, addon, base, catalogs);
   }
 }
 
@@ -343,7 +445,7 @@ export async function listChannels(
   { startIndex, limit }: { startIndex: number; limit: number }
 ): Promise<{ channels: ListedChannel[]; total: number }> {
   const end = startIndex + limit;
-  const list = await walk(addon, base, catalogs, (l) => l.entries.length >= end);
+  const list = await walk(addon, base, catalogs, (l) => l.entries.length >= end, { want: end });
   const page = list.entries.slice(startIndex, end);
   for (const entry of page) rememberListed(addon, base, entry, entry.number);
   return { channels: page.map(({ meta, number }) => ({ meta, number })), total: list.finished ? list.entries.length : list.entries.length + 1 };
@@ -370,7 +472,7 @@ export async function listGroup(
   { startIndex, limit }: { startIndex: number; limit: number }
 ): Promise<{ channels: ListedChannel[]; total: number }> {
   const end = startIndex + limit;
-  const list = await walk(addon, base, groupCatalogs(catalogs, genre), (l) => l.entries.length >= end);
+  const list = await walk(addon, base, groupCatalogs(catalogs, genre), (l) => l.entries.length >= end, { want: end });
   const state = stateFor(addon);
   const whole = assemble(state, addon, base, catalogs).byKey;
   const channels = list.entries.slice(startIndex, end).map((entry) => {
@@ -388,9 +490,10 @@ export async function listPlacements(
   base: string,
   catalogs: LiveCatalog[],
   limit: number,
-  enough: (entries: Placement[]) => boolean = () => false
+  enough: (entries: Placement[]) => boolean = () => false,
+  waitMs?: number
 ): Promise<Placement[]> {
-  const list = await walk(addon, base, catalogs, (l) => l.entries.length >= limit || enough(l.entries));
+  const list = await walk(addon, base, catalogs, (l) => l.entries.length >= limit || enough(l.entries), { waitMs });
   return list.entries.slice(0, limit);
 }
 
@@ -411,7 +514,7 @@ export async function guideChannels(addon: LineupAddon, base: string, catalogs: 
   const last = catalogs.map((c) => c.guide).lastIndexOf(true);
   if (last < 0) return [];
   const guided = (list: Assembly) => list.entries.filter((p) => p.catalog?.guide);
-  const list = await walk(addon, base, catalogs, (l) => l.lineups[last]?.done === true || guided(l).length >= limit);
+  const list = await walk(addon, base, catalogs, (l) => l.lineups[last]?.done === true || guided(l).length >= limit, { want: limit });
   return guided(list).slice(0, limit).map(({ meta, number }) => ({ meta, number }));
 }
 
@@ -437,13 +540,14 @@ export function admitted(addon: LineupAddon, base: string, catalogs: LiveCatalog
 async function findByIds(state: State, addon: LineupAddon, base: string, catalogs: LiveCatalog[], channels: ChannelRef[]): Promise<void> {
   const keyOf = (c: ChannelRef) => placementKey(base, c.type, c.id);
   const failed = new Set<string>();
+  const until = addon.now() + LOOKUP_MS;
   let left = channels.filter((c) => !state.unknown.has(keyOf(c)) && !state.failures.has(`ids|${keyOf(c)}`));
   for (const catalog of catalogs) {
     if (!catalog.ids || !left.length) continue;
     const found = new Set<string>();
     const read = async (chunk: ChannelRef[]) => {
       const ids = [...new Set(chunk.map((c) => c.id))].sort();
-      const entries = await shareInFlight(`livetv:${state.id}|${hash(base)}|${pagePath(catalog, { ids })}`, () => readPage(addon, base, catalog, { ids }));
+      const entries = await shareInFlight(`livetv:${state.id}|${hash(base)}|${pagePath(catalog, { ids })}`, () => readPage(addon, base, catalog, { ids }, until));
       if (!entries) for (const c of chunk) failed.add(keyOf(c));
       const wanted = new Set(chunk.map(keyOf));
       for (const entry of entries ?? []) {

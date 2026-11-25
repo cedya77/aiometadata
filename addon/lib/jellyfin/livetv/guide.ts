@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import { LRUCache } from 'lru-cache';
-import { clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
-import { catalogKey, idChunks, narrowedTo, pagePath, readPage, utcDay, wholeCatalogs, type LiveCatalog } from './catalogs';
+import { clockOptions, hash, inBatches, inTime, shareInFlight, type AddonDeps } from '../addonReader';
+import { AIOSTREAMS_PAGE, catalogKey, idChunks, isAioStreams, narrowedTo, pagePath, readPage, utcDay, wholeCatalogs, type LiveCatalog } from './catalogs';
 import { admitted, channelMetaOf, GONE, listPlacements, placementFor, placementsFor, rememberFound, scheduleOf, type ChannelMeta, type ListedChannel, type Placement } from './lineup';
 import { pageSize, programmesOf, type Programme } from './programmes';
 import { flag, integer, listOf, timeOf, type Ask } from './query';
@@ -25,6 +25,13 @@ const IDLE_MS = 60 * 60 * 1000;
 const SWEEP_MS = 10 * 60 * 1000;
 const SEARCH_SCAN = 5000;
 const SEARCH_WAIT_MS = 4000;
+const PICKED_WAIT_MS = 2000;
+const SEARCH_READ_MS = 8000;
+const DATED_WAIT_MS = 2500;
+const SEARCH_TTL_MS = 2 * 60 * 1000;
+const MAX_SEARCHES = 500;
+const MAX_SEARCHED = 1000;
+const MAX_TERM = 100;
 const FEW_OF_A_PAGE = 25;
 const MAX_REQUEST_READS = 400;
 const REQUEST_READ_MS = 15 * 1000;
@@ -48,6 +55,7 @@ interface ReadContext {
   catalog: LiveCatalog;
   skip: number;
   day: string;
+  until: number;
 }
 
 interface State {
@@ -57,6 +65,8 @@ interface State {
   /** One channel's day, for the channels read by their ids. */
   singles: LRUCache<string, GuidePage>;
   failures: LRUCache<string, true>;
+  /** What each catalog answered to a search. */
+  searches: LRUCache<string, ChannelMeta[]>;
 }
 
 interface ReadBudget {
@@ -100,7 +110,7 @@ function stateFor(addon: GuideAddon): State {
       noDeleteOnFetchRejection: true,
       ...clock,
       fetchMethod: async (key, stale, { options, context }) => {
-        const entries = await readPage(addon, context.base, context.catalog, { skip: context.skip, date: context.day });
+        const entries = await readPage(addon, context.base, context.catalog, { skip: context.skip, date: context.day }, context.until);
         const programmes = new Map<string, Programme[]>();
         for (const entry of entries ?? []) {
           const meta = channelMetaOf(entry, context.catalog);
@@ -123,7 +133,8 @@ function stateFor(addon: GuideAddon): State {
       ttl: READ_TTL_MS,
       ...clock,
     });
-    const created: State = { id: ++serial, now: addon.now, reads, singles, failures };
+    const searches = new LRUCache<string, ChannelMeta[]>({ max: MAX_SEARCHES, ttl: SEARCH_TTL_MS, ...clock });
+    const created: State = { id: ++serial, now: addon.now, reads, singles, failures, searches };
     states.set(addon, created);
     setInterval(() => purge(created), SWEEP_MS).unref();
     state = created;
@@ -137,7 +148,7 @@ function spend(state: State, budget: ReadBudget): boolean {
   return true;
 }
 
-const dayKey = ({ base, catalog, skip, day }: ReadContext): string => `${hash(base)}|${catalogKey(catalog)}|${skip}|${day}`;
+const dayKey = ({ base, catalog, skip, day }: Omit<ReadContext, 'until'>): string => `${hash(base)}|${catalogKey(catalog)}|${skip}|${day}`;
 
 function readDay(state: State, context: ReadContext, budget: ReadBudget): Promise<GuidePage | null> {
   const key = dayKey(context);
@@ -162,40 +173,46 @@ interface IdContext {
 const singleKey = ({ base, catalog, day }: IdContext, { type, id }: ChannelMeta): string =>
   `${hash(base)}|${catalogKey(catalog)}|${day}|${type}|${id}`;
 
+const nameOf = ({ type, id }: ChannelMeta): string => `${type}|${id}`;
+
+/** Keeps the programmes of the channels that were asked for, from what was read of them. */
+function keepSingles(state: State, context: IdContext, wanted: ChannelMeta[], entries: any[] | null): void {
+  const read = new Map<string, Programme[]>();
+  for (const entry of entries ?? []) {
+    const meta = channelMetaOf(entry, context.catalog);
+    if (meta) read.set(nameOf(meta), programmesOf(entry));
+  }
+  // A channel without programmes beside ones that have them has none, rather than a guide still loading.
+  const loaded = [...read.values()].some((list) => list.length > 0);
+  for (const channel of wanted) {
+    const key = singleKey(context, channel);
+    const stale = state.singles.peek(key, { allowStale: true });
+    const list = read.get(nameOf(channel)) ?? [];
+    if (!entries || (!list.length && !loaded && stale && !isEmpty(stale.programmes))) {
+      state.failures.set(key, true);
+      continue;
+    }
+    const empties = list.length || loaded ? 0 : (stale?.empties ?? 0) + 1;
+    state.singles.set(key, { programmes: new Map([[nameOf(channel), list]]), usedAt: state.now(), empties }, { ttl: ttlOf(empties) });
+  }
+}
+
 /** The programmes of channels read by their ids, kept channel by channel. */
 async function readChannels(
   state: State,
   addon: GuideAddon,
-  { base, catalog, day }: IdContext,
+  context: IdContext,
   channels: ChannelMeta[],
   budget: ReadBudget
 ): Promise<GuidePage> {
-  const scope = `${hash(base)}|${catalogKey(catalog)}|${day}`;
-  const nameOf = (c: ChannelMeta) => `${c.type}|${c.id}`;
-  const keyOf = (c: ChannelMeta) => singleKey({ base, catalog, day }, c);
+  const { base, catalog, day } = context;
+  const keyOf = (c: ChannelMeta) => singleKey(context, c);
   const heldOf = (c: ChannelMeta) => state.singles.peek(keyOf(c), { allowStale: true });
 
   const load = (wanted: ChannelMeta[]): Promise<void> => {
     const ids = [...new Set(wanted.map((c) => c.id))].sort();
-    return shareInFlight(`guide:${state.id}|${scope}|${pagePath(catalog, { ids })}`, async () => {
-      const entries = await readPage(addon, base, catalog, { ids, date: day });
-      const read = new Map<string, Programme[]>();
-      for (const entry of entries ?? []) {
-        const meta = channelMetaOf(entry, catalog);
-        if (meta) read.set(nameOf(meta), programmesOf(entry));
-      }
-      // A channel without programmes beside ones that have them has none, rather than a guide still loading.
-      const loaded = [...read.values()].some((list) => list.length > 0);
-      for (const channel of wanted) {
-        const stale = heldOf(channel);
-        const list = read.get(nameOf(channel)) ?? [];
-        if (!entries || (!list.length && !loaded && stale && !isEmpty(stale.programmes))) {
-          state.failures.set(keyOf(channel), true);
-          continue;
-        }
-        const empties = list.length || loaded ? 0 : (stale?.empties ?? 0) + 1;
-        state.singles.set(keyOf(channel), { programmes: new Map([[nameOf(channel), list]]), usedAt: addon.now(), empties }, { ttl: ttlOf(empties) });
-      }
+    return shareInFlight(`guide:${state.id}|${hash(base)}|${pagePath(catalog, { ids, date: day })}`, async () => {
+      keepSingles(state, context, wanted, await readPage(addon, base, catalog, { ids, date: day }, budget.until));
     });
   };
 
@@ -262,7 +279,8 @@ export async function programmesFor(
   catalogs: LiveCatalog[],
   channels: Array<{ type: string; id: string }>,
   fromMs: number,
-  toMs: number
+  toMs: number,
+  { waitMs }: { waitMs?: number } = {}
 ): Promise<Map<string, Programme[]>> {
   const state = stateFor(addon);
   const placements = await placementsFor(addon, base, catalogs, channels, { guideOnly: true });
@@ -300,13 +318,15 @@ export async function programmesFor(
     for (const page of pages) {
       const { catalog, skip } = page;
       if (byIds.has(page)) addTo(ids, wholeCatalogs([catalog])[0], page.channels);
-      else work.push({ channels: page.channels, read: () => readDay(state, { base, catalog, skip, day }, budget) });
+      else work.push({ channels: page.channels, read: () => readDay(state, { base, catalog, skip, day, until: budget.until }, budget) });
     }
     for (const { catalog, channels: metas } of ids.values()) {
       for (const part of idChunks(metas)) work.push({ channels: part, read: () => readChannels(state, addon, { base, catalog, day }, part, budget) });
     }
   }
-  const pages = await inBatches(work.map(({ read }) => read), PARALLEL_READS);
+  const pages: Array<GuidePage | null> = [];
+  const reading = inBatches(work.map(({ read }, n) => async () => { pages[n] = await read(); }), PARALLEL_READS);
+  await (waitMs === undefined ? reading : inTime(reading, waitMs));
 
   const found = new Map<string, Map<number, Programme>>();
   let rows = 0;
@@ -452,20 +472,45 @@ export async function programmeTarget(
   return { channel, programme, live: true, streamId: placement.meta.id };
 }
 
+/** The channels a catalog's search answers, with what is on them where one read can bring both. */
+async function searchIn(state: State, addon: GuideAddon, base: string, catalog: LiveCatalog, wanted: string): Promise<ChannelMeta[] | null> {
+  const key = `${hash(base)}|${catalogKey(catalog)}|${wanted}`;
+  const held = state.searches.get(key);
+  if (held) return held;
+  return shareInFlight(`search:${state.id}|${key}`, async () => {
+    const until = addon.now() + SEARCH_READ_MS;
+    const metasOf = (entries: any[]) =>
+      entries.slice(0, MAX_SEARCHED).map((entry) => channelMetaOf(entry, catalog)).filter((meta): meta is ChannelMeta => meta !== null);
+    const read = async (day?: string): Promise<ChannelMeta[] | null> => {
+      const entries = await readPage(addon, base, catalog, { search: wanted, date: day }, until);
+      if (!entries) return null;
+      const metas = metasOf(entries);
+      if (day) keepSingles(state, { base, catalog, day }, metas, entries);
+      if (wanted.length <= MAX_TERM) state.searches.set(key, metas);
+      return metas;
+    };
+    if (!catalog.guide || !isAioStreams(catalog)) return read();
+    const dated = await inTime(read(utcDay(addon.now())), DATED_WAIT_MS);
+    return dated === undefined ? read() : dated;
+  });
+}
+
 export async function searchChannels(addon: GuideAddon, base: string, catalogs: LiveCatalog[], term: string, limit: number): Promise<ListedChannel[]> {
   const wanted = String(term ?? '').trim().toLowerCase();
   const terms = wordsOf(wanted);
-  const until = addon.now() + SEARCH_WAIT_MS;
   const narrowed = narrowedTo(catalogs) !== undefined;
+  const waitMs = narrowed ? PICKED_WAIT_MS : SEARCH_WAIT_MS;
+  const state = stateFor(addon);
 
   const answered = new Set<string>();
+  let complete = true;
   const found = (
     await Promise.all(
       wholeCatalogs(catalogs).filter((c) => c.search).map(async (catalog) => {
-        const entries = await readPage(addon, base, catalog, { search: wanted });
-        if (!entries) return [];
+        const metas = await searchIn(state, addon, base, catalog, wanted);
+        if (!metas) return [];
         answered.add(`${catalog.type}|${catalog.id}`);
-        const metas = entries.map((entry) => channelMetaOf(entry, catalog)).filter((meta): meta is ChannelMeta => meta !== null);
+        if (!isAioStreams(catalog) || metas.length >= AIOSTREAMS_PAGE || metas.some((meta) => !meta.groups)) complete = false;
         for (const meta of metas) rememberFound(addon, base, meta, catalog);
         return metas;
       })
@@ -476,18 +521,17 @@ export async function searchChannels(addon: GuideAddon, base: string, catalogs: 
 
   // The lists of catalogs without a search are read in full, and the whole list only as far as it adds to
   // what the searches answered. A search of the whole addon may be full of other groups' channels, so
-  // picked groups are matched by name as well.
+  // picked groups are matched by name as well, unless it answered all there is.
   const isNumber = (number: string | undefined) => number?.toLowerCase() === wanted;
-  const searchless = narrowed ? catalogs : catalogs.filter((c) => !c.search);
+  const answeredAll = catalogs.every((c) => !c.search || answered.has(`${c.type}|${c.id}`));
+  const numeric = /^\d\S*$/.test(wanted);
+  const searchless = narrowed && (numeric || !complete || !answeredAll) ? catalogs : catalogs.filter((c) => !c.search);
   const patient = searchless.some((c) => !c.search);
-  const unsearched = searchless.length ? await listPlacements(addon, base, searchless, SEARCH_SCAN, () => !patient && addon.now() >= until) : [];
-  const answeredAll =
-    catalogs.every((c) => !c.search || answered.has(`${c.type}|${c.id}`)) &&
-    hits.every((meta) => meta.channelNumber !== undefined);
+  const unsearched = searchless.length ? await listPlacements(addon, base, searchless, SEARCH_SCAN, undefined, patient ? undefined : waitMs) : [];
   const settled = (entries: Placement[]) =>
-    !/^\d\S*$/.test(wanted) || hits.some((meta) => isNumber(meta.channelNumber)) || entries.some((p) => isNumber(p.number));
+    !numeric || hits.some((meta) => isNumber(meta.channelNumber)) || entries.some((p) => isNumber(p.number));
   const scanned = searchless.length === catalogs.length ? unsearched : await listPlacements(addon, base, catalogs, SEARCH_SCAN, (entries) =>
-    addon.now() >= until || (answeredAll && settled(entries))
+    answeredAll && settled(entries), waitMs
   );
   const numbers = new Map(scanned.map((p) => [`${p.meta.type}|${p.meta.id}`, p.number]));
   const asked = hits.map((meta) => ({ meta, number: numbers.get(`${meta.type}|${meta.id}`) ?? meta.channelNumber }));

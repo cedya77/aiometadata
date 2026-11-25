@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
-import { extrasOf, type AddonDeps, type Manifest } from '../addonReader';
+import { extrasOf, isAddonError, type AddonDeps, type Manifest } from '../addonReader';
 
 // An addon may wait some seconds for a guide it is still loading before it answers.
 const GUIDE_TIMEOUT_MS = 10 * 1000;
@@ -111,12 +111,12 @@ export function pagePath(catalog: LiveCatalog, query: PageQuery): string {
   return extras.length ? `${head}/${extras.join('&')}.json` : `${head}.json`;
 }
 
-/** AIOStreams answers a failure with 200 and an entry that names the error. */
-export const isAddonError = (entry: any): boolean => String(entry?.id ?? '').startsWith('aiostreamserror.');
-
 const AIOSTREAMS_CATALOG = /\.(xtream|m3u)$/;
 const AIOSTREAMS_CHANNEL = /^(xtream|m3u)\.[0-9a-f]{8}:/;
-const AIOSTREAMS_PAGE = 100;
+export const AIOSTREAMS_PAGE = 100;
+
+/** Whether a catalog is one of the sources built into AIOStreams. */
+export const isAioStreams = (catalog: LiveCatalog): boolean => AIOSTREAMS_CATALOG.test(catalog.id);
 
 /**
  * Whether a page is the last, as the sources built into AIOStreams page: by 100.
@@ -124,14 +124,14 @@ const AIOSTREAMS_PAGE = 100;
  * short anywhere, so only an empty one ends theirs.
  */
 export function endsList(catalog: LiveCatalog, page: any[]): boolean {
-  return AIOSTREAMS_CATALOG.test(catalog.id)
+  return isAioStreams(catalog)
     && page.length < AIOSTREAMS_PAGE
     && page.length % 10 !== 0
     && page.every((entry) => AIOSTREAMS_CHANNEL.test(String(entry.id)));
 }
 
-export async function readPage(addon: Pick<AddonDeps, 'fetchJson'>, base: string, catalog: LiveCatalog, query: PageQuery): Promise<any[] | null> {
-  const body = await addon.fetchJson(base, pagePath(catalog, query), query.date ? GUIDE_TIMEOUT_MS : undefined);
+export async function readPage(addon: Pick<AddonDeps, 'fetchJson'>, base: string, catalog: LiveCatalog, query: PageQuery, until?: number): Promise<any[] | null> {
+  const body = await addon.fetchJson(base, pagePath(catalog, query), query.date ? GUIDE_TIMEOUT_MS : undefined, until);
   if (!body) return null;
   const lists = query.date ? [body.metasDetailed, body.metas] : [body.metas];
   const entries = lists.find(Array.isArray);

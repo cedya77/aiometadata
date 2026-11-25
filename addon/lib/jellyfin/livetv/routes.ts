@@ -16,6 +16,7 @@ const PROGRAMME_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_LIMIT = 500;
 const MAX_GROUP = 10000;
 const MAX_ASKED_CHANNELS = 1000;
+const ON_NOW_WAIT_MS = 4000;
 
 export interface LiveTvDeps extends GateDeps, ItemDeps {
   decodeLiveId(raw: string): Promise<any>;
@@ -77,7 +78,7 @@ export async function channelItems(
   const serverId = deps.serverIdFor(userOf(req));
   const now = deps.now();
   const airing = withProgram && channels.length
-    ? await programmesFor(deps.addon, live.base, live.reach, channels.map((c) => c.meta), now, now + 1)
+    ? await programmesFor(deps.addon, live.base, live.reach, channels.map((c) => c.meta), now, now + 1, { waitMs: ON_NOW_WAIT_MS })
     : new Map();
   return channels.map((channel) =>
     channelItem(deps, serverId, channel, {
