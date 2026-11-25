@@ -7,7 +7,7 @@ import { imageTag, wideTag } from './imageTags';
 import { LRUCache } from 'lru-cache';
 import { envInt } from '../../utils/envNumber';
 import { encodeJellyfinId, jellyfinIdQueued, parseStremioId } from './ids';
-import { normaliseJellyfinId } from './idsCodec';
+import { isLiveJellyfinId, normaliseJellyfinId } from './idsCodec';
 import { rememberSeriesRatingIds } from './seriesRatingIds';
 import { EMPTY_USER_DATA } from './dto';
 import { walkRecords } from './walkRecords';
@@ -35,6 +35,14 @@ const imageCache = new LRUCache<string, ItemImages>({
   max: envInt('JELLYFIN_IMAGE_CACHE_MAX', 20000, 1),
   ttl: envInt('JELLYFIN_IMAGE_MEMO_TTL', 6 * 60 * 60, 60) * 1000,
 });
+
+// Apart, so that a long channel list leaves the titles' art in place.
+const liveImageCache = new LRUCache<string, ItemImages>({
+  max: envInt('JELLYFIN_IMAGE_CACHE_MAX', 20000, 1),
+  ttl: envInt('JELLYFIN_IMAGE_MEMO_TTL', 6 * 60 * 60, 60) * 1000,
+});
+
+const imagesOf = (itemId: string): LRUCache<string, ItemImages> => (isLiveJellyfinId(itemId) ? liveImageCache : imageCache);
 
 /**
  * Scoped by the configuration's settings: art depends on a user's providers,
@@ -178,7 +186,8 @@ export function rememberImages(scope: string, itemId: string, images: ItemImages
   if (!images.primary && !images.backdrop && !images.logo && !images.thumb) return;
 
   const key = imageKey(scope, itemId);
-  const held = imageCache.get(key);
+  const cache = imagesOf(itemId);
+  const held = cache.get(key);
   if (held && held.primary === images.primary && held.backdrop === images.backdrop && held.logo === images.logo && held.thumb === images.thumb) return;
 
   rememberArt(images.primary);
@@ -186,7 +195,7 @@ export function rememberImages(scope: string, itemId: string, images: ItemImages
   rememberArt(images.logo);
   rememberArt(images.thumb);
 
-  imageCache.set(key, images);
+  cache.set(key, images);
 
   if (redis) queueImageWrite(imageHash(scope), imageField(itemId), JSON.stringify(images));
 }
@@ -207,7 +216,8 @@ export async function recallArt(tag: string): Promise<string | undefined> {
 
 export async function recallImages(scope: string, itemId: string): Promise<ItemImages | undefined> {
   const key = imageKey(scope, itemId);
-  const local = imageCache.get(key);
+  const cache = imagesOf(itemId);
+  const local = cache.get(key);
   if (local) return local;
 
   if (!redis) return undefined;
@@ -216,7 +226,7 @@ export async function recallImages(scope: string, itemId: string): Promise<ItemI
     const stored = await redis.hget(imageHash(scope), imageField(itemId));
     if (!stored) return undefined;
     const images = JSON.parse(stored) as ItemImages;
-    imageCache.set(key, images);
+    cache.set(key, images);
     return images;
   } catch {
     return undefined;
