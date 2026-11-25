@@ -549,10 +549,10 @@ export async function listPlacements(
   base: string,
   catalogs: LiveCatalog[],
   limit: number,
-  enough: (entries: Placement[]) => boolean = () => false,
+  enough?: (entries: Placement[]) => boolean,
   waitMs?: number
 ): Promise<Placement[]> {
-  const list = await walk(addon, base, catalogs, (l) => l.entries.length >= limit || enough(l.entries), { waitMs });
+  const list = await walk(addon, base, catalogs, (l) => l.entries.length >= limit || enough?.(l.entries) === true, { want: enough ? 0 : limit, waitMs });
   return list.entries.slice(0, limit);
 }
 
