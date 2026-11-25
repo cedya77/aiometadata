@@ -21,8 +21,9 @@ export interface Programme {
   imdbId?: string;
 }
 
+// Sliced, as a filtered list keeps spare room.
 const strings = (value: unknown): string[] =>
-  Array.isArray(value) ? value.slice(0, MAX_LISTED).map((v) => clipped(v, MAX_NAME)).filter((v): v is string => v !== undefined) : [];
+  Array.isArray(value) ? value.slice(0, MAX_LISTED).map((v) => clipped(v, MAX_NAME)).filter((v): v is string => v !== undefined).slice() : [];
 
 function wholeNumber(value: unknown): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
