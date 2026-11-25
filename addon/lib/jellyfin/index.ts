@@ -1484,9 +1484,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     // a single flat list with no way to express them.
     if (searchTerm) {
       const askedKinds = includeItemTypes ? String(includeItemTypes).split(',').map((t) => t.trim()).filter(Boolean) : [];
-      const live = await liveSearch(req, liveTv, { term: String(searchTerm), includeItemTypes: askedKinds, startIndex: 0, limit: startIndex + limit });
+      const live = await liveSearch(req, liveTv, { term: String(searchTerm), includeItemTypes: askedKinds, startIndex, limit });
       if (live && !live.rest.length) {
-        res.json(itemList(live.items.slice(startIndex), live.total, startIndex));
+        res.json(itemList(live.items, live.total, startIndex));
         return;
       }
       const kinds = live ? live.rest : askedKinds;

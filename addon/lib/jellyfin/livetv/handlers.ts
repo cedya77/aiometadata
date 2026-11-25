@@ -102,6 +102,7 @@ const CHANNEL_TYPES = new Set(['tvchannel', 'livetvchannel']);
 const PROGRAMME_TYPES = new Set(['livetvprogram', 'tvprogram', 'program']);
 
 export interface LiveFound {
+  /** The page asked for or, when there is a rest to list before them, all up to its end. */
   items: any[];
   total: number;
   /** The asked types that are not Live TV's, for the caller to search. */
@@ -133,13 +134,15 @@ export async function liveSearch(
     aired = filterProgrammes(await programmesAround(deps, live, listed, () => undefined, now), ask, now).items;
   }
 
-  const page = found.slice(startIndex, startIndex + limit);
-  const after = Math.max(0, startIndex - found.length);
+  const rest = types.filter((type) => !CHANNEL_TYPES.has(type.toLowerCase()) && !PROGRAMME_TYPES.has(type.toLowerCase()));
+  const from = rest.length ? 0 : startIndex;
+  const end = startIndex + limit;
+  const page = found.slice(from, end);
+  const after = Math.max(0, from - found.length);
   const items = [
     ...(page.length ? await channelItems(deps, req, live, page, await favouriteKeys(deps, req, config), true) : []),
-    ...programItems(deps, req, aired.slice(after, after + limit - page.length), now),
+    ...programItems(deps, req, aired.slice(after, after + end - from - page.length), now),
   ];
-  const rest = types.filter((type) => !CHANNEL_TYPES.has(type.toLowerCase()) && !PROGRAMME_TYPES.has(type.toLowerCase()));
   return { items, total: found.length + aired.length, rest };
 }
 
