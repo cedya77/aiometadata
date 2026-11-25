@@ -67,7 +67,7 @@ async function fetchRecent(profile: TasteProfile, kind: RecommendKind, chosen: a
         reasoningEffort: reasoningEffort(config),
         // Floored at the client's own default, which this call used to get.
         maxTokens: budgetFor(2048, reasoningEffort(config), 8192),
-        timeout: 60000,
+        timeout: envInt('RECOMMENDATION_RECENT_TIMEOUT', 60, 5) * 1000,
       });
       const queries = result?.groundingMetadata?.webSearchQueries;
       const usage = result?.usage;
@@ -438,7 +438,7 @@ export async function recommend(
       model: recent ? String(model).replace(/:online$/, '') : model,
       prompt: buildPrompt(profile, kind, exclude, asked, watched, searchMode, recent, reasonLanguage(config)),
       systemPrompt: systemPrompt(searchMode),
-      timeout: 90000,
+      timeout: envInt('RECOMMENDATION_PICKS_TIMEOUT', 90, 5) * 1000,
       maxTokens: replyBudget(asked, reasoningEffort(config)),
       reasoningEffort: reasoningEffort(config),
     });

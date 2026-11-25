@@ -189,7 +189,7 @@ export async function getTasteProfile(
       model,
       prompt,
       systemPrompt: SYSTEM_PROMPT,
-      timeout: 60000,
+      timeout: envInt('RECOMMENDATION_PROFILE_TIMEOUT', 60, 5) * 1000,
       maxTokens: budgetFor(profileReplyTokens(), reasoningEffort(config)),
       reasoningEffort: reasoningEffort(config),
     });
