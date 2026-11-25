@@ -33,7 +33,7 @@ export function LiveTvGroups({ id, name, main, addonUrl, rated, value, onChange,
   rated: boolean;
   value?: LiveTvPick;
   onChange: (next: LiveTvPick | undefined) => void;
-  row: (label: string, description: string, body: ReactNode) => ReactNode;
+  row: (label: string, description: string, control: ReactNode, body: ReactNode) => ReactNode;
 }) {
   const url = addonUrl.trim();
   const manifestUrl = manifestUrlOf(url);
@@ -51,6 +51,7 @@ export function LiveTvGroups({ id, name, main, addonUrl, rated, value, onChange,
     staleTime: CHECK_STALE_MS,
     retry: false,
   });
+  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [warning, setWarning] = useState(false);
 
@@ -77,17 +78,30 @@ export function LiveTvGroups({ id, name, main, addonUrl, rated, value, onChange,
       ? `The channel groups ${who} get${main ? '' : 's'} in Live TV. None picked means no Live TV, because of the content rating.`
       : `The channel groups ${who} get${main ? '' : 's'} in Live TV. None picked means all of them.`;
 
+  const pickable = !unreadable && !none;
+  const toggleOpen = () => {
+    setOpen(!open);
+    setSearch('');
+  };
+
+  const control = pickable ? (
+    <div className="flex items-center gap-2">
+      <Button variant="outline" size="sm" aria-expanded={open} onClick={toggleOpen}>{open ? 'Done' : picked.size ? 'Change' : 'Pick groups'}</Button>
+      {picked.size && !open ? <span className="text-xs tabular-nums text-muted-foreground">{picked.size} picked{only ? ', only these' : ''}</span> : null}
+    </div>
+  ) : null;
+
   return (
     <>
-      {row('Live TV groups', description, (
+      {row('Live TV groups', description, control, stale || !pickable || open ? (
         <div className="space-y-2 sm:max-w-xl">
           {stale ? <p className="text-xs text-amber-400">These were picked for another addon.{none ? '' : ' Pick them again.'}</p> : null}
-          {unreadable || none ? (
+          {!pickable ? (
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>{none ? 'This addon has no channel groups.' : "Couldn't read the groups from your browser."} {value?.groups.length ?? 0} picked.</span>
               {value ? <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => onChange(undefined)}>Clear</Button> : null}
             </div>
-          ) : (
+          ) : open ? (
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <Input
@@ -124,8 +138,8 @@ export function LiveTvGroups({ id, name, main, addonUrl, rated, value, onChange,
                 </div>
               ) : null}
             </>
-          )}
-          {picked.size ? (
+          ) : null}
+          {picked.size && (open || !pickable) ? (
             <label htmlFor={`${id}-only`} className="flex items-start justify-between gap-4 pt-1">
               <span className="min-w-0 space-y-0.5">
                 <span className="block text-sm font-medium">Only these groups</span>
@@ -137,7 +151,7 @@ export function LiveTvGroups({ id, name, main, addonUrl, rated, value, onChange,
             </label>
           ) : null}
         </div>
-      ))}
+      ) : null)}
       <AlertDialog open={warning} onOpenChange={setWarning}>
         <AlertDialogContent>
           <AlertDialogHeader>

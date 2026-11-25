@@ -647,7 +647,7 @@ function PersonDetail({ person, allTags, hasPmdb, mainSkipSource, showHandoff, j
                 rated={configRated || caps.length > 0}
                 value={user.liveTv}
                 onChange={(next) => onChange({ liveTv: next })}
-                row={(label, description, body) => <SettingRow label={label} description={description}>{body}</SettingRow>}
+                row={(label, description, control, body) => <SettingRow label={label} description={description} control={control}>{body}</SettingRow>}
               />
             ) : null}
           </Group>
