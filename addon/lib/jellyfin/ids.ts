@@ -63,7 +63,7 @@ export function encodeJellyfinId(raw: Descriptor): string {
   const id = hashJellyfinId(d);
   cache.set(id, d);
 
-  if (!persisted.has(id)) {
+  if (!persisted.get(id)) {
     persisted.set(id, true);
     pending.push({ id, payload: d, codecVersion: CODEC_VERSION });
     scheduleFlush();
