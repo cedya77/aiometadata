@@ -55,7 +55,8 @@ export function LiveTvGroups({ id, name, main, addonUrl, rated, value, onChange,
   const gone = useMemo(() => [...picked].filter((group) => !groups.includes(group)), [picked, groups]);
 
   const unreadable = !readable || (check !== undefined && !check.ok);
-  if (!groups.length && !(value && unreadable)) return null;
+  const none = check?.ok && !groups.length;
+  if (!groups.length && !(value && (unreadable || none))) return null;
 
   const set = (next: string[]) => onChange(withGroups(stale ? undefined : value, url, next));
   const toggle = (group: string) => set(picked.has(group) ? [...picked].filter((g) => g !== group) : [...picked, group]);
@@ -72,11 +73,11 @@ export function LiveTvGroups({ id, name, main, addonUrl, rated, value, onChange,
     <>
       {row('Live TV groups', description, (
         <div className="space-y-2 sm:max-w-xl">
-          {stale ? <p className="text-xs text-amber-400">These were picked for another addon. Pick them again.</p> : null}
-          {unreadable ? (
+          {stale ? <p className="text-xs text-amber-400">These were picked for another addon.{none ? '' : ' Pick them again.'}</p> : null}
+          {unreadable || none ? (
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span>Couldn't read the groups from your browser. {picked.size} picked.</span>
-              {picked.size ? <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => set([])}>Clear</Button> : null}
+              <span>{none ? 'This addon has no channel groups.' : "Couldn't read the groups from your browser."} {value?.groups.length ?? 0} picked.</span>
+              {value ? <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => onChange(undefined)}>Clear</Button> : null}
             </div>
           ) : (
             <>
