@@ -574,7 +574,9 @@ export async function guideChannels(addon: LineupAddon, base: string, catalogs: 
   if (last < 0) return [];
   const guided = (list: Assembly) => list.entries.filter((p) => p.catalog?.guide);
   const list = await walk(addon, base, catalogs, (l) => l.lineups[last]?.done === true || guided(l).length >= limit, { want: limit });
-  return guided(list).slice(0, limit).map(({ meta, number }) => ({ meta, number }));
+  const page = guided(list).slice(0, limit);
+  for (const entry of page) rememberListed(addon, base, entry, entry.number);
+  return page.map(({ meta, number }) => ({ meta, number }));
 }
 
 type ChannelRef = Pick<ChannelMeta, 'type' | 'id'>;
