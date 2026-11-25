@@ -5169,6 +5169,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'RECOMMENDATION_RETRY_MAX',
+    envVar: 'RECOMMENDATION_RETRY_MAX',
+    label: 'Recommendations Retry Cap (seconds)',
+    description: 'A row whose rebuild failed keeps its last picks and is tried again after one sweep, then twice as long each time, up to this.',
+    category: 'Features',
+    type: 'number',
+    default: 21600,
+    min: 60,
+  },
+  {
     key: 'RECOMMENDATION_COUNT',
     envVar: 'RECOMMENDATION_COUNT',
     label: 'Recommendations Asked For',

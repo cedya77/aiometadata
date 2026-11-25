@@ -506,12 +506,55 @@ export async function recommend(
 
   // Rewriting this before it expires is the shared refresh-ahead's job, one
   // layer up: a page rebuild re-runs this build with the source cache bypassed.
+  const { classifyResult }: any = require('../../lib/getCache');
+  const { runWithSourceRefetch, sourceRefetchRequested }: any = require('../../lib/cacheSourceRefetch');
+  const keep: any = require('./keep');
+  const refetch = sourceRefetchRequested();
   let built = false;
+  let held = false;
   const picks = await cacheWrapGlobal(key, async () => {
-    const result = await build();
+    if (!refetch) {
+      // A lapsed row keeps its last picks while a rebuild runs, rather than waiting on the model.
+      const last = await keep.readLastPicks(key);
+      if (last) {
+        held = true;
+        if (await keep.rebuildDue(key)) {
+          void runWithSourceRefetch(() => recommend(config, userUUID, profile, kind, want))
+            .catch((error: any) => logger.warn(`Could not rebuild ${kind} picks for ${userUUID}: ${error?.message || error}`));
+        }
+        return last;
+      }
+    }
+    let result: any[] = [];
+    let failure: any = null;
+    try {
+      result = await build();
+    } catch (error: any) {
+      failure = error;
+    }
+    if (result.length) {
+      built = true;
+      await keep.writeLastPicks(key, result, ttl);
+      if (refetch) await keep.noteRebuild(key, true);
+      return result;
+    }
+    if (refetch) {
+      // A rebuild that fails or finds nothing keeps the picks it was meant to replace.
+      await keep.noteRebuild(key, false);
+      const kept = await keep.heldPicks(key, ttl);
+      if (kept) {
+        held = true;
+        logger.warn(`Kept the last ${kind} picks for ${userUUID}: ${failure ? failure.message || failure : 'the rebuild found nothing'}`);
+        return kept;
+      }
+    }
+    if (failure) throw failure;
     built = true;
     return result;
-  }, ttl, { sourceList: true });
+  }, ttl, {
+    sourceList: true,
+    resultClassifier: (result: any, error: any, cacheKey: string) => (held ? { type: 'SKIP_CACHE', ttl: 0 } : classifyResult(result, error, cacheKey)),
+  });
   if (built) await require('./refresh').bumpRowStamp(require('./history').viewerKey(config, userUUID));
   return picks;
 }

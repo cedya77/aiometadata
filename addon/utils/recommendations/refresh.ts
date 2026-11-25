@@ -59,7 +59,8 @@ export async function sweepRecommendations(): Promise<{ checked: number; refresh
     const { RECOMMENDATION_CATALOGS, isRecommendationCatalog }: any = require('./catalog');
     const { picksKey, recommend }: any = require('./rank');
     const { getTasteProfile }: any = require('./profile');
-    const { hasOwnHistory, runAsProfile }: any = require('./history');
+    const { hasOwnHistory, runAsProfile, viewerKey }: any = require('./history');
+    const { hasLastPicks, rebuildDue }: any = require('./keep');
     const leadMs = envInt('RECOMMENDATION_REFRESH_LEAD', 3600, 60) * 1000;
 
     const seen: string[] = [];
@@ -97,14 +98,20 @@ export async function sweepRecommendations(): Promise<{ checked: number; refresh
           const kind = RECOMMENDATION_CATALOGS.find((entry: any) => entry.id === id)?.kind;
           if (!kind) continue;
           out.checked += 1;
-          const ttlMs = await redis.pttl(withGlobalEpoch(picksKey(viewerConfig, user.id, kind)));
-          if (!(ttlMs > 0 && ttlMs <= leadMs)) continue;
+          const key = picksKey(viewerConfig, user.id, kind);
+          const ttlMs = await redis.pttl(withGlobalEpoch(key));
+          // Picks that lapsed after failed rebuilds are still served from the last good ones, so they are rebuilt too.
+          const lapsed = ttlMs === -2 && (await hasLastPicks(key));
+          if (!(ttlMs > 0 && ttlMs <= leadMs) && !lapsed) continue;
+          if (!(await rebuildDue(key))) continue;
           try {
             profile = profile ?? (await runWithRequestContext(user.id, () => getTasteProfile(viewerConfig, user.id)));
             if (!profile) break;
+            const before = await rowStamp(viewerKey(viewerConfig, user.id));
             const picks = await runWithRequestContext(user.id, () => runWithSourceRefetch(() => recommend(viewerConfig, user.id, profile, kind)));
+            if ((await rowStamp(viewerKey(viewerConfig, user.id))) === before) continue;
             out.refreshed += 1;
-            logger.info(`Refreshed ${id} for ${viewer} ${Math.round(ttlMs / 60000)} min before it lapsed: ${picks.length} picks`);
+            logger.info(`Refreshed ${id} for ${viewer} ${lapsed ? 'after it lapsed' : `${Math.round(ttlMs / 60000)} min before it lapsed`}: ${picks.length} picks`);
           } catch (error: any) {
             logger.warn(`Could not refresh ${id} for ${viewer}: ${error?.message || error}`);
           }
