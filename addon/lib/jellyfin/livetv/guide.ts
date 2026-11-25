@@ -3,8 +3,11 @@
 import { LRUCache } from 'lru-cache';
 import { chunksOf, clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
 import { catalogKey, IDS_PER_READ, narrowedTo, pagePath, readPage, utcDay, wholeCatalogs, type LiveCatalog } from './catalogs';
-import { admitted, channelMetaOf, GONE, listPlacements, placementFor, placementsFor, rememberFound, type ChannelMeta, type ListedChannel, type Placement } from './lineup';
+import { admitted, channelMetaOf, GONE, listPlacements, placementFor, placementsFor, rememberFound, scheduleOf, type ChannelMeta, type ListedChannel, type Placement } from './lineup';
+import { pageSize, programmesOf, type Programme } from './programmes';
 import { flag, integer, listOf, timeOf, type Ask } from './query';
+
+export { airingAt, pageSize, programmesOf, type Programme } from './programmes';
 
 const READ_TTL_MS = 30 * 60 * 1000;
 const EMPTY_TTL_MS = 60 * 1000;
@@ -24,22 +27,6 @@ const SEARCH_SCAN = 5000;
 const SEARCH_WAIT_MS = 4000;
 const MAX_REQUEST_READS = 400;
 const REQUEST_READ_MS = 15 * 1000;
-
-export interface Programme {
-  id: string;
-  title: string;
-  start: number;
-  end: number;
-  overview?: string;
-  image?: string;
-  background?: string;
-  genres?: string[];
-  cast?: string[];
-  directors?: string[];
-  season?: number;
-  episode?: number;
-  imdbId?: string;
-}
 
 export interface GuideItem {
   channel: ListedChannel;
@@ -78,72 +65,6 @@ interface ReadBudget {
 
 const states = new WeakMap<object, State>();
 let serial = 0;
-
-const text = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined);
-
-const strings = (value: unknown): string[] =>
-  Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v.length > 0) : [];
-
-function wholeNumber(value: unknown): number | undefined {
-  if (value === undefined || value === null || value === '') return undefined;
-  const n = Number(value);
-  return Number.isInteger(n) && n >= 0 ? n : undefined;
-}
-
-export function programmesOf(entry: any): Programme[] {
-  const parsed: Programme[] = [];
-  for (const video of Array.isArray(entry?.videos) ? entry.videos : []) {
-    const id = text(video?.id);
-    const start = timeOf(video?.startTime);
-    const end = timeOf(video?.endTime);
-    if (!id || start === null || end === null || end <= start) continue;
-    const programme: Programme = { id, title: text(video.title) ?? text(video.name) ?? '', start, end };
-    const overview = text(video.description) ?? text(video.overview);
-    if (overview) programme.overview = overview;
-    const image = text(video.thumbnail);
-    const background = text(video.background);
-    if (image) programme.image = image;
-    if (background) programme.background = background;
-    for (const key of ['genres', 'cast', 'directors'] as const) {
-      const list = strings(video[key]);
-      if (list.length) programme[key] = list;
-    }
-    const season = wholeNumber(video.season);
-    const episode = wholeNumber(video.episode);
-    if (season !== undefined) programme.season = season;
-    if (episode !== undefined) programme.episode = episode;
-    const imdbId = text(video.imdbId);
-    if (imdbId) programme.imdbId = imdbId;
-    parsed.push(programme);
-  }
-  parsed.sort((a, b) => a.start - b.start || b.end - a.end);
-  const kept: Programme[] = [];
-  for (const programme of parsed) {
-    const last = kept[kept.length - 1];
-    if (last && last.start === programme.start) continue;
-    if (last && last.end > programme.start) last.end = programme.start;
-    kept.push(programme);
-  }
-  return kept;
-}
-
-export function airingAt(programmes: Programme[] | undefined, atMs: number): Programme | undefined {
-  return programmes?.find((p) => p.start <= atMs && atMs < p.end);
-}
-
-export function pageSize(programmes: Map<string, Programme[]>): number {
-  let size = 1;
-  for (const list of programmes.values()) {
-    for (const programme of list) {
-      size += 200;
-      for (const value of Object.values(programme)) {
-        if (typeof value === 'string') size += value.length;
-        else if (Array.isArray(value)) for (const part of value) size += part.length + 16;
-      }
-    }
-  }
-  return size;
-}
 
 const isEmpty = (programmes: Map<string, Programme[]>): boolean => [...programmes.values()].every((list) => !list.length);
 
@@ -361,6 +282,11 @@ export async function programmesFor(
   });
 
   const merged = new Map<string, Programme[]>();
+  placements.forEach((placement, n) => {
+    if (!placement || placement === GONE || placement.catalog?.guide) return;
+    const own = scheduleOf(addon, base, channels[n]).filter((p) => p.start < toMs && p.end > fromMs);
+    if (own.length) merged.set(`${placement.meta.type}|${placement.meta.id}`, own);
+  });
   for (const [key, byStart] of found) merged.set(key, [...byStart.values()].sort((a, b) => a.start - b.start));
   return merged;
 }
@@ -501,24 +427,30 @@ export async function searchChannels(addon: GuideAddon, base: string, catalogs: 
 
   const hits = admitted(addon, base, catalogs, found);
 
-  // A catalog without a search is read in full. Otherwise the list only adds to what the searches answered.
-  // A search of the whole addon may be full of other groups' channels, so groups are matched by name as well.
-  const unsearchable = catalogs.some((c) => !c.search);
-  const answeredAll = !narrowed && catalogs.every((c) => answered.has(`${c.type}|${c.id}`)) && hits.every((meta) => meta.channelNumber !== undefined);
+  // The lists of catalogs without a search are read in full, and the whole list only as far as it adds to
+  // what the searches answered. A search of the whole addon may be full of other groups' channels, so
+  // picked groups are matched by name as well.
   const isNumber = (number: string | undefined) => number?.toLowerCase() === wanted;
+  const searchless = narrowed ? catalogs : catalogs.filter((c) => !c.search);
+  const patient = searchless.some((c) => !c.search);
+  const unsearched = searchless.length ? await listPlacements(addon, base, searchless, SEARCH_SCAN, () => !patient && addon.now() >= until) : [];
+  const answeredAll =
+    catalogs.every((c) => !c.search || answered.has(`${c.type}|${c.id}`)) &&
+    hits.every((meta) => meta.channelNumber !== undefined);
   const settled = (entries: Placement[]) =>
     !/^\d\S*$/.test(wanted) || hits.some((meta) => isNumber(meta.channelNumber)) || entries.some((p) => isNumber(p.number));
-  const scanned = await listPlacements(addon, base, catalogs, SEARCH_SCAN, (entries) =>
-    !unsearchable && (addon.now() >= until || (answeredAll && settled(entries)))
+  const scanned = searchless.length === catalogs.length ? unsearched : await listPlacements(addon, base, catalogs, SEARCH_SCAN, (entries) =>
+    addon.now() >= until || (answeredAll && settled(entries))
   );
   const numbers = new Map(scanned.map((p) => [`${p.meta.type}|${p.meta.id}`, p.number]));
   const asked = hits.map((meta) => ({ meta, number: numbers.get(`${meta.type}|${meta.id}`) ?? meta.channelNumber }));
-  const exactNumber = scanned
-    .filter((p) => isNumber(p.number))
-    .map((p) => ({ meta: p.meta, number: p.number }));
-  const named = scanned
+  const exactNumber = [
+    ...scanned.filter((p) => isNumber(p.number)).map((p) => ({ meta: p.meta, number: p.number })),
+    ...unsearched.filter((p) => isNumber(p.meta.channelNumber)).map((p) => ({ meta: p.meta, number: p.meta.channelNumber })),
+  ];
+  const named = [...scanned, ...unsearched]
     .filter((p) => (narrowed || !answered.has(`${p.catalog?.type}|${p.catalog?.id}`)) && terms.length > 0 && terms.every((word) => p.meta.name.toLowerCase().includes(word)))
-    .map((p) => ({ meta: p.meta, number: p.number }));
+    .map((p) => ({ meta: p.meta, number: numbers.get(`${p.meta.type}|${p.meta.id}`) ?? p.meta.channelNumber }));
 
   const seen = new Set<string>();
   const all = [...exactNumber, ...asked, ...named].filter((c) => {

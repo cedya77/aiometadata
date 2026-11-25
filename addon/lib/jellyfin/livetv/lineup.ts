@@ -3,6 +3,7 @@
 import { LRUCache } from 'lru-cache';
 import { chunksOf, clockOptions, hash, inBatches, shareInFlight, type AddonDeps } from '../addonReader';
 import { catalogKey, endsList, IDS_PER_READ, isAddonError, narrowedTo, pagePath, readPage, wholeCatalogs, type LiveCatalog } from './catalogs';
+import { pageSize, programmesOf, type Programme } from './programmes';
 
 const LINEUP_TTL_MS = 60 * 60 * 1000;
 const PLACEMENT_TTL_MS = 60 * 60 * 1000;
@@ -20,6 +21,10 @@ const SWEEP_MS = 10 * 60 * 1000;
 const PARALLEL_META_READS = 8;
 const PARALLEL_ID_READS = 4;
 const MAX_GROUPS_KEPT = 50;
+const DETAILS_FIRST = 4;
+const SCHEDULE_TTL_MS = 30 * 60 * 1000;
+const MAX_SCHEDULES = 5000;
+const MAX_SCHEDULE_BYTES = 16 * 1024 * 1024;
 
 export interface ChannelMeta {
   id: string;
@@ -80,6 +85,8 @@ interface State {
   failures: LRUCache<string, true>;
   /** Channels the reads by id answered without. */
   unknown: LRUCache<string, true>;
+  /** The programmes that came with a channel's details. */
+  schedules: LRUCache<string, Programme[]>;
 }
 
 const states = new WeakMap<object, State>();
@@ -109,6 +116,13 @@ export function stateFor(addon: LineupAddon): State {
       assemblies,
       failures: new LRUCache<string, true>({ max: MAX_FAILURES, ttl: FAILURE_MS, ...clock }),
       unknown: new LRUCache<string, true>({ max: MAX_FAILURES, ttl: EMPTY_TTL_MS, ...clock }),
+      schedules: new LRUCache<string, Programme[]>({
+        max: MAX_SCHEDULES,
+        maxSize: MAX_SCHEDULE_BYTES,
+        sizeCalculation: (list) => pageSize(new Map([['', list]])),
+        ttl: SCHEDULE_TTL_MS,
+        ...clock,
+      }),
     };
     states.set(addon, created);
     setInterval(() => purge(created), SWEEP_MS).unref();
@@ -459,14 +473,22 @@ async function readMeta(state: State, addon: LineupAddon, base: string, { type, 
   // Found this way it has no guide, so it is looked up by its id again soon.
   const ttl = state.failures.has(`ids|${key}`) ? FAILURE_MS : PLACEMENT_TTL_MS;
   state.placements.set(key, meta ? { meta, number: meta.channelNumber } : GONE, { ttl });
+  const programmes = meta ? programmesOf(body.meta) : [];
+  if (programmes.length) state.schedules.set(key, programmes);
+}
+
+/** The programmes held from a channel's details. */
+export function scheduleOf(addon: LineupAddon, base: string, { type, id }: ChannelRef): Programme[] {
+  return stateFor(addon).schedules.get(placementKey(base, type, id)) ?? [];
 }
 
 /**
  * Where each channel is listed or found: in the list as read so far, by its id
- * in the catalogs that take ids, further down the list where one does not, and
- * by its meta. `guideOnly` leaves out what only the channel's own name or
- * number needs. Catalogs narrowed to groups answer GONE for any other channel,
- * also one found for someone else.
+ * in the catalogs that take ids, by its details when few are asked for, and in
+ * the lists of the catalogs without ids. A list is never read for a number.
+ * `guideOnly` reads no details, and only lists that lead to a guide. Catalogs
+ * narrowed to groups answer GONE for any other channel, also one found for
+ * someone else.
  */
 export async function placementsFor(
   addon: LineupAddon,
@@ -476,37 +498,41 @@ export async function placementsFor(
   { guideOnly = false }: { guideOnly?: boolean } = {}
 ): Promise<Array<Placement | typeof GONE | null>> {
   const state = stateFor(addon);
-  let list = assemble(state, addon, base, catalogs);
   const keyOf = (c: ChannelRef) => placementKey(base, c.type, c.id);
   const held = (c: ChannelRef) => state.placements.get(keyOf(c));
-  const located = (c: ChannelRef): Placement | undefined => {
+  const whole = () => assemble(state, addon, base, catalogs).byKey;
+  const admits = (p: Placement) => admitter(state, base, catalogs)(p.meta, p.catalog);
+  const found = (c: ChannelRef): Placement | undefined => {
     const placement = held(c);
-    return placement && placement !== GONE && placement.catalog ? placement : undefined;
+    return placement && placement !== GONE && admits(placement) ? placement : undefined;
   };
-  const unlisted = () => [...new Map(channels.filter((c) => !list.byKey.has(channelKey(c))).map((c) => [channelKey(c), c])).values()];
+  const unlisted = whole();
+  const left = [...new Map(channels.filter((c) => !unlisted.has(channelKey(c))).map((c) => [channelKey(c), c])).values()];
+  if (left.length) await findByIds(state, addon, base, wholeCatalogs(catalogs), left.filter((c) => !found(c)?.catalog));
 
-  let left = unlisted();
-  if (left.length) await findByIds(state, addon, base, wholeCatalogs(catalogs), left.filter((c) => !located(c)));
-  const allById = catalogs.every((c) => c.ids);
-  const toWalk = left.filter((c) => {
-    const placement = located(c);
-    return placement ? !guideOnly && placement.number === undefined && placement.skip === undefined : !allById;
-  });
-  if (toWalk.length) {
-    list = await walk(addon, base, catalogs, (l) => toWalk.every((c) => l.byKey.has(channelKey(c))));
-    left = unlisted();
+  const read = (list: ChannelRef[]) => inBatches(list.map((c) => () => readMeta(state, addon, base, c)), PARALLEL_META_READS);
+  const first = !guideOnly && left.length <= DETAILS_FIRST;
+  // When a read of many channels fails, as under a rate limit, a read of each would only add to it.
+  const readable = (c: ChannelRef) => held(c) === undefined && (channels.length === 1 || !state.failures.has(`ids|${keyOf(c)}`));
+  if (first) await read(left.filter(readable));
+
+  const lists = catalogs.filter((c) => !c.ids && (!guideOnly || c.guide));
+  const toFind = left.filter((c) => (guideOnly ? !found(c)?.catalog && !state.schedules.has(keyOf(c)) : !found(c)));
+  let walked: Assembly | undefined;
+  if (lists.length && toFind.length) {
+    walked = await walk(addon, base, lists, (w) => toFind.every((c) => w.byKey.has(channelKey(c))));
   }
-  if (!guideOnly) {
-    // When a read of many channels fails, as under a rate limit, a read of each would only add to it.
-    const readable = left.filter((c) => held(c) === undefined && (channels.length === 1 || !state.failures.has(`ids|${keyOf(c)}`)));
-    await inBatches(readable.map((c) => () => readMeta(state, addon, base, c)), PARALLEL_META_READS);
-  }
-  const admits = admitter(state, base, catalogs);
+  if (!guideOnly && !first) await read(left.filter((c) => !walked?.byKey.has(channelKey(c)) && readable(c)));
+
+  const listed = whole();
   return channels.map((c) => {
-    const listed = list.byKey.get(channelKey(c));
-    if (listed) return listed;
-    const found = held(c);
-    return found && found !== GONE && !admits(found.meta, found.catalog) ? GONE : found ?? null;
+    const inWhole = listed.get(channelKey(c));
+    if (inWhole) return inWhole;
+    const inLists = walked?.byKey.get(channelKey(c));
+    // Its place in some of the lists is not its place in all of them.
+    if (inLists) return lists.length === catalogs.length ? inLists : { ...inLists, number: inLists.meta.channelNumber };
+    const placement = held(c);
+    return placement && placement !== GONE && !admits(placement) ? GONE : placement ?? null;
   });
 }
 
