@@ -586,10 +586,11 @@ function admitter(state: State, base: string, catalogs: LiveCatalog[]): (meta: C
   const names = narrowedTo(catalogs);
   if (!names) return () => true;
   const lineups = catalogs.map((c) => state.lineups.peek(lineupKey(base, c), { allowStale: true }));
-  return (meta, from) =>
-    (meta.groups ?? []).some((g) => names.has(g)) ||
-    (from?.genre !== undefined && names.has(from.genre)) ||
-    lineups.some((l) => l?.keys.has(channelKey(meta)));
+  return (meta, from) => {
+    if ((meta.groups ?? []).some((g) => names.has(g)) || (from?.genre !== undefined && names.has(from.genre))) return true;
+    const key = channelKey(meta);
+    return lineups.some((l) => l?.keys.has(key));
+  };
 }
 
 /** Those of the channels found that these catalogs hold. */
