@@ -4,18 +4,56 @@ import type { LiveTvPick } from '@/contexts/config';
 
 export const MAX_PICKED = 1000;
 
-type Extra = { name?: unknown; isRequired?: unknown; options?: unknown };
+// What the server keeps of a manifest: the limits of addonReader.ts.
+const MAX_CATALOGS = 50;
+const MAX_OPTIONS = 5000;
+const MAX_OPTION = 200;
+const MAX_MANIFEST = 256 * 1024;
 
-/** The channel groups of a manifest's live catalogs, as the server tells one. */
+interface Extra {
+  name: string;
+  isRequired?: boolean;
+  options?: unknown[];
+}
+
+const kept = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= MAX_OPTION;
+
+const listed = (value: unknown): any[] => (Array.isArray(value) ? value : []);
+
+/** The extras a catalog declares, as the server reads them: objects, or the older lists of names. */
+function extrasOf(catalog: any): Extra[] {
+  const extras = new Map<string, Extra>();
+  for (const extra of listed(catalog.extra)) {
+    if (typeof extra?.name !== 'string') continue;
+    extras.set(extra.name, { name: extra.name, isRequired: Boolean(extra.isRequired), options: extra.name === 'genre' ? listed(extra.options) : undefined });
+  }
+  for (const name of listed(catalog.extraSupported)) if (typeof name === 'string' && !extras.has(name)) extras.set(name, { name });
+  for (const name of listed(catalog.extraRequired)) if (typeof name === 'string') extras.set(name, { name, isRequired: true });
+  return [...extras.values()];
+}
+
+/** The channel groups the server can apply: of the live catalogs, as far as it keeps the manifest. */
 export function channelGroups(manifest: any): string[] {
   const guideProvider = manifest?.behaviorHints?.epgProvider === true;
   const groups = new Set<string>();
-  for (const catalog of Array.isArray(manifest?.catalogs) ? manifest.catalogs : []) {
-    const extras: Extra[] = (Array.isArray(catalog?.extra) ? catalog.extra : []).filter((e: any) => typeof e?.name === 'string');
-    if (extras.some((e) => e.isRequired) || (Array.isArray(catalog?.extraRequired) && catalog.extraRequired.length)) continue;
-    if (catalog?.type !== 'tv' && !(guideProvider && extras.some((e) => e.name === 'date'))) continue;
-    const options = extras.find((e) => e.name === 'genre')?.options;
-    for (const option of Array.isArray(options) ? options : []) if (typeof option === 'string' && option) groups.add(option);
+  const seen = new Set<string>();
+  let room = MAX_MANIFEST;
+  const fits = (value: string) => (room -= value.length + 4) >= 0;
+  let count = 0;
+  for (const catalog of listed(manifest?.catalogs)) {
+    if (count >= MAX_CATALOGS) break;
+    if (!kept(catalog?.type) || !kept(catalog.id)) continue;
+    const extras = extrasOf(catalog).filter((e) => kept(e.name)).slice(0, MAX_CATALOGS);
+    const guide = extras.some((e) => e.name === 'date');
+    if (catalog.type !== 'tv' && !guide) continue;
+    if (![catalog.type, catalog.id, ...extras.map((e) => e.name)].every(fits)) break;
+    // Also what is not offered below takes room.
+    const options = listed(extras.find((e) => e.name === 'genre')?.options).slice(0, MAX_OPTIONS).filter((o) => kept(o) && fits(o));
+    count++;
+    const key = `${catalog.type}|${catalog.id}`;
+    if (extras.some((e) => e.isRequired) || (catalog.type !== 'tv' && !guideProvider) || seen.has(key)) continue;
+    seen.add(key);
+    for (const option of options) groups.add(option);
   }
   return [...groups];
 }
