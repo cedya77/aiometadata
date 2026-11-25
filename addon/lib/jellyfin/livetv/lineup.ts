@@ -647,10 +647,10 @@ async function readMeta(state: State, addon: LineupAddon, base: string, { type, 
     return;
   }
   const meta = body.meta ? channelMetaOf({ ...body.meta, id, type }, { type }) : null;
-  // Found this way it has no guide, so it is looked up by its id again soon.
-  const ttl = state.failures.has(`ids|${key}`) ? FAILURE_MS : PLACEMENT_TTL_MS;
-  state.placements.set(key, meta ? { meta, number: meta.channelNumber } : GONE, { ttl });
   const programmes = meta ? programmesOf(body.meta) : [];
+  // Found this way it has no guide, so it is looked up by its id again soon.
+  const ttl = state.failures.has(`ids|${key}`) ? FAILURE_MS : programmes.length ? SCHEDULE_TTL_MS : PLACEMENT_TTL_MS;
+  state.placements.set(key, meta ? { meta, number: meta.channelNumber } : GONE, { ttl });
   if (programmes.length) state.schedules.set(key, programmes);
 }
 
