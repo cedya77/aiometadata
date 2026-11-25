@@ -188,8 +188,9 @@ export async function programmesAround(deps: LiveTvDeps, live: LiveTv, channels:
   const max = timeOf(ask('MaxStartDate')) ?? timeOf(ask('MaxEndDate'));
   const aired = flag(ask('HasAired')) === true;
   const past = aired || (max !== null && max <= now);
-  const from = Math.max(range.start, min ?? (past ? range.start : now));
-  const to = Math.min(range.end, max ?? (aired ? now : Math.max(now, from) + PROGRAMME_WINDOW_MS));
+  const airing = flag(ask('IsAiring')) === true;
+  const from = airing ? now : Math.max(range.start, min ?? (past ? range.start : now));
+  const to = airing ? now : Math.min(range.end, max ?? (aired ? now : Math.max(now, from) + PROGRAMME_WINDOW_MS));
   if (!channels.length || from > to) return [];
   const found = await programmesFor(deps.addon, live.base, live.reach, channels.map((c) => c.meta), from, to + 1);
   const items: GuideItem[] = [];
