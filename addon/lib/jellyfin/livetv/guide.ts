@@ -470,12 +470,17 @@ export async function programmeTarget(
   addon: GuideAddon,
   base: string,
   catalogs: LiveCatalog[],
-  { t, i, at }: { t: string; i: string; at: number }
+  { t, i, at }: { t: string; i: string; at: number },
+  { playing = false }: { playing?: boolean } = {}
 ): Promise<ProgrammeTarget | null> {
   const placement = await placementFor(addon, base, catalogs, { type: t, id: i });
   if (!placement || placement === GONE) return null;
   const channel: ListedChannel = { meta: placement.meta, number: placement.number };
   const startMs = at * 1000;
+  // An id holds its start to the second.
+  if (playing && ![startMs, startMs + 999].some((start) => caughtUp(placement.meta, start, addon.now()))) {
+    return { channel, live: true, streamId: placement.meta.id };
+  }
   const startingIn = async (fromMs: number): Promise<Programme | undefined> => {
     const found = await programmesFor(addon, base, catalogs, [{ type: t, id: i }], fromMs, fromMs + 1000);
     return (found.get(`${placement.meta.type}|${placement.meta.id}`) ?? []).find((p) => Math.floor(p.start / 1000) === at);

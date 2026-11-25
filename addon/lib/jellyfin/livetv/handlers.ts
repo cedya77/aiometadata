@@ -71,7 +71,7 @@ export async function livePlayback(
   const allowHeaders = req.body?.EnableRequiredHttpHeaders === true;
 
   if (descriptor.k === 'program') {
-    const target = await programmeTarget(deps.addon, live.base, live.reach, descriptor);
+    const target = await programmeTarget(deps.addon, live.base, live.reach, descriptor, { playing: true });
     if (!target) return NOT_FOUND;
     const { meta } = target.channel;
     if (!target.live && target.runtimeMs) {
