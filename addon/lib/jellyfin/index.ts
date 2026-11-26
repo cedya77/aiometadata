@@ -1257,8 +1257,9 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       const origins = { WatchlistSources: watchlistOrigins(config) };
       const shelved = await serverWatchlistItems(userUUID, config, serverId, wanted);
       if (shelved) {
-        await applyWatchedState(shelved, await watchedSnapshot(userUUID, config), userUUID, profileKey(config));
-        res.json({ ...itemList(shelved.slice(startIndex, startIndex + limit), shelved.length, startIndex), ...origins, WatchlistComplete: true });
+        const page = shelved.slice(startIndex, startIndex + limit);
+        await applyWatchedState(page, await watchedSnapshot(userUUID, config), userUUID, profileKey(config));
+        res.json({ ...itemList(page, shelved.length, startIndex), ...origins, WatchlistComplete: true });
         return;
       }
       const read = await watchlistEntries(userUUID, config);
