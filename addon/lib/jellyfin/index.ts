@@ -3237,10 +3237,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     return { body: Buffer.concat(chunks), contentType: upstream.contentType };
   };
 
-  const sendArtwork = (res: any, image: { body: Buffer; contentType: string }): void => {
+  const sendArtwork = (res: any, image: { body: Buffer; contentType: string }, lasting = true): void => {
     res.set('Content-Type', image.contentType);
     res.set('Content-Security-Policy', IMAGE_CSP);
-    res.set('Cache-Control', 'public, max-age=86400');
+    res.set('Cache-Control', lasting ? 'public, max-age=86400' : 'no-store');
     res.end(image.body);
   };
 
@@ -3261,7 +3261,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       sendArtwork(res, image);
     } catch (error: any) {
       if (error instanceof ImageQueueFull) {
-        if (source) sendArtwork(res, source);
+        if (source) sendArtwork(res, source, false);
         else if (relaying) await relayImage(req, res, url);
         else res.redirect(302, url);
         return;
@@ -3290,7 +3290,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       sendArtwork(res, image);
     } catch (error: any) {
       if (!(error instanceof ImageQueueFull)) logger.debug(`Image resize failed for ${url}: ${error?.message || error}`);
-      if (error instanceof ImageQueueFull && source) sendArtwork(res, source);
+      if (error instanceof ImageQueueFull && source) sendArtwork(res, source, false);
       else if (relaying) await relayImage(req, res, url);
       else res.redirect(302, url);
     }
