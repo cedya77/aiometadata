@@ -49,7 +49,7 @@ import { createRedisStore } from './syncplay/store';
 import { noteDefaultSource, noteGroupPlaying, preferGroupRelease, recordedDefaultFirst } from './syncplay/releases';
 import { deviceBack, deviceGone, leaveOnLogout, memberFor, registerSyncPlay, registerSyncPlayPublic, startSweep, type SyncPlayDeps } from './syncplay/routes';
 import { artTag, imageTag, isWideTag } from './imageTags';
-import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, ratingFields, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, productionYear, studioDescriptorsOf, wantedYears, extraFiltersOf, type Window } from './items';
+import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, typesNarrowNothing, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, ratingFields, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, productionYear, studioDescriptorsOf, wantedYears, extraFiltersOf, type Window } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { canPlay, coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberIssued, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
@@ -1792,15 +1792,16 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const played = await playedPick(req, userUUID, config, catalog.type, serverId, String(parentId));
     const favourite = favouritePick(req, userUUID, config, catalog.type, serverId, String(parentId));
     const resumable = await resumablePick(req, userUUID, config, catalog.type, serverId, String(parentId));
+    const walkedTypes = includeItemTypes && !typesNarrowNothing(catalog, String(includeItemTypes)) ? String(includeItemTypes) : undefined;
     const window = await fetchWindow(
       userUUID,
       catalog,
       startIndex,
       pageLimit,
       extras,
-      withoutTitles(includeTypesFilter(catalog.type, includeItemTypes ? String(includeItemTypes) : undefined, officialRatings, years, studios, extra), excludedTitleIds),
+      withoutTitles(includeTypesFilter(catalog.type, walkedTypes, officialRatings, years, studios, extra), excludedTitleIds),
       profileTags(config),
-      `${listFilterKey(includeItemTypes, officialRatings, years, studios, extra)}${excludedKey(excludedTitleIds)}${played.key}${favourite.key}${resumable.key}`,
+      `${listFilterKey(walkedTypes, officialRatings, years, studios, extra)}${excludedKey(excludedTitleIds)}${played.key}${favourite.key}${resumable.key}`,
       chainPicks(played.pick, favourite.pick, resumable.pick)
     );
 

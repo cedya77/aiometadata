@@ -1268,6 +1268,14 @@ export function catalogCannotServe(catalog: { id: string; type: string }, includ
   return !serves.some((type) => wanted.has(type));
 }
 
+export function typesNarrowNothing(catalog: { id: string; type: string }, includeItemTypes: string | undefined): boolean {
+  const serves = CATALOG_SERVES[catalog.type];
+  const wanted = wantedTypes(includeItemTypes);
+  if (!serves || !wanted || EXTERNAL_CATALOG.test(catalog.id)) return false;
+  const held = catalog.id === 'tvdb.collections' ? ['BoxSet'] : serves.filter((type) => type !== 'BoxSet');
+  return held.every((type) => wanted.has(type));
+}
+
 export function filterByIncludeTypes(items: any[], includeItemTypes: string | undefined): any[] {
   if (!includeItemTypes) return items;
   const wanted = new Set(
