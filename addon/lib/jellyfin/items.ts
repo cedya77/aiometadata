@@ -882,7 +882,7 @@ function itemTypeOf(meta: any, mediaType: string): 'Movie' | 'Series' | 'BoxSet'
   return isBoxSetMeta(meta) ? 'BoxSet' : jellyfinTypeFor(meta?.type || mediaType);
 }
 
-function ratingFields(meta: any): { OfficialRating: string | null; CustomRating?: string | null } {
+export function ratingFields(meta: any): { OfficialRating: string | null; CustomRating?: string | null } {
   const extras = meta?.app_extras;
   const rating = extras?.certification || null;
   const local = extras?.certifications ? extras.certificationLocal || rating : rating;
@@ -1268,6 +1268,14 @@ export function catalogCannotServe(catalog: { id: string; type: string }, includ
   return !serves.some((type) => wanted.has(type));
 }
 
+export function typesNarrowNothing(catalog: { id: string; type: string }, includeItemTypes: string | undefined): boolean {
+  const serves = CATALOG_SERVES[catalog.type];
+  const wanted = wantedTypes(includeItemTypes);
+  if (!serves || !wanted || EXTERNAL_CATALOG.test(catalog.id)) return false;
+  const held = catalog.id === 'tvdb.collections' ? ['BoxSet'] : serves.filter((type) => type !== 'BoxSet');
+  return held.every((type) => wanted.has(type));
+}
+
 export function filterByIncludeTypes(items: any[], includeItemTypes: string | undefined): any[] {
   if (!includeItemTypes) return items;
   const wanted = new Set(
@@ -1461,12 +1469,15 @@ export function buildEpisodes(
   serverId: string,
   season: number | null
 ): any[] {
-  const wanted = episodeVideos(meta, season);
-  const art = parentArt(meta, seriesId, serverId);
-  return wanted.map((video: any) => buildEpisode(meta, video, mediaType, seriesId, serverId, art));
+  return buildEpisodesOf(meta, episodeVideos(meta, season), mediaType, seriesId, serverId);
 }
 
-function episodeVideos(meta: any, season: number | null): any[] {
+export function buildEpisodesOf(meta: any, videos: any[], mediaType: string, seriesId: string, serverId: string): any[] {
+  const art = parentArt(meta, seriesId, serverId);
+  return videos.map((video: any) => buildEpisode(meta, video, mediaType, seriesId, serverId, art));
+}
+
+export function episodeVideos(meta: any, season: number | null): any[] {
   const videos = Array.isArray(meta?.videos) ? meta.videos : [];
   return season === null ? videos : videos.filter((v: any) => v.season === season);
 }
@@ -1516,6 +1527,21 @@ export function pageEpisodes(
   return { page, total: wanted.length };
 }
 
+export function episodeIdOf(meta: any, video: any, mediaType: string): string {
+  const parsed = parseStremioId(String(video.id ?? ''));
+  return encodeJellyfinId(
+    parsed
+      ? { k: 'episode', t: mediaType, i: parsed.base, s: parsed.season, e: parsed.episode as number }
+      : {
+          k: 'episode',
+          t: mediaType,
+          i: String(meta.id),
+          s: Number.isInteger(video.season) ? video.season : null,
+          e: Number(video.episode),
+        }
+  );
+}
+
 export function buildEpisode(
   meta: any,
   video: any,
@@ -1533,18 +1559,7 @@ export function buildEpisode(
     // one: a MAL series (mal:52991) publishes kitsu:46474:1 episodes. Identity
     // comes from that id so it rebuilds to what a stream addon was given, while
     // season and episode numbering stay with the video for display.
-    const parsed = parseStremioId(String(video.id ?? ''));
-    const id = encodeJellyfinId(
-      parsed
-        ? { k: 'episode', t: mediaType, i: parsed.base, s: parsed.season, e: parsed.episode as number }
-        : {
-            k: 'episode',
-            t: mediaType,
-            i: String(meta.id),
-            s: hasSeason ? video.season : null,
-            e: Number(video.episode),
-          }
-    );
+    const id = episodeIdOf(meta, video, mediaType);
     const parentSeasonId = hasSeason
       ? encodeJellyfinId({ k: 'season', t: mediaType, i: String(meta.id), s: video.season })
       : seriesId;

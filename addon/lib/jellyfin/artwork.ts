@@ -6,15 +6,22 @@ import { envInt } from '../../utils/envNumber';
 export interface Artwork {
   body: Buffer;
   contentType: string;
+  etag?: string;
 }
 
+const heldBytes = envInt('JELLYFIN_IMAGE_CACHE_MB', 64, 1) * 1024 * 1024;
 const held = new LRUCache<string, Artwork>({
-  maxSize: envInt('JELLYFIN_IMAGE_CACHE_MB', 64, 1) * 1024 * 1024,
+  maxSize: heldBytes,
+  maxEntrySize: Math.max(1, Math.floor(heldBytes / 16)),
   sizeCalculation: (value) => value.body.length,
   ttl: envInt('JELLYFIN_IMAGE_CACHE_TTL', 6 * 60 * 60, 60) * 1000,
 });
 
 const loading = new Map<string, Promise<Artwork>>();
+
+export function heldArtwork(key: string): Artwork | undefined {
+  return held.get(key);
+}
 
 /**
  * The bytes for one image at one size, fetched once. A shelf shows the same

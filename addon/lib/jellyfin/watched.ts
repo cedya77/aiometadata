@@ -779,7 +779,7 @@ export async function assembleMdblist(data: MdblistData, config: any): Promise<R
   }
 
   const dropped = new Set<string>();
-  for (const item of droppedShows) for (const key of seriesKeysWithKitsu(item?.show?.ids ?? {})) dropped.add(key);
+  for (const item of droppedShows) for (const key of await droppedKeys(item?.show?.ids ?? {}, config)) dropped.add(key);
 
   await resolutions.save();
 
@@ -808,7 +808,7 @@ type MirroredService = 'simkl' | 'mdblist' | 'publicmetadb' | 'anilist' | 'mal';
 
 // Raised to rebuild indexes written in an older spelling.
 const INDEX_FORMAT = 9;
-const SERVICE_FORMATS: Partial<Record<MirroredService, number>> = { publicmetadb: 10, simkl: 10, anilist: 10, mal: 10 };
+const SERVICE_FORMATS: Partial<Record<MirroredService, number>> = { publicmetadb: 10, simkl: 10, anilist: 10, mal: 10, mdblist: 10 };
 const formatOf = (service: MirroredService): number => SERVICE_FORMATS[service] ?? INDEX_FORMAT;
 
 interface SummaryData {
@@ -1499,14 +1499,14 @@ async function reconcileUnmarks(userUUID: string, profile: string, service: stri
   const database: any = require('../database');
   if (!(await database.listPlayedVideoIds(userUUID, 1, profile)).length) return;
 
-  const whole = await allWatched(snapshot);
-  const ids = [...whole.episodes, ...whole.movies];
-  if (!ids.length) return;
-
   const { readGlobalCache, writeGlobalCache } = require('../getCache');
   const storeKey = `jellyfin_tracker_seen_v1:${key}`;
   const held = await readGlobalCache(storeKey);
   if (held?.fingerprint === snapshot.fingerprint) return;
+
+  const whole = await allWatched(snapshot);
+  const ids = [...whole.episodes, ...whole.movies];
+  if (!ids.length) return;
 
   if (Array.isArray(held?.ids)) {
     const cleared = await clearUnmarked(userUUID, profile, config, held.ids, Number(held.seenAt) || 0, new Set(ids));
