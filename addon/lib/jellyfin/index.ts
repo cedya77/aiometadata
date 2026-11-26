@@ -3901,7 +3901,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     ]);
     const shows = new Map<string, string>();
     for (const row of [...caughtUp, ...following]) {
-      if (!shows.has(row.metaId)) shows.set(row.metaId, row.mediaType);
+      if (!shows.has(row.metaId) && !snapshot.dropped.has(row.metaId)) shows.set(row.metaId, row.mediaType);
     }
     const watchlisted = listed.entries
       .filter((entry: any) => entryItemType(entry) === 'Series' && !snapshot.dropped.has(entry.metaId))
