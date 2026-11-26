@@ -11,7 +11,8 @@ import { boxSetMembers, collectionById, folderById } from './collections';
 import { collectionFolder, itemList, EMPTY_USER_DATA } from './dto';
 import { imageTag } from './imageTags';
 import { profileKey } from './profiles';
-import { loadConfig, serverIdFor } from './context';
+import { clientHasOwnWatchlist, loadConfig, serverIdFor } from './context';
+import { asksForFavourites } from './libraryFilters';
 
 // Jellyfin's playlists, kept per user. An entry's PlaylistItemId is its item's id, as in Jellyfin, so a title is in a playlist once.
 
@@ -350,7 +351,9 @@ export async function answerPlaylistListing(req: any, res: any, deps: PlaylistRo
   }
 
   const playlists = await listPlaylists(owner);
-  const built = sortPlaylists(req, await mapWithConcurrency(playlists, playlistConcurrency(), (playlist: Playlist) => playlistDto(req, deps, playlist)));
+  const dtos = await mapWithConcurrency(playlists, playlistConcurrency(), (playlist: Playlist) => playlistDto(req, deps, playlist));
+  const favourites = asksForFavourites(req.query ?? {}, clientHasOwnWatchlist());
+  const built = sortPlaylists(req, favourites ? dtos.filter((dto: any) => dto?.UserData?.IsFavorite === true) : dtos);
   const { start, end } = pageOf(req, built.length);
   res.json(itemList(built.slice(start, end), built.length, start));
   return true;
