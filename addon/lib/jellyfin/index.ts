@@ -2266,6 +2266,17 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     res.redirect(302, chosen.Path);
   };
 
+  const aboveCap = async (req: any, descriptor: any): Promise<boolean> => {
+    const config = await loadConfig(req);
+    if (!hasAgeRatingCap(config)) return false;
+    if (descriptor.k === 'movie') {
+      const meta = await fetchMeta(req.params.userUUID, 'movie', descriptor.i);
+      return Boolean(meta) && !keepsUnderProfileCap(config)({ Type: 'Movie', ...ratingFields(meta) });
+    }
+    const found = await seriesForEpisode(req.params.userUUID, config, descriptor);
+    return Boolean(found) && !keepsUnderProfileCap(config)({ Type: 'Series', ...ratingFields(found!.meta) });
+  };
+
   const playbackHandler = async (req: any, res: any) => {
     const { itemId, descriptor } = await unwrapMarker(String(req.params.itemId));
     const live = await liveDescriptor(itemId, descriptor);
@@ -2274,7 +2285,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return;
     }
 
-    if (!descriptor || (descriptor.k !== 'movie' && descriptor.k !== 'episode')) {
+    if (!descriptor || (descriptor.k !== 'movie' && descriptor.k !== 'episode') || (await aboveCap(req, descriptor))) {
       res.status(404).json({ MediaSources: [], PlaySessionId: '', ErrorCode: 'NotAllowed' });
       return;
     }
@@ -2373,7 +2384,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       await streamLive(req, res, itemId, live);
       return;
     }
-    if (!descriptor || (descriptor.k !== 'movie' && descriptor.k !== 'episode')) {
+    if (!descriptor || (descriptor.k !== 'movie' && descriptor.k !== 'episode') || (await aboveCap(req, descriptor))) {
       res.status(404).json({ Message: 'Item not found' });
       return;
     }
