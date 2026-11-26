@@ -49,7 +49,7 @@ import { createRedisStore } from './syncplay/store';
 import { noteDefaultSource, noteGroupPlaying, preferGroupRelease, recordedDefaultFirst } from './syncplay/releases';
 import { deviceBack, deviceGone, leaveOnLogout, memberFor, registerSyncPlay, registerSyncPlayPublic, startSweep, type SyncPlayDeps } from './syncplay/routes';
 import { artTag, imageTag, isWideTag } from './imageTags';
-import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, typesNarrowNothing, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, ratingFields, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, productionYear, studioDescriptorsOf, wantedYears, extraFiltersOf, type Window } from './items';
+import { ANIME_TAG, buildEpisodes, buildEpisodesOf, episodeIdOf, episodeVideos, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, typesNarrowNothing, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, ratingFields, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, productionYear, studioDescriptorsOf, wantedYears, extraFiltersOf, type Window } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { canPlay, coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberIssued, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
@@ -3505,36 +3505,38 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
     }
 
-    const episodes = buildEpisodes(
-      found.meta,
-      found.descriptor.t,
-      String(req.params.seriesId),
-      serverIdFor(req.params.userUUID),
-      season
-    );
-    // A play queue starts at the episode being played, not the first.
+    const videos = episodeVideos(found.meta, season);
     const startItemId = req.query.StartItemId ?? req.query.startItemId;
+    const adjacentTo = req.query.AdjacentTo ?? req.query.adjacentTo;
+    const ids = startItemId || adjacentTo ? videos.map((video: any) => episodeIdOf(found.meta, video, found.descriptor.t)) : [];
+    // A play queue starts at the episode being played, not the first.
     let from = 0;
     if (startItemId) {
-      const wanted = normaliseJellyfinId(String(startItemId));
-      const at = episodes.findIndex((e: any) => e.Id === wanted);
+      const at = ids.indexOf(normaliseJellyfinId(String(startItemId)));
       if (at > 0) from = at;
     }
-    let list = episodes.slice(from);
-    const adjacentTo = req.query.AdjacentTo ?? req.query.adjacentTo;
+    let to = videos.length;
     if (adjacentTo) {
-      const at = list.findIndex((e: any) => e.Id === normaliseJellyfinId(String(adjacentTo)));
-      list = at < 0 ? [] : list.slice(Math.max(0, at - 1), at + 2);
+      const at = ids.indexOf(normaliseJellyfinId(String(adjacentTo)), from);
+      if (at < 0) to = from;
+      else [from, to] = [Math.max(from, at - 1), Math.min(to, at + 2)];
     }
+    const listed = to - from;
     const startIndex = Math.max(0, qInt(req, 'StartIndex', 0));
-    const limit = Math.max(1, qInt(req, 'Limit', list.length || 1));
-    const page = list.slice(startIndex, startIndex + limit);
+    const limit = Math.max(1, qInt(req, 'Limit', listed || 1));
+    const page = buildEpisodesOf(
+      found.meta,
+      videos.slice(Math.min(to, from + startIndex), Math.min(to, from + startIndex + limit)),
+      found.descriptor.t,
+      String(req.params.seriesId),
+      serverIdFor(req.params.userUUID)
+    );
 
     const episodesConfig = await loadConfig(req);
     if (episodesConfig) {
       await applyWatchedState(page, await watchedSnapshot(req.params.userUUID, episodesConfig), req.params.userUUID, profileKey(episodesConfig), episodesConfig);
     }
-    res.json(itemList(page, list.length, startIndex));
+    res.json(itemList(page, listed, startIndex));
   });
 
   router.get('/Shows/NextUp', async (req: any, res: any) => {
