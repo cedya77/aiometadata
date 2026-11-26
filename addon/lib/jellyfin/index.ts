@@ -7,7 +7,7 @@ import { envInt } from '../../utils/envNumber';
 import { tmdbBackdropSize, tmdbLandscapeSize, tmdbLogoSize, tmdbPosterSize } from '../../utils/tmdbImageSize';
 import { mapWithConcurrency } from '../../utils/concurrency';
 import { hasAgeRatingCap } from '../../utils/ageRating';
-import { randomUUID, timingSafeEqual } from 'crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import {
   attachJellyfinContext,
   clientInfo,
@@ -71,7 +71,7 @@ import { asksForFavourites, asksForResumable, carriesProviderId, chainPicks, exc
 import { studioListing, yearListing } from './discoverPages';
 import { hasTmdbKey } from '../getTmdb';
 import { applyRatings, applyWatchedState, finishedSeries, ownNextUpRows, seriesCountsAmong, upcomingFollowed, watchedAmong, watchedHistory, watchedSnapshot, type NextUpRow, type UpcomingRow } from './watched';
-import { cachedArtwork, heldArtwork } from './artwork';
+import { cachedArtwork, heldArtwork, type Artwork } from './artwork';
 import { oneIdAsked, withCriticRatings } from './criticRatings';
 import { ImageQueueFull, SIZED_WIDTH, imageQueueFull, inImageSlot, shrinkToWidth, widthStep } from '../posterCache/resize';
 import { IMAGE_CSP } from '../posterCache/proxyResponse';
@@ -3172,17 +3172,22 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
   let liveRelays = 0;
 
+  const revalidates = (header: unknown, etag: string): boolean =>
+    String(header ?? '').split(',').map((tag) => tag.trim().replace(/^W\//, '')).some((tag) => tag === etag || tag === '*');
+
   const relayImage = async (req: any, res: any, url: string): Promise<void> => {
-    const etag = `"${imageTag(url)}"`;
-    if (req.get('if-none-match') === etag) {
-      res.status(304).end();
-      return;
-    }
-    const send = (image: { body: Buffer; contentType: string }) => {
+    const send = (image: Artwork) => {
+      const etag = image.etag ?? `"${imageTag(url)}"`;
       res.set('ETag', etag);
+      res.set('Cache-Control', 'public, max-age=86400');
+      if (revalidates(req.get('if-none-match'), etag)) {
+        res.status(304).end();
+        return;
+      }
       if (req.method !== 'HEAD') return sendArtwork(res, image);
       res.set('Content-Type', image.contentType);
-      res.set('Cache-Control', 'public, max-age=86400');
+      res.set('Content-Security-Policy', IMAGE_CSP);
+      res.set('Content-Length', String(image.body.length));
       res.end();
     };
     const key = `${url}|relay`;
@@ -3197,7 +3202,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     }
     liveRelays++;
     try {
-      send(await cachedArtwork(key, () => sourceImage(url, AbortSignal.timeout(imageSetting('JELLYFIN_IMAGE_RELAY_TIMEOUT_MS', 15000, 1000)))));
+      send(await cachedArtwork(key, async () => {
+        const image = await sourceImage(url, AbortSignal.timeout(imageSetting('JELLYFIN_IMAGE_RELAY_TIMEOUT_MS', 15000, 1000)));
+        return { ...image, etag: `"${createHash('sha1').update(image.body).digest('hex').slice(0, 20)}"` };
+      }));
     } catch (error: any) {
       logger.debug(`Image relay failed for ${url}: ${error?.message || error}`);
       if (!res.headersSent) res.redirect(302, url);
@@ -3212,6 +3220,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const upstream = await openImageStream(url, signal ? { signal } : undefined);
     if (upstream.notModified) throw new Error('not modified');
     const limit = getMaxObjectBytes();
+    if (Number(upstream.response.headers?.['content-length'] || 0) > limit) {
+      upstream.response.data.destroy();
+      throw new Error(`larger than ${limit} bytes`);
+    }
     const chunks: Buffer[] = [];
     let bytes = 0;
     for await (const chunk of upstream.response.data) {
