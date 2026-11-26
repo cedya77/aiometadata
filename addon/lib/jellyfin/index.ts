@@ -1496,15 +1496,17 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
       const kinds = live ? live.rest : askedKinds;
       const titleKinds = kinds.filter((kind) => kind !== 'Person');
-      const people = kinds.includes('Person') ? await peopleMatching(config, serverId, String(searchTerm)) : [];
-      const titles = kinds.length && !titleKinds.length ? [] : await searchAcross(
-        userUUID,
-        config,
-        serverId,
-        String(searchTerm),
-        startIndex + limit,
-        kinds.length ? titleKinds.join(',') : includeItemTypes
-      );
+      const [people, titles] = await Promise.all([
+        kinds.includes('Person') ? peopleMatching(config, serverId, String(searchTerm)) : [],
+        kinds.length && !titleKinds.length ? [] : searchAcross(
+          userUUID,
+          config,
+          serverId,
+          String(searchTerm),
+          startIndex + limit,
+          kinds.length ? titleKinds.join(',') : includeItemTypes
+        ),
+      ]);
       const found = [...people, ...titles, ...(live?.items ?? [])];
       const page = found.slice(startIndex, startIndex + limit);
       await applyWatchedState(page.filter((item: any) => item.Type !== 'Person' && item.Type !== 'TvChannel' && item.Type !== 'Program'), await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config, {
