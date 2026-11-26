@@ -95,6 +95,8 @@ const database: any = require('../database');
 
 const logger = consola.withTag('Jellyfin');
 
+const NUMERIC_ORDER = new Intl.Collator(undefined, { numeric: true });
+
 function maxMediaSources(): number {
   return envInt('JELLYFIN_MAX_MEDIA_SOURCES', 50, 1);
 }
@@ -1371,11 +1373,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         }
       }
 
-      played.sort((a, b) => b.at - a.at || b.id.localeCompare(a.id, undefined, { numeric: true }));
       if (countOnly) {
         res.json(itemList([], played.length, startIndex));
         return;
       }
+      played.sort((a, b) => b.at - a.at || NUMERIC_ORDER.compare(b.id, a.id));
 
       const page = played.slice(startIndex, startIndex + limit);
       const shows = [...new Set(page.flatMap((entry) => (entry.kind === 'episode' && entry.metaId ? [entry.metaId] : [])))];
