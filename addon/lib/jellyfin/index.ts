@@ -3062,6 +3062,8 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     poster: [92, 154, 185, 342, 500, 780],
     backdrop: [300, 780, 1280],
   };
+  const TMDB_BESTV2_POSTER = 'https://image.tmdb.org/t/p/w600_and_h900_bestv2/';
+  const TMDB_BESTV2_WIDTHS = [94, 130, 188, 220, 300, 440];
   const TVDB = 'https://artworks.thetvdb.com/banners/';
   const TVDB_THUMBS: [RegExp, number][] = [
     [/\/posters\//, 340],
@@ -3098,6 +3100,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       return width ? url.replace(TMDB_ORIGINAL, `https://image.tmdb.org/t/p/w${width}/`) : url;
     }
     if (!(maxWidth > 0)) return url;
+    if (url.startsWith(TMDB_BESTV2_POSTER)) {
+      const width = TMDB_BESTV2_WIDTHS.find((w) => w >= maxWidth);
+      return width ? url.replace(TMDB_BESTV2_POSTER, `https://image.tmdb.org/t/p/w${width}_and_h${width * 1.5}_bestv2/`) : url;
+    }
     if (url.startsWith(TVDB) && !/_t\.\w+$/.test(url)) {
       const thumb = TVDB_THUMBS.find(([path]) => path.test(url));
       return thumb && maxWidth <= thumb[1] ? url.replace(/(\.\w+)$/, '_t$1') : url;
