@@ -218,7 +218,9 @@ export async function upsertPlaystateEverywhere(userUUID: string, videoId: strin
 export async function getPlaystatesAcross(userUUID: string, videoIds: string[], profile = '', config?: any): Promise<Map<string, any>> {
   const resolved = config === undefined ? await aliasConfigFor(userUUID) : config;
   const aliases = new Map<string, string[]>();
-  for (const id of videoIds) aliases.set(id, await videoIdAliases(id, resolved));
+  const { mapWithConcurrency } = require('../../utils/concurrency');
+  const spelled: string[][] = await mapWithConcurrency(videoIds, 8, (id: string) => videoIdAliases(id, resolved));
+  videoIds.forEach((id, i) => aliases.set(id, spelled[i]));
 
   const lookup = new Set<string>(videoIds);
   for (const list of aliases.values()) for (const alias of list) lookup.add(alias);
