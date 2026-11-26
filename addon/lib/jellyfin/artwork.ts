@@ -16,6 +16,10 @@ const held = new LRUCache<string, Artwork>({
 
 const loading = new Map<string, Promise<Artwork>>();
 
+export function heldArtwork(key: string): Artwork | undefined {
+  return held.get(key);
+}
+
 /**
  * The bytes for one image at one size, fetched once. A shelf shows the same
  * poster on many items and many clients open it at once, so the load is shared

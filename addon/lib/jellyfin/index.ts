@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // Copyright (C) 2026 cedya77 and AIOMetadata contributors, see NOTICE
 import express from 'express';
-import { pipeline } from 'stream/promises';
 import { LRUCache } from 'lru-cache';
 import consola from 'consola';
 import { envInt } from '../../utils/envNumber';
@@ -72,7 +71,7 @@ import { asksForFavourites, asksForResumable, carriesProviderId, chainPicks, exc
 import { studioListing, yearListing } from './discoverPages';
 import { hasTmdbKey } from '../getTmdb';
 import { applyRatings, applyWatchedState, finishedSeries, ownNextUpRows, seriesCountsAmong, upcomingFollowed, watchedAmong, watchedHistory, watchedSnapshot, type NextUpRow, type UpcomingRow } from './watched';
-import { cachedArtwork } from './artwork';
+import { cachedArtwork, heldArtwork } from './artwork';
 import { oneIdAsked, withCriticRatings } from './criticRatings';
 import { ImageQueueFull, SIZED_WIDTH, imageQueueFull, inImageSlot, shrinkToWidth, widthStep } from '../posterCache/resize';
 import { IMAGE_CSP } from '../posterCache/proxyResponse';
@@ -3170,56 +3169,43 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   let liveRelays = 0;
 
   const relayImage = async (req: any, res: any, url: string): Promise<void> => {
+    const etag = `"${imageTag(url)}"`;
+    if (req.get('if-none-match') === etag) {
+      res.status(304).end();
+      return;
+    }
+    const send = (image: { body: Buffer; contentType: string }) => {
+      res.set('ETag', etag);
+      if (req.method !== 'HEAD') return sendArtwork(res, image);
+      res.set('Content-Type', image.contentType);
+      res.set('Cache-Control', 'public, max-age=86400');
+      res.end();
+    };
+    const key = `${url}|relay`;
+    const held = heldArtwork(key);
+    if (held) {
+      send(held);
+      return;
+    }
     if (liveRelays >= imageSetting('JELLYFIN_IMAGE_RELAY_CONCURRENCY', 32, 1)) {
       res.redirect(302, url);
       return;
     }
     liveRelays++;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), imageSetting('JELLYFIN_IMAGE_RELAY_TIMEOUT_MS', 15000, 1000));
-    const abandon = () => controller.abort();
-    res.once('close', abandon);
     try {
-      const { openImageStream } = require('../posterCache/upstream');
-      const { getMaxObjectBytes } = require('../posterCache/config');
-      const etag = req.get('if-none-match');
-      const upstream = await openImageStream(url, { signal: controller.signal, ...(etag ? { validators: { etag } } : {}) });
-      if (upstream.notModified) {
-        res.status(304).end();
-        return;
-      }
-      const stream = upstream.response.data;
-      const headers = upstream.response.headers;
-      if (Number(headers['content-length'] || 0) > getMaxObjectBytes()) {
-        stream.destroy();
-        res.redirect(302, url);
-        return;
-      }
-      res.set('Content-Type', upstream.contentType);
-      if (headers['etag']) res.set('ETag', headers['etag']);
-      if (headers['last-modified']) res.set('Last-Modified', headers['last-modified']);
-      res.set('Content-Security-Policy', IMAGE_CSP);
-      res.set('Cache-Control', 'public, max-age=86400');
-      if (req.method === 'HEAD') {
-        stream.destroy();
-        res.end();
-        return;
-      }
-      await pipeline(stream, res).catch(() => undefined);
+      send(await cachedArtwork(key, () => sourceImage(url, AbortSignal.timeout(imageSetting('JELLYFIN_IMAGE_RELAY_TIMEOUT_MS', 15000, 1000)))));
     } catch (error: any) {
       logger.debug(`Image relay failed for ${url}: ${error?.message || error}`);
       if (!res.headersSent) res.redirect(302, url);
     } finally {
-      clearTimeout(timer);
-      res.off('close', abandon);
       liveRelays--;
     }
   };
 
-  const sourceImage = async (url: string): Promise<{ body: Buffer; contentType: string }> => {
+  const sourceImage = async (url: string, signal?: AbortSignal): Promise<{ body: Buffer; contentType: string }> => {
     const { openImageStream } = require('../posterCache/upstream');
     const { getMaxObjectBytes } = require('../posterCache/config');
-    const upstream = await openImageStream(url);
+    const upstream = await openImageStream(url, signal ? { signal } : undefined);
     if (upstream.notModified) throw new Error('not modified');
     const limit = getMaxObjectBytes();
     const chunks: Buffer[] = [];
