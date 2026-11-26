@@ -3230,21 +3230,24 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   };
 
   const shapedPoster = async (req: any, res: any, url: string, maxWidth: number, relaying: boolean): Promise<void> => {
+    let source: { body: Buffer; contentType: string } | undefined;
     try {
       const image = await cachedArtwork(`${url}|${widthStep(maxWidth) ?? 0}|shaped`, async () => {
         if (imageQueueFull()) throw new ImageQueueFull();
         const { shapePoster } = require('../posterCache/shape');
-        const source = await sourceImage(url);
+        source = await sourceImage(url);
+        const { body, contentType } = source;
         return inImageSlot(async () => {
-          const shaped = await shapePoster(source.body, source.contentType);
+          const shaped = await shapePoster(body, contentType);
           const step = widthStep(maxWidth);
           return step ? shrinkToWidth(shaped.body, shaped.contentType, step) : shaped;
-        }, source.body.length);
+        }, body.length);
       });
       sendArtwork(res, image);
     } catch (error: any) {
       if (error instanceof ImageQueueFull) {
-        if (relaying) await relayImage(req, res, url);
+        if (source) sendArtwork(res, source);
+        else if (relaying) await relayImage(req, res, url);
         else res.redirect(302, url);
         return;
       }
@@ -3261,16 +3264,19 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   };
 
   const sizedArtwork = async (req: any, res: any, url: string, step: number, relaying: boolean): Promise<void> => {
+    let source: { body: Buffer; contentType: string } | undefined;
     try {
       const image = await cachedArtwork(`${url}|${step}|sized`, async () => {
         if (imageQueueFull()) throw new ImageQueueFull();
-        const source = await sourceImage(url);
-        return inImageSlot(() => shrinkToWidth(source.body, source.contentType, step), source.body.length);
+        source = await sourceImage(url);
+        const { body, contentType } = source;
+        return inImageSlot(() => shrinkToWidth(body, contentType, step), body.length);
       });
       sendArtwork(res, image);
     } catch (error: any) {
       if (!(error instanceof ImageQueueFull)) logger.debug(`Image resize failed for ${url}: ${error?.message || error}`);
-      if (relaying) await relayImage(req, res, url);
+      if (error instanceof ImageQueueFull && source) sendArtwork(res, source);
+      else if (relaying) await relayImage(req, res, url);
       else res.redirect(302, url);
     }
   };
