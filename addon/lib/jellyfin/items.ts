@@ -882,7 +882,7 @@ function itemTypeOf(meta: any, mediaType: string): 'Movie' | 'Series' | 'BoxSet'
   return isBoxSetMeta(meta) ? 'BoxSet' : jellyfinTypeFor(meta?.type || mediaType);
 }
 
-function ratingFields(meta: any): { OfficialRating: string | null; CustomRating?: string | null } {
+export function ratingFields(meta: any): { OfficialRating: string | null; CustomRating?: string | null } {
   const extras = meta?.app_extras;
   const rating = extras?.certification || null;
   const local = extras?.certifications ? extras.certificationLocal || rating : rating;

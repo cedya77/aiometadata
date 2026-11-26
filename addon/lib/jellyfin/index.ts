@@ -49,7 +49,7 @@ import { createRedisStore } from './syncplay/store';
 import { noteDefaultSource, noteGroupPlaying, preferGroupRelease, recordedDefaultFirst } from './syncplay/releases';
 import { deviceBack, deviceGone, leaveOnLogout, memberFor, registerSyncPlay, registerSyncPlayPublic, startSweep, type SyncPlayDeps } from './syncplay/routes';
 import { artTag, imageTag, isWideTag } from './imageTags';
-import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, productionYear, studioDescriptorsOf, wantedYears, extraFiltersOf, type Window } from './items';
+import { ANIME_TAG, buildEpisodes, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, ratingFields, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, productionYear, studioDescriptorsOf, wantedYears, extraFiltersOf, type Window } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { canPlay, coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberIssued, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
 import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
@@ -3446,12 +3446,14 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
   }
   router.get(['/UserItems/Resume', '/Users/:userId/Items/Resume'], resumeHandler);
 
+  const showAllowed = (config: any, meta: any): boolean => keepsUnderProfileCap(config)({ Type: 'Series', ...ratingFields(meta) });
+
   const seriesMetaFor = async (req: any) => {
     const descriptor = await decodeJellyfinId(String(req.params.seriesId));
     if (!descriptor || descriptor.k !== 'series') return null;
-    await loadConfig(req);
+    const config = await loadConfig(req);
     const meta = await fetchMeta(req.params.userUUID, 'series', descriptor.i);
-    return meta ? { descriptor, meta } : null;
+    return meta && showAllowed(config, meta) ? { descriptor, meta } : null;
   };
 
   router.get('/Shows/:seriesId/Seasons', async (req: any, res: any) => {
@@ -4479,7 +4481,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     if (descriptor.k === 'episode') {
       const found = await seriesForEpisode(userUUID, await loadConfig(req), descriptor);
-      if (!found) {
+      if (!found || !showAllowed(await loadConfig(req), found.meta)) {
         res.status(404).json({ Message: 'Item not found' });
         return;
       }
@@ -4508,7 +4510,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     // waiting on a page it will never get.
     if (descriptor.k === 'season') {
       const meta = await fetchMeta(userUUID, 'series', descriptor.i);
-      if (!meta) {
+      if (!meta || !showAllowed(await loadConfig(req), meta)) {
         res.status(404).json({ Message: 'Item not found' });
         return;
       }
@@ -4543,6 +4545,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return;
       }
       const item = metaToBaseItem(meta, descriptor.t, serverIdFor(userUUID), null);
+      if (!keepsUnderProfileCap(await loadConfig(req))(item)) {
+        res.status(404).json({ Message: 'Item not found' });
+        return;
+      }
 
       // A meta can resolve to another id than the one it was opened by; the client keys on the one it asked for.
       const requestedId = normaliseJellyfinId(String(req.params.itemId));
