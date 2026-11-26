@@ -3375,6 +3375,11 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
 
     const startIndex = Math.max(0, qInt(req, 'StartIndex', 0));
     const limit = Math.min(Math.max(1, qInt(req, 'Limit', 20)), 100);
+    const mediaTypes = String(req.query.MediaTypes ?? req.query.mediaTypes ?? '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+    if (mediaTypes.length && !mediaTypes.includes('video')) {
+      res.json(itemList([], 0, startIndex));
+      return;
+    }
     const watched = await watchedSnapshot(userUUID, config);
     const animeOnly = keepsAnimeOnly(config);
     // A resumed play is a film or an episode; a show stands for its episodes.
