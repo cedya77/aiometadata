@@ -1298,7 +1298,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return null;
       });
       const items = built.filter(Boolean).filter(keepsUnderProfileCap(config));
-      await applyWatchedState(items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config));
+      await applyWatchedState(items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);
       res.json(itemList(items, picks.length, startIndex));
       return;
     }
@@ -1398,7 +1398,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return (await locateOneEpisode(meta, mediaType, encodeJellyfinId({ k: 'series', t: mediaType, i: String(meta.id) }), serverId, entry.id, config ?? {})) ?? null;
       });
       const items = built.filter(Boolean);
-      await applyWatchedState(items, snapshot, userUUID, profile);
+      await applyWatchedState(items, snapshot, userUUID, profile, config ?? undefined);
       const seen = new Set<string>();
       const shelf = items
         .filter((item: any) => item.UserData?.Played === true && !seen.has(item.Id) && seen.add(item.Id))
