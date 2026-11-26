@@ -1499,14 +1499,14 @@ async function reconcileUnmarks(userUUID: string, profile: string, service: stri
   const database: any = require('../database');
   if (!(await database.listPlayedVideoIds(userUUID, 1, profile)).length) return;
 
-  const whole = await allWatched(snapshot);
-  const ids = [...whole.episodes, ...whole.movies];
-  if (!ids.length) return;
-
   const { readGlobalCache, writeGlobalCache } = require('../getCache');
   const storeKey = `jellyfin_tracker_seen_v1:${key}`;
   const held = await readGlobalCache(storeKey);
   if (held?.fingerprint === snapshot.fingerprint) return;
+
+  const whole = await allWatched(snapshot);
+  const ids = [...whole.episodes, ...whole.movies];
+  if (!ids.length) return;
 
   if (Array.isArray(held?.ids)) {
     const cleared = await clearUnmarked(userUUID, profile, config, held.ids, Number(held.seenAt) || 0, new Set(ids));
