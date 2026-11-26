@@ -95,6 +95,7 @@ const database: any = require('../database');
 const logger = consola.withTag('Jellyfin');
 
 const NUMERIC_ORDER = new Intl.Collator(undefined, { numeric: true });
+const NEXT_UP_LOOKAHEAD = 3;
 
 function maxMediaSources(): number {
   return envInt('JELLYFIN_MAX_MEDIA_SOURCES', 50, 1);
@@ -3708,6 +3709,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const identity: string[] = [];
     const availableAt: number[] = [];
     let skipped = 0;
+    const located: Array<{ meta: any; episodes: any[]; target: any; walked: any[]; locate: (episodes: any[], metaId: string, videoId?: string | null) => Promise<any | undefined> } | undefined> = [];
     await warmSeriesIndex(userUUID, rows.map((row) => row.metaId));
     await mapWithConcurrency(rows, shelfConcurrency(), async (row, index) => {
       const locate = async (episodes: any[], metaId: string, videoId = row.videoId): Promise<any | undefined> =>
@@ -3758,21 +3760,25 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
         return;
       }
 
-      // The table wins; walked one episode at a time since the first is nearly always it.
-      const from = episodes.indexOf(target);
-      const onward = episodes.slice(from);
-      const ts = Date.now();
-      let next: any = null;
-      for (let i = 0; i < onward.length; i++) {
-        const episode = onward[i];
-        if (i > 0 && episode.ParentIndexNumber === 0) continue;
-        await applyWatchedState([episode], snapshot, userUUID, profileKey(config));
-        if (episode.UserData?.Played !== true) {
-          next = episode;
-          break;
-        }
+      const walked = episodes.slice(episodes.indexOf(target)).filter((episode: any, i: number) => i === 0 || episode.ParentIndexNumber !== 0);
+      located[index] = { meta, episodes, target, walked, locate };
+    });
+
+    // The table wins, so every show's first few episodes are read together; the first is nearly always it.
+    const ts = Date.now();
+    await applyWatchedState(located.flatMap((show) => show?.walked.slice(0, NEXT_UP_LOOKAHEAD) ?? []), snapshot, userUUID, profileKey(config));
+    lap.state += Date.now() - ts;
+
+    await mapWithConcurrency(rows, shelfConcurrency(), async (row, index) => {
+      const show = located[index];
+      if (!show) return;
+      const { meta, episodes, target, walked, locate } = show;
+      let next: any = walked.slice(0, NEXT_UP_LOOKAHEAD).find((episode: any) => episode.UserData?.Played !== true) ?? null;
+      for (let at = NEXT_UP_LOOKAHEAD; at < walked.length && !next; at += NEXT_UP_LOOKAHEAD) {
+        const ahead = walked.slice(at, at + NEXT_UP_LOOKAHEAD);
+        await applyWatchedState(ahead, snapshot, userUUID, profileKey(config));
+        next = ahead.find((episode: any) => episode.UserData?.Played !== true) ?? null;
       }
-      lap.state += Date.now() - ts;
       const nowMs = Date.now();
       const borrowed = row.airsAt ? undefined : trackerTimes.get(row.metaId);
       const borrowedFits = Boolean(borrowed && next) && (
