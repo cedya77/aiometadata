@@ -173,6 +173,7 @@ async function parseTvdbSearchResult(type: string, extendedRecord: any, language
   let stremioId: string = `tvdb:${extendedRecord.id}`;
   if(imdbId) stremioId = imdbId;
   const logoUrl = findArtwork(extendedRecord.artworks, type === 'movie' ? 25 : 23, langCode3, config);
+  const backgroundUrl = findArtwork(extendedRecord.artworks, type === 'movie' ? 15 : 3, null, config);
   const validLogoUrl = logoUrl && typeof logoUrl === 'string' && !logoUrl.includes('undefined') && logoUrl !== 'null' ? logoUrl : imdbId? imdb.getLogoFromImdb(imdbId) : null;
 
   return {
@@ -196,6 +197,7 @@ async function parseTvdbSearchResult(type: string, extendedRecord: any, language
       ? { certification, certifications, releaseDates: movieReleaseDates }
       : { certification, certifications },
     logo: validLogoUrl,
+    background: backgroundUrl || null,
     runtime: type === 'movie' ? Utils.parseRunTime(extendedRecord.runtime) : Utils.parseRunTime(extendedRecord.averageRuntime),
     genres: extendedRecord.genres?.map((g: any) => g.name) || [],
     imdbRating: imdbId ? await getImdbRating(imdbId, type) : 'N/A',
