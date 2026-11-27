@@ -25,6 +25,10 @@ import {
   getMdbListType,
   isDynamicMixedList,
   createMDBListUnifiedDynamicCatalog,
+  createMDBListOfficialCatalog,
+  mdblistOfficialVariantCount,
+  MDBLIST_OFFICIAL_VARIANTS,
+  MdblistOfficialVariant,
 } from '@/utils/catalogUtils';
 import { apiCache } from '@/utils/apiCache';
 
@@ -194,7 +198,49 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
     setError(null);
 
     try {
-      if (parsedUrl.externalListId) {
+      if (parsedUrl.mdblistOfficial) {
+        const response = await fetch(`/api/mdblist/lists/official${apiKey ? `?apikey=${apiKey}` : ''}`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch official lists (Status: ${response.status})`);
+        }
+        const officialLists = await response.json();
+        if (!Array.isArray(officialLists) || officialLists.length === 0) {
+          throw new Error('MDBList returned no official lists');
+        }
+
+        if (parsedUrl.listSlug) {
+          const list = officialLists.find((l: any) => l.slug === parsedUrl.listSlug);
+          if (!list) throw new Error(`"${parsedUrl.listSlug}" is not one of MDBList's official lists`);
+
+          const { mediatype } = parsedUrl.mdblistOfficial;
+          const variant: MdblistOfficialVariant = mediatype === 'movie' ? 'movie' : mediatype === 'show' ? 'series' : 'all';
+          const newCatalog = createMDBListOfficialCatalog({ list, variant, displayTypeOverrides: config.displayTypeOverrides });
+          if (catalogExists(newCatalog.id)) {
+            toast.info(`List "${newCatalog.name}" is already in your catalog list.`);
+            onClose();
+            return;
+          }
+          setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
+          toast.success("List Added", { description: `The list "${newCatalog.name}" has been added to your catalogs.` });
+          onClose();
+          return;
+        }
+
+        const officialMap = new Map<string, any>();
+        const selectableItems: SelectableItem[] = [];
+        for (const list of officialLists) {
+          for (const { variant } of MDBLIST_OFFICIAL_VARIANTS) {
+            const itemCount = mdblistOfficialVariantCount(list, variant);
+            if (itemCount === 0) continue;
+            const catalog = createMDBListOfficialCatalog({ list, variant });
+            officialMap.set(catalog.id, { list, variant });
+            selectableItems.push({ id: catalog.id, name: catalog.name, type: variant, itemCount, author: 'MDBList' });
+          }
+        }
+        setRawListData(officialMap);
+        setItems(selectableItems);
+        setStep('selection');
+      } else if (parsedUrl.externalListId) {
         const response = await fetch(
           `/api/mdblist/external/lists/${parsedUrl.externalListId}${apiKey ? `?apikey=${apiKey}` : ''}`
         );
@@ -341,6 +387,17 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
       const listsToAdd: CatalogConfig[] = [];
       
       for (const itemId of selectedItems) {
+        if (parsedUrl?.mdblistOfficial) {
+          const official = rawListData.get(itemId);
+          if (!official || catalogExists(itemId)) continue;
+          listsToAdd.push(createMDBListOfficialCatalog({
+            list: official.list,
+            variant: official.variant,
+            displayTypeOverrides: config.displayTypeOverrides,
+          }));
+          continue;
+        }
+
         const catalogId = `mdblist.${itemId}`;
         if (catalogExists(catalogId)) continue;
 
@@ -968,10 +1025,13 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
                     <Badge variant={getServiceBadgeVariant(parsedUrl.service)}>
                       {getServiceDisplayName(parsedUrl.service)}
                     </Badge>
-                    {parsedUrl.type === 'user-profile' && (
+                    {parsedUrl.mdblistOfficial && (
+                      <Badge variant="outline">{parsedUrl.listSlug ? 'Official List' : 'Official Lists'}</Badge>
+                    )}
+                    {parsedUrl.type === 'user-profile' && !parsedUrl.mdblistOfficial && (
                       <Badge variant="outline">User Profile</Badge>
                     )}
-                    {parsedUrl.type === 'single-list' && (
+                    {parsedUrl.type === 'single-list' && !parsedUrl.mdblistOfficial && (
                       <Badge variant="outline">Single List</Badge>
                     )}
                     {parsedUrl.type === 'watchlist' && (
@@ -995,7 +1055,7 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
                   <CardTitle className="text-sm">Supported URLs</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2 text-xs text-muted-foreground">
-                  <p><strong>MDBList:</strong> mdblist.com/lists/username/list-name, mdblist.com/lists/username/external/12345 or mdblist.com/users/username</p>
+                  <p><strong>MDBList:</strong> mdblist.com/lists/username/list-name, mdblist.com/lists/username/external/12345, mdblist.com/users/username, mdblist.com/lists/official or mdblist.com/lists/official/movies/popular</p>
                   <p><strong>Trakt:</strong> trakt.tv/users/username/lists/list-slug or trakt.tv/users/username</p>
                   <p><strong>Letterboxd:</strong> letterboxd.com/username/list/list-name or letterboxd.com/username/watchlist</p>
                   <p><strong>TheTVDB:</strong> thetvdb.com/lists/list-slug</p>

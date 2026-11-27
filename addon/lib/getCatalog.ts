@@ -1008,6 +1008,12 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       unified = true;
       if (parts[3] === 'movies') mediaTypeFilter = 'movie';
       else if (parts[3] === 'series') mediaTypeFilter = 'show';
+    } else if (id.startsWith('mdblist.official.')) {
+      const parts = id.split('.');
+      listId = `official/${parts[2]}`;
+      unified = true;
+      if (parts[3] === 'movies') mediaTypeFilter = 'movie';
+      else if (parts[3] === 'series') mediaTypeFilter = 'show';
     } else {
       // Regular MDBList catalog
       listId = id.split(".")[1];

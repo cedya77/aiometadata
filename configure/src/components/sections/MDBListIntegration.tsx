@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { ChevronDown, Loader2, Plus, Trash2, KeyRound, BarChart3, Settings, PlayCircle, UserSearch, Link2, Bookmark, Sparkles, TrendingUp, Download, Eye, EyeOff, CheckCircle2, ThumbsUp, Search } from 'lucide-react';
+import { ChevronDown, Loader2, Plus, Trash2, KeyRound, BarChart3, Settings, PlayCircle, UserSearch, Link2, Bookmark, Sparkles, TrendingUp, Download, Eye, EyeOff, CheckCircle2, ThumbsUp, Search, BadgeCheck } from 'lucide-react';
 
 const MDBLIST_RECOMMENDED_SECTIONS = [
   { section: 'recommended', label: 'Recommended For You', description: 'Personalised picks based on your ratings and taste' },
@@ -27,8 +27,18 @@ const MDBLIST_RECOMMENDED_VARIANTS = [
 import { toast } from "sonner";
 import { apiCache } from '@/utils/apiCache';
 import { getGenresBySelection, GenreSelection } from '@/data/genres';
-import { getMdbListType, createMDBListCatalog, isDynamicMixedList, createMDBListUnifiedDynamicCatalog } from '@/utils/catalogUtils';
-import { parseMdblistExternalListUrl } from '@/utils/urlParser';
+import {
+  getMdbListType,
+  createMDBListCatalog,
+  isDynamicMixedList,
+  createMDBListUnifiedDynamicCatalog,
+  createMDBListOfficialCatalog,
+  mdblistOfficialCatalogId,
+  mdblistOfficialVariantCount,
+  MDBLIST_OFFICIAL_VARIANTS,
+  MdblistOfficialVariant,
+} from '@/utils/catalogUtils';
+import { parseMdblistExternalListUrl, parseMdblistOfficialListUrl } from '@/utils/urlParser';
 import type { CatalogConfig } from '@/contexts/ConfigContext';
 import { CacheTTLField } from '@/components/CacheTTLField';
 
@@ -97,6 +107,26 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     listSlug: string;
     listUrl: string;
   } | null>(null);
+
+  const [officialLists, setOfficialLists] = useState<any[] | null>(null);
+  const [isLoadingOfficialLists, setIsLoadingOfficialLists] = useState(false);
+  const [officialListsError, setOfficialListsError] = useState<string | null>(null);
+
+  const fetchOfficialLists = useCallback(async (): Promise<any[]> => {
+    const response = await fetch(listsUrl('/api/mdblist/lists/official'));
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.error || `Failed to fetch official lists (Status: ${response.status})`);
+    return Array.isArray(data) ? data : [];
+  }, [listsUrl]);
+
+  useEffect(() => {
+    if (!isOpen || !canBrowse || officialLists !== null || isLoadingOfficialLists || officialListsError) return;
+    setIsLoadingOfficialLists(true);
+    fetchOfficialLists()
+      .then(setOfficialLists)
+      .catch(error => setOfficialListsError(error instanceof Error ? error.message : 'Failed to fetch official lists'))
+      .finally(() => setIsLoadingOfficialLists(false));
+  }, [isOpen, canBrowse, officialLists, isLoadingOfficialLists, officialListsError, fetchOfficialLists]);
 
   // User info state
   const [userInfo, setUserInfo] = useState<any>(null);
@@ -867,6 +897,22 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         return;
     }
     try {
+      const official = parseMdblistOfficialListUrl(customListUrl);
+      if (official) {
+        if (!official.slug) {
+          toast.info("Pick official lists from the Official Lists section above.");
+          return;
+        }
+        const lists = officialLists?.length ? officialLists : await fetchOfficialLists();
+        const list = lists.find((l: any) => l.slug === official.slug);
+        if (!list) throw new Error(`"${official.slug}" is not one of MDBList's official lists`);
+        const variant: MdblistOfficialVariant = official.mediatype === 'movie' ? 'movie' : official.mediatype === 'show' ? 'series' : 'all';
+        if (!isOfficialCatalogAdded(list.slug, variant)) toggleOfficialCatalog(list, variant);
+        else toast.info(`That official list is already in your catalog list.`);
+        setCustomListUrl("");
+        return;
+      }
+
       const external = parseMdblistExternalListUrl(customListUrl);
       if (external) {
         const response = await fetch(listsUrl(`/api/mdblist/external/lists/${external.listId}`));
@@ -933,6 +979,31 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
       const message = err instanceof Error ? err.message : "An unknown error occurred.";
       toast.error("Error Adding List", { description: message });
     }
+  };
+
+  const isOfficialCatalogAdded = (slug: string, variant: MdblistOfficialVariant) =>
+    config.catalogs.some(c => c.id === mdblistOfficialCatalogId(slug, variant));
+
+  const toggleOfficialCatalog = (list: any, variant: MdblistOfficialVariant) => {
+    const catalogId = mdblistOfficialCatalogId(list.slug, variant);
+    if (isOfficialCatalogAdded(list.slug, variant)) {
+      setConfig(prev => ({ ...prev, catalogs: prev.catalogs.filter(c => c.id !== catalogId) }));
+      toast.success(`Removed "${createMDBListOfficialCatalog({ list, variant }).name}"`);
+      return;
+    }
+    const newCatalog = createMDBListOfficialCatalog({
+      list,
+      variant,
+      sort: defaultSort,
+      order: defaultOrder,
+      cacheTTL: defaultCacheTTL ?? undefined,
+      genreSelection: defaultGenreSelection,
+      displayTypeOverrides: config.displayTypeOverrides,
+    });
+    setConfig(prev => prev.catalogs.some(c => c.id === catalogId)
+      ? prev
+      : { ...prev, catalogs: [...prev.catalogs, newCatalog] });
+    toast.success(`Added "${newCatalog.name}"`);
   };
 
   const isRecommendedCatalogAdded = (section: string, suffix: string = '') =>
@@ -1481,6 +1552,78 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                 <p className="text-xs text-muted-foreground">
                   This catalog will show the next episode to watch for each show in your MDBList watched list.
                 </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Official Lists Section */}
+          {canBrowse && (
+            <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
+                <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
+                  <BadgeCheck className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <CardTitle>Official Lists</CardTitle>
+                  <CardDescription>
+                    Charts MDBList maintains itself, such as popularity, trending and streaming charts. Add each as one combined catalog or as separate movie and series catalogs.
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {isLoadingOfficialLists ? (
+                  <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading official lists...
+                  </div>
+                ) : officialListsError ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3 border rounded-lg bg-muted/30">
+                    <p className="text-sm text-destructive">{officialListsError}</p>
+                    <Button variant="outline" size="sm" onClick={() => { setOfficialLists(null); setOfficialListsError(null); }}>
+                      Retry
+                    </Button>
+                  </div>
+                ) : officialLists && officialLists.length > 0 ? (
+                  <div className="space-y-2">
+                    {officialLists.map((list) => {
+                      const anyAdded = MDBLIST_OFFICIAL_VARIANTS.some(v => isOfficialCatalogAdded(list.slug, v.variant));
+                      return (
+                        <div key={list.slug} className="flex flex-wrap items-center justify-between gap-3 p-3 border rounded-lg bg-muted/30">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium truncate">{list.name}</span>
+                              {anyAdded && <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />}
+                            </div>
+                            {list.description && (
+                              <p className="text-xs text-muted-foreground line-clamp-2">{list.description}</p>
+                            )}
+                          </div>
+                          <div className="flex shrink-0 gap-1.5">
+                            {MDBLIST_OFFICIAL_VARIANTS.map(({ variant, label }) => {
+                              const count = mdblistOfficialVariantCount(list, variant);
+                              if (count === 0) return null;
+                              const added = isOfficialCatalogAdded(list.slug, variant);
+                              return (
+                                <Button
+                                  key={variant}
+                                  variant={added ? "destructive" : "outline"}
+                                  size="sm"
+                                  onClick={() => toggleOfficialCatalog(list, variant)}
+                                  title={`${added ? 'Remove' : 'Add'} the ${label.toLowerCase()} catalog (${count} items)`}
+                                >
+                                  {added ? <Trash2 className="h-4 w-4 mr-1" /> : <Plus className="h-4 w-4 mr-1" />}
+                                  {label}
+                                </Button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">MDBList returned no official lists.</p>
+                )}
               </CardContent>
             </Card>
           )}

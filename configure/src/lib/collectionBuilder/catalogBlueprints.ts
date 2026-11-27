@@ -6,6 +6,7 @@ import type { CatalogConfig } from '@/contexts/config';
 import type { CatalogBlueprint } from '@shared/catalogReconstruction';
 
 import { SUFFIX_TYPES } from '@shared/types';
+import { createMDBListOfficialCatalog } from '@/utils/catalogUtils';
 
 export { SUFFIX_TYPES };
 
@@ -128,6 +129,7 @@ function findDefinition(catalogId: string, type: string) {
 
 const FLIXPATROL_ID = /^flixpatrol\.(.+)\.([a-z]{2}|world)\.(movie|series|all)(?:\.([a-z0-9-]+))?$/;
 const MDBLIST_LIST_ID = /^mdblist\.(\d+)$/;
+const MDBLIST_OFFICIAL_ID = /^mdblist\.official\.([a-z0-9-]+)(?:\.(movies|series))?$/;
 
 interface ImportedSource {
   catalogId: string;
@@ -161,6 +163,16 @@ function reconstructFromId(source: ImportedSource): CatalogConfig | undefined {
       enableRatingPosters: true,
       metadata: { countrySlug: country.slug },
     };
+  }
+
+  const official = MDBLIST_OFFICIAL_ID.exec(source.catalogId);
+  if (official) {
+    const [, slug, media] = official;
+    const catalog = createMDBListOfficialCatalog({
+      list: { slug, name: `MDBList ${slug}` },
+      variant: media === 'movies' ? 'movie' : media === 'series' ? 'series' : 'all',
+    });
+    return source.name?.trim() ? { ...catalog, name: source.name.trim() } : catalog;
   }
 
   const list = MDBLIST_LIST_ID.exec(source.catalogId);

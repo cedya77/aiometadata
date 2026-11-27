@@ -80,6 +80,10 @@ export interface MDBListCatalogOptions {
  * @returns CatalogConfig object ready to be added to the config
  */
 export function createMDBListCatalog(options: MDBListCatalogOptions): CatalogConfig {
+  if (isMdblistOfficialList(options.list)) {
+    return createMDBListOfficialCatalog({ ...options, variant: getMdbListType(options.list) });
+  }
+
   const {
     list,
     sort = 'default',
@@ -122,6 +126,84 @@ export function createMDBListCatalog(options: MDBListCatalogOptions): CatalogCon
       ...(list.user_name ? { author: list.user_name } : {}),
       ...(finalListUrl && { url: finalListUrl }),
       ...(list.mediatype && { mediatype: list.mediatype }),
+    },
+  };
+}
+
+// ============================================================================
+// MDBList Official Lists
+// ============================================================================
+
+export type MdblistOfficialVariant = 'all' | 'movie' | 'series';
+
+export const MDBLIST_OFFICIAL_VARIANTS: { variant: MdblistOfficialVariant; label: string }[] = [
+  { variant: 'all', label: 'All' },
+  { variant: 'movie', label: 'Movies' },
+  { variant: 'series', label: 'Series' },
+];
+
+/** Official lists share numeric ids with user lists, so they are keyed by slug instead. */
+export function isMdblistOfficialList(list: any): boolean {
+  return list?.source === 'official' || (list?.user_name === 'official' && Number(list?.user_id) === 0);
+}
+
+export function mdblistOfficialCatalogId(slug: string, variant: MdblistOfficialVariant = 'all'): string {
+  const suffix = variant === 'movie' ? '.movies' : variant === 'series' ? '.series' : '';
+  return `mdblist.official.${slug}${suffix}`;
+}
+
+export function mdblistOfficialVariantCount(list: any, variant: MdblistOfficialVariant): number {
+  if (variant === 'movie') return Number(list?.movies) || 0;
+  if (variant === 'series') return Number(list?.shows) || 0;
+  return Number(list?.items) || 0;
+}
+
+/** Prefers the per-media name MDBList gives under `?mediatype=`, which the proxy attaches as `names`. */
+function mdblistOfficialVariantName(list: any, variant: MdblistOfficialVariant): string {
+  const name: string = list.name || list.slug;
+  if (variant === 'all') return name;
+  const given = list.names?.[variant === 'movie' ? 'movie' : 'show'];
+  if (given) return given;
+  const media = variant === 'movie' ? 'Movies' : 'Shows';
+  return /Movies & Shows/.test(name) ? name.replace('Movies & Shows', media) : `${name} (${variant === 'movie' ? 'Movies' : 'Series'})`;
+}
+
+export interface MDBListOfficialCatalogOptions extends Omit<MDBListCatalogOptions, 'sourceUrl' | 'listUrl'> {
+  variant?: MdblistOfficialVariant;
+}
+
+export function createMDBListOfficialCatalog(options: MDBListOfficialCatalogOptions): CatalogConfig {
+  const {
+    list,
+    variant = 'all',
+    sort = 'default',
+    order = 'asc',
+    cacheTTL,
+    genreSelection = 'standard',
+    displayTypeOverrides,
+  } = options;
+
+  const displayType = getDisplayTypeOverride(variant, displayTypeOverrides);
+  const page = variant === 'movie' ? 'movies/' : variant === 'series' ? 'shows/' : '';
+
+  return {
+    id: mdblistOfficialCatalogId(list.slug, variant),
+    type: variant,
+    name: mdblistOfficialVariantName(list, variant),
+    enabled: true,
+    showInHome: true,
+    source: 'mdblist',
+    sort,
+    order,
+    ...(cacheTTL !== undefined && { cacheTTL }),
+    genreSelection,
+    enableRatingPosters: true,
+    ...(displayType && { displayType }),
+    metadata: {
+      itemCount: mdblistOfficialVariantCount(list, variant),
+      author: 'MDBList',
+      url: page ? `https://mdblist.com/lists/official/${page}${list.slug}` : 'https://mdblist.com/lists/official',
+      ...(variant !== 'all' && { mediatype: variant === 'movie' ? 'movie' : 'show' }),
     },
   };
 }

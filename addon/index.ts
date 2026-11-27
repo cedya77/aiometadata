@@ -1763,6 +1763,43 @@ addon.get("/api/mdblist/lists/top", async (req, res) => {
   }
 });
 
+// Proxy: Get MDBList's official lists. Their numeric ids collide with user lists, so callers key them by slug.
+addon.get("/api/mdblist/lists/official", async (req, res) => {
+  try {
+    const apikey = resolveMdblistKey(req.query.apikey);
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+
+    const url = `https://api.mdblist.com/lists/official?apikey=${apikey}`;
+    const payload = await cacheWrapGlobal(
+      mdblistCacheKey(['lists', 'official'], apikey),
+      async () => {
+        // ?mediatype= answers each list under its per-media name, which the split catalogs are named after.
+        const perMedia = (mediatype) => makeRateLimitedMDBListRequest(`${url}&mediatype=${mediatype}`, apikey, `MDBList Proxy - Get Official Lists (${mediatype})`)
+          .then(r => (Array.isArray(r.data) ? r.data : []))
+          .catch(() => []);
+        const [response, movies, shows] = await Promise.all([
+          makeRateLimitedMDBListRequest(url, apikey, 'MDBList Proxy - Get Official Lists'),
+          perMedia('movie'),
+          perMedia('show'),
+        ]);
+        const nameFor = (lists, slug) => lists.find(l => l?.slug === slug)?.name;
+        return (Array.isArray(response.data) ? response.data : []).map(list => ({
+          ...list,
+          names: { movie: nameFor(movies, list.slug), show: nameFor(shows, list.slug) },
+        }));
+      },
+      mdblistListCacheTtl()
+    );
+    res.json(payload);
+  } catch (error) {
+    consola.error("[MDBList Proxy] Error fetching official lists:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch official lists" });
+  }
+});
+
 // Proxy: Get a list's items, poster URLs included.
 // Declared above /:username/:listname, which would otherwise swallow this path.
 addon.get("/api/mdblist/lists/:listId/items", async (req, res) => {
