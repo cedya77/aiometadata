@@ -389,7 +389,7 @@ function PosterShapeField({ value, onChange }: { value: 'poster' | 'landscape'; 
 
 const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, catalogTTL, config } = useConfig();
-  const [sort, setSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>((catalog.sort as any) || 'default');
+  const [sort, setSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerebert' | 'sort_title' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>((catalog.sort as string) === 'rogerbert' ? 'rogerebert' : (catalog.sort as any) || 'default');
   const [order, setOrder] = useState<'asc' | 'desc'>(catalog.order || 'asc');
   const [cacheTTL, setCacheTTL] = useState<number | null>(catalog.cacheTTL ?? null);
   const [genreSelection, setGenreSelection] = useState<GenreSelection>(catalog.genreSelection || 'standard');
@@ -464,7 +464,7 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
             <>
           <div className="space-y-2">
             <Label>Sort By</Label>
-            <Select value={sort} onValueChange={(value: 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default') => setSort(value)}>
+            <Select value={sort} onValueChange={(value: 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerebert' | 'sort_title' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default') => setSort(value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select sort option" />
               </SelectTrigger>
@@ -481,7 +481,7 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
                 <SelectItem value="last_air_date">Last Air Date</SelectItem>
                 <SelectItem value="imdbpopular">IMDB Popular</SelectItem>
                 <SelectItem value="tmdbpopular">TMDB Popular</SelectItem>
-                <SelectItem value="rogerbert">Roger Ebert</SelectItem>
+                <SelectItem value="rogerebert">Roger Ebert</SelectItem>
                 <SelectItem value="rtomatoes">Rotten Tomatoes</SelectItem>
                 <SelectItem value="rtaudience">RT Audience</SelectItem>
                 <SelectItem value="metacritic">Metacritic</SelectItem>
@@ -492,6 +492,7 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
                 <SelectItem value="revenue">Revenue</SelectItem>
                 <SelectItem value="runtime">Runtime</SelectItem>
                 <SelectItem value="title">Title</SelectItem>
+                <SelectItem value="sort_title">Sort Title</SelectItem>
                 <SelectItem value="added">Date Added</SelectItem>
                 <SelectItem value="random">Random</SelectItem>
               </SelectContent>

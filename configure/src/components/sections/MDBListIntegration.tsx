@@ -65,7 +65,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const [customUserLists, setCustomUserLists] = useState<any[]>([]);
   const [selectedCustomLists, setSelectedCustomLists] = useState<Set<string>>(new Set());
   const [isLoadingCustomUser, setIsLoadingCustomUser] = useState(false);
-  const [defaultSort, setDefaultSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>('default');
+  const [defaultSort, setDefaultSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerebert' | 'sort_title' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>('default');
   const [defaultOrder, setDefaultOrder] = useState<'asc' | 'desc'>('asc');
   const [defaultCacheTTL, setDefaultCacheTTL] = useState<number | null>(null);
   const [defaultGenreSelection, setDefaultGenreSelection] = useState<GenreSelection>('standard'); // Default to standard genres only
@@ -1410,7 +1410,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                 <SelectItem value="last_air_date">Last Air Date</SelectItem>
                 <SelectItem value="imdbpopular">IMDB Popular</SelectItem>
                 <SelectItem value="tmdbpopular">TMDB Popular</SelectItem>
-                <SelectItem value="rogerbert">Roger Ebert</SelectItem>
+                <SelectItem value="rogerebert">Roger Ebert</SelectItem>
                 <SelectItem value="rtomatoes">Rotten Tomatoes</SelectItem>
                 <SelectItem value="rtaudience">RT Audience</SelectItem>
                 <SelectItem value="metacritic">Metacritic</SelectItem>
@@ -1421,6 +1421,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                 <SelectItem value="revenue">Revenue</SelectItem>
                 <SelectItem value="runtime">Runtime</SelectItem>
                 <SelectItem value="title">Title</SelectItem>
+                <SelectItem value="sort_title">Sort Title</SelectItem>
                 <SelectItem value="added">Date Added</SelectItem>
                 <SelectItem value="random">Random</SelectItem>
               </SelectContent>
