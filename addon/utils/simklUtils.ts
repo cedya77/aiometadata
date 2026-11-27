@@ -1119,6 +1119,50 @@ export async function removeFromHistory(
   }
 }
 
+/**
+ * What moving a date in place came to: `missing` when Simkl has no such title,
+ * `unwatched` when it has the title but not this movie or episode as watched.
+ */
+export type SimklDateEdit = 'updated' | 'missing' | 'unwatched' | 'refused' | 'unsupported' | 'failed';
+
+/** Moves the watch date of a watched movie or episode without removing it, so its rating and memo stay. */
+export async function editHistoryDates(
+  idInput: Record<string, string | number>,
+  accessToken: string,
+  watchedAt: string,
+  season?: number,
+  episode?: number
+): Promise<SimklDateEdit> {
+  const url = `${SIMKL_BASE_URL}/sync/history/edit-dates`;
+  try {
+    const response = await makeAuthenticatedSimklRequest(url, accessToken, 'Simkl edit watch date', 'POST', historyPayload(idInput, season, episode, undefined, watchedAt), 10000);
+    if (response.status === 403) return 'unsupported';
+    if (response.status < 200 || response.status >= 300) {
+      logger.warn(`[Simkl] Editing a watch date answered ${response.status}`);
+      return 'failed';
+    }
+    const data = response.data ?? {};
+    if ((Number(data.updated?.movies) || 0) + (Number(data.updated?.episodes) || 0) > 0) {
+      logger.info('[Simkl] Moved a watch date', { ids: idInput, season, episode });
+      return 'updated';
+    }
+    const missed = data.not_found ?? {};
+    if (['movies', 'shows', 'anime'].some((key) => Array.isArray(missed[key]) && missed[key].length)) return 'missing';
+    if (Array.isArray(missed.episodes) && missed.episodes.length) return 'unwatched';
+    const codes = (Array.isArray(data.errors) ? data.errors : []).map((entry: any) => entry?.error?.code);
+    if (codes.includes('not_completed')) return 'unwatched';
+    if (codes.length) {
+      noteTrackerCall(url, 409, `Simkl refused the date (${codes.join(', ')})`);
+      return 'refused';
+    }
+    return 'failed';
+  } catch (error: any) {
+    if (error?.response?.status === 403) return 'unsupported';
+    logger.error(`[Simkl] Editing a watch date failed: ${error.message}`);
+    return 'failed';
+  }
+}
+
 export interface SimklScrobbleOptions {
   /** checkin is fire and forget and self-completes; start and stop are a session. */
   action?: 'checkin' | 'start' | 'pause' | 'stop';

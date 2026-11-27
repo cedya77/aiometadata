@@ -1585,6 +1585,8 @@ export interface JellyfinProfileSummary {
   lastActivity: number | null;
 }
 
+export type RedateScope = 'all' | 'episodes' | 'titles';
+
 export interface JellyfinSyncRow {
   service: string;
   profiles: string[];
@@ -1596,6 +1598,8 @@ export interface JellyfinSyncRow {
   attempts: number;
   lastError: string | null;
   readError?: string | null;
+  /** How a watch date change reaches this account, where it differs by sign-in. */
+  redates?: RedateScope | null;
 }
 
 export interface JellyfinConfiguration {
@@ -2381,7 +2385,7 @@ export interface TrackerInfo {
   datedHistory: boolean;
   matchable: boolean;
   wholeRatings: boolean;
-  redates: 'all' | 'episodes' | null;
+  redates: RedateScope | null;
   marks: { from: TrackerMark[]; to: TrackerMark[] };
   pace: { perSecond: number; ratingsPerHour?: number } | null;
   notes?: { watchlist?: string; redate?: string };

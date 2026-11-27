@@ -553,6 +553,8 @@ export interface SyncRow {
   attempts: number;
   lastError: string | null;
   readError: string | null;
+  /** How a watch date change reaches this account. */
+  redates: 'all' | 'episodes' | 'titles' | null;
 }
 
 type SyncSource = { service: string; profiles: string[]; keys: Set<string>; credential: string; scoped: any };
@@ -584,6 +586,7 @@ async function trackerSync(config: any, userUUID: string): Promise<SyncRow[]> {
     const state = await database.getTrackerSync(key).catch(() => null);
     const waiting = queued.filter((row) => row.service === source.service && source.keys.has(String(row.profile ?? '')));
     const failed = [...waiting].reverse().find((row) => row.last_error);
+    const redates = await require('../trackers').redateScope(source.service, source.scoped);
     return {
       service: source.service,
       profiles: source.profiles,
@@ -595,6 +598,7 @@ async function trackerSync(config: any, userUUID: string): Promise<SyncRow[]> {
       attempts: waiting.reduce((max, row) => Math.max(max, Number(row.attempts) || 0), 0),
       lastError: failed ? String(failed.last_error) : null,
       readError: lastRead?.kind === 'readFailed' ? String(parseDetail(lastRead.detail).error ?? 'The last read failed') : null,
+      redates,
     };
   });
 }

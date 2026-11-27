@@ -14,6 +14,8 @@ export interface TrackerPace {
   ratingsPerHour?: number;
 }
 
+export type RedateScope = 'all' | 'episodes' | 'titles';
+
 export interface Tracker {
   id: AccountService;
   name: string;
@@ -47,7 +49,11 @@ export interface Tracker {
   takesEpisodeIds?: boolean;
   writeWatches?: { url: string; write(items: CopyItem[], credential: string, config: any, rewatch?: boolean): Promise<WatchOutcome> };
   writeWatch?(item: CopyItem, credential: string, config: any): Promise<boolean>;
-  redate?: { scope: 'all' | 'episodes'; run(redate: Redate): Promise<void> };
+  /**
+   * `all` moves and deletes each viewing; `episodes` keeps one date per episode and moves it
+   * to the latest viewing; `titles` does that for movies too. `scopeFor` answers for one account.
+   */
+  redate?: { scope: RedateScope; scopeFor?(config: any): Promise<RedateScope>; run(redate: Redate): Promise<void> };
   match?: {
     search(credential: string, query: string, kind: 'movie' | 'series', config: any): Promise<MatchCandidate[]>;
     detail(credential: string, candidate: MatchCandidate, config: any): Promise<MatchDetail>;

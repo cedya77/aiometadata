@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronLeft, ChevronRight, Clock, ImageOff, Loader2, Trash2 } from "lucide-react";
-import type { TrackerInfo } from "@/hooks/useDashboardQueries";
+import type { RedateScope, TrackerInfo } from "@/hooks/useDashboardQueries";
 import { useTrackers } from "./trackers";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
@@ -57,7 +57,7 @@ const uses12Hours = new Intl.DateTimeFormat(undefined, { hour: "numeric" }).reso
 
 function dateNote(target: WatchDateTarget, sentTo: TrackerInfo[]): string {
   if (target.from === null) return "Saved here. The trackers keep the date they have.";
-  const moved = sentTo.filter((tracker) => tracker.redates === "all" || (tracker.redates === "episodes" && target.episode)).map((tracker) => tracker.name);
+  const moved = sentTo.filter((tracker) => tracker.redates === "all" || tracker.redates === "titles" || (tracker.redates === "episodes" && target.episode)).map((tracker) => tracker.name);
   const held = target.episode ? "" : sentTo.filter((tracker) => tracker.redates === "episodes" && tracker.notes?.redate).map((tracker) => ` ${tracker.notes!.redate}`).join("");
   return `Saved here${moved.length ? ` and changed on ${moved.join(", ")}` : ""}.${held}`;
 }
@@ -65,8 +65,8 @@ function dateNote(target: WatchDateTarget, sentTo: TrackerInfo[]): string {
 function removeNote(target: WatchDateTarget, sentTo: TrackerInfo[]): string {
   const removed = sentTo.filter((tracker) => tracker.redates === "all").map((tracker) => tracker.name);
   const newest = target.from !== null && target.others.every((at) => at <= target.from!);
-  const moved = target.episode && newest ? sentTo.filter((tracker) => tracker.redates === "episodes").map((tracker) => tracker.name) : [];
-  const keeps = moved.length ? ` ${moved.join(", ")} ${moved.length === 1 ? "keeps" : "keep"} one date per episode, so it moves to the latest viewing left.` : "";
+  const moved = newest ? sentTo.filter((tracker) => tracker.redates === "titles" || (tracker.redates === "episodes" && target.episode)).map((tracker) => tracker.name) : [];
+  const keeps = moved.length ? ` ${moved.join(", ")} ${moved.length === 1 ? "keeps" : "keep"} one date per ${target.episode ? "episode" : "title"}, so it moves to the latest viewing left.` : "";
   return `Deleted here${removed.length ? ` and on ${removed.join(", ")}` : ""}. The other viewings stay, so it is still watched.${keeps}`;
 }
 
@@ -99,16 +99,23 @@ function TimeField({ value, min, max, label, onChange }: { value: number; min: n
   );
 }
 
-export default function WatchDateSheet({ target, anchor, sentTo, onSave, onRemove, onClose }: {
+export default function WatchDateSheet({ target, anchor, sentTo, redates, onSave, onRemove, onClose }: {
   target: WatchDateTarget;
   anchor: WatchDateAnchor;
   sentTo: string[];
+  /** Each account's own way of taking a date change, over its tracker's usual one. */
+  redates: Record<string, RedateScope | null | undefined>;
   onSave: (to: number) => Promise<boolean>;
   /** Offered for a dated viewing of a title watched more than once. */
   onRemove?: () => Promise<boolean>;
   onClose: () => void;
 }) {
   const trackers = useTrackers();
+  const sent = sentTo.flatMap((id) => {
+    const tracker = trackers.of(id);
+    if (!tracker) return [];
+    return [redates[id] === undefined ? tracker : { ...tracker, redates: redates[id] ?? null }];
+  });
   const ref = useRef<HTMLFormElement>(null);
   const grid = useRef<HTMLDivElement>(null);
   const [now] = useState(() => Date.now());
@@ -371,11 +378,11 @@ export default function WatchDateSheet({ target, anchor, sentTo, onSave, onRemov
       {confirming ? (
         <div role="alert" className="m-3 mb-0 rounded-xl bg-red-500/10 p-3 ring-1 ring-inset ring-red-400/25">
           <p className="text-sm font-semibold text-red-100">Delete this viewing?</p>
-          <p className="mt-1 text-xs leading-relaxed text-red-100/75">{removeNote(target, sentTo.map(trackers.of).filter((tracker): tracker is TrackerInfo => Boolean(tracker)))}</p>
+          <p className="mt-1 text-xs leading-relaxed text-red-100/75">{removeNote(target, sent)}</p>
         </div>
       ) : (
         <p className={cx("px-3 pt-3 text-xs leading-relaxed", future ? "text-amber-300" : "text-muted-foreground")}>
-          {future ? "That's later than now. Pick a time that has passed." : dateNote(target, sentTo.map(trackers.of).filter((tracker): tracker is TrackerInfo => Boolean(tracker)))}
+          {future ? "That's later than now. Pick a time that has passed." : dateNote(target, sent)}
         </p>
       )}
       <div className="flex items-center justify-end gap-2 p-3">

@@ -7,9 +7,9 @@ import { mal } from './mal';
 import { mdblist } from './mdblist';
 import { publicmetadb } from './publicmetadb';
 import { simkl } from './simkl';
-import type { Mark, Tracker } from './types';
+import type { Mark, RedateScope, Tracker } from './types';
 
-export type { Mark, Tracker } from './types';
+export type { Mark, RedateScope, Tracker } from './types';
 export { MARK_KINDS } from './types';
 
 export const TRACKERS: Record<AccountService, Tracker> = { simkl, mdblist, publicmetadb, anilist, mal };
@@ -20,6 +20,13 @@ export const trackerName = (id: string): string => trackerOf(id)?.name ?? id;
 export const isAnimeList = (id: string): boolean => trackerOf(id)?.animeOnly === true;
 export const resumeTrackers = (): AccountService[] => LIST.filter((tracker) => tracker.resumeRank).sort((a, b) => a.resumeRank! - b.resumeRank!).map((tracker) => tracker.id);
 export const isMatchable = (id: string): boolean => Boolean(trackerOf(id)?.match);
+/** How a watch date change reaches this tracker for the account in `config`, or null when it never does. */
+export async function redateScope(id: string, config: any): Promise<RedateScope | null> {
+  const redate = trackerOf(id)?.redate;
+  if (!redate) return null;
+  return redate.scopeFor ? redate.scopeFor(config).catch(() => redate.scope) : redate.scope;
+}
+
 export const scrobblingTrackers = (): AccountService[] => LIST.filter((tracker) => tracker.scrobbles).map((tracker) => tracker.id);
 
 export function copyBatch(id: string, what: Mark | 'watches' = 'watches'): number {

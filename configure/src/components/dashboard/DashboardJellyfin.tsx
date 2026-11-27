@@ -346,12 +346,14 @@ function Configuration({ userUUID, route, activeTab, onClose }: { userUUID: stri
   const search = <JellyfinSearch userUUID={userUUID} profile={profile} profileName={profileName} local={localTitles} activeTab={activeTab} />;
 
   const watched = shown.reduce((sum, p) => sum + p.movies + p.episodes, 0);
-  const sentTo = data.sync.filter((row) => row.profiles.includes(historyName)).map((row) => row.service);
+  const sentRows = data.sync.filter((row) => row.profiles.includes(historyName));
+  const sentTo = sentRows.map((row) => row.service);
+  const redates = Object.fromEntries(sentRows.map((row) => [row.service, row.redates]));
   return (
     <OpenTitleContext.Provider value={openTitle}>
     <div className="pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-0">
       {remote && <RemoteSheet userUUID={userUUID} profile={remote.profile} profileName={remote.profileName} target={remote.target} at={remote.at} activeTab={activeTab} onClose={closeRemote} />}
-      {route.stack.length > 0 && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} sentTo={sentTo} stack={route.stack} activeTab={activeTab} onOpen={openStack} />}
+      {route.stack.length > 0 && <JellyfinTitlePage userUUID={userUUID} profile={profile} profileName={profileName} sentTo={sentTo} redates={redates} stack={route.stack} activeTab={activeTab} onOpen={openStack} />}
       <Hero data={data} profile={profile} onProfile={setProfile} activity={activity} back={isOwnPage() ? null : back} actions={menus} search={search} switching={switching} />
       {ownPageFull() && <JellyfinImport userUUID={userUUID} notice />}
       <div ref={sectionsTop} />

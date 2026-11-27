@@ -914,14 +914,26 @@ export async function recordWatchDate(req: any, itemId: string, from: number | n
     logger.debug(`User data push failed for ${session.videoId}: ${error?.message || error}`)
   );
   if (from === null || !tellsTrackers(config, 'dashboard')) return true;
-  const { enqueueTrackerWrites, hasCredential } = require('../trackerOutbox');
-  const latest = session.descriptor.k === 'episode' && latestAfter !== latestBefore ? latestAfter : null;
-  const services = ['mdblist', 'publicmetadb', ...(latest ? ['simkl'] : [])].filter((service) => hasCredential(config, service));
+  const { enqueueTrackerWrites } = require('../trackerOutbox');
+  const latest = latestAfter !== latestBefore ? latestAfter : null;
+  const services = await redateServices(config, session.descriptor.k === 'episode', latest !== null);
   await enqueueTrackerWrites(userUUID, config, services.map((service) => ({
     service, op: 'redate', item: session.descriptor.i,
     payload: { type: session.stremioType, id: session.videoId, from, to, latest, ...(apart ? { apart: true } : {}) },
   }))).catch((error: any) => logger.debug(`Moving the watch date on trackers failed for ${session.videoId}: ${error?.message || error}`));
   return true;
+}
+
+/** The trackers a date change reaches: those that keep each viewing, and those that keep one date once that date moved. */
+async function redateServices(config: any, episode: boolean, latestMoved: boolean): Promise<string[]> {
+  const { hasCredential } = require('../trackerOutbox');
+  const { redateScope } = require('../trackers');
+  const picked = await Promise.all(['mdblist', 'publicmetadb', 'simkl'].map(async (service) => {
+    if (!hasCredential(config, service)) return null;
+    const scope = await redateScope(service, config);
+    return scope === 'all' || (latestMoved && (scope === 'titles' || (scope === 'episodes' && episode))) ? service : null;
+  }));
+  return picked.filter((service): service is string => service !== null);
 }
 
 /** Deletes one viewing of a title watched more than once, here and on the trackers that keep plays. */
@@ -950,10 +962,10 @@ export async function recordWatchRemoval(req: any, itemId: string, at: number): 
     logger.debug(`User data push failed for ${session.videoId}: ${error?.message || error}`)
   );
   if (!tellsTrackers(config, 'dashboard')) return true;
-  const { enqueueTrackerWrites, hasCredential } = require('../trackerOutbox');
-  // A tracker that keeps one date per episode only moves when the latest viewing went.
-  const latest = session.descriptor.k === 'episode' && latestAfter !== null && latestAfter !== latestBefore ? latestAfter : null;
-  const services = ['mdblist', 'publicmetadb', ...(latest ? ['simkl'] : [])].filter((service) => hasCredential(config, service));
+  const { enqueueTrackerWrites } = require('../trackerOutbox');
+  // A tracker that keeps one date per title or episode only moves when the latest viewing went.
+  const latest = latestAfter !== null && latestAfter !== latestBefore ? latestAfter : null;
+  const services = await redateServices(config, session.descriptor.k === 'episode', latest !== null);
   await enqueueTrackerWrites(userUUID, config, services.map((service) => ({
     service, op: 'redate', item: session.descriptor.i,
     payload: { type: session.stremioType, id: session.videoId, from: at, to: at, latest, remove: true },

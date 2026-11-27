@@ -150,12 +150,39 @@ async function token(credential: string): Promise<string | null> {
   return (await getSimklToken(credential).catch(() => null))?.access_token ?? null;
 }
 
-async function redate({ config, ids, mediaType, season, episode, change, fallback }: Redate): Promise<void> {
-  if (mediaType === 'movie' || season == null || episode == null || change.latest == null) return;
+/** Whether the account moves dates in place, which keeps ratings and so covers movies too. */
+function editsInPlace(token: any): boolean {
+  const { isSimklV2Token, simklV2ScopeWrites } = require('../simkl');
+  return isSimklV2Token(token?.access_token) && (!token?.scope || simklV2ScopeWrites(token.scope));
+}
+
+async function redateScope(config: any): Promise<'titles' | 'episodes'> {
+  const tokenId = config?.apiKeys?.simklTokenId;
+  const token = tokenId ? await require('../../utils/simklUtils').getSimklToken(tokenId).catch(() => null) : null;
+  return editsInPlace(token) ? 'titles' : 'episodes';
+}
+
+async function redateInPlace({ ids, season, episode, fallback }: Redate, access: string, at: string): Promise<'done' | 'legacy'> {
+  const simklUtils = require('../../utils/simklUtils');
+  const first = await simklUtils.editHistoryDates(ids, access, at, season, episode);
+  if (first === 'unsupported') return 'legacy';
+  if (first === 'updated' || first === 'refused' || first === 'failed') return 'done';
+  if (fallback && episode != null && (await simklUtils.editHistoryDates(fallback.ids, access, at, fallback.season, fallback.episode)) === 'updated') return 'done';
+  if (first === 'missing') nothingToMove('https://api.simkl.com/sync/history/edit-dates', 'not found on Simkl');
+  else await simklUtils.addToHistory(ids, access, season, episode, undefined, at);
+  return 'done';
+}
+
+async function redate(job: Redate): Promise<void> {
+  const { config, ids, mediaType, season, episode, change, fallback } = job;
+  if (change.latest == null || (mediaType !== 'movie' && (season == null || episode == null))) return;
   const simklUtils = require('../../utils/simklUtils');
   const tokenId = config.apiKeys?.simklTokenId;
-  const access = tokenId ? (await simklUtils.getSimklToken(tokenId))?.access_token : null;
+  const token = tokenId ? await simklUtils.getSimklToken(tokenId) : null;
+  const access = token?.access_token;
   if (!access) return;
+  if (editsInPlace(token) && (await redateInPlace(job, access, new Date(change.latest).toISOString())) === 'done') return;
+  if (mediaType === 'movie' || season == null || episode == null) return;
   let target = { ids, season, episode };
   let held = await simklUtils.episodeWatchedAt(ids, access, season, episode);
   const status = require('../../utils/trackerCalls').lastTrackerCall()?.status ?? 200;
@@ -195,7 +222,7 @@ export const simkl: Tracker = {
   marks: { from: MARK_KINDS, to: MARK_KINDS },
   notes: {
     watchlist: 'Titles anywhere in your Simkl library are skipped too.',
-    redate: 'Simkl keeps its own date for movies, since changing it there clears your rating.',
+    redate: 'Simkl keeps its own date for movies on an older Simkl sign-in, since changing it there clears your rating. Reconnecting Simkl lets it move them.',
   },
   async readMarks(what, side) {
     const out: Array<MarkItem | null> = [];
@@ -220,7 +247,7 @@ export const simkl: Tracker = {
   writeMarks: (what, items, side) => writeMarks(what, items, side.credential),
   watchesHeld: { read: watchesHeld, keys: heldKeys },
   writeWatches: { url: 'https://api.simkl.com/sync/history', write: writeWatches },
-  redate: { scope: 'episodes', run: redate },
+  redate: { scope: 'episodes', scopeFor: redateScope, run: redate },
   match: {
     async search(credential, query, kind) {
       const { fetchSimklSearchItems } = require('../../utils/simklUtils');
