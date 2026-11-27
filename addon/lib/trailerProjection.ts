@@ -21,7 +21,12 @@ interface AddonTrailer {
   title: string;
   ytId?: string;
   url?: string;
+  thumbnail?: string;
+  description?: string;
 }
+
+const MAX_URL = 2048;
+const MAX_DESCRIPTION = 1000;
 
 type AddonResource = 'stream' | 'meta';
 
@@ -196,10 +201,20 @@ function textOf(...candidates: any[]): string {
   return '';
 }
 
-function toTrailer(title: string, ytId: any, url: any): AddonTrailer | null {
+/** The picture and text an addon gives a trailer stream, passed on as it sent them. */
+function extrasOf(entry: any): Pick<AddonTrailer, 'thumbnail' | 'description'> {
+  const thumbnail = typeof entry?.thumbnail === 'string' ? entry.thumbnail.trim() : '';
+  const description = typeof entry?.description === 'string' ? entry.description.trim() : '';
+  return {
+    ...(HTTP_URL.test(thumbnail) && thumbnail.length <= MAX_URL ? { thumbnail } : {}),
+    ...(description ? { description: description.slice(0, MAX_DESCRIPTION) } : {}),
+  };
+}
+
+function toTrailer(title: string, ytId: any, url: any, extras: Pick<AddonTrailer, 'thumbnail' | 'description'> = {}): AddonTrailer | null {
   const name = title || 'Trailer';
-  if (typeof ytId === 'string' && YOUTUBE_ID.test(ytId.trim())) return { title: name, ytId: ytId.trim() };
-  if (typeof url === 'string' && HTTP_URL.test(url.trim())) return { title: name, url: url.trim() };
+  if (typeof ytId === 'string' && YOUTUBE_ID.test(ytId.trim())) return { title: name, ytId: ytId.trim(), ...extras };
+  if (typeof url === 'string' && HTTP_URL.test(url.trim())) return { title: name, url: url.trim(), ...extras };
   return null;
 }
 
@@ -208,7 +223,7 @@ function trailersFromEntries(entries: any): AddonTrailer[] {
   const trailers: AddonTrailer[] = [];
   for (const entry of entries) {
     if (!entry || typeof entry !== 'object') continue;
-    const trailer = toTrailer(textOf(entry.title, entry.name), entry.ytId, entry.url);
+    const trailer = toTrailer(textOf(entry.title, entry.name), entry.ytId, entry.url, extrasOf(entry));
     if (trailer) trailers.push(trailer);
   }
   return trailers;
