@@ -994,8 +994,6 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     const newCatalog = createMDBListOfficialCatalog({
       list,
       variant,
-      sort: defaultSort,
-      order: defaultOrder,
       cacheTTL: defaultCacheTTL ?? undefined,
       genreSelection: defaultGenreSelection,
       displayTypeOverrides: config.displayTypeOverrides,

@@ -408,7 +408,7 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   const isWatchlist = catalog.id.startsWith('mdblist.watchlist');
   const isDiscover = catalog.id.startsWith('mdblist.discover.');
   const minCacheTTL = minCacheTTLFor(catalog.id);
-  const showSortOptions = !isUpNext && !isDiscover;
+  const showSortOptions = !isUpNext && !isDiscover && !catalog.id.startsWith('mdblist.official.');
   const showScoreFilters = supportsMdblistScoreFilters(catalog);
 
   const [posterShape, setPosterShape] = useState<'poster' | 'landscape'>(catalog.metadata?.posterShape === 'landscape' ? 'landscape' : 'poster');
