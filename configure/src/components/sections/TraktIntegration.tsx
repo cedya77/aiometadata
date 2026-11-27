@@ -843,7 +843,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
         enabled: true,
         showInHome: true,
         source: "trakt",
-        sort: favoriteSortBy as 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default',
+        sort: favoriteSortBy as 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerebert' | 'sort_title' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default',
         sortDirection: favoriteSortHow === 'desc' ? 'desc' : 'asc',
         ...(displayType && { displayType }),
       };

@@ -361,7 +361,7 @@ function buildListItemsUrl(opts: { listId: string; apiKey: string; limit: number
   const base = listId === 'watchlist'
     ? 'https://api.mdblist.com/watchlist/items'
     : `https://api.mdblist.com/lists/${listId}/items`;
-  let url = `${base}?limit=${limit}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=${opts.unified !== false}`;
+  let url = `${base}?limit=${limit}&offset=${offset}&apikey=${apiKey}&append_to_response=genres,poster&unified=${opts.unified !== false}`;
 
   if (opts.sort && opts.sort.trim() !== '') url += `&sort=${opts.sort}`;
   if (opts.order && opts.order.trim() !== '') url += `&order=${opts.order}`;
@@ -715,7 +715,7 @@ async function getGenresFromMDBList(listId: string, apiKey: string): Promise<str
       const genres = [
         ...new Set(
           response.items.flatMap((item: any) =>
-            (item.genre || []).map((g: any) => {
+            (item.genres || item.genre || []).map((g: any) => {
               if (!g || typeof g !== "string") return null;
               return g.charAt(0).toUpperCase() + g.slice(1).toLowerCase();
             })
@@ -764,7 +764,7 @@ async function fetchCursorBlock(opts: { baseUrl: string; apiKey: string; blockIn
     url.searchParams.set('apikey', opts.apiKey);
     url.searchParams.set('limit', String(blockSize));
     url.searchParams.set('unified', 'true');
-    url.searchParams.set('append_to_response', 'genre,poster');
+    url.searchParams.set('append_to_response', 'genres,poster');
     if (cursor) url.searchParams.set('cursor', cursor);
     if (opts.sort && opts.sort.trim() !== '') url.searchParams.set('sort', opts.sort);
     if (opts.order && opts.order.trim() !== '') url.searchParams.set('order', opts.order);

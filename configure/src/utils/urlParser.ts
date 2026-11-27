@@ -11,6 +11,8 @@ export interface ParsedUrl {
   username?: string;
   listSlug?: string;
   externalListId?: string;
+  /** MDBList official list: listSlug holds its slug; absent on the index of all official lists. */
+  mdblistOfficial?: { mediatype?: 'movie' | 'show' };
   url: string;
 }
 
@@ -21,6 +23,8 @@ export interface ParsedUrl {
 const URL_PATTERNS = {
   mdblist: {
     externalList: /^https?:\/\/(?:www\.)?mdblist\.com\/lists\/([^\/]+)\/external\/(\d+)\/?$/,
+    // https://mdblist.com/lists/official, https://mdblist.com/lists/official/{movies|shows}/{slug}
+    officialList: /^https?:\/\/(?:www\.)?mdblist\.com\/lists\/official(?:\/(?:(movies|shows)\/)?([^\/]+))?\/?$/,
     // https://mdblist.com/lists/{username}/{list-name}
     singleList: /^https?:\/\/(?:www\.)?mdblist\.com\/lists\/([^\/]+)\/([^\/]+)\/?$/,
     // https://mdblist.com/lists/{username}/ or https://mdblist.com/users/{username}/
@@ -65,6 +69,13 @@ export function parseMdblistExternalListUrl(url: string): { username: string; li
   return match ? { username: match[1], listId: match[2] } : null;
 }
 
+export function parseMdblistOfficialListUrl(url: string): { slug?: string; mediatype?: 'movie' | 'show' } | null {
+  const match = stripQueryParams(url.trim()).match(URL_PATTERNS.mdblist.officialList);
+  if (!match) return null;
+  const mediatype = match[1] === 'movies' ? 'movie' : match[1] === 'shows' ? 'show' : undefined;
+  return { slug: match[2], mediatype };
+}
+
 /**
  * Parses a URL and returns structured data about the detected service
  */
@@ -82,6 +93,18 @@ export function parseQuickAddUrl(url: string): ParsedUrl {
       type: 'single-list',
       username: mdblistExternal.username,
       externalListId: mdblistExternal.listId,
+      url: trimmedUrl,
+    };
+  }
+
+  const mdblistOfficial = parseMdblistOfficialListUrl(trimmedUrl);
+  if (mdblistOfficial) {
+    return {
+      service: 'mdblist',
+      type: mdblistOfficial.slug ? 'single-list' : 'user-profile',
+      username: 'official',
+      listSlug: mdblistOfficial.slug,
+      mdblistOfficial: { mediatype: mdblistOfficial.mediatype },
       url: trimmedUrl,
     };
   }
