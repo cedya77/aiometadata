@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.2.1](https://github.com/cedya77/aiometadata/compare/v4.2.0...v4.2.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **watch-state:** send the watched library from this server's own records when no tracker is read ([b4282e5](https://github.com/cedya77/aiometadata/commit/b4282e5fb365ee3a2fd6e6dfc91c488565414028))
+
 ## [4.2.0](https://github.com/cedya77/aiometadata/compare/v4.1.0...v4.2.0) (2026-11-28)
 
 
