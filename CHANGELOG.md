@@ -2,6 +2,85 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.2.0](https://github.com/cedya77/aiometadata/compare/v4.1.0...v4.2.0) (2026-11-28)
+
+
+### Features
+
+* **collections:** send a collection's layout, All tab, hero video, merge and shuffle to AIOStreams ([d0ce043](https://github.com/cedya77/aiometadata/commit/d0ce04397b9e76a16311f7412060aede1e4b30ad))
+* **configure:** pick a person's Live TV groups ([b74a535](https://github.com/cedya77/aiometadata/commit/b74a535aeefd8073bd94fc1043bf48715256f961))
+* **jellyfin:** add the Live TV guide and catch-up ([8456ce4](https://github.com/cedya77/aiometadata/commit/8456ce4230d7d213fccf4907f044c49134990784))
+* **jellyfin:** hold Live TV to the groups picked for a person, with a rating or without ([41e0e4f](https://github.com/cedya77/aiometadata/commit/41e0e4f2191f121b2f4562563611673581d132b8))
+* **jellyfin:** leave Live TV off unless it is turned on ([3491115](https://github.com/cedya77/aiometadata/commit/3491115ecb9db5cdf635b96f3d15a19eea781be0))
+* **jellyfin:** list Live TV channels by group ([aaf9e1a](https://github.com/cedya77/aiometadata/commit/aaf9e1a6900852a07fabb49584e30262fa79136d))
+* **jellyfin:** make Live TV's memory, lifetimes and list limits settings ([3a982ca](https://github.com/cedya77/aiometadata/commit/3a982ca9019fde8df5ebdc36c0bcde0e005c5db5))
+* **jellyfin:** show the playback addon's live channels as Live TV ([890b6e6](https://github.com/cedya77/aiometadata/commit/890b6e67c931b300d7a5dcefa54da609ae997d01))
+* **jellyfin:** start playback without waiting for subtitle addons when asked, and lead the menu with the profile's subtitle languages ([e603c9f](https://github.com/cedya77/aiometadata/commit/e603c9f3d88732b9250e9e49a5e691073d4104ab))
+* **mdblist:** add MDBList official lists to Quick Add and the MDBList integration ([4152f5f](https://github.com/cedya77/aiometadata/commit/4152f5f70010c7374eb3301a9c5303a607a67473))
+* **people:** let a person see everything except some tags, with catalogs and collections following one rule ([9151849](https://github.com/cedya77/aiometadata/commit/915184914cbc930aef1d3319cf35d4cae8fe4d4f))
+* **recommendations:** set how long the model gets for taste profiles, new releases and picks ([b3150f4](https://github.com/cedya77/aiometadata/commit/b3150f44d6b577b94a113505e3b78e95bf38af34))
+* **search:** stop searches a client has typed past ([32afb7a](https://github.com/cedya77/aiometadata/commit/32afb7abddc0e92429806d2e2026adb32659f168))
+* **search:** stop searches a client has typed past ([945cbe1](https://github.com/cedya77/aiometadata/commit/945cbe11410b6fb3020021605b691f87e83d1f47))
+* **simkl:** move watch dates on Simkl in place, movies included ([70d1495](https://github.com/cedya77/aiometadata/commit/70d1495d0cf84e9e133f0d26311934d5c867c77d))
+* **trailers:** pass a trailer addon's thumbnail and description through to trailerStreams ([40d8eb6](https://github.com/cedya77/aiometadata/commit/40d8eb6bfbc5551413727b38abedaa53e250be5e))
+
+
+### Bug Fixes
+
+* **anime:** open anime titles in More Like This, Similar and credits by their IMDb id when anime catalogs do ([f0153c0](https://github.com/cedya77/aiometadata/commit/f0153c0122893a2c23f0da2c535919642006ed06))
+* **cache:** pick a profile's missing art from its provider under its own language settings ([1528de1](https://github.com/cedya77/aiometadata/commit/1528de1a82d7dc8e9c42af605993a84931480667))
+* **cache:** pick a profile's missing art from its provider under its own language settings ([5fb9de8](https://github.com/cedya77/aiometadata/commit/5fb9de88e7f94fe85de8ff9c128f6c0f992a292c))
+* **configure:** carry a renamed or deleted tag over to the people using it ([8235b62](https://github.com/cedya77/aiometadata/commit/8235b62adfed090b36229845fac453ca90e41288))
+* **configure:** let picked Live TV groups be cleared when the addon has none ([9f2888b](https://github.com/cedya77/aiometadata/commit/9f2888b89a0e4a307c93a88942b5980743af6836))
+* **configure:** offer Live TV groups for every addon URL the server takes ([dbe1dc8](https://github.com/cedya77/aiometadata/commit/dbe1dc8bff517cce8c62e11c4641f960517ee30e))
+* **configure:** offer only the Live TV groups the server keeps of a manifest ([0530dee](https://github.com/cedya77/aiometadata/commit/0530dee835cdc0305a4befb1bb4738e17e5a120b))
+* **configure:** show the Live TV group picker only when asked for ([b653c15](https://github.com/cedya77/aiometadata/commit/b653c151a496fe936f20331e83059e59c34b7943))
+* **jellyfin:** answer a live channel's user data ([087dadd](https://github.com/cedya77/aiometadata/commit/087dadd9504ab4dc6a1313dd746dcfe094a822f8))
+* **jellyfin:** bound Live TV guide reads and harden its manifest, search, favourites and playback ([1324735](https://github.com/cedya77/aiometadata/commit/13247353623b7bdc960d837ec2f2359efc9029be))
+* **jellyfin:** find Live TV channels past the list by their ids, with their guide, and answer searches without reading the list ([6dc6716](https://github.com/cedya77/aiometadata/commit/6dc6716e7ab0f3ec1fc26f1fdaf264f2b0f1d76d))
+* **jellyfin:** give Live TV's artwork cache its own size setting, drop packProgramId ([8c95a3f](https://github.com/cedya77/aiometadata/commit/8c95a3f5b8cd17a42b4f34e449f5b8c219f90832))
+* **jellyfin:** hold the wait for what is on to 4 seconds while a channel is looked for ([5dd9aa6](https://github.com/cedya77/aiometadata/commit/5dd9aa68e7361660e85540f15cc9318e59a2999c))
+* **jellyfin:** keep a Live TV channel's details no longer than its programmes ([a695c29](https://github.com/cedya77/aiometadata/commit/a695c29c53601ca5ff1394ff0c9a79e40a21b35f))
+* **jellyfin:** keep live streams to their own user and harden the Live TV guide, lists and search ([00f7ca7](https://github.com/cedya77/aiometadata/commit/00f7ca77a133baf891e30aa4b5b02544bd3bb220))
+* **jellyfin:** read a shared Live TV group in full ([4314b8e](https://github.com/cedya77/aiometadata/commit/4314b8e5905ac244c439c02ae84205b0e885edac))
+* **jellyfin:** read AIOStreams' Live TV errors and guides that are still loading, and list longer playlists ([2d4254c](https://github.com/cedya77/aiometadata/commit/2d4254cec13e2edb924472b1ccbb0ea27a13e507))
+* **jellyfin:** remember Live TV id lookups per catalog ([75af626](https://github.com/cedya77/aiometadata/commit/75af6267466d27db9f680f893bb4bf8a5a30a57a))
+* **jellyfin:** require a sign-in on every path that is not artwork ([5d6b9d2](https://github.com/cedya77/aiometadata/commit/5d6b9d21cbae57c32748904b09a6aecb871d21f0))
+* **jellyfin:** wait a moment for the addon's manifest so a first sign-in shows Live TV ([6cbab04](https://github.com/cedya77/aiometadata/commit/6cbab044a53084946e7b7f7758c2a798a617792a))
+* **mdblist:** hide sorting for official lists, which MDBList ignores ([dcba94e](https://github.com/cedya77/aiometadata/commit/dcba94e36e4a241fe18650a3e4dbd028fa0e5291))
+* **mdblist:** send the genres append and rogerebert sort the API documents, add sort_title ([719f5b5](https://github.com/cedya77/aiometadata/commit/719f5b52da4e9d9b58d3c8cd2ef19c7403df4421))
+* **recommendations:** keep a row's last picks when a rebuild fails, and rebuild a lapsed row in the background ([26ae169](https://github.com/cedya77/aiometadata/commit/26ae1694003289a4e256b75d5e642f2baa8b0499))
+* **similar:** keep Simkl's More Like This on the right cards and answer from TMDB when Simkl is slow ([839f7d0](https://github.com/cedya77/aiometadata/commit/839f7d0cc1d310ccf7e57575b3a55b80e9c9db3e))
+* **tvdb:** give TVDB search results the title's background art ([4aa4687](https://github.com/cedya77/aiometadata/commit/4aa468710f6aed4a41b61ec884bc351765c5b7f4))
+
+
+### Performance Improvements
+
+* **jellyfin:** answer a group's favourites at once when there are none ([d4d0e90](https://github.com/cedya77/aiometadata/commit/d4d0e9045baa65de39d87cce81593b9f18b0e626))
+* **jellyfin:** ask again for Live TV reads refused under a limit without a 30 s wait ([2ead4d9](https://github.com/cedya77/aiometadata/commit/2ead4d96e7fcf46b148f959181e8cf76d1f615de))
+* **jellyfin:** bound what Live TV holds of an addon by size ([8b22ef3](https://github.com/cedya77/aiometadata/commit/8b22ef352e102a17c2aedbca37c2e162abe4e335))
+* **jellyfin:** build a channel's parts of its programmes once ([a096928](https://github.com/cedya77/aiometadata/commit/a096928e6bc4f09991f91c2240c4875dbe32d4c9))
+* **jellyfin:** build a manifest's Live TV catalogs once ([d5c4b1e](https://github.com/cedya77/aiometadata/commit/d5c4b1ed869dbd69ab8c546a8bde2deeef6e013d))
+* **jellyfin:** build only the page asked for in a Live TV search ([e65bcd8](https://github.com/cedya77/aiometadata/commit/e65bcd8d0770a93812d0eb67a451226def38b635))
+* **jellyfin:** compute the channel key once in the group check ([c979cd3](https://github.com/cedya77/aiometadata/commit/c979cd3a3d58eee1909f1cf82711497816701045))
+* **jellyfin:** end AIOStreams' channel lists at a short page ([4cf241c](https://github.com/cedya77/aiometadata/commit/4cf241c028f902c38227d62b85d6eb58f20dba1d))
+* **jellyfin:** give channel logos a cache of their own ([556cec7](https://github.com/cedya77/aiometadata/commit/556cec7bfe85e6e7670b4162b52905f7f0dc4fa4))
+* **jellyfin:** keep ids in use in the saved-id memory ([dcf3a7f](https://github.com/cedya77/aiometadata/commit/dcf3a7ffc49e3fd111266216aa2b0525468dd58f))
+* **jellyfin:** let the sweep see expired Live TV guide entries ([b1b76ea](https://github.com/cedya77/aiometadata/commit/b1b76ea4a3049f08761a92174c0745b1cb3b7039))
+* **jellyfin:** limit the Live TV channel details one request reads ([5e0092a](https://github.com/cedya77/aiometadata/commit/5e0092a9398c724f93ad2969bcaf314bb7d98660))
+* **jellyfin:** load the views and the Live TV manifest together ([725c06e](https://github.com/cedya77/aiometadata/commit/725c06e850f66483772db25493b0cadf1538f292))
+* **jellyfin:** open Live TV channels without ids by their details ([253696e](https://github.com/cedya77/aiometadata/commit/253696e495db8cb99b2883aec6a4fea943f8f6e5))
+* **jellyfin:** read few Live TV channels by their ids and look none up twice ([62f8b2b](https://github.com/cedya77/aiometadata/commit/62f8b2b5427d2445b7404f3c18db339c239b7b04))
+* **jellyfin:** read Live TV lists, guides and searches with fewer and better timed reads ([6f38a92](https://github.com/cedya77/aiometadata/commit/6f38a9225d889704e732e53aa94a2bf978271325))
+* **jellyfin:** read only the Live TV picks that are used ([b89976b](https://github.com/cedya77/aiometadata/commit/b89976b6ec0f1de79c5f6b6f483e4f1d334241d5))
+* **jellyfin:** read only today's guide for what is on now ([ad8b285](https://github.com/cedya77/aiometadata/commit/ad8b285956b8dd889abb5b0438a8f602599b41e8))
+* **jellyfin:** read picked groups side by side in search ([ebb2d61](https://github.com/cedya77/aiometadata/commit/ebb2d61e1528e7f44a6dcc62c72e9c8af50a0d57))
+* **jellyfin:** remember where programme channels were listed ([4a57c35](https://github.com/cedya77/aiometadata/commit/4a57c352e0b7ad8b6563ff4c42d93277e855f91c))
+* **jellyfin:** skip the guide for programmes that can only play live ([0d57993](https://github.com/cedya77/aiometadata/commit/0d57993452cf5d24e886c8dd1e225089d91c52db))
+* **jellyfin:** stop dated Live TV searches while guides are slow ([8a95eb9](https://github.com/cedya77/aiometadata/commit/8a95eb9407e1cd967e1fe55900eb2a364ed9d5f2))
+* **jellyfin:** trim programme lists ([16d39ac](https://github.com/cedya77/aiometadata/commit/16d39ac0a6f9269c0d510ab1f3c1b67a8bbd9322))
+* **jellyfin:** use the loaded configuration in Live TV info ([b17673b](https://github.com/cedya77/aiometadata/commit/b17673becbd9aa59b96f0794793986f4df40d927))
+
 ## [4.1.0](https://github.com/cedya77/aiometadata/compare/v4.0.0...v4.1.0) (2026-11-18)
 
 
