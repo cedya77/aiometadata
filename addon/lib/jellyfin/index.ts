@@ -51,7 +51,7 @@ import { artTag, imageTag, isWideTag } from './imageTags';
 import { ANIME_TAG, buildEpisodes, buildEpisodesOf, episodeIdOf, episodeVideos, buildSeasons, withSeasonAnimeIds, fetchCatalogPage, fetchMeta, fetchWindow, servedOrder, filterByIncludeTypes, typesNarrowNothing, hasWantedTag, isAnimeCatalogType, sortItems, wantedTags, includeTypesFilter, listFilterKey, officialRatingOf, buildEpisode, findEpisodeVideo, knownCatalogLength, metaToBaseItem, pageChildren, pageEpisodes, ratingFields, recallArt, recallImages, rememberArt, rememberImages, sortNameFor, warmCatalogLengths, isLandscapeCatalog, showLandscape, productionYear, studioDescriptorsOf, wantedYears, extraFiltersOf, type Window } from './items';
 import { dashedGuid, encodeJellyfinId, normaliseJellyfinId, parseStremioId, stremioIdFor } from './ids';
 import { canPlay, coalesce, fetchStreams, fileFor, languageCode, languageName, mediaSourceFor, normaliseStreamBase, forgetDuration, placeholderMediaSource, recallDuration, recallFailure, recallIssued, recallStreams, rememberDuration, rememberIssued, rememberFailure, rememberStreams, runtimeTicksFrom, streamClient, streamsState, streamUserAgent, toNotice, toPlayable, type StreamClient } from './streams';
-import { fetchAddonSubtitles, formatOf, pickSubtitles, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
+import { fetchAddonSubtitles, formatOf, pickStreamFirst, type PreferredLanguages, recallOffered, rememberOffered, subtitleBody, subtitleCodecFor, subtitleExtensionOf, subtitleFormatFor, subtitleLanguage, type SubtitleTrack } from './subtitles';
 import { subtitleLanguageName, subtitleMenuTitles } from './subtitles';
 import { heldNextUp, memoNextUp, resumeSnapshot, resumeUserData } from './resume';
 import { animeSequels } from './sequels';
@@ -88,7 +88,7 @@ import { addonFetch, addonFetchMaxBytes, readCappedResponse } from '../../utils/
 import { answerPlaylistListing, hasPlaylists, playlistAsItem, playlistConcurrency, playlistImages, playlistsFolder, registerPlaylistRoutes, type PlaylistRouteDeps } from './playlists';
 import { noteWantsPeople } from './viewer';
 import { decodeCursor, exportRow, findUser, historyPage, historyUsers, isEpisodeVideo, itemIdForVideo, userByKey, videoIdsOf } from './history';
-import { clientPlayedAt, forgetUserSettings, liveSessionsFor, recordPlayed, recordPlayedUpTo, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData, sessionTouchDue, touchSessions, type LiveSession } from './playstate';
+import { clientPlayedAt, forgetUserSettings, liveSessionsFor, recordPlayed, recordPlayedUpTo, recordPlaying, recordProgress, recordStopped, recordUnplayed, recordUserData, sessionTouchDue, subtitleLanguagesFor, touchSessions, type LiveSession } from './playstate';
 
 const database: any = require('../database');
 
@@ -2015,6 +2015,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const client = clientInfo(req).client;
     const config = await loadConfig(req);
     const base = normaliseStreamBase(config?.jellyfinStreamUrl || '');
+    let preferred: PreferredLanguages | undefined;
 
     for (const source of sources) {
       const file = fileFor(source);
@@ -2033,15 +2034,22 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       }
       if (!tracks.length) continue;
 
-      // A subtitle addon answers with dozens of files per language; a menu wants a few of each.
-      const kept = pickSubtitles(
+      // A subtitle addon answers with dozens of files per language; a menu wants a few of each,
+      // and more of the languages the profile reads.
+      preferred ??= {
+        languages: (await subtitleLanguagesFor(userUUID, req.jellyfin?.profileId ?? null, req.jellyfin?.config))
+          .map((code) => subtitleLanguage(code, languageCode)),
+        perLanguage: envInt('JELLYFIN_SUBTITLES_PER_PREFERRED_LANGUAGE', 10, 1),
+      };
+      const kept = pickStreamFirst(
         tracks.map((track) => {
           const language = subtitleLanguage(track.lang, languageCode, track.langCode);
           return { ...track, language, languageLabel: subtitleLanguageName(track.lang, languageName(language), track.langCode) };
         }),
         envInt('JELLYFIN_SUBTITLES_PER_LANGUAGE', 3, 1),
         envInt('JELLYFIN_SUBTITLES_MAX', 40, 1),
-        (track) => track.languageLabel
+        (track) => track.languageLabel,
+        preferred
       );
 
       const streams: any[] = Array.isArray(source.MediaStreams) ? source.MediaStreams : [];
@@ -2319,9 +2327,10 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
       else forgetDuration(normaliseJellyfinId(itemId));
     }
 
+    // SkipSubtitles: the client starts without the addon's subtitles and asks for them once playing.
     await attachExternalSubtitles(req, itemId, sources, {
       profile: req.body?.DeviceProfile,
-      addonFor: sources[0].Id,
+      addonFor: req.body?.SkipSubtitles === true ? null : sources[0].Id,
     });
     res.json({ MediaSources: sources, PlaySessionId: randomUUID() });
   };

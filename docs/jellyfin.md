@@ -100,7 +100,7 @@ External subtitles come from two places, both offered as subtitle streams on eac
 - the subtitle links a stream itself carries;
 - every addon in the configuration that declares a subtitle resource, asked with the file's hash, size and name so it can match the release.
 
-Anime titles known under a Kitsu or MyAnimeList id are also asked under their IMDb id, since most subtitle addons only know that one. Results are spread across languages round-robin so one language with dozens of files does not crowd out the rest: `JELLYFIN_SUBTITLES_PER_LANGUAGE` per language, `JELLYFIN_SUBTITLES_MAX` in total. SRT, WebVTT, ASS and JSON are converted to whatever the client asks for. Converted text is kept in memory (`JELLYFIN_SUBTITLE_BODY_CACHE_MB`) so a seek or a second device does not fetch the file again.
+Anime titles known under a Kitsu or MyAnimeList id are also asked under their IMDb id, since most subtitle addons only know that one. The subtitle languages a profile chose in its client (its ordered `SubtitleLanguages` list, else `SubtitleLanguagePreference`) come first, up to `JELLYFIN_SUBTITLES_PER_PREFERRED_LANGUAGE` files each. The other languages are spread round-robin so one language with dozens of files does not crowd out the rest: `JELLYFIN_SUBTITLES_PER_LANGUAGE` per language, `JELLYFIN_SUBTITLES_MAX` in total. A stream's own subtitles stay ahead of the addons', picked as they would be without them. A `PlaybackInfo` body with `SkipSubtitles: true` is answered without asking the subtitle addons; asking again for the same version without it adds theirs after the tracks already sent, at the same indexes. SRT, WebVTT, ASS and JSON are converted to whatever the client asks for. Converted text is kept in memory (`JELLYFIN_SUBTITLE_BODY_CACHE_MB`) so a seek or a second device does not fetch the file again.
 
 ### Trailers
 
@@ -339,6 +339,7 @@ All of these are in the dashboard under **Server**, or as environment variables,
 | Setting | Default | What it does |
 |---|---|---|
 | `JELLYFIN_SUBTITLES_PER_LANGUAGE` | `3` | Subtitle files offered per language. |
+| `JELLYFIN_SUBTITLES_PER_PREFERRED_LANGUAGE` | `10` | Subtitle files offered for each subtitle language the profile chose in its client. |
 | `JELLYFIN_SUBTITLES_MAX` | `40` | Subtitle files offered across all languages. |
 | `JELLYFIN_SUBTITLE_TTL` | `3600` | How long the subtitles found for a file, and their converted text, are kept. |
 | `JELLYFIN_SUBTITLE_FETCH_TIMEOUT_MS` | `15000` | How long a subtitle file, or an addon's search, may take. |

@@ -148,23 +148,70 @@ export function subtitleMenuTitles<T extends TitledTrack>(tracks: T[], labelOf: 
   });
 }
 
-/** A few of each language, taken a round at a time so a late language is not lost to the cap. */
-export function pickSubtitles<T extends { language: string }>(tracks: T[], perLanguage: number, total: number, groupOf: (track: T) => string = (track) => track.language): Array<T & { ordinal: number }> {
-  const byLanguage = new Map<string, T[]>();
+/** The languages a menu leads with, and how many tracks each of them keeps. */
+export interface PreferredLanguages {
+  /** ISO 639-2/B codes, most wanted first. */
+  languages: string[];
+  perLanguage: number;
+}
+
+const NO_PREFERENCE: PreferredLanguages = { languages: [], perLanguage: 0 };
+
+/**
+ * A few of each language, taken a round at a time so a late language is not lost to the cap.
+ * The preferred languages come first, in their order, with their own larger share.
+ * `taken` counts tracks of a language already in the menu, which use up its share and its numbers.
+ */
+export function pickSubtitles<T extends { language: string }>(
+  tracks: T[],
+  perLanguage: number,
+  total: number,
+  groupOf: (track: T) => string = (track) => track.language,
+  taken: Map<string, number> = new Map(),
+  preferred: PreferredLanguages = NO_PREFERENCE
+): Array<T & { ordinal: number }> {
+  const byLanguage = new Map<string, { list: T[]; rank: number }>();
   for (const track of tracks) {
     const group = groupOf(track);
-    const list = byLanguage.get(group) ?? [];
-    if (list.length < perLanguage) list.push(track);
-    byLanguage.set(group, list);
+    const entry = byLanguage.get(group) ?? { list: [], rank: preferred.languages.indexOf(track.language) };
+    const share = entry.rank >= 0 ? preferred.perLanguage : perLanguage;
+    if (entry.list.length < share - (taken.get(group) ?? 0)) entry.list.push(track);
+    byLanguage.set(group, entry);
   }
   const out: Array<T & { ordinal: number }> = [];
+  const take = (group: string, track: T, round: number) => out.push({ ...track, ordinal: (taken.get(group) ?? 0) + round + 1 });
+  const wanted = [...byLanguage].filter(([, entry]) => entry.rank >= 0).sort((a, b) => a[1].rank - b[1].rank);
+  for (const [group, { list }] of wanted) {
+    for (let round = 0; round < list.length && out.length < total; round++) take(group, list[round], round);
+  }
+  const rest = [...byLanguage].filter(([, entry]) => entry.rank < 0);
   for (let round = 0; round < perLanguage && out.length < total; round++) {
-    for (const list of byLanguage.values()) {
+    for (const [group, { list }] of rest) {
       if (out.length >= total) break;
-      if (list[round]) out.push({ ...list[round], ordinal: round + 1 });
+      if (list[round]) take(group, list[round], round);
     }
   }
   return out;
+}
+
+/**
+ * pickSubtitles with the stream's own tracks first, picked as they are without an addon's, so a
+ * client that asked for the list without the addon's and asks again finds its tracks in the same places.
+ */
+export function pickStreamFirst<T extends { language: string; source: SubtitleTrack['source'] }>(
+  tracks: T[],
+  perLanguage: number,
+  total: number,
+  groupOf: (track: T) => string = (track) => track.language,
+  preferred: PreferredLanguages = NO_PREFERENCE
+): Array<T & { ordinal: number }> {
+  const own = tracks.filter((track) => track.source === 'stream');
+  const added = tracks.filter((track) => track.source !== 'stream');
+  if (!own.length || !added.length) return pickSubtitles(tracks, perLanguage, total, groupOf, new Map(), preferred);
+  const first = pickSubtitles(own, perLanguage, total, groupOf, new Map(), preferred);
+  const taken = new Map<string, number>();
+  for (const track of first) taken.set(groupOf(track), (taken.get(groupOf(track)) ?? 0) + 1);
+  return [...first, ...pickSubtitles(added, perLanguage, total - first.length, groupOf, taken, preferred)];
 }
 
 export function subtitleExtensionOf(url: string): string {

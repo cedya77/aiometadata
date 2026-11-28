@@ -1871,6 +1871,17 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     max: 50,
   },
   {
+    key: 'JELLYFIN_SUBTITLES_PER_PREFERRED_LANGUAGE',
+    envVar: 'JELLYFIN_SUBTITLES_PER_PREFERRED_LANGUAGE',
+    label: 'Jellyfin Subtitles per Preferred Language',
+    description: 'How many subtitle files a title offers for each subtitle language the profile chose in its client. These languages come first in the menu; the others share what is left of the total.',
+    category: 'Features',
+    type: 'number',
+    default: 10,
+    min: 1,
+    max: 50,
+  },
+  {
     key: 'JELLYFIN_SUBTITLES_MAX',
     envVar: 'JELLYFIN_SUBTITLES_MAX',
     label: 'Jellyfin Subtitles per Title',
