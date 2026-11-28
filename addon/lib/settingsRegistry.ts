@@ -1763,6 +1763,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     min: 1,
   },
   {
+    key: 'WATCH_STATE_PULL_MAX_WATCHED',
+    envVar: 'WATCH_STATE_PULL_MAX_WATCHED',
+    label: 'Watch State Most Watched Ids',
+    description: 'The most watched films, episodes, drops or watchlist titles a watch state read lists. Past it the list is left out, so the front-end keeps what it has instead of refusing the whole answer. Keep it at or under the front-end\'s own limit, 50,000 by default in AIOStreams.',
+    category: 'Features',
+    type: 'number',
+    default: 50000,
+    min: 1,
+  },
+  {
     key: 'JELLYFIN_STREAM_USER_AGENT',
     envVar: 'JELLYFIN_STREAM_USER_AGENT',
     label: 'Jellyfin Stream Request User Agent',

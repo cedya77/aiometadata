@@ -1694,6 +1694,24 @@ export class DatabaseCore {
     return rows.map((row: any) => String(row.video_id));
   }
 
+  /** How many titles are played here and when the latest changed, which moves on any mark, unmark or finish. */
+  async playedSignal(userUUID: string, profile = ''): Promise<{ count: number; latest: number }> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT COUNT(*) AS count, MAX(updated_at) AS latest FROM jellyfin_playstate WHERE user_uuid = ? AND profile = ? AND played = 1'
+      : 'SELECT COUNT(*) AS count, MAX(updated_at) AS latest FROM jellyfin_playstate WHERE user_uuid = $1 AND profile = $2 AND played = 1';
+    const row = await this.getQuery(query, [userUUID, profile]);
+    return { count: Number(row?.count) || 0, latest: Number(row?.latest) || 0 };
+  }
+
+  /** Every played row's id and when it was watched, up to `limit`. */
+  async listPlayedWithTimes(userUUID: string, limit: number, profile = ''): Promise<Array<{ video_id: string; at: number }>> {
+    const query = this.type === 'sqlite'
+      ? 'SELECT video_id, COALESCE(last_played_at, updated_at) AS at FROM jellyfin_playstate WHERE user_uuid = ? AND profile = ? AND played = 1 LIMIT ?'
+      : 'SELECT video_id, COALESCE(last_played_at, updated_at) AS at FROM jellyfin_playstate WHERE user_uuid = $1 AND profile = $2 AND played = 1 LIMIT $3';
+    const rows = (await this.allQuery(query, [userUUID, profile, limit])) || [];
+    return rows.map((row: any) => ({ video_id: String(row.video_id), at: Number(row.at) || 0 }));
+  }
+
   async listUnwatchedVideoIds(userUUID: string, limit: number, profile = ''): Promise<Array<{ video_id: string; updated_at: number }>> {
     const query = this.type === 'sqlite'
       ? 'SELECT video_id, updated_at FROM jellyfin_playstate WHERE user_uuid = ? AND profile = ? AND played = 0 AND play_count > 0 ORDER BY updated_at DESC LIMIT ?'
