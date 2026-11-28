@@ -81,7 +81,11 @@ async function titleCard(config: any, row: any, kind: Kind): Promise<any> {
   return card;
 }
 
-export async function titleCards(config: any, userUUID: string, rows: any[]): Promise<any[]> {
+/** A row whose card could not be built: kept as it is, except a Simkl row, whose name, art and type are Simkl's own (null). */
+const unbuilt = (row: any): any | null => (row._artSource === 'simkl' ? null : row);
+
+/** Each row's card, in order. A Simkl row whose card could not be built is null. */
+export async function titleCards(config: any, userUUID: string, rows: any[]): Promise<Array<any | null>> {
   const { animeOpenId, isAnimeTitle } = require('./jellyfin/canonicalIds');
   const scoped = { ...config, userUUID };
   const full = hasAgeRatingCap(config);
@@ -89,9 +93,9 @@ export async function titleCards(config: any, userUUID: string, rows: any[]): Pr
     const kind: Kind = row.type === 'movie' ? 'movie' : 'series';
     if (full || isAnimeTitle(String(row.id), kind)) {
       const id = await animeOpenId(String(row.id), kind, config, { imdb: row._imdbId }).catch(() => String(row.id));
-      return (await previewMeta(config, userUUID, kind, id).catch(() => null)) ?? row;
+      return (await previewMeta(config, userUUID, kind, id).catch(() => null)) ?? unbuilt(row);
     }
-    return titleCard(scoped, row, kind).catch(() => row);
+    return titleCard(scoped, row, kind).catch(() => unbuilt(row));
   });
 }
 

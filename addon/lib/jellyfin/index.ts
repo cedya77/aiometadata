@@ -4346,7 +4346,7 @@ export function createJellyfinRouter(options: { loginRateLimit?: any } = {}): an
     const capped = hasAgeRatingCap(config);
     const picked = capped ? rows : rows.slice(0, limit);
     const cards = await titleCards(config, userUUID, picked);
-    const items = cards.map((card: any, i: number) => metaToBaseItem(card, picked[i].type, serverId, null))
+    const items = cards.flatMap((card: any, i: number) => (card ? [metaToBaseItem(card, picked[i].type, serverId, null)] : []))
       .filter(keepsUnderProfileCap(config))
       .slice(0, limit);
     await applyWatchedState(items, await watchedSnapshot(userUUID, config), userUUID, profileKey(config), config);

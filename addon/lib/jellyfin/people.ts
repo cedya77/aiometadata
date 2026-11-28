@@ -171,12 +171,22 @@ export function metaFromTmdbRow(row: any, type: 'movie' | 'series'): any | null 
 const simklImage = (path: string | null | undefined, kind: 'posters' | 'fanart', size: string): string | null =>
   path ? `https://wsrv.nl/?url=https://simkl.in/${kind}/${path}_${size}.webp` : null;
 
+/** Simkl's type for a suggestion. An OVA, ONA or special is a movie when TMDB holds it as one. */
+function simklRowType(row: any, malId: number): 'movie' | 'series' {
+  if (row?.type === 'movie' || row?.anime_type === 'movie') return 'movie';
+  if (row?.type !== 'anime' || row?.anime_type === 'tv') return 'series';
+  const record = malId > 0 ? require('../id-mapper').getMappingByMalId(malId) : null;
+  if (record) return record.themoviedb_type === 'movie' ? 'movie' : 'series';
+  return row.ids?.tmdbm && !row.ids?.tmdb ? 'movie' : 'series';
+}
+
 /** A Simkl suggestion as the meta a catalog would hand out, opened by its MAL, TMDB or IMDb id. */
 function metaFromSimklRow(row: any): any | null {
   const ids = row?.ids || {};
-  const type: 'movie' | 'series' = row?.type === 'movie' || row?.anime_type === 'movie' ? 'movie' : 'series';
   const malId = row?.type === 'anime' ? Number(ids.mal) : NaN;
-  const id = malId > 0 ? `mal:${malId}` : ids.tmdb ? `tmdb:${ids.tmdb}` : /^tt\d+$/.test(String(ids.imdb || '')) ? String(ids.imdb) : null;
+  const type = simklRowType(row, malId);
+  const tmdbId = ids.tmdb || ids.tmdbm;
+  const id = malId > 0 ? `mal:${malId}` : tmdbId ? `tmdb:${tmdbId}` : /^tt\d+$/.test(String(ids.imdb || '')) ? String(ids.imdb) : null;
   if (!id) return null;
   const year = row.year ? String(row.year) : '';
   return {
@@ -190,7 +200,7 @@ function metaFromSimklRow(row: any): any | null {
     releaseInfo: year,
     year,
     genres: [],
-    ...(ids.tmdb ? { _tmdbId: String(ids.tmdb) } : {}),
+    ...(tmdbId ? { _tmdbId: String(tmdbId) } : {}),
     ...(/^tt\d+$/.test(String(ids.imdb || '')) ? { _imdbId: String(ids.imdb) } : {}),
     _artSource: 'simkl',
   };
@@ -240,17 +250,30 @@ export async function similarTitles(config: any, meta: any, type: 'movie' | 'ser
   return rows.filter((_row: any, i: number) => kept[i]);
 }
 
-/** What the chosen source recommends next to a title. Simkl falls back to TMDB when it has nothing for it. */
+/** Simkl's suggestions for a title, or null when they take longer than the wait. The lookup still finishes and fills the cache. */
+async function simklSuggestions(meta: any, type: 'movie' | 'series'): Promise<any[] | null> {
+  const { fetchSimklRecommendations } = require('../../utils/simklUtils');
+  const { envInt } = require('../../utils/envNumber');
+  const lookup: Promise<any[]> = fetchSimklRecommendations(
+    { mal: meta?._malId, imdb: meta?._imdbId || meta?.imdb_id, tmdb: meta?._tmdbId },
+    type
+  ).catch((error: any) => {
+    logger.debug(`Simkl similar titles unavailable for ${meta?.id}: ${error?.message || error}`);
+    return [];
+  });
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(resolve, envInt('SIMILAR_SIMKL_WAIT_MS', 2000, 100), null);
+  });
+  const rows = await Promise.race([lookup, late]).finally(() => clearTimeout(timer));
+  if (rows === null) logger.debug(`Simkl similar titles too slow for ${meta?.id}, using TMDB`);
+  return rows;
+}
+
+/** What the chosen source recommends next to a title. Simkl falls back to TMDB when it has nothing for it or is slow. */
 async function recommendedTitles(config: any, meta: any, type: 'movie' | 'series'): Promise<any[]> {
   if (config?.jellyfinSimilarSource === 'simkl') {
-    const { fetchSimklRecommendations } = require('../../utils/simklUtils');
-    const rows: any[] = await fetchSimklRecommendations(
-      { mal: meta?._malId, imdb: meta?._imdbId || meta?.imdb_id, tmdb: meta?._tmdbId },
-      type
-    ).catch((error: any) => {
-      logger.debug(`Simkl similar titles unavailable for ${meta?.id}: ${error?.message || error}`);
-      return [];
-    });
+    const rows = (await simklSuggestions(meta, type)) ?? [];
     const metas = rows.map(metaFromSimklRow).filter(Boolean);
     if (metas.length) return metas;
   }

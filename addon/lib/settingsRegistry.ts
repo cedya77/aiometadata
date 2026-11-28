@@ -5018,6 +5018,16 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     max: 40,
   },
   {
+    key: 'SIMILAR_SIMKL_WAIT_MS',
+    envVar: 'SIMILAR_SIMKL_WAIT_MS',
+    label: 'More Like This Simkl Wait (ms)',
+    description: 'How long More Like This waits for Simkl before TMDB answers instead, when Simkl is the source. The Simkl lookup still finishes in the background, so the next request has it.',
+    category: 'Features',
+    type: 'number',
+    default: 2000,
+    min: 100,
+  },
+  {
     key: 'SIMKL_DETAIL_TTL',
     envVar: 'SIMKL_DETAIL_TTL',
     label: 'Simkl Title Details TTL (sec)',
